@@ -26,6 +26,12 @@ sealed class AppDestination(
         icon = HzPlayerIcons.FileBrowser,
     )
 
+    data object Network : AppDestination(
+        route = "network",
+        label = "Network",
+        icon = HzPlayerIcons.Network,
+    )
+
     data object Settings : AppDestination(
         route = "settings",
         label = "Settings",
@@ -37,5 +43,6 @@ val bottomNavDestinations = listOf(
     AppDestination.VideoLibrary,
     AppDestination.AudioBrowser,
     AppDestination.FileBrowser,
+    AppDestination.Network,
     AppDestination.Settings,
 )
