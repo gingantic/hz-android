@@ -41,6 +41,7 @@ class SftpBrowserClient(
                         path = filePath,
                         isDirectory = entry.isDirectory,
                         fileSize = entry.attributes.size,
+                        childCount = 0,
                         dateModified = entry.attributes.mtime * 1000L,
                         mimeType = if (!entry.isDirectory) guessMimeType(entry.name) else null,
                     )
