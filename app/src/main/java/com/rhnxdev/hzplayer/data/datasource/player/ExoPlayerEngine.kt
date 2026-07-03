@@ -276,7 +276,9 @@ class ExoPlayerEngine @Inject constructor(
         val androidUri = Uri.parse(videoUri)
         val scheme = androidUri.scheme?.lowercase() ?: "file"
 
-        return if (scheme == "file") {
+        // Only auto-discover for local files and SMB/FTP schemes where we can reasonably
+        // expect subtitle files to exist. HTTP/HTTPS streams rarely have side-by-side subs.
+        return if (scheme == "file" || SUBTITLE_SCHEMES_WITH_DIR.contains(scheme)) {
             val videoPath = androidUri.path ?: return emptyList()
             val videoFile = File(videoPath)
             val parentDir = videoFile.parentFile ?: return emptyList()
@@ -290,16 +292,8 @@ class ExoPlayerEngine @Inject constructor(
                 }
                 ?.map { Uri.fromFile(it) }
                 ?: emptyList()
-        } else if (SUBTITLE_SCHEMES_WITH_DIR.contains(scheme) || scheme.startsWith("http")) {
-            val path = androidUri.path ?: return emptyList()
-            val baseName = path.substringBeforeLast('.')
-            if (baseName == path) return emptyList()
-
-            SUBTITLE_EXTENSIONS.mapNotNull { ext ->
-                val subPath = "$baseName.$ext"
-                androidUri.buildUpon().path(subPath).build()
-            }
         } else {
+            // http/https/other schemes: no auto-discovery to avoid unnecessary HTTP probes
             emptyList()
         }
     }

@@ -80,14 +80,13 @@ class MediaPlayerHolder @Inject constructor(
                     )
                 }
 
+                // Bug 2 fix: update bufferedPosition on every event, not just state changes.
+                // Keeps the StateFlow snapshot fresh for the position poller (important for
+                // HLS/DASH where buffer fills continuously, not just at state transitions).
                 override fun onEvents(player: Player, events: Player.Events) {
-                    if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) ||
-                        events.contains(Player.EVENT_IS_PLAYING_CHANGED)
-                    ) {
-                        _playbackStateInfo.value = _playbackStateInfo.value.copy(
-                            bufferedPosition = player.bufferedPosition.coerceAtLeast(0),
-                        )
-                    }
+                    _playbackStateInfo.value = _playbackStateInfo.value.copy(
+                        bufferedPosition = player.bufferedPosition.coerceAtLeast(0),
+                    )
                 }
             },
         )
