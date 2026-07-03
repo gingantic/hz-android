@@ -2,7 +2,6 @@ package com.rhnxdev.hzplayer.presentation.audio
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +25,7 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
+import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
@@ -46,19 +45,19 @@ fun AudioBrowserScreen(
     onSongClicked: ((AudioItem) -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
+    val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
     val tabs = AudioTab.entries
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Toolbar with inline search
-        HzPlayerTopBar(
-            title = "Music",
-            searchQuery = if (uiState.isSearchActive) uiState.searchQuery else null,
-            searchPlaceholder = "Search songs...",
-            onSearchQueryChanged = viewModel::onSearchQueryChanged,
-            onSearchToggle = viewModel::onSearchToggle,
-            onSearchClose = viewModel::onClearSearch,
-        )
-
+    HzPlayerSearchableScaffold(
+        title = "Music",
+        isSearchActive = isSearchActive,
+        searchQuery = searchQuery,
+        onSearchToggle = viewModel::onSearchToggle,
+        onSearchQueryChanged = viewModel::onSearchQueryChanged,
+        onClearSearch = viewModel::onClearSearch,
+        searchPlaceholder = "Search songs...",
+    ) {
         // Tab row synced directly to ViewModel tab state
         TabRow(
             selectedTabIndex = tabs.indexOf(uiState.currentTab),
@@ -86,9 +85,9 @@ fun AudioBrowserScreen(
         ) { targetTab ->
             when (targetTab) {
                 AudioTab.SONGS -> SongsTab(
-                    songs = if (uiState.isSearchActive) uiState.filteredSongs else uiState.songs,
+                    songs = if (isSearchActive) uiState.filteredSongs else uiState.songs,
                     isLoading = uiState.isLoadingSongs,
-                    searchQuery = if (uiState.isSearchActive) uiState.searchQuery else null,
+                    searchQuery = if (isSearchActive) searchQuery else null,
                     onSongClicked = { song ->
                         viewModel.onSongClicked(song)
                         onSongClicked?.invoke(song)

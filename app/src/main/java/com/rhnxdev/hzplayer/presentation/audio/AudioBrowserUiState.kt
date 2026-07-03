@@ -19,7 +19,5 @@ data class AudioBrowserUiState(
     val isLoadingAlbums: Boolean = true,
     val isLoadingArtists: Boolean = true,
     val error: String? = null,
-    val searchQuery: String? = null,
-    val isSearchActive: Boolean = false,
     val filteredSongs: List<AudioItem> = emptyList(),
 )
