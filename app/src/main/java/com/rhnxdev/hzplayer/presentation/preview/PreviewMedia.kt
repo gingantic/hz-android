@@ -5,6 +5,9 @@ import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.MediaType
+import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
+import com.rhnxdev.hzplayer.domain.model.ServerConfig
+import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
 import com.rhnxdev.hzplayer.domain.model.MediaItem as DomainMediaItem
 
 object PreviewMedia {
@@ -18,6 +21,7 @@ object PreviewMedia {
             "year" to "2017",
             "durationMs" to 9_123_000,
             "resolution" to "4K",
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
         ),
         mapOf(
             "title" to "Arrival",
@@ -25,6 +29,7 @@ object PreviewMedia {
             "year" to "2016",
             "durationMs" to 7_080_000,
             "resolution" to "HD",
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
         ),
         mapOf(
             "title" to "Interstellar",
@@ -32,6 +37,7 @@ object PreviewMedia {
             "year" to "2014",
             "durationMs" to 10_260_000,
             "resolution" to "4K",
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
         ),
         mapOf(
             "title" to "The Dark Knight",
@@ -39,6 +45,7 @@ object PreviewMedia {
             "year" to "2008",
             "durationMs" to 8_940_000,
             "resolution" to "HD",
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
         ),
         mapOf(
             "title" to "Inception",
@@ -46,6 +53,7 @@ object PreviewMedia {
             "year" to "2010",
             "durationMs" to 8_280_000,
             "resolution" to "HD",
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
         ),
         mapOf(
             "title" to "Dune: Part Two",
@@ -53,6 +61,7 @@ object PreviewMedia {
             "year" to "2024",
             "durationMs" to 10_020_000,
             "resolution" to "4K",
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
         ),
         mapOf(
             "title" to "Parasite",
@@ -60,6 +69,7 @@ object PreviewMedia {
             "year" to "2019",
             "durationMs" to 7_920_000,
             "resolution" to "HD",
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
         ),
         mapOf(
             "title" to "Everything Everywhere All at Once",
@@ -67,6 +77,7 @@ object PreviewMedia {
             "year" to "2022",
             "durationMs" to 8_340_000,
             "resolution" to "HD",
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
         ),
     )
 
@@ -78,12 +89,14 @@ object PreviewMedia {
             "subtitle" to "45% watched",
             "durationMs" to 9_123_000,
             "progress" to 0.45f,
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
         ),
         mapOf(
             "title" to "Dune: Part Two",
             "subtitle" to "72% watched",
             "durationMs" to 10_020_000,
             "progress" to 0.72f,
+            "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
         ),
     )
 
@@ -116,18 +129,18 @@ object PreviewMedia {
     // ── Songs ──────────────────────────────────────────────────────
 
     val songs: List<AudioItem> = listOf(
-        AudioItem(id = 1, title = "Get Lucky", uri = "", artist = "Daft Punk", album = "Random Access Memories", durationMs = 369_000, trackNumber = 1),
-        AudioItem(id = 2, title = "Blinding Lights", uri = "", artist = "The Weeknd", album = "After Hours", durationMs = 200_000, trackNumber = 3),
-        AudioItem(id = 3, title = "Time", uri = "", artist = "Hans Zimmer", album = "Inception (OST)", durationMs = 290_000, trackNumber = 1),
-        AudioItem(id = 4, title = "HUMBLE.", uri = "", artist = "Kendrick Lamar", album = "DAMN.", durationMs = 177_000, trackNumber = 8),
-        AudioItem(id = 5, title = "Pink + White", uri = "", artist = "Frank Ocean", album = "Blonde", durationMs = 185_000, trackNumber = 4),
-        AudioItem(id = 6, title = "The Less I Know the Better", uri = "", artist = "Tame Impala", album = "Currents", durationMs = 215_000, trackNumber = 7),
-        AudioItem(id = 7, title = "Starboy", uri = "", artist = "The Weeknd", album = "Starboy", durationMs = 230_000, trackNumber = 1),
-        AudioItem(id = 8, title = "Around the World", uri = "", artist = "Daft Punk", album = "Homework", durationMs = 428_000, trackNumber = 2),
-        AudioItem(id = 9, title = "Money Trees", uri = "", artist = "Kendrick Lamar", album = "good kid, m.A.A.d city", durationMs = 386_000, trackNumber = 5),
-        AudioItem(id = 10, title = "Let It Happen", uri = "", artist = "Tame Impala", album = "Currents", durationMs = 498_000, trackNumber = 1),
-        AudioItem(id = 11, title = "Ivy", uri = "", artist = "Frank Ocean", album = "Blonde", durationMs = 249_000, trackNumber = 2),
-        AudioItem(id = 12, title = "Interstellar (Main Theme)", uri = "", artist = "Hans Zimmer", album = "Interstellar (OST)", durationMs = 475_000, trackNumber = 1),
+        AudioItem(id = 1, title = "Get Lucky", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", artist = "Daft Punk", album = "Random Access Memories", durationMs = 369_000, trackNumber = 1),
+        AudioItem(id = 2, title = "Blinding Lights", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", artist = "The Weeknd", album = "After Hours", durationMs = 200_000, trackNumber = 3),
+        AudioItem(id = 3, title = "Time", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", artist = "Hans Zimmer", album = "Inception (OST)", durationMs = 290_000, trackNumber = 1),
+        AudioItem(id = 4, title = "HUMBLE.", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3", artist = "Kendrick Lamar", album = "DAMN.", durationMs = 177_000, trackNumber = 8),
+        AudioItem(id = 5, title = "Pink + White", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3", artist = "Frank Ocean", album = "Blonde", durationMs = 185_000, trackNumber = 4),
+        AudioItem(id = 6, title = "The Less I Know the Better", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3", artist = "Tame Impala", album = "Currents", durationMs = 215_000, trackNumber = 7),
+        AudioItem(id = 7, title = "Starboy", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3", artist = "The Weeknd", album = "Starboy", durationMs = 230_000, trackNumber = 1),
+        AudioItem(id = 8, title = "Around the World", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3", artist = "Daft Punk", album = "Homework", durationMs = 428_000, trackNumber = 2),
+        AudioItem(id = 9, title = "Money Trees", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3", artist = "Kendrick Lamar", album = "good kid, m.A.A.d city", durationMs = 386_000, trackNumber = 5),
+        AudioItem(id = 10, title = "Let It Happen", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3", artist = "Tame Impala", album = "Currents", durationMs = 498_000, trackNumber = 1),
+        AudioItem(id = 11, title = "Ivy", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3", artist = "Frank Ocean", album = "Blonde", durationMs = 249_000, trackNumber = 2),
+        AudioItem(id = 12, title = "Interstellar (Main Theme)", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3", artist = "Hans Zimmer", album = "Interstellar (OST)", durationMs = 475_000, trackNumber = 1),
     )
 
     // ── Files/Folders ─────────────────────────────────────────────
@@ -142,5 +155,20 @@ object PreviewMedia {
         FolderItem(id = 11, name = "interstellar.mkv", path = "/storage/emulated/0/Movies/interstellar.mkv", isDirectory = false, fileSize = 15_800_000_000, dateModified = 1_700_000_000_000, mimeType = "video/x-matroska"),
         FolderItem(id = 12, name = "lecture_notes.pdf", path = "/storage/emulated/0/Download/lecture_notes.pdf", isDirectory = false, fileSize = 2_400_000, dateModified = 1_712_000_000_000, mimeType = "application/pdf"),
         FolderItem(id = 13, name = "photo_2024.jpg", path = "/storage/emulated/0/Download/photo_2024.jpg", isDirectory = false, fileSize = 3_200_000, dateModified = 1_714_000_000_000, mimeType = "image/jpeg"),
+    )
+
+    // ── Network Servers ─────────────────────────────────────────────
+
+    val servers: List<ServerConfig> = listOf(
+        ServerConfig(id = 1, name = "Home NAS", protocol = NetworkProtocol.SMB, host = "192.168.1.100", port = 445, username = "user"),
+        ServerConfig(id = 2, name = "Office FTP", protocol = NetworkProtocol.FTP, host = "ftp.office.com", port = 21, username = "admin"),
+        ServerConfig(id = 3, name = "Dev Server", protocol = NetworkProtocol.SFTP, host = "dev.example.com", port = 22, username = "deploy"),
+    )
+
+    // ── Stream History ──────────────────────────────────────────────
+
+    val streamHistory: List<StreamHistoryItem> = listOf(
+        StreamHistoryItem(id = 1, url = "https://example.com/live/stream.m3u8", title = "Live Stream", isFavorite = true, lastPlayedAt = System.currentTimeMillis() - 3_600_000),
+        StreamHistoryItem(id = 2, url = "rtsp://camera.local/feed", title = "Security Camera", isFavorite = false, lastPlayedAt = System.currentTimeMillis() - 86_400_000),
     )
 }

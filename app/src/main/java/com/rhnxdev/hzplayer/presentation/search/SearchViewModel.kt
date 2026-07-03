@@ -2,8 +2,11 @@ package com.rhnxdev.hzplayer.presentation.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rhnxdev.hzplayer.domain.model.AudioItem
+import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.repository.AudioRepository
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
+import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -18,7 +21,16 @@ import javax.inject.Inject
 class SearchViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val audioRepository: AudioRepository,
+    private val playerRepository: PlayerRepository,
 ) : ViewModel() {
+
+    fun playVideo(video: VideoItem) {
+        playerRepository.playVideo(video)
+    }
+
+    fun playAudio(audio: AudioItem) {
+        playerRepository.playAudio(audio)
+    }
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()

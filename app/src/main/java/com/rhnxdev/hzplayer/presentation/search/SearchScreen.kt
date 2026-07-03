@@ -28,6 +28,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rhnxdev.hzplayer.domain.model.AudioItem
+import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
@@ -41,8 +43,8 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
-    onVideoClicked: (Long) -> Unit = {},
-    onAudioClicked: (Long) -> Unit = {},
+    onVideoClicked: (VideoItem) -> Unit = {},
+    onAudioClicked: (AudioItem) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -110,8 +112,12 @@ fun SearchScreen(
             uiState.hasSearched || uiState.query.isNotBlank() -> {
                 SearchResults(
                     uiState = uiState,
-                    onVideoClicked = onVideoClicked,
-                    onAudioClicked = onAudioClicked,
+                    onVideoClicked = { video ->
+                        onVideoClicked(video)
+                    },
+                    onAudioClicked = { audio ->
+                        onAudioClicked(audio)
+                    },
                 )
             }
 
@@ -130,8 +136,8 @@ fun SearchScreen(
 @Composable
 private fun SearchResults(
     uiState: SearchUiState,
-    onVideoClicked: (Long) -> Unit,
-    onAudioClicked: (Long) -> Unit,
+    onVideoClicked: (VideoItem) -> Unit = {},
+    onAudioClicked: (AudioItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -160,7 +166,7 @@ private fun SearchResults(
                     thumbnailContent = {
                         ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
                     },
-                    onClick = { onVideoClicked(video.id) },
+                    onClick = { onVideoClicked(video) },
                     modifier = Modifier.padding(horizontal = Spacing.lg),
                 )
             }
@@ -191,7 +197,7 @@ private fun SearchResults(
                     thumbnailContent = {
                         ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
                     },
-                    onClick = { onAudioClicked(song.id) },
+                    onClick = { onAudioClicked(song) },
                     modifier = Modifier.padding(horizontal = Spacing.lg),
                 )
             }
