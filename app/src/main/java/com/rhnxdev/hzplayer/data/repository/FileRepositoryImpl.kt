@@ -4,7 +4,6 @@ import android.content.ContentResolver
 import android.provider.MediaStore
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.repository.FileRepository
-import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -13,43 +12,71 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Map of file extensions to MIME types for the file browser. */
+private val MIME_MAP = mapOf(
+    "mp4" to "video/mp4", "mkv" to "video/x-matroska", "avi" to "video/avi",
+    "mov" to "video/quicktime", "wmv" to "video/x-ms-wmv", "flv" to "video/x-flv",
+    "webm" to "video/webm", "3gp" to "video/3gpp", "m4v" to "video/mp4",
+    "mpg" to "video/mpeg", "mpeg" to "video/mpeg", "ts" to "video/mp2t",
+    "mp3" to "audio/mpeg", "flac" to "audio/flac", "wav" to "audio/wav",
+    "ogg" to "audio/ogg", "aac" to "audio/aac", "wma" to "audio/x-ms-wma",
+    "m4a" to "audio/mp4", "opus" to "audio/opus", "ape" to "audio/x-ape",
+    "aiff" to "audio/aiff", "dsf" to "audio/dsf", "dff" to "audio/dff",
+    "jpg" to "image/jpeg", "jpeg" to "image/jpeg", "png" to "image/png",
+    "gif" to "image/gif", "webp" to "image/webp", "bmp" to "image/bmp",
+    "pdf" to "application/pdf", "zip" to "application/zip", "rar" to "application/vnd.rar",
+    "7z" to "application/x-7z-compressed", "gz" to "application/gzip",
+    "txt" to "text/plain",
+    "srt" to "text/plain", "sub" to "text/plain",
+    "ass" to "text/plain", "ssa" to "text/plain", "vtt" to "text/plain",
+    "lrc" to "text/plain", "nfo" to "text/plain",
+    "iso" to "application/x-iso9660-image",
+)
+
+private fun guessMimeType(name: String): String? {
+    val ext = name.substringAfterLast('.', "").lowercase()
+    return MIME_MAP[ext]
+}
+
 @Singleton
 class FileRepositoryImpl @Inject constructor(
     private val contentResolver: ContentResolver,
 ) : FileRepository {
 
     override fun listDirectory(path: String): Flow<List<FolderItem>> = flow {
-        val file = File(path)
+        val file = File(path.trimEnd('/'))
         if (!file.exists() || !file.isDirectory) {
             emit(emptyList())
             return@flow
         }
 
-        val items = file.listFiles()?.map { f ->
-            FolderItem(
-                id = f.hashCode().toLong(),
-                name = f.name,
-                path = f.absolutePath,
-                isDirectory = f.isDirectory,
-                fileSize = if (f.isFile) f.length() else 0,
-                childCount = if (f.isDirectory) f.listFiles()?.size ?: 0 else 0,
-                dateModified = f.lastModified(),
-            )
-        }?.sortedByDescending { it.isDirectory }
-            ?.sortedBy { it.name }
-
-        if (items.isNullOrEmpty()) {
-            // Fallback to preview data for demo
-            emit(PreviewMedia.folders.filter { it.path.startsWith(path) && it.path != path })
-        } else {
-            emit(items)
+        val files = file.listFiles() ?: run {
+            emit(emptyList())
+            return@flow
         }
+
+        emit(
+            files.map { f ->
+                FolderItem(
+                    id = f.hashCode().toLong(),
+                    name = f.name,
+                    path = f.absolutePath,
+                    isDirectory = f.isDirectory,
+                    fileSize = if (f.isFile) f.length() else 0,
+                    childCount = if (f.isDirectory) f.listFiles()?.size ?: 0 else 0,
+                    dateModified = f.lastModified(),
+                    mimeType = if (f.isFile) guessMimeType(f.name) else null,
+                )
+            }.sortedWith(
+                compareByDescending<FolderItem> { it.isDirectory }
+                    .thenBy { it.name.lowercase() }
+            )
+        )
     }.flowOn(Dispatchers.IO)
 
     override fun getStorageRoots(): Flow<List<FolderItem>> = flow {
         val roots = mutableListOf<FolderItem>()
 
-        // Internal storage
         val internalRoot = File("/storage/emulated/0")
         if (internalRoot.exists()) {
             roots.add(
@@ -112,10 +139,7 @@ class FileRepositoryImpl @Inject constructor(
         }
 
         if (results.isEmpty()) {
-            val filtered = PreviewMedia.folders.filter {
-                it.name.contains(query, ignoreCase = true)
-            }
-            emit(filtered)
+            emit(emptyList())
         } else {
             emit(results)
         }

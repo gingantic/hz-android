@@ -4,9 +4,13 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ViewMode
+import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -24,6 +28,29 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override val useDynamicColors: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[DYNAMIC_COLORS_KEY] ?: true
+    }
+
+    override val activeEngine: Flow<EngineType> = dataStore.data.map { prefs ->
+        val name = prefs[ENGINE_KEY]
+        try {
+            name?.let { EngineType.valueOf(it) } ?: EngineType.EXO_PLAYER
+        } catch (_: IllegalArgumentException) {
+            EngineType.EXO_PLAYER
+        }
+    }
+
+    override val openSubtitlesApiKey: Flow<String> = dataStore.data.map { prefs ->
+        prefs[OPENSUBTITLES_API_KEY] ?: ""
+    }
+
+    override val subtitleStyle: Flow<SubtitleStyle> = dataStore.data.map { prefs ->
+        SubtitleStyle(
+            fontSizeSp = prefs[SUB_FONT_SIZE] ?: SubtitleStyle.DEFAULT.fontSizeSp,
+            textColorArgb = (prefs[SUB_TEXT_COLOR] ?: SubtitleStyle.DEFAULT.textColorArgb.toLong()).toInt(),
+            backgroundColorArgb = (prefs[SUB_BG_COLOR] ?: SubtitleStyle.DEFAULT.backgroundColorArgb.toLong()).toInt(),
+            edgeStyle = prefs[SUB_EDGE_STYLE] ?: SubtitleStyle.DEFAULT.edgeStyle,
+            enabled = prefs[SUB_ENABLED] ?: SubtitleStyle.DEFAULT.enabled,
+        )
     }
 
     override fun getViewMode(key: String): Flow<ViewMode> = dataStore.data.map { prefs ->
@@ -52,6 +79,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[DYNAMIC_COLORS_KEY] = enabled }
     }
 
+    override suspend fun setActiveEngine(engine: EngineType) {
+        dataStore.edit { prefs -> prefs[ENGINE_KEY] = engine.name }
+    }
+
     override suspend fun setViewMode(key: String, mode: ViewMode) {
         dataStore.edit { prefs ->
             prefs[stringPreferencesKey("view_mode_$key")] = mode.name
@@ -64,8 +95,31 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun setSubtitleStyle(style: SubtitleStyle) {
+        dataStore.edit { prefs ->
+            prefs[SUB_FONT_SIZE] = style.fontSizeSp
+            prefs[SUB_TEXT_COLOR] = style.textColorArgb.toLong()
+            prefs[SUB_BG_COLOR] = style.backgroundColorArgb.toLong()
+            prefs[SUB_EDGE_STYLE] = style.edgeStyle
+            prefs[SUB_ENABLED] = style.enabled
+        }
+    }
+
+    override suspend fun setOpenSubtitlesApiKey(key: String) {
+        dataStore.edit { prefs ->
+            prefs[OPENSUBTITLES_API_KEY] = key
+        }
+    }
+
     companion object {
         private val DARK_THEME_KEY = booleanPreferencesKey("dark_theme")
         private val DYNAMIC_COLORS_KEY = booleanPreferencesKey("dynamic_colors")
+        private val ENGINE_KEY = stringPreferencesKey("active_engine")
+        private val SUB_FONT_SIZE = intPreferencesKey("subtitle_font_size")
+        private val SUB_TEXT_COLOR = longPreferencesKey("subtitle_text_color")
+        private val SUB_BG_COLOR = longPreferencesKey("subtitle_bg_color")
+        private val SUB_EDGE_STYLE = intPreferencesKey("subtitle_edge_style")
+        private val SUB_ENABLED = booleanPreferencesKey("subtitle_enabled")
+        private val OPENSUBTITLES_API_KEY = stringPreferencesKey("opensubtitles_api_key")
     }
 }

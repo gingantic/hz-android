@@ -5,8 +5,10 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
+import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +40,21 @@ class MediaPlayerHolder @Inject constructor(
                             Player.STATE_ENDED -> PlayerState.ENDED
                             else -> PlayerState.IDLE
                         },
+                        bufferedPosition = player.bufferedPosition.coerceAtLeast(0),
+                    )
+                }
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    _playbackStateInfo.value = _playbackStateInfo.value.copy(
+                        state = PlayerState.ERROR,
+                        isPlaying = false,
+                        errorMessage = when (error.errorCode) {
+                            androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                            androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                            androidx.media3.common.PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED,
+                            -> "Network error — check your connection"
+                            else -> "Playback error: ${error.localizedMessage ?: "unknown"}"
+                        },
                     )
                 }
 
@@ -45,6 +62,32 @@ class MediaPlayerHolder @Inject constructor(
                     _playbackStateInfo.value = _playbackStateInfo.value.copy(
                         isPlaying = isPlaying,
                     )
+                }
+
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                    _playbackStateInfo.value = _playbackStateInfo.value.copy(
+                        shuffleModeEnabled = shuffleModeEnabled,
+                    )
+                }
+
+                override fun onRepeatModeChanged(repeatMode: Int) {
+                    _playbackStateInfo.value = _playbackStateInfo.value.copy(
+                        repeatMode = when (repeatMode) {
+                            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+                            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+                            else -> RepeatMode.NONE
+                        },
+                    )
+                }
+
+                override fun onEvents(player: Player, events: Player.Events) {
+                    if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) ||
+                        events.contains(Player.EVENT_IS_PLAYING_CHANGED)
+                    ) {
+                        _playbackStateInfo.value = _playbackStateInfo.value.copy(
+                            bufferedPosition = player.bufferedPosition.coerceAtLeast(0),
+                        )
+                    }
                 }
             },
         )
