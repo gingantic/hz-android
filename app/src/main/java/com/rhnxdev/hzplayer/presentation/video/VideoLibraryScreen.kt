@@ -38,7 +38,7 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
+import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.components.MediaCard
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaErrorState
@@ -61,57 +61,47 @@ fun VideoLibraryScreen(
     onVideoClicked: (Long) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
+    val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Toolbar with inline search
-            HzPlayerTopBar(
-                title = "Hz Player",
-                searchQuery = if (uiState.isSearchActive) uiState.searchQuery else null,
-                searchPlaceholder = "Search videos...",
-                onSearchQueryChanged = viewModel::onSearchQueryChanged,
-                onSearchToggle = viewModel::onSearchToggle,
-                onSearchClose = viewModel::onClearSearch,
-                actions = {
-                    var showSortMenu by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Sort,
-                                contentDescription = "Sort",
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Sort by Title") },
-                                onClick = {
-                                    viewModel.onSortChanged(SortType.TITLE)
-                                    showSortMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Sort by Date") },
-                                onClick = {
-                                    viewModel.onSortChanged(SortType.DATE_ADDED)
-                                    showSortMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Sort by Duration") },
-                                onClick = {
-                                    viewModel.onSortChanged(SortType.DURATION)
-                                    showSortMenu = false
-                                }
-                            )
-                        }
+        HzPlayerSearchableScaffold(
+            title = "Hz Player",
+            isSearchActive = isSearchActive,
+            searchQuery = searchQuery,
+            onSearchToggle = viewModel::onSearchToggle,
+            onSearchQueryChanged = viewModel::onSearchQueryChanged,
+            onClearSearch = viewModel::onClearSearch,
+            searchPlaceholder = "Search videos...",
+            actions = {
+                var showSortMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { showSortMenu = true }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Sort,
+                            contentDescription = "Sort",
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showSortMenu,
+                        onDismissRequest = { showSortMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Sort by Title") },
+                            onClick = { viewModel.onSortChanged(SortType.TITLE); showSortMenu = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Sort by Date") },
+                            onClick = { viewModel.onSortChanged(SortType.DATE_ADDED); showSortMenu = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Sort by Duration") },
+                            onClick = { viewModel.onSortChanged(SortType.DURATION); showSortMenu = false },
+                        )
                     }
                 }
-            )
-
+            },
+        ) {
             // Content
             Box(modifier = Modifier.weight(1f)) {
                 when {
@@ -122,44 +112,48 @@ fun VideoLibraryScreen(
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
-
                     uiState.error != null -> {
                         MediaErrorState(
                             title = "Could not load videos",
-                            subtitle = uiState.error ?: "An unknown error occurred",
+                            subtitle = uiState.error ?: "",
                             onRetry = viewModel::onRetry,
                         )
                     }
-
-                    uiState.isEmpty && !uiState.isSearchActive -> {
+                    uiState.isEmpty && !isSearchActive -> {
                         MediaEmptyState(
                             icon = Icons.Filled.VideoLibrary,
                             title = "No videos found",
                             subtitle = "Tap browse to find media on your device.",
-                            actionLabel = "Browse Files",
-                            onAction = {},
                         )
                     }
-
+                    isSearchActive -> {
+                        SearchResultsContent(
+                            videos = uiState.filteredVideos,
+                            viewMode = uiState.viewMode,
+                            onVideoClicked = { v ->
+                                viewModel.onVideoClicked(v)
+                                onVideoClicked(v.id)
+                            },
+                            searchQuery = searchQuery,
+                        )
+                    }
+                    uiState.viewMode == ViewMode.GRID -> {
+                        GridContent(
+                            categories = uiState.categories,
+                            onVideoClicked = { v ->
+                                viewModel.onVideoClicked(v)
+                                onVideoClicked(v.id)
+                            },
+                        )
+                    }
                     else -> {
-                        if (uiState.isSearchActive) {
-                            SearchResultsContent(
-                                videos = uiState.filteredVideos,
-                                viewMode = uiState.viewMode,
-                                onVideoClicked = { v -> onVideoClicked(v.id) },
-                                searchQuery = uiState.searchQuery ?: "",
-                            )
-                        } else if (uiState.viewMode == ViewMode.GRID) {
-                            GridContent(
-                                categories = uiState.categories,
-                                onVideoClicked = { v -> onVideoClicked(v.id) },
-                            )
-                        } else {
-                            ListContent(
-                                videos = uiState.allVideos,
-                                onVideoClicked = { v -> onVideoClicked(v.id) },
-                            )
-                        }
+                        ListContent(
+                            videos = uiState.allVideos,
+                            onVideoClicked = { v ->
+                                viewModel.onVideoClicked(v)
+                                onVideoClicked(v.id)
+                            },
+                        )
                     }
                 }
             }

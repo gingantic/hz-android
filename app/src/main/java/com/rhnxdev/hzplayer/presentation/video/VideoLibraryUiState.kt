@@ -13,8 +13,6 @@ data class VideoLibraryUiState(
     val error: String? = null,
     val viewMode: ViewMode = ViewMode.GRID,
     val sortType: SortType = SortType.TITLE,
-    val searchQuery: String? = null,
-    val isSearchActive: Boolean = false,
     val isEmpty: Boolean = false,
 )
 
