@@ -43,7 +43,7 @@ class FileRepositoryImpl @Inject constructor(
     private val contentResolver: ContentResolver,
 ) : FileRepository {
 
-    override fun listDirectory(path: String): Flow<List<FolderItem>> = flow {
+    override fun listDirectory(path: String, showHidden: Boolean): Flow<List<FolderItem>> = flow {
         val file = File(path.trimEnd('/'))
         if (!file.exists() || !file.isDirectory) {
             emit(emptyList())
@@ -55,22 +55,35 @@ class FileRepositoryImpl @Inject constructor(
             return@flow
         }
 
+        val noMedia = File(file, ".nomedia").exists()
+
         emit(
-            files.map { f ->
-                FolderItem(
-                    id = f.hashCode().toLong(),
-                    name = f.name,
-                    path = f.absolutePath,
-                    isDirectory = f.isDirectory,
-                    fileSize = if (f.isFile) f.length() else 0,
-                    childCount = if (f.isDirectory) f.listFiles()?.size ?: 0 else 0,
-                    dateModified = f.lastModified(),
-                    mimeType = if (f.isFile) guessMimeType(f.name) else null,
-                )
-            }.sortedWith(
-                compareByDescending<FolderItem> { it.isDirectory }
-                    .thenBy { it.name.lowercase() }
-            )
+            files.asSequence()
+                .filter { f ->
+                    if (noMedia && !showHidden) false
+                    else showHidden || !f.name.startsWith(".")
+                }
+                .map { f ->
+                    FolderItem(
+                        id = f.hashCode().toLong(),
+                        name = f.name,
+                        path = f.absolutePath,
+                        isDirectory = f.isDirectory,
+                        fileSize = if (f.isFile) f.length() else 0,
+                        childCount = if (f.isDirectory) {
+                            try {
+                                f.listFiles()?.size ?: 0
+                            } catch (e: Exception) {
+                                0
+                            }
+                        } else 0,
+                        dateModified = f.lastModified(),
+                        mimeType = if (f.isFile) guessMimeType(f.name) else null,
+                    )
+                }.sortedWith(
+                    compareByDescending<FolderItem> { it.isDirectory }
+                        .thenBy { it.name.lowercase() }
+                ).toList()
         )
     }.flowOn(Dispatchers.IO)
 
@@ -85,7 +98,11 @@ class FileRepositoryImpl @Inject constructor(
                     name = "Internal Storage",
                     path = internalRoot.absolutePath,
                     isDirectory = true,
-                    childCount = internalRoot.listFiles()?.size ?: 0,
+                    childCount = try {
+                        internalRoot.listFiles()?.size ?: 0
+                    } catch (e: Exception) {
+                        0
+                    },
                 ),
             )
         }

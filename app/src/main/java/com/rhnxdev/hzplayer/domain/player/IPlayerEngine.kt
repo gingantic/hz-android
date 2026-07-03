@@ -53,6 +53,9 @@ interface IPlayerEngine {
     /** Current playback position in ms. */
     fun getCurrentPosition(): Long
 
+    /** Currently buffered position in ms, or 0 if unknown. */
+    fun getBufferedPosition(): Long
+
     // ── Configuration ───────────────────────────────────────────
 
     /** Set playback speed (1.0 = normal). */
@@ -94,6 +97,17 @@ interface IPlayerEngine {
 
     /** Get current subtitle timing offset in milliseconds, or 0 if unset. */
     fun getSubtitleDelay(): Long
+
+    // ── Audio track selection ──────────────────────────────────
+
+    /** Get the list of audio track names/languages. */
+    fun getAudioTracks(): List<String>
+
+    /** Get the index of the currently active audio track, or -1 if none. */
+    fun getSelectedAudioTrack(): Int
+
+    /** Select an audio track by its index in [getAudioTracks], or -1 to disable. */
+    fun selectAudioTrack(index: Int)
 
     // ── Lifecycle ───────────────────────────────────────────────
 

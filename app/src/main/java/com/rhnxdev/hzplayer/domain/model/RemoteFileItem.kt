@@ -5,6 +5,7 @@ data class RemoteFileItem(
     val path: String,
     val isDirectory: Boolean,
     val fileSize: Long = 0,
+    val childCount: Int = 0,
     val dateModified: Long = 0,
     val mimeType: String? = null,
 )

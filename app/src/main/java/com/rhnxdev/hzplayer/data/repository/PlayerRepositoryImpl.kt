@@ -263,6 +263,14 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override fun getSubtitleDelay(): Long = _activeEngine.value.getSubtitleDelay()
 
+    override fun getAudioTracks(): List<String> = _activeEngine.value.getAudioTracks()
+
+    override fun getSelectedAudioTrack(): Int = _activeEngine.value.getSelectedAudioTrack()
+
+    override fun selectAudioTrack(index: Int) {
+        _activeEngine.value.selectAudioTrack(index)
+    }
+
     override fun stop() {
         savedPlaybackUri = null
         savedPlaybackTitle = null

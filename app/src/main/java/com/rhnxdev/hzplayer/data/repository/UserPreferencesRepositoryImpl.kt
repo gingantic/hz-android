@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ViewMode
@@ -41,6 +42,14 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override val openSubtitlesApiKey: Flow<String> = dataStore.data.map { prefs ->
         prefs[OPENSUBTITLES_API_KEY] ?: ""
+    }
+
+    override val seekSensitivity: Flow<Float> = dataStore.data.map { prefs ->
+        prefs[SEEK_SENSITIVITY] ?: 1.0f
+    }
+
+    override val showHiddenFiles: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[SHOW_HIDDEN_FILES] ?: false
     }
 
     override val subtitleStyle: Flow<SubtitleStyle> = dataStore.data.map { prefs ->
@@ -111,6 +120,16 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun setSeekSensitivity(sensitivity: Float) {
+        dataStore.edit { prefs ->
+            prefs[SEEK_SENSITIVITY] = sensitivity
+        }
+    }
+
+    override suspend fun setShowHiddenFiles(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[SHOW_HIDDEN_FILES] = enabled }
+    }
+
     companion object {
         private val DARK_THEME_KEY = booleanPreferencesKey("dark_theme")
         private val DYNAMIC_COLORS_KEY = booleanPreferencesKey("dynamic_colors")
@@ -121,5 +140,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         private val SUB_EDGE_STYLE = intPreferencesKey("subtitle_edge_style")
         private val SUB_ENABLED = booleanPreferencesKey("subtitle_enabled")
         private val OPENSUBTITLES_API_KEY = stringPreferencesKey("opensubtitles_api_key")
+        private val SEEK_SENSITIVITY = floatPreferencesKey("seek_sensitivity")
+        private val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
     }
 }
