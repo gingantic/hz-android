@@ -100,8 +100,10 @@ fun MiniPlayerBar(
             if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd ||
                 dismissState.currentValue == SwipeToDismissBoxValue.EndToStart
             ) {
-                isSwiped = true
-                onDismiss()
+                if (visible) {
+                    isSwiped = true
+                    onDismiss()
+                }
             }
         }
 
@@ -161,9 +163,7 @@ fun MiniPlayerBar(
             ) {
                 // Card-like content area
                 Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onClick),
+                    modifier = Modifier.fillMaxWidth(),
                     shape = containerShape,
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     tonalElevation = 3.dp,
@@ -175,33 +175,41 @@ fun MiniPlayerBar(
                             .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // Album thumbnail
-                        Box(
+                        // Clicking metadata navigates to full player
+                        Row(
                             modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(Spacing.sm)),
+                                .weight(1f)
+                                .clickable(onClick = onClick),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        }
+                            // Album thumbnail
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(Spacing.sm)),
+                            ) {
+                                ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                            }
 
-                        Spacer(modifier = Modifier.width(Spacing.sm))
+                            Spacer(modifier = Modifier.width(Spacing.sm))
 
-                        // Track info
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            // Track info
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
 
                         // Controls

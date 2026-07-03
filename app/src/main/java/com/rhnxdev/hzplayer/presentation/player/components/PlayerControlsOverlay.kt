@@ -1,9 +1,7 @@
 package com.rhnxdev.hzplayer.presentation.player.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,36 +9,50 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.ScreenRotationAlt
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.core.designsystem.stableNavBarPaddingValues
+import com.rhnxdev.hzplayer.core.designsystem.stableStatusBarTopDp
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
-import com.rhnxdev.hzplayer.core.util.formatDuration
+import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.presentation.player.PlayerUiState
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+
+private val topGradient = Brush.verticalGradient(
+    colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent),
+)
+
+private val bottomGradient = Brush.verticalGradient(
+    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
+)
 
 @Composable
 fun PlayerControlsOverlay(
@@ -53,186 +65,218 @@ fun PlayerControlsOverlay(
     onSkipBackward: () -> Unit,
     onSpeedClick: () -> Unit,
     onSubtitleClick: () -> Unit,
+    onLockClick: () -> Unit = {},
+    onOrientationClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val overlayBg = remember { Color.Black.copy(alpha = 0.6f) }
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(overlayBg),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
+    Box(modifier = modifier.fillMaxSize()) {
+        // ── Top bar: back + title + network speed ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .background(topGradient)
+                .padding(top = stableStatusBarTopDp())
+                .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Top bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White,
-                    )
-                }
-                Text(
-                    text = title ?: "Now Playing",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f),
+            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
                 )
             }
 
-            // Spacer pushes center controls to middle
-            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = title ?: "Now Playing",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs),
+            )
 
-            // Center controls
+            // Network speed indicator
+            NetworkSpeedChip(uiState.networkTraffic)
+        }
+
+        // ── Bottom panel: seekbar + play controls + secondary row ──
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .background(bottomGradient)
+                .padding(stableNavBarPaddingValues())
+                .padding(bottom = 8.dp),
+        ) {
+            // Row 1: seekbar
+            PlayerSeekBar(
+                currentPosition = uiState.currentPosition,
+                duration = uiState.duration,
+                bufferedPercentage = uiState.bufferedPercentage,
+                onSeek = onSeekTo,
+                onSeekStart = {},
+                onSeekEnd = {},
+            )
+
+            // Row 2: play controls
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Skip backward 10s
                 IconButton(
                     onClick = onSkipBackward,
-                    modifier = Modifier.size(56.dp),
+                    modifier = Modifier.size(44.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Replay10,
-                        contentDescription = "Replay 10",
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp),
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(Spacing.lg))
-
-                // Previous
-                IconButton(
-                    onClick = { /* previous track */ },
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = "Previous",
+                        contentDescription = "Replay 10s",
                         tint = Color.White,
                         modifier = Modifier.size(28.dp),
                     )
                 }
 
-                Spacer(modifier = Modifier.width(Spacing.lg))
+                Spacer(modifier = Modifier.width(Spacing.xxl))
 
-                // Play/Pause (larger)
-                IconButton(
-                    onClick = onPlayPause,
-                    modifier = Modifier.size(72.dp),
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (uiState.isPlaying) "Pause" else "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(48.dp),
-                    )
+                    IconButton(
+                        onClick = onPlayPause,
+                        modifier = Modifier.size(56.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp),
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.width(Spacing.lg))
+                Spacer(modifier = Modifier.width(Spacing.xxl))
 
-                // Next
-                IconButton(
-                    onClick = { /* next track */ },
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipNext,
-                        contentDescription = "Next",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp),
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(Spacing.lg))
-
-                // Skip forward 10s
                 IconButton(
                     onClick = onSkipForward,
-                    modifier = Modifier.size(56.dp),
+                    modifier = Modifier.size(44.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Forward10,
-                        contentDescription = "Forward 10",
+                        contentDescription = "Forward 10s",
                         tint = Color.White,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(28.dp),
                     )
                 }
             }
 
-            // Bottom bar with seekbar
-            Column(
+            // Row 3: secondary controls (icon-only, evenly centered)
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = Spacing.lg),
+                    .padding(horizontal = 48.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                PlayerSeekBar(
-                    currentPosition = uiState.currentPosition,
-                    duration = uiState.duration,
-                    bufferedPercentage = uiState.bufferedPercentage,
-                    onSeek = onSeekTo,
-                    onSeekStart = {},
-                    onSeekEnd = {},
+                // Speed
+                Text(
+                    text = "${uiState.playbackSpeed}x",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onSpeedClick)
+                        .background(Color.White.copy(alpha = 0.12f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
 
-                // Bottom row: speed, extra buttons
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = Spacing.lg),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    // Speed
-                    IconButton(onClick = onSpeedClick) {
-                        Text(
-                            text = "${uiState.playbackSpeed}x",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
+                Spacer(modifier = Modifier.width(Spacing.xxl))
 
-                    Row {
-                        // Subtitles
-                        IconButton(onClick = onSubtitleClick) {
-                            Text(
-                                text = "CC",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
+                // CC
+                IconButton(onClick = onSubtitleClick, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Subtitles,
+                        contentDescription = "Subtitles",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(Spacing.xxl))
+
+                // Lock placeholder
+                IconButton(onClick = onLockClick, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = if (uiState.playerLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                        contentDescription = if (uiState.playerLocked) "Unlock" else "Lock",
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(Spacing.xxl))
+
+                // Orientation placeholder
+                IconButton(onClick = onOrientationClick, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.ScreenRotationAlt,
+                        contentDescription = "Orientation",
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(22.dp),
+                    )
                 }
             }
         }
     }
 }
 
+@Composable
+private fun NetworkSpeedChip(traffic: NetworkTraffic) {
+    Text(
+        text = "↓ ${formatSpeed(traffic.speedDown)}",
+        color = Color.White.copy(alpha = 0.85f),
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.12f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
+}
+
+private fun formatSpeed(bytesPerSec: Long): String = when {
+    bytesPerSec < 1024 -> "$bytesPerSec B/s"
+    bytesPerSec < 1024 * 1024 -> "%.1f KB/s".format(bytesPerSec / 1024.0)
+    else -> "%.1f MB/s".format(bytesPerSec / (1024.0 * 1024.0))
+}
+
 @PreviewLightDark
-@Preview
+@Preview(widthDp = 640, heightDp = 320)
 @Composable
 private fun PlayerControlsOverlayPreview() {
     HzPlayerTheme {
-        Box(modifier = Modifier.size(400.dp, 300.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.DarkGray),
+        ) {
             PlayerControlsOverlay(
                 uiState = PlayerUiState(
                     isPlaying = true,
                     currentPosition = 180000,
                     duration = 369000,
                 ),
-                title = "Get Lucky - Daft Punk",
+                title = "Blade Runner 2049 - Final Cut (2017)",
                 onBack = {},
                 onPlayPause = {},
                 onSeekTo = {},

@@ -1,13 +1,18 @@
 package com.rhnxdev.hzplayer.presentation.player
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
-import com.rhnxdev.hzplayer.data.datasource.player.MediaPlayerHolder
+import com.rhnxdev.hzplayer.data.repository.PlayerRepositoryImpl
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
+import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
+import com.rhnxdev.hzplayer.domain.player.EngineType
+import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
+import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -22,7 +27,8 @@ import javax.inject.Inject
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
-    private val playerHolder: MediaPlayerHolder,
+    private val playerRepositoryImpl: PlayerRepositoryImpl,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -30,10 +36,42 @@ class PlayerViewModel @Inject constructor(
 
     private var positionUpdateJob: Job? = null
 
-    fun getExoPlayer(): Player = playerHolder.player
+    // ── Seek state (Bug 1 + 6 fix) ──────────────────────────────
+
+    /** True while ExoPlayer is settling after a seekTo(). */
+    private var isSeeking = false
+
+    /** Timestamp of the last seekTo() call. Suppresses position poller until elapsed. */
+    private var lastSeekTimestamp = 0L
+
+    /** The position we seeked to — used as optimistic UI value during buffering. */
+    private var seekTargetPosition = 0L
+
+    companion object {
+        /** How long to suppress poller position updates after a seek (ms). */
+        private const val SEEK_SUPPRESS_MS = 800L
+
+        /** Minimum interval between consecutive seeks (ms). */
+        private const val SEEK_DEBOUNCE_MS = 150L
+    }
+
+    /** Expose the active engine for VLC surface rendering. */
+    fun getActiveEngine(): IPlayerEngine = playerRepository.activeEngine
+
+    /** Expose the ExoPlayer instance for [PlayerView]. */
+    fun getExoPlayer(): Player? = playerRepositoryImpl.exoPlayer
+
+    /** Current engine type (used by the UI to choose rendering path). */
+    val activeEngineType: EngineType get() = playerRepository.activeEngineType
+
+    /** Whether an engine switch is in progress. */
+    val isSwitchingEngine: Boolean get() = playerRepository.isSwitchingEngine
 
     init {
         observePlaybackState()
+        observeEngineType()
+        observeSubtitleStyle()
+        observeNetworkTraffic()
         startPositionUpdates()
     }
 
@@ -41,14 +79,54 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             playerRepository.playbackStateInfo.collect { info ->
                 _uiState.update { state ->
+                    // Bug 3 fix: only set isLoading from engine state (BUFFERING).
+                    // Do NOT manually set isLoading=true in seek functions — the engine's
+                    // own STATE_BUFFERING signal handles it. This eliminates the race where
+                    // a fast BUFFERING→READY transition clears isLoading before the manual
+                    // isLoading=true is processed, leaving the spinner stuck.
+                    val newIsLoading = info.state == PlayerState.BUFFERING
+
+                    // Bug 1 supplement: when engine reaches READY after a seek, clear
+                    // the seek suppress so the poller resumes normally.
+                    if (info.state == PlayerState.READY && isSeeking) {
+                        isSeeking = false
+                    }
+
                     state.copy(
                         isPlaying = info.isPlaying,
-                        isLoading = info.state == PlayerState.BUFFERING,
+                        isLoading = newIsLoading,
                         playbackSpeed = info.playbackSpeed,
                         shuffleMode = info.shuffleModeEnabled,
                         repeatMode = info.repeatMode,
+                        errorMessage = info.errorMessage,
                     )
                 }
+            }
+        }
+    }
+
+    private fun observeEngineType() {
+        viewModelScope.launch {
+            playerRepository.activeEngineTypeFlow.collect { type ->
+                _uiState.update { state ->
+                    state.copy(activeEngineType = type)
+                }
+            }
+        }
+    }
+
+    private fun observeSubtitleStyle() {
+        viewModelScope.launch {
+            userPreferencesRepository.subtitleStyle.collect { style ->
+                _uiState.update { it.copy(subtitleStyle = style) }
+            }
+        }
+    }
+
+    private fun observeNetworkTraffic() {
+        viewModelScope.launch {
+            playerRepository.networkTraffic.collect { traffic ->
+                _uiState.update { it.copy(networkTraffic = traffic) }
             }
         }
     }
@@ -58,18 +136,150 @@ class PlayerViewModel @Inject constructor(
         positionUpdateJob = viewModelScope.launch {
             while (isActive) {
                 delay(250)
+                val engine = playerRepository.activeEngine
+                val duration = engine.getDuration()
+                val position = engine.getCurrentPosition()
+                val bufferedPos = engine.playbackState.value.bufferedPosition
+                val bufferedPct = if (duration > 0) {
+                    ((bufferedPos * 100) / duration).toInt().coerceIn(0, 100)
+                } else 0
+                val subTracks = playerRepository.getSubtitleTracks()
+                val selectedSub = playerRepository.getSelectedSubtitleTrack()
+                val currentUri = playerRepository.currentPlaybackUri
+
+                // Bug 1 fix: suppress position updates for SEEK_SUPPRESS_MS after a seek.
+                // During this window the UI shows the optimistic seekTargetPosition,
+                // preventing the seek bar from snapping back to the old position while
+                // ExoPlayer is in STATE_BUFFERING.
+                val now = System.currentTimeMillis()
+                val withinSuppressWindow = isSeeking && (now - lastSeekTimestamp) < SEEK_SUPPRESS_MS
+                val effectivePosition = if (withinSuppressWindow) seekTargetPosition else position
+
                 _uiState.update { state ->
-                    state.copy(
-                        currentPosition = playerHolder.player.currentPosition,
-                        duration = playerHolder.player.duration.coerceAtLeast(0),
-                    )
+                    val tracksChanged = state.subtitleTracks != subTracks
+                    val selectionChanged = state.selectedSubtitleTrack != selectedSub
+                    val uriChanged = state.currentPlaybackUri != currentUri
+                    if (tracksChanged || selectionChanged || uriChanged || state.currentPosition != effectivePosition || state.duration != duration || state.bufferedPercentage != bufferedPct) {
+                        state.copy(
+                            currentPosition = effectivePosition,
+                            duration = duration,
+                            bufferedPercentage = bufferedPct,
+                            subtitleTracks = if (tracksChanged) subTracks else state.subtitleTracks,
+                            selectedSubtitleTrack = selectedSub,
+                            currentPlaybackUri = currentUri
+                        )
+                    } else {
+                        state
+                    }
                 }
             }
         }
     }
 
+    fun selectSubtitleTrack(index: Int) {
+        playerRepository.selectSubtitleTrack(index)
+        val subTracks = playerRepository.getSubtitleTracks()
+        val selectedSub = playerRepository.getSelectedSubtitleTrack()
+        _uiState.update { state ->
+            state.copy(
+                subtitleTracks = subTracks,
+                selectedSubtitleTrack = selectedSub
+            )
+        }
+    }
+
+    fun addExternalSubtitle(uri: Uri, displayName: String? = null) {
+        val name = displayName ?: uri.lastPathSegment ?: uri.toString()
+        val success = playerRepository.addExternalSubtitle(uri)
+        if (success) {
+            val subTracks = playerRepository.getSubtitleTracks()
+            val selectedSub = playerRepository.getSelectedSubtitleTrack()
+            _uiState.update { state ->
+                state.copy(
+                    subtitleTracks = subTracks,
+                    selectedSubtitleTrack = selectedSub,
+                    externalSubtitles = state.externalSubtitles + (name to uri)
+                )
+            }
+        }
+    }
+
+    fun onSubtitleDelayChange(delayMs: Long) {
+        playerRepository.setSubtitleDelay(delayMs)
+        _uiState.update { it.copy(subtitleDelayMs = delayMs) }
+    }
+
+    fun onSubtitleStyleChange(style: SubtitleStyle) {
+        _uiState.update { it.copy(subtitleStyle = style) }
+        viewModelScope.launch {
+            userPreferencesRepository.setSubtitleStyle(style)
+        }
+    }
+
+    fun onToggleLock() {
+        _uiState.update { it.copy(playerLocked = !it.playerLocked) }
+    }
+
+    fun onToggleOrientation(activity: android.app.Activity) {
+        val rotation = activity.windowManager.defaultDisplay?.rotation
+            ?: android.view.Surface.ROTATION_0
+        activity.requestedOrientation = when (rotation) {
+            android.view.Surface.ROTATION_0, android.view.Surface.ROTATION_180 ->
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ->
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        }
+    }
+
+    /**
+     * Play a media file from its URI string.
+     * Used by the file browser and external intents.
+     */
+    /** Mark current playback as video (hides the mini player bar). */
+    fun onVideoStarted() {
+        _uiState.update { it.copy(isVideo = true) }
+    }
+
+    fun playVideo(video: com.rhnxdev.hzplayer.domain.model.VideoItem) {
+        _uiState.update { state ->
+            state.copy(
+                currentTitle = video.title,
+                currentArtist = null,
+                isVideo = true,
+                isPlaying = true,
+                isLoading = true,
+                duration = video.durationMs,
+                currentPlaybackUri = video.uri,
+            )
+        }
+        playerRepository.playVideo(video)
+    }
+
+    fun playUri(
+        uri: String,
+        title: String,
+        isVideo: Boolean = false,
+        playImmediately: Boolean = true,
+    ) {
+        _uiState.update { state ->
+            state.copy(
+                currentTitle = title,
+                currentArtist = null,
+                isVideo = isVideo,
+                isPlaying = playImmediately,
+                isLoading = true,
+                currentPlaybackUri = uri,
+            )
+        }
+        playerRepository.playUri(uri, title, isVideo = isVideo)
+    }
+
     fun onPlayPause() {
         playerRepository.togglePlayPause()
+    }
+
+    fun pause() {
+        playerRepository.activeEngine.pause()
     }
 
     fun playAudio(audio: AudioItem) {
@@ -77,26 +287,35 @@ class PlayerViewModel @Inject constructor(
             it.copy(
                 currentTitle = audio.title,
                 currentArtist = audio.artist,
+                isVideo = false,
                 isPlaying = true,
+                isLoading = true,
                 duration = audio.durationMs,
+                currentPlaybackUri = audio.uri,
             )
         }
-        playerHolder.buildMediaItem(audio.uri, audio.title).also { item ->
-            playerHolder.player.setMediaItem(item)
-            playerHolder.player.prepare()
-            playerHolder.player.play()
-        }
+        playerRepository.playAudio(audio)
     }
 
+    // Bug 3 fix: do NOT set isLoading=true manually — let the engine's
+    // STATE_BUFFERING event drive it via observePlaybackState().
+    // Bug 6 fix: debounce rapid seeks; ignore if one is already in flight.
+    // Bug 1 fix: record seek target + timestamp for poller suppression.
+
     fun onSeekTo(positionMs: Long) {
+        val now = System.currentTimeMillis()
+        if (now - lastSeekTimestamp < SEEK_DEBOUNCE_MS) return
+        markSeekStart(positionMs)
         playerRepository.seekTo(positionMs)
     }
 
     fun onSkipForward() {
+        markSeekStart(_uiState.value.currentPosition + 10_000)
         playerRepository.skipForward(10000)
     }
 
     fun onSkipBackward() {
+        markSeekStart((_uiState.value.currentPosition - 10_000).coerceAtLeast(0))
         playerRepository.skipBackward(10000)
     }
 
@@ -121,8 +340,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun stop() {
+        android.util.Log.d("PlayerViewModel", "stop() called")
         playerRepository.stop()
-        _uiState.update { it.copy(currentTitle = null, currentArtist = null, isPlaying = false) }
+        _uiState.update { it.copy(currentTitle = null, currentArtist = null, isPlaying = false, currentPlaybackUri = null) }
     }
 
     fun onToggleControls() {
@@ -138,13 +358,53 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onSeekBy(deltaMs: Long) {
+        val target = (_uiState.value.currentPosition + deltaMs).coerceAtLeast(0)
+        markSeekStart(target)
         if (deltaMs >= 0) playerRepository.skipForward(deltaMs)
         else playerRepository.skipBackward(-deltaMs)
     }
 
+    fun playNetworkUri(uri: String, title: String, isVideo: Boolean) {
+        val needsVlc = uri.startsWith("ftp://") ||
+            uri.startsWith("sftp://") ||
+            uri.startsWith("smb://")
+        if (needsVlc && activeEngineType != EngineType.VLC) {
+            viewModelScope.launch {
+                playerRepository.switchEngine(EngineType.VLC)
+                playerRepository.playUri(uri, title, isVideo = isVideo)
+                _uiState.update { state ->
+                    state.copy(
+                        currentTitle = title,
+                        currentArtist = null,
+                        isVideo = isVideo,
+                        isPlaying = true,
+                        currentPlaybackUri = uri,
+                    )
+                }
+            }
+        } else {
+            playUri(uri, title, isVideo)
+        }
+    }
+
+    /** Switch the playback engine. */
+    fun switchEngine(type: EngineType) {
+        viewModelScope.launch {
+            playerRepository.switchEngine(type)
+        }
+    }
+
+    /** Record seek state for the poller suppress window (Bug 1) and debounce (Bug 6). */
+    private fun markSeekStart(targetMs: Long) {
+        isSeeking = true
+        lastSeekTimestamp = System.currentTimeMillis()
+        seekTargetPosition = targetMs.coerceAtLeast(0)
+    }
+
     override fun onCleared() {
         super.onCleared()
+        android.util.Log.d("PlayerViewModel", "onCleared() called")
         positionUpdateJob?.cancel()
-        playerRepository.release()
+        playerRepository.stop()
     }
 }
