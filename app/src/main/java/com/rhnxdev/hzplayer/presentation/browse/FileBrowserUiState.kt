@@ -8,7 +8,7 @@ data class FileBrowserUiState(
     val currentPath: String = "/",
     val breadcrumbs: List<Breadcrumb> = emptyList(),
     val items: List<FolderItem> = emptyList(),
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val error: String? = null,
     val isEmpty: Boolean = false,
 )
