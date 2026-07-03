@@ -79,8 +79,10 @@ class ExoPlayerEngine @Inject constructor(
             )
         }
 
-        player.stop()
-        player.clearMediaItems()
+        // Do NOT call player.stop() here — that emits STATE_IDLE which causes
+        // observePlaybackState to briefly set isLoading=false, producing the
+        // blank-screen artifact at startup. setMediaItem() alone replaces the
+        // current item and transitions directly to BUFFERING via prepare().
         player.setMediaItem(buildMediaItemWithSubtitles(uri, title))
         player.prepare()
         player.play()
@@ -118,6 +120,9 @@ class ExoPlayerEngine @Inject constructor(
     override fun getDuration(): Long = player.duration.coerceAtLeast(0)
 
     override fun getCurrentPosition(): Long = player.currentPosition.coerceAtLeast(0)
+
+    /** Reads buffered position directly from ExoPlayer — always live, no StateFlow lag. */
+    override fun getBufferedPosition(): Long = player.bufferedPosition.coerceAtLeast(0)
 
     override fun setPlaybackSpeed(speed: Float) {
         playerHolder.updateSpeed(speed)
@@ -174,8 +179,7 @@ class ExoPlayerEngine @Inject constructor(
             if (currentUri != null) {
                 val position = player.currentPosition
                 val wasPlaying = player.isPlaying
-                player.stop()
-                player.clearMediaItems()
+                // Same as play(): skip stop() to avoid the IDLE flash.
                 player.setMediaItem(buildMediaItemWithSubtitles(currentUri, currentTitle ?: ""))
                 player.prepare()
                 player.seekTo(position)
@@ -255,6 +259,68 @@ class ExoPlayerEngine @Inject constructor(
                 .buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .build()
+        }
+    }
+
+    // ── Audio track selection ──────────────────────────────────
+
+    private fun getExoAudioTracks(): List<ExoTrackInfo> {
+        val list = mutableListOf<ExoTrackInfo>()
+        val currentTracks = player.currentTracks
+        var trackIdxCounter = 1
+        for (group in currentTracks.groups) {
+            if (group.type == C.TRACK_TYPE_AUDIO) {
+                for (i in 0 until group.length) {
+                    if (group.isTrackSupported(i)) {
+                        val format = group.getTrackFormat(i)
+                        val lang = format.language
+                        val label = format.label
+                        val channelCount = format.channelCount
+                        val name = when {
+                            !label.isNullOrEmpty() -> label
+                            !lang.isNullOrEmpty() && channelCount > 0 -> "$lang ($channelCount ch)"
+                            !lang.isNullOrEmpty() -> "Audio - $lang"
+                            else -> "Audio Track $trackIdxCounter"
+                        }
+                        list.add(ExoTrackInfo(group, i, name))
+                        trackIdxCounter++
+                    }
+                }
+            }
+        }
+        return list
+    }
+
+    override fun getAudioTracks(): List<String> {
+        return getExoAudioTracks().map { it.displayName }
+    }
+
+    override fun getSelectedAudioTrack(): Int {
+        val tracks = getExoAudioTracks()
+        for (index in tracks.indices) {
+            val trackInfo = tracks[index]
+            if (trackInfo.group.isTrackSelected(trackInfo.trackIndex)) {
+                return index
+            }
+        }
+        return -1
+    }
+
+    override fun selectAudioTrack(index: Int) {
+        val tracks = getExoAudioTracks()
+        if (index in tracks.indices) {
+            val selectedTrack = tracks[index]
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .addOverride(
+                    TrackSelectionOverride(
+                        selectedTrack.group.mediaTrackGroup,
+                        selectedTrack.trackIndex
+                    )
+                )
                 .build()
         }
     }

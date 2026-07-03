@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.view.Surface
 import android.view.SurfaceView
+import android.view.TextureView
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import com.rhnxdev.hzplayer.domain.player.EngineType
@@ -69,9 +70,10 @@ class VlcEngine @Inject constructor(
 
     private fun initialize() {
         val args = arrayListOf(
-            "--verbose=2",
-            "--network-caching=300",
-            "--file-caching=300",
+            "--verbose=0",              // silence logcat spam → less CPU overhead
+            "--network-caching=3000",   // 3 s buffer — prevents starvation on slow internet
+            "--file-caching=1500",      // 1.5 s for local/SMB reads
+            "--clock-jitter=0",         // remove jitter tolerance → smoother AV sync after seek
         )
         libVLC = LibVLC(appContext, args)
         mediaPlayer = MediaPlayer(libVLC)
@@ -208,9 +210,12 @@ class VlcEngine @Inject constructor(
                 .build()
 
             Media(vlc, cleanUri).apply {
-                setHWDecoderEnabled(true, false)
-                addOption(":network-caching=300")
-                addOption(":file-caching=300")
+                // true, true = enable HW decoding with fallback on failure.
+                // Without fallback, a HW decoder that silently mis-handles colour
+                // range stays active instead of falling back to correct SW decoding.
+                setHWDecoderEnabled(true, true)
+                addOption(":network-caching=3000")
+                addOption(":file-caching=1500")
                 if (user.isNotEmpty()) {
                     addOption(":smb-user=$user")
                 }
@@ -219,10 +224,20 @@ class VlcEngine @Inject constructor(
                 }
             }
         } else {
+            val scheme = androidUri.scheme?.lowercase() ?: ""
             createMedia(vlc, uri).apply {
-                setHWDecoderEnabled(true, false)
-                addOption(":network-caching=300")
-                addOption(":file-caching=300")
+                // true, true = enable HW decoding with fallback on failure.
+                // Without fallback, a HW decoder that silently mis-handles colour
+                // range stays active instead of falling back to correct SW decoding.
+                setHWDecoderEnabled(true, true)
+                if (scheme.startsWith("http") || scheme == "rtsp") {
+                    // HTTP/RTSP: large cache + reconnect on seek-induced EOF
+                    addOption(":network-caching=3000")
+                    addOption(":http-reconnect")
+                } else {
+                    addOption(":network-caching=3000")
+                    addOption(":file-caching=1500")
+                }
             }
         }
 
@@ -264,6 +279,8 @@ class VlcEngine @Inject constructor(
         if (!currentIsVideo || surfacesAttached) {
             mediaPlayer?.play()
         } else {
+            // Surface not yet ready (e.g. app returning from background): mark
+            // pending so playback starts as soon as setSurfaceView() is called.
             pendingPlay = true
         }
     }
@@ -275,12 +292,24 @@ class VlcEngine @Inject constructor(
     }
 
     override fun seekTo(positionMs: Long) {
-        // Signal buffering immediately so the UI shows the loading indicator
-        // before libVLC starts firing its Buffering events.
-        _playbackState.value = _playbackState.value.copy(
-            state = PlayerState.BUFFERING,
-        )
-        mediaPlayer?.time = positionMs.coerceAtLeast(0)
+        val mp = mediaPlayer ?: return
+        val duration = mp.length.coerceAtLeast(1L)
+        val scheme = Uri.parse(currentUri ?: "").scheme?.lowercase() ?: ""
+        val isNetworkStream = scheme.startsWith("http") || scheme == "rtsp" ||
+            scheme == "ftp" || scheme == "sftp" || scheme == "smb"
+
+        // Signal buffering immediately so the UI shows the loading indicator.
+        _playbackState.value = _playbackState.value.copy(state = PlayerState.BUFFERING)
+
+        if (isNetworkStream) {
+            // Position-based seek: VLC snaps to the nearest keyframe immediately
+            // without waiting for exact-time accuracy. Much faster on HTTP streams.
+            val fraction = (positionMs.toFloat() / duration).coerceIn(0f, 1f)
+            mp.position = fraction
+        } else {
+            // File/local: use exact time seek (instant, no network round-trip).
+            mp.time = positionMs.coerceAtLeast(0)
+        }
     }
 
     override fun skipForward(ms: Long) {
@@ -305,6 +334,9 @@ class VlcEngine @Inject constructor(
     override fun getCurrentPosition(): Long {
         return (mediaPlayer?.time ?: 0L).coerceAtLeast(0)
     }
+
+    /** VLC doesn't expose buffered position via its API; fall back to the StateFlow value. */
+    override fun getBufferedPosition(): Long = _playbackState.value.bufferedPosition
 
     override fun setPlaybackSpeed(speed: Float) {
         mediaPlayer?.rate = speed.coerceIn(0.25f, 4.0f)
@@ -346,6 +378,13 @@ class VlcEngine @Inject constructor(
         val mp = mediaPlayer ?: return
         val vout = mp.getVLCVout() ?: return
 
+        // Detach any stale views before re-attaching (guard against double-attach
+        // which can happen when Compose re-creates the AndroidView on recomposition).
+        if (surfacesAttached) {
+            try { vout.detachViews() } catch (_: Exception) {}
+            surfacesAttached = false
+        }
+
         vout.setVideoView(surfaceView)
         vout.setWindowSize(
             surfaceView.width.coerceAtLeast(1),
@@ -364,7 +403,53 @@ class VlcEngine @Inject constructor(
             pendingPlay = false
             mp.play()
         }
+        // userPaused == true → user explicitly paused; keep paused on foreground return.
     }
+
+    /**
+     * Attach a [TextureView] for video output.
+     *
+     * Preferred over [setSurfaceView] because [TextureView] keeps its GPU
+     * texture alive across [android.app.Activity.onStop], and
+     * [onSurfaceTextureDestroyed][android.view.TextureView.SurfaceTextureListener.onSurfaceTextureDestroyed]
+     * can return `false` to prevent the OS from releasing the texture —
+     * eliminating the black flash on brief app switches.
+     *
+     * Call from [android.view.TextureView.SurfaceTextureListener.onSurfaceTextureAvailable].
+     */
+    fun setTextureView(textureView: TextureView) {
+        val mp = mediaPlayer ?: return
+        val vout = mp.getVLCVout() ?: return
+
+        // Detach stale views before re-attaching.
+        if (surfacesAttached) {
+            try { vout.detachViews() } catch (_: Exception) {}
+            surfacesAttached = false
+        }
+
+        vout.setVideoView(textureView)
+        vout.setWindowSize(
+            textureView.width.coerceAtLeast(1),
+            textureView.height.coerceAtLeast(1),
+        )
+        vout.attachViews(
+            org.videolan.libvlc.interfaces.IVLCVout.OnNewVideoLayoutListener { _, w, h, _, _, _, _ ->
+                _videoWidth = w
+                _videoHeight = h
+            },
+        )
+
+        surfacesAttached = true
+
+        if (pendingPlay) {
+            pendingPlay = false
+            mp.play()
+        }
+        // userPaused == true → user explicitly paused; keep paused on foreground return.
+    }
+
+    @Volatile private var _windowWidth = 0
+    @Volatile private var _windowHeight = 0
 
     /**
      * Update the render window size (used during orientation changes).
@@ -372,17 +457,51 @@ class VlcEngine @Inject constructor(
     fun setWindowSize(width: Int, height: Int) {
         val mp = mediaPlayer ?: return
         val vout = mp.getVLCVout() ?: return
+        _windowWidth = width
+        _windowHeight = height
         vout.setWindowSize(width.coerceAtLeast(1), height.coerceAtLeast(1))
     }
 
     /**
-     * Detach the video surface.
+     * Soft-detach called from [android.view.SurfaceHolder.Callback.surfaceDestroyed].
      *
-     * Call from [android.view.SurfaceHolder.Callback.surfaceDestroyed].
+     * Unlike [removeSurfaceView] this does NOT call [org.videolan.libvlc.interfaces.IVLCVout.detachViews].
+     * Keeping the vout reference alive means VLC holds its last decoded frame
+     * in the surface buffer instead of going black.  The actual [detachViews] is
+     * deferred until the next [setSurfaceView] call (right before the new surface
+     * is attached), or when [release] is called.
+     *
+     * This eliminates the brief black flash seen when switching apps for 1-2 seconds.
+     */
+    fun onSurfaceDestroyed() {
+        val wasPlaying = mediaPlayer?.isPlaying == true
+        if (wasPlaying && !userPaused) {
+            pendingPlay = true
+        }
+        // Mark as detached so setSurfaceView knows to run a clean re-attach.
+        surfacesAttached = false
+        // ⚠ Do NOT call detachViews() here — that clears VLC's surface reference
+        // and causes the black frame. The lazy detach in setSurfaceView handles it.
+    }
+
+    /**
+     * Explicit full detach — use when the player is being stopped/released,
+     * not from surfaceDestroyed.
+     *
+     * Call from lifecycle STOP or [release] where we want VLC to fully
+     * relinquish the surface.
      */
     fun removeSurfaceView() {
+        val wasPlaying = mediaPlayer?.isPlaying == true
+        if (wasPlaying && !userPaused) {
+            pendingPlay = true
+        }
         surfacesAttached = false
-        mediaPlayer?.getVLCVout()?.detachViews()
+        try {
+            mediaPlayer?.getVLCVout()?.detachViews()
+        } catch (_: Exception) {
+            // Ignore detach errors (can occur if surface is already gone)
+        }
     }
 
     /**
@@ -399,6 +518,21 @@ class VlcEngine @Inject constructor(
     /** Dimensions set by [IVLCVout.OnNewVideoLayoutListener]. */
     @Volatile private var _videoWidth = 0
     @Volatile private var _videoHeight = 0
+
+    /** Set VLC's forced aspect ratio (e.g. "16:9", "4:3"). Pass null to use native ratio. */
+    fun setAspectRatio(ratio: String?) {
+        mediaPlayer?.let { mp ->
+            val vout = mp.getVLCVout()
+            // VLC expects an empty string or null to reset to native
+            mp.setAspectRatio(ratio ?: "")
+            // Force a surface update so the new ratio takes effect immediately
+            if (vout != null && _windowWidth > 0 && _windowHeight > 0) {
+                vout.setWindowSize(_windowWidth, _windowHeight)
+            } else if (vout != null && _videoWidth > 0 && _videoHeight > 0) {
+                vout.setWindowSize(_videoWidth, _videoHeight)
+            }
+        }
+    }
 
     /** The active engine type identifier. */
     val engineType: EngineType get() = EngineType.VLC
@@ -553,6 +687,32 @@ class VlcEngine @Inject constructor(
             mediaPlayer?.setSpuTrack(tracks[index].id)
         } else {
             mediaPlayer?.setSpuTrack(-1)
+        }
+    }
+
+    // ── Audio track selection ──────────────────────────────────
+
+    private fun getAudioTrackDescriptions(): Array<MediaPlayer.TrackDescription> {
+        return mediaPlayer?.audioTracks ?: emptyArray()
+    }
+
+    override fun getAudioTracks(): List<String> {
+        return getAudioTrackDescriptions()
+            .filter { it.id != -1 }
+            .map { it.name ?: "Track ${it.id}" }
+    }
+
+    override fun getSelectedAudioTrack(): Int {
+        val currentId = mediaPlayer?.audioTrack ?: -1
+        if (currentId == -1) return -1
+        val tracks = getAudioTrackDescriptions().filter { it.id != -1 }
+        return tracks.indexOfFirst { it.id == currentId }
+    }
+
+    override fun selectAudioTrack(index: Int) {
+        val tracks = getAudioTrackDescriptions().filter { it.id != -1 }
+        if (index in tracks.indices) {
+            mediaPlayer?.setAudioTrack(tracks[index].id)
         }
     }
 }
