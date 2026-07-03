@@ -3,12 +3,18 @@ package com.rhnxdev.hzplayer.di
 import com.rhnxdev.hzplayer.data.repository.AudioRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.FileRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.MediaRepositoryImpl
+import com.rhnxdev.hzplayer.data.repository.NetworkRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.PlayerRepositoryImpl
+import com.rhnxdev.hzplayer.data.repository.RemoteBrowseRepositoryImpl
+import com.rhnxdev.hzplayer.data.repository.SubtitleRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.UserPreferencesRepositoryImpl
 import com.rhnxdev.hzplayer.domain.repository.AudioRepository
 import com.rhnxdev.hzplayer.domain.repository.FileRepository
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
+import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
+import com.rhnxdev.hzplayer.domain.repository.RemoteBrowseRepository
+import com.rhnxdev.hzplayer.domain.repository.SubtitleRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.Binds
 import dagger.Module
@@ -49,4 +55,22 @@ abstract class RepositoryModule {
     abstract fun bindFileRepository(
         impl: FileRepositoryImpl,
     ): FileRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindNetworkRepository(
+        impl: NetworkRepositoryImpl,
+    ): NetworkRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindRemoteBrowseRepository(
+        impl: RemoteBrowseRepositoryImpl,
+    ): RemoteBrowseRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSubtitleRepository(
+        impl: SubtitleRepositoryImpl,
+    ): SubtitleRepository
 }
