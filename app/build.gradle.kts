@@ -77,6 +77,8 @@ dependencies {
     // Media3
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
+    implementation(libs.media3.exoplayer.dash)
+    implementation(libs.media3.exoplayer.rtsp)
     implementation(libs.media3.session)
     implementation(libs.media3.ui)
 
@@ -89,6 +91,22 @@ dependencies {
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)
+
+    // Network browsing
+    implementation(libs.commons.net)
+    implementation(libs.sshj)
+    implementation(libs.jcifs.ng)
+
+    // Security
+    implementation(libs.security.crypto)
+
+    // libVLC
+    implementation(libs.libvlc.all) {
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+        exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-common")
+    }
 
     // Testing
     testImplementation(libs.junit)
