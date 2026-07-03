@@ -5,6 +5,7 @@ enum class PlayerState {
     BUFFERING,
     READY,
     ENDED,
+    ERROR,
 }
 
 data class PlayerStateInfo(
@@ -16,4 +17,5 @@ data class PlayerStateInfo(
     val playbackSpeed: Float = 1.0f,
     val shuffleModeEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.NONE,
+    val errorMessage: String? = null,
 )
