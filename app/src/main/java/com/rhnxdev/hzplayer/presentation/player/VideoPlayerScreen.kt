@@ -46,11 +46,15 @@ import android.view.Window
 import android.view.WindowManager
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.rhnxdev.hzplayer.data.datasource.player.VlcEngine
+import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerControlsOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.SeekIndicator
+import com.rhnxdev.hzplayer.presentation.player.components.DragSeekIndicator
+import com.rhnxdev.hzplayer.presentation.player.components.AudioSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SlideIndicator
 import com.rhnxdev.hzplayer.presentation.player.components.SlideType
 import com.rhnxdev.hzplayer.presentation.player.components.SpeedSelectionDialog
@@ -83,6 +87,7 @@ fun VideoPlayerScreen(
     // --- Seek indicator local state ---
     var seekDelta by remember { mutableLongStateOf(0L) }
     var seekVisible by remember { mutableStateOf(false) }
+    var isDragSeeking by remember { mutableStateOf(false) }
 
     // --- Slide indicator local state (brightness / volume) ---
     var slideVisible by remember { mutableStateOf(false) }
@@ -93,16 +98,18 @@ fun VideoPlayerScreen(
     var showSubtitleBrowser by remember { mutableStateOf(false) }
     var showSubtitleStyleDialog by remember { mutableStateOf(false) }
     var showSubtitleSearchDialog by remember { mutableStateOf(false) }
+    var showAudioDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showUnlockOverlay by remember { mutableStateOf(false) }
+    var hudInteractionTick by remember { mutableLongStateOf(0L) }
     val playerViewRef = remember { mutableStateOf<PlayerView?>(null) }
 
     // Bug 5: whether seeking (drag-to-seek) is allowed — disabled for live/unknown streams
     val canSeek = uiState.duration > 0
 
     // Auto-hide the indicators after the last gesture
-    LaunchedEffect(seekVisible) {
-        if (seekVisible) {
+    LaunchedEffect(seekVisible, isDragSeeking) {
+        if (seekVisible && !isDragSeeking) {
             delay(1200)
             seekVisible = false
         }
@@ -115,17 +122,36 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Surface lifecycle: pause/cleanup on background, reconnect on resume
+    // Surface lifecycle: pause/cleanup on background, reconnect on resume.
+    //
+    // IMPORTANT: We hook ON_STOP / ON_START instead of ON_PAUSE / ON_RESUME so that
+    // brief window-focus losses (notification shade, permission dialog, switching apps
+    // for just a second) do NOT pause the player or destroy the surface. ON_PAUSE fires
+    // on *any* focus change; ON_STOP only fires when the app is truly fully backgrounded.
+    //
+    // Both engines use TextureView whose SurfaceTexture persists across onStop()
+    // (onSurfaceTextureDestroyed returns false), so there is NO surface rebuild on resume.
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                    playerViewRef.value?.onResume()
-                }
-                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    // App is truly fully backgrounded — pause playback now.
                     playerViewRef.value?.onPause()
                     viewModel.pause()
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    // App is returning from background — resume playback.
+                    // For VLC: resume() sets pendingPlay so onSurfaceTextureAvailable
+                    //           triggers play (or calls mp.play() directly if attached).
+                    // For ExoPlayer: PlayerView.onResume() below handles reconnect.
+                    if (viewModel.activeEngineType == EngineType.VLC) {
+                        viewModel.resume()
+                    }
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    // Reconnect ExoPlayer's PlayerView; VLC handled via TextureView callbacks.
+                    playerViewRef.value?.onResume()
                 }
                 else -> {}
             }
@@ -143,11 +169,22 @@ fun VideoPlayerScreen(
 
         val originalNavColor = window.navigationBarColor
         val originalStatusColor = window.statusBarColor
+        val originalCutoutMode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode
+        } else {
+            0
+        }
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.navigationBarColor = Color.Black.toArgb()
         window.statusBarColor = Color.Black.toArgb()
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val attrs = window.attributes
+            attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = attrs
+        }
 
         val controller = WindowInsetsControllerCompat(window, view)
         controller.systemBarsBehavior =
@@ -155,6 +192,11 @@ fun VideoPlayerScreen(
         controller.hide(WindowInsetsCompat.Type.systemBars())
 
         onDispose {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                val attrs = window.attributes
+                attrs.layoutInDisplayCutoutMode = originalCutoutMode
+                window.attributes = attrs
+            }
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             window.navigationBarColor = originalNavColor
             window.statusBarColor = originalStatusColor
@@ -183,8 +225,8 @@ fun VideoPlayerScreen(
         onDispose {}
     }
 
-    // Auto-hide controls after 3 seconds (only if not locked)
-    LaunchedEffect(uiState.showControls, uiState.playerLocked) {
+    // Auto-hide controls after 3 seconds (only if not locked), reset on HUD interaction
+    LaunchedEffect(uiState.showControls, uiState.playerLocked, hudInteractionTick) {
         if (uiState.showControls && !uiState.playerLocked) {
             delay(3000)
             viewModel.onHideControls()
@@ -202,17 +244,36 @@ fun VideoPlayerScreen(
         // Video surface + subtitle overlay — choose the rendering path based on engine
         when (activeEngineType) {
             EngineType.EXO_PLAYER -> {
-                // Standard ExoPlayer PlayerView
+                // Standard ExoPlayer PlayerView (inflated with TextureView surface type)
                 AndroidView(
                     factory = { ctx ->
-                        PlayerView(ctx).also { playerView ->
-                            playerView.player = viewModel.getExoPlayer()
-                            playerView.useController = false
-                            playerViewRef.value = playerView
-                        }
+                        // Inflate from XML so `app:surface_type="texture_view"` takes effect.
+                        // PlayerView surface type is fixed at construction time — there is no
+                        // programmatic setter.  TextureView keeps its last decoded frame in
+                        // GPU memory through onStop(), eliminating the black flash when the
+                        // user briefly switches apps and returns.
+                        // Colour accuracy: MediaPlayerHolder uses EXTENSION_RENDERER_MODE_PREFER
+                        // + enableDecoderFallback which enforces correct limited-range YUV→RGB
+                        // conversion regardless of view type — no colour regression.
+                        val playerView = android.view.LayoutInflater.from(ctx)
+                            .inflate(com.rhnxdev.hzplayer.R.layout.view_exo_player, null, false)
+                            as PlayerView
+                        playerView.player = viewModel.getExoPlayer()
+                        playerView.useController = false
+                        playerViewRef.value = playerView
+                        playerView
                     },
                     update = { playerView ->
                         playerView.player = viewModel.getExoPlayer()
+                        // Map our AspectRatioMode to Media3 PlayerView resize modes.
+                        // RATIO_16_9 / RATIO_4_3 fall through to FIT — ExoPlayer's
+                        // PlayerView doesn't expose a forced-ratio API; the VLC engine
+                        // handles those natively via setAspectRatio().
+                        playerView.resizeMode = when (uiState.aspectRatioMode) {
+                            AspectRatioMode.AUTO,
+                            AspectRatioMode.RATIO_16_9,
+                            AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -231,6 +292,7 @@ fun VideoPlayerScreen(
                 if (vlcEngine is VlcEngine) {
                     VlcVideoSurface(
                         engine = vlcEngine,
+                        aspectRatioMode = uiState.aspectRatioMode,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -244,14 +306,23 @@ fun VideoPlayerScreen(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onDoubleTap = { offset ->
+                            if (uiState.showControls) {
+                                val topBarHeight = 80.dp.toPx()
+                                val bottomBarHeight = 160.dp.toPx()
+                                if (offset.y < topBarHeight || offset.y > size.height - bottomBarHeight) {
+                                    return@detectTapGestures
+                                }
+                            }
                             val third = size.width / 3f
                             when {
                                 offset.x < third -> {
+                                    isDragSeeking = false
                                     viewModel.onSeekBy(-TAP_SEEK_MS)
                                     seekDelta = -TAP_SEEK_MS
                                     seekVisible = true
                                 }
                                 offset.x > third * 2 -> {
+                                    isDragSeeking = false
                                     viewModel.onSeekBy(TAP_SEEK_MS)
                                     seekDelta = TAP_SEEK_MS
                                     seekVisible = true
@@ -267,7 +338,10 @@ fun VideoPlayerScreen(
                     var dragAccumulated = 0f
                     var offsetAccumulated = Offset.Zero
                     var dominantDirection: DragDirection? = null // null=undecided, SEEK, ADJUST
-                    var isLeftSide = false
+                    var isLeftSideEdge = false
+                    var isRightSideEdge = false
+                    var isMiddleArea = false
+                    var ignoreGesture = false
                     var initialBrightness = 0f
 
                     // Volume helpers captured once per gesture
@@ -276,12 +350,34 @@ fun VideoPlayerScreen(
 
                     detectDragGestures(
                         onDragStart = { startOffset ->
+                            ignoreGesture = false
+                            if (uiState.showControls) {
+                                val topBarHeight = 80.dp.toPx()
+                                val bottomBarHeight = 160.dp.toPx()
+                                if (startOffset.y < topBarHeight || startOffset.y > size.height - bottomBarHeight) {
+                                    ignoreGesture = true
+                                    return@detectDragGestures
+                                }
+                            }
+
+                            // Hide controls for an immersive gesture adjustment
+                            viewModel.onHideControls()
+
+                            isDragSeeking = false
+                            seekDelta = 0L
                             dragAccumulated = 0f
                             offsetAccumulated = Offset.Zero
                             dominantDirection = null
-                            isLeftSide = startOffset.x < size.width / 2f
 
-                            if (isLeftSide) {
+                            val isLeft = startOffset.x < size.width * 0.3f
+                            val isRight = startOffset.x > size.width * 0.7f
+                            val isMiddle = !isLeft && !isRight
+
+                            isLeftSideEdge = isLeft
+                            isRightSideEdge = isRight
+                            isMiddleArea = isMiddle
+
+                            if (isLeft) {
                                 // Initialize brightness from window
                                 val w = window
                                 if (w != null) {
@@ -299,7 +395,7 @@ fun VideoPlayerScreen(
                                     initialBrightness = 0.5f
                                 }
                                 slideValue = initialBrightness
-                            } else {
+                            } else if (isRight) {
                                 // Initialize volume
                                 maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                                 currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -307,6 +403,7 @@ fun VideoPlayerScreen(
                             }
                         },
                         onDrag = { change, dragAmount ->
+                            if (ignoreGesture) return@detectDragGestures
                             change.consume()
                             offsetAccumulated += dragAmount
 
@@ -316,53 +413,61 @@ fun VideoPlayerScreen(
                                 if (v > h + 20f) {
                                     dominantDirection = DragDirection.ADJUST
                                 } else if (h > v + 20f) {
-                                    // Bug 5: block horizontal seek for live/unknown duration streams
-                                    dominantDirection = if (canSeek) DragDirection.SEEK else DragDirection.ADJUST
+                                    // Block horizontal seek for live/unknown duration streams
+                                    dominantDirection = if (canSeek) DragDirection.SEEK else null
                                 }
-                                // else: still in dead-zone
                             }
 
                             when (dominantDirection) {
                                 DragDirection.ADJUST -> {
-                                    val deltaNormal = -offsetAccumulated.y / size.height.coerceAtLeast(1)
-                                    val newVal = (if (isLeftSide) initialBrightness else (if (maxVolume > 0) currentVolume.toFloat() / maxVolume else 0f)) + deltaNormal
-                                    val clamped = newVal.coerceIn(0f, 1f)
-                                    slideValue = clamped
-                                    slideType = if (isLeftSide) SlideType.BRIGHTNESS else SlideType.VOLUME
-                                    slideVisible = true
-                                    slideShowCount++
+                                    if (!isMiddleArea) {
+                                        val deltaNormal = -offsetAccumulated.y / size.height.coerceAtLeast(1)
+                                        val newVal = (if (isLeftSideEdge) initialBrightness else (if (maxVolume > 0) currentVolume.toFloat() / maxVolume else 0f)) + deltaNormal
+                                        val clamped = newVal.coerceIn(0f, 1f)
+                                        slideValue = clamped
+                                        slideType = if (isLeftSideEdge) SlideType.BRIGHTNESS else SlideType.VOLUME
+                                        slideVisible = true
+                                        slideShowCount++
 
-                                    if (isLeftSide) {
-                                        window?.attributes = window?.attributes?.apply { screenBrightness = clamped }
-                                    } else {
-                                        val vol = (clamped * maxVolume).toInt().coerceIn(0, maxVolume)
-                                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
+                                        if (isLeftSideEdge) {
+                                            window?.attributes = window?.attributes?.apply { screenBrightness = clamped }
+                                        } else {
+                                            val vol = (clamped * maxVolume).toInt().coerceIn(0, maxVolume)
+                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
+                                        }
                                     }
                                 }
                                 DragDirection.SEEK -> {
-                                    // Bug 5: guard against duration <= 0 (already blocked above, but
-                                    // double-check for safety)
                                     if (!canSeek) return@detectDragGestures
+                                    isDragSeeking = true
                                     val durationMs = uiState.duration
-                                    val widthPx = size.width.coerceAtLeast(1)
-                                    dragAccumulated = (dragAccumulated + dragAmount.x).coerceIn(-widthPx.toFloat(), widthPx.toFloat())
-                                    val ratio = dragAccumulated / widthPx
-                                    val maxSwipeMs = (durationMs * 0.1f).toLong().coerceIn(60_000L, 300_000L)
+                                    // Linear seek: full-width swipe = 300s * sensitivity
+                                    // sensitivity 1.0 = 5 minutes, 3.0 = 15 minutes, 0.2 = 1 minute per full swipe
+                                    val widthPx = size.width.coerceAtLeast(1).toFloat()
+                                    val maxSwipeMs = (300_000L * uiState.seekSensitivity).toLong()
+                                    val ratio = offsetAccumulated.x / widthPx
                                     val rawDelta = (ratio * maxSwipeMs).toLong()
-                                    seekDelta = rawDelta.coerceIn(-uiState.currentPosition, (durationMs - uiState.currentPosition).coerceAtLeast(0L))
+                                    seekDelta = rawDelta.coerceIn(
+                                        -uiState.currentPosition,
+                                        (durationMs - uiState.currentPosition).coerceAtLeast(0L)
+                                    )
                                     seekVisible = true
                                 }
-                                null -> {} // dead-zone
+                                null -> {}
                             }
                         },
                         onDragEnd = {
+                            if (ignoreGesture) return@detectDragGestures
                             if (dominantDirection == DragDirection.SEEK && seekDelta != 0L) {
                                 viewModel.onSeekBy(seekDelta)
                             }
+                            isDragSeeking = false
+                            seekDelta = 0L
                         },
                         onDragCancel = {
                             seekVisible = false; seekDelta = 0L
                             slideVisible = false
+                            isDragSeeking = false
                         },
                     )
                 }
@@ -381,12 +486,15 @@ fun VideoPlayerScreen(
                     onSkipForward = viewModel::onSkipForward,
                     onSkipBackward = viewModel::onSkipBackward,
                     onSpeedClick = { showSpeedDialog = true },
+                    onAudioClick = { showAudioDialog = true },
                     onSubtitleClick = { showSubtitleDialog = true },
                     onLockClick = { viewModel.onToggleLock() },
+                    onAspectRatioClick = { viewModel.onAspectRatioChange(uiState.aspectRatioMode.next()) },
                     onOrientationClick = {
                         val activity = view.context as? android.app.Activity
                         if (activity != null) viewModel.onToggleOrientation(activity)
                     },
+                    onInteract = { hudInteractionTick++ },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -455,6 +563,15 @@ fun VideoPlayerScreen(
                 )
             }
 
+            if (showAudioDialog) {
+                AudioSelectionDialog(
+                    audioTracks = uiState.audioTracks,
+                    selectedTrackIndex = uiState.selectedAudioTrack,
+                    onTrackSelected = viewModel::selectAudioTrack,
+                    onDismiss = { showAudioDialog = false },
+                )
+            }
+
             if (showSubtitleBrowser) {
                 SubtitleFileBrowserBottomSheet(
                     videoUri = uiState.currentPlaybackUri,
@@ -494,13 +611,24 @@ fun VideoPlayerScreen(
                 )
             }
 
-            // Seek indicator (positioned on the correct side automatically)
-            SeekIndicator(
-                deltaMs = seekDelta,
-                currentPositionMs = uiState.currentPosition,
-                visible = seekVisible,
-                modifier = Modifier.fillMaxSize(),
-            )
+            // Seek indicator (positioned on the correct side automatically for double tap,
+            // or central progress indicator for drag seeks)
+            if (isDragSeeking) {
+                DragSeekIndicator(
+                    deltaMs = seekDelta,
+                    currentPositionMs = uiState.currentPosition,
+                    durationMs = uiState.duration,
+                    visible = seekVisible,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                SeekIndicator(
+                    deltaMs = seekDelta,
+                    currentPositionMs = uiState.currentPosition,
+                    visible = seekVisible,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
 
             // Slide indicator (brightness / volume)
             SlideIndicator(

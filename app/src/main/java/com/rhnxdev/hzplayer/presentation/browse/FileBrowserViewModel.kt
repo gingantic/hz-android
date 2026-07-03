@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.repository.FileRepository
+import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,7 @@ private class DirectoryLruCache(private val maxSize: Int = 50) {
 @HiltViewModel
 class FileBrowserViewModel @Inject constructor(
     private val fileRepository: FileRepository,
+    private val userPrefs: UserPreferencesRepository,
     @ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
 
@@ -46,12 +48,26 @@ class FileBrowserViewModel @Inject constructor(
 
     private val navigationStack = mutableListOf<String>()
     private val cache = DirectoryLruCache()
+    private var showHidden = false
 
     /** Reusable search state holder — exposes [searchQuery] and [isSearchActive] flows. */
     val search = SearchDelegate()
 
     init {
         loadRoots()
+        viewModelScope.launch {
+            userPrefs.showHiddenFiles.collect { hidden ->
+                showHidden = hidden
+                val mode = _uiState.value.mode
+                if (mode == FileBrowserMode.BROWSING) {
+                    val path = _uiState.value.currentPath
+                    if (path.isNotEmpty()) {
+                        cache.remove(path)
+                        browseDirectory(path)
+                    }
+                }
+            }
+        }
     }
 
     /** Force-refresh the current directory (pull-to-refresh). */
@@ -90,7 +106,11 @@ class FileBrowserViewModel @Inject constructor(
                             isDirectory = true,
                             freeSpace = internalStorage.freeSpace,
                             totalSpace = internalStorage.totalSpace,
-                            childCount = internalStorage.listFiles()?.size ?: 0,
+                            childCount = try {
+                                internalStorage.listFiles()?.size ?: 0
+                            } catch (e: Exception) {
+                                0
+                            },
                         ),
                     )
                 }
@@ -119,7 +139,11 @@ class FileBrowserViewModel @Inject constructor(
                                             isDirectory = true,
                                             freeSpace = file.freeSpace,
                                             totalSpace = file.totalSpace,
-                                            childCount = file.listFiles()?.size ?: 0,
+                                            childCount = try {
+                                                file.listFiles()?.size ?: 0
+                                            } catch (e: Exception) {
+                                                0
+                                            },
                                         ),
                                     )
                                 }
@@ -210,7 +234,7 @@ class FileBrowserViewModel @Inject constructor(
             }
 
             try {
-                fileRepository.listDirectory(path).collect { items ->
+                fileRepository.listDirectory(path, showHidden).collect { items ->
                     cache.put(path, items)
                     _uiState.update {
                         it.copy(

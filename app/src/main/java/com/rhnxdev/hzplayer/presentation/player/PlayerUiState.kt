@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.presentation.player
 
 import android.net.Uri
+import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
@@ -31,4 +32,6 @@ data class PlayerUiState(
     val playerLocked: Boolean = false,
     val errorMessage: String? = null,
     val networkTraffic: NetworkTraffic = NetworkTraffic.DEFAULT,
+    val seekSensitivity: Float = 1.0f,
+    val aspectRatioMode: AspectRatioMode = AspectRatioMode.AUTO,
 )

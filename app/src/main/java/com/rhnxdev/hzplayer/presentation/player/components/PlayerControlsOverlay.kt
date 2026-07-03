@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
@@ -30,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -38,6 +40,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import com.rhnxdev.hzplayer.core.designsystem.stableNavBarPaddingValues
 import com.rhnxdev.hzplayer.core.designsystem.stableStatusBarTopDp
 import androidx.compose.ui.unit.sp
@@ -54,6 +61,7 @@ private val bottomGradient = Brush.verticalGradient(
     colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
 )
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun PlayerControlsOverlay(
     uiState: PlayerUiState,
@@ -64,18 +72,32 @@ fun PlayerControlsOverlay(
     onSkipForward: () -> Unit,
     onSkipBackward: () -> Unit,
     onSpeedClick: () -> Unit,
+    onAudioClick: () -> Unit = {},
     onSubtitleClick: () -> Unit,
     onLockClick: () -> Unit = {},
+    onAspectRatioClick: () -> Unit = {},
     onOrientationClick: () -> Unit = {},
+    onInteract: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier.fillMaxSize().pointerInput(Unit) {
+            awaitPointerEventScope {
+                awaitPointerEvent()
+                onInteract()
+            }
+        },
+    ) {
         // ── Top bar: back + title + network speed ──
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .background(topGradient)
+                .windowInsetsPadding(
+                    WindowInsets.navigationBarsIgnoringVisibility
+                        .only(WindowInsetsSides.Horizontal)
+                )
                 .padding(top = stableStatusBarTopDp())
                 .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
@@ -101,6 +123,33 @@ fun PlayerControlsOverlay(
 
             // Network speed indicator
             NetworkSpeedChip(uiState.networkTraffic)
+
+            Spacer(modifier = Modifier.width(Spacing.xs))
+
+            // Lock
+            IconButton(onClick = onLockClick, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = if (uiState.playerLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                    contentDescription = if (uiState.playerLocked) "Unlock" else "Lock",
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // Aspect ratio
+            Text(
+                text = uiState.aspectRatioMode.label,
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onAspectRatioClick)
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .padding(horizontal = 7.dp, vertical = 4.dp),
+            )
         }
 
         // ── Bottom panel: seekbar + play controls + secondary row ──
@@ -179,12 +228,12 @@ fun PlayerControlsOverlay(
                 }
             }
 
-            // Row 3: secondary controls (icon-only, evenly centered)
+            // Row 3: secondary controls (icon-only, evenly spaced)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 48.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.Center,
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Speed
@@ -200,7 +249,15 @@ fun PlayerControlsOverlay(
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
 
-                Spacer(modifier = Modifier.width(Spacing.xxl))
+                // Audio
+                IconButton(onClick = onAudioClick, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = "Audio",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
 
                 // CC
                 IconButton(onClick = onSubtitleClick, modifier = Modifier.size(40.dp)) {
@@ -212,21 +269,7 @@ fun PlayerControlsOverlay(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(Spacing.xxl))
-
-                // Lock placeholder
-                IconButton(onClick = onLockClick, modifier = Modifier.size(40.dp)) {
-                    Icon(
-                        imageVector = if (uiState.playerLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                        contentDescription = if (uiState.playerLocked) "Unlock" else "Lock",
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(Spacing.xxl))
-
-                // Orientation placeholder
+                // Orientation
                 IconButton(onClick = onOrientationClick, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = Icons.Default.ScreenRotationAlt,
@@ -284,6 +327,7 @@ private fun PlayerControlsOverlayPreview() {
                 onSkipBackward = {},
                 onSpeedClick = {},
                 onSubtitleClick = {},
+                onAspectRatioClick = {},
             )
         }
     }

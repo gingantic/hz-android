@@ -138,7 +138,11 @@ class SubtitleBrowserViewModel @Inject constructor(
                             isDirectory = true,
                             freeSpace = internalStorage.freeSpace,
                             totalSpace = internalStorage.totalSpace,
-                            childCount = internalStorage.listFiles()?.size ?: 0,
+                            childCount = try {
+                                internalStorage.listFiles()?.size ?: 0
+                            } catch (e: Exception) {
+                                0
+                            },
                         )
                     )
                 }
@@ -166,7 +170,11 @@ class SubtitleBrowserViewModel @Inject constructor(
                                             isDirectory = true,
                                             freeSpace = file.freeSpace,
                                             totalSpace = file.totalSpace,
-                                            childCount = file.listFiles()?.size ?: 0,
+                                            childCount = try {
+                                                file.listFiles()?.size ?: 0
+                                            } catch (e: Exception) {
+                                                0
+                                            },
                                         )
                                     )
                                 }

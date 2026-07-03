@@ -18,7 +18,21 @@ class SettingsViewModel @Inject constructor(
     val openSubtitlesApiKey: StateFlow<String> = prefs.openSubtitlesApiKey
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
+    val seekSensitivity: StateFlow<Float> = prefs.seekSensitivity
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
+
+    val showHiddenFiles: StateFlow<Boolean> = prefs.showHiddenFiles
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     fun saveOpenSubtitlesApiKey(key: String) {
         viewModelScope.launch { prefs.setOpenSubtitlesApiKey(key) }
+    }
+
+    fun saveSeekSensitivity(value: Float) {
+        viewModelScope.launch { prefs.setSeekSensitivity(value) }
+    }
+
+    fun setShowHiddenFiles(enabled: Boolean) {
+        viewModelScope.launch { prefs.setShowHiddenFiles(enabled) }
     }
 }

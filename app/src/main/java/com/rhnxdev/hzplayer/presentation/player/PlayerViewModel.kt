@@ -48,9 +48,6 @@ class PlayerViewModel @Inject constructor(
     private var seekTargetPosition = 0L
 
     companion object {
-        /** How long to suppress poller position updates after a seek (ms). */
-        private const val SEEK_SUPPRESS_MS = 800L
-
         /** Minimum interval between consecutive seeks (ms). */
         private const val SEEK_DEBOUNCE_MS = 150L
     }
@@ -72,26 +69,15 @@ class PlayerViewModel @Inject constructor(
         observeEngineType()
         observeSubtitleStyle()
         observeNetworkTraffic()
+        observeSeekSensitivity()
         startPositionUpdates()
     }
 
     private fun observePlaybackState() {
         viewModelScope.launch {
             playerRepository.playbackStateInfo.collect { info ->
+                val newIsLoading = info.state == PlayerState.BUFFERING
                 _uiState.update { state ->
-                    // Bug 3 fix: only set isLoading from engine state (BUFFERING).
-                    // Do NOT manually set isLoading=true in seek functions — the engine's
-                    // own STATE_BUFFERING signal handles it. This eliminates the race where
-                    // a fast BUFFERING→READY transition clears isLoading before the manual
-                    // isLoading=true is processed, leaving the spinner stuck.
-                    val newIsLoading = info.state == PlayerState.BUFFERING
-
-                    // Bug 1 supplement: when engine reaches READY after a seek, clear
-                    // the seek suppress so the poller resumes normally.
-                    if (info.state == PlayerState.READY && isSeeking) {
-                        isSeeking = false
-                    }
-
                     state.copy(
                         isPlaying = info.isPlaying,
                         isLoading = newIsLoading,
@@ -100,6 +86,12 @@ class PlayerViewModel @Inject constructor(
                         repeatMode = info.repeatMode,
                         errorMessage = info.errorMessage,
                     )
+                }
+                // Clear seek suppression once the engine is no longer buffering.
+                // Covers READY (seek done), IDLE (stopped), ENDED, and ERROR (failed)
+                // so isSeeking can never get permanently stuck.
+                if (isSeeking && info.state != PlayerState.BUFFERING) {
+                    isSeeking = false
                 }
             }
         }
@@ -139,33 +131,36 @@ class PlayerViewModel @Inject constructor(
                 val engine = playerRepository.activeEngine
                 val duration = engine.getDuration()
                 val position = engine.getCurrentPosition()
-                val bufferedPos = engine.playbackState.value.bufferedPosition
+                val bufferedPos = engine.getBufferedPosition()
                 val bufferedPct = if (duration > 0) {
                     ((bufferedPos * 100) / duration).toInt().coerceIn(0, 100)
                 } else 0
                 val subTracks = playerRepository.getSubtitleTracks()
                 val selectedSub = playerRepository.getSelectedSubtitleTrack()
+                val audioTracks = playerRepository.getAudioTracks()
+                val selectedAudio = playerRepository.getSelectedAudioTrack()
                 val currentUri = playerRepository.currentPlaybackUri
 
-                // Bug 1 fix: suppress position updates for SEEK_SUPPRESS_MS after a seek.
-                // During this window the UI shows the optimistic seekTargetPosition,
-                // preventing the seek bar from snapping back to the old position while
-                // ExoPlayer is in STATE_BUFFERING.
-                val now = System.currentTimeMillis()
-                val withinSuppressWindow = isSeeking && (now - lastSeekTimestamp) < SEEK_SUPPRESS_MS
-                val effectivePosition = if (withinSuppressWindow) seekTargetPosition else position
+                // Hold the seek target position until ExoPlayer fully settles.
+                // isSeeking stays true for the entire BUFFERING window, so the
+                // thumb never snaps back regardless of how slow the server is.
+                val effectivePosition = if (isSeeking) seekTargetPosition else position
 
                 _uiState.update { state ->
                     val tracksChanged = state.subtitleTracks != subTracks
                     val selectionChanged = state.selectedSubtitleTrack != selectedSub
+                    val audioTracksChanged = state.audioTracks != audioTracks
+                    val audioSelectionChanged = state.selectedAudioTrack != selectedAudio
                     val uriChanged = state.currentPlaybackUri != currentUri
-                    if (tracksChanged || selectionChanged || uriChanged || state.currentPosition != effectivePosition || state.duration != duration || state.bufferedPercentage != bufferedPct) {
+                    if (tracksChanged || selectionChanged || audioTracksChanged || audioSelectionChanged || uriChanged || state.currentPosition != effectivePosition || state.duration != duration || state.bufferedPercentage != bufferedPct) {
                         state.copy(
                             currentPosition = effectivePosition,
                             duration = duration,
                             bufferedPercentage = bufferedPct,
                             subtitleTracks = if (tracksChanged) subTracks else state.subtitleTracks,
                             selectedSubtitleTrack = selectedSub,
+                            audioTracks = if (audioTracksChanged) audioTracks else state.audioTracks,
+                            selectedAudioTrack = selectedAudio,
                             currentPlaybackUri = currentUri
                         )
                     } else {
@@ -184,6 +179,18 @@ class PlayerViewModel @Inject constructor(
             state.copy(
                 subtitleTracks = subTracks,
                 selectedSubtitleTrack = selectedSub
+            )
+        }
+    }
+
+    fun selectAudioTrack(index: Int) {
+        playerRepository.selectAudioTrack(index)
+        val audioTracks = playerRepository.getAudioTracks()
+        val selectedAudio = playerRepository.getSelectedAudioTrack()
+        _uiState.update { state ->
+            state.copy(
+                audioTracks = audioTracks,
+                selectedAudioTrack = selectedAudio
             )
         }
     }
@@ -214,6 +221,10 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             userPreferencesRepository.setSubtitleStyle(style)
         }
+    }
+
+    fun onAspectRatioChange(mode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode) {
+        _uiState.update { it.copy(aspectRatioMode = mode) }
     }
 
     fun onToggleLock() {
@@ -280,6 +291,10 @@ class PlayerViewModel @Inject constructor(
 
     fun pause() {
         playerRepository.activeEngine.pause()
+    }
+
+    fun resume() {
+        playerRepository.activeEngine.resume()
     }
 
     fun playAudio(audio: AudioItem) {
@@ -367,7 +382,9 @@ class PlayerViewModel @Inject constructor(
     fun playNetworkUri(uri: String, title: String, isVideo: Boolean) {
         val needsVlc = uri.startsWith("ftp://") ||
             uri.startsWith("sftp://") ||
-            uri.startsWith("smb://")
+            uri.startsWith("http://") ||
+            uri.startsWith("https://") ||
+            uri.startsWith("rtsp://")
         if (needsVlc && activeEngineType != EngineType.VLC) {
             viewModelScope.launch {
                 playerRepository.switchEngine(EngineType.VLC)
@@ -391,6 +408,14 @@ class PlayerViewModel @Inject constructor(
     fun switchEngine(type: EngineType) {
         viewModelScope.launch {
             playerRepository.switchEngine(type)
+        }
+    }
+
+    private fun observeSeekSensitivity() {
+        viewModelScope.launch {
+            userPreferencesRepository.seekSensitivity.collect { sensitivity ->
+                _uiState.update { it.copy(seekSensitivity = sensitivity) }
+            }
         }
     }
 

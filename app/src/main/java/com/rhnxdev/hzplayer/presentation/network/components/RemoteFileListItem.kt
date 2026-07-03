@@ -42,7 +42,7 @@ fun RemoteFileListItem(
     }
 
     val subtitle = when {
-        item.isDirectory -> "Folder"
+        item.isDirectory -> "${item.childCount} items"
         else -> formatFileSize(item.fileSize)
     }
 

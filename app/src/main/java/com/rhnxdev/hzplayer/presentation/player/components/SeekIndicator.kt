@@ -49,9 +49,7 @@ fun SeekIndicator(
     val horizontalPadding = if (isLandscape) 96.dp else 40.dp
 
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .systemBarsPadding(),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = if (isForward) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         AnimatedVisibility(

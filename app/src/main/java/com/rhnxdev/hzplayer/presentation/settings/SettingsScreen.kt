@@ -35,6 +35,7 @@ import com.rhnxdev.hzplayer.presentation.player.PlayerViewModel
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsItem
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsSection
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsToggleItem
+import com.rhnxdev.hzplayer.presentation.settings.components.SettingsSliderItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 @Composable
@@ -47,11 +48,12 @@ fun SettingsScreen(
     var darkTheme by remember { mutableStateOf(false) }
     var dynamicColors by remember { mutableStateOf(true) }
     var resumePlayback by remember { mutableStateOf(true) }
-    var showHiddenFiles by remember { mutableStateOf(false) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
 
     val currentEngine = playerViewModel.activeEngineType
     val currentApiKey by settingsViewModel.openSubtitlesApiKey.collectAsStateWithLifecycle()
+    val seekSensitivity by settingsViewModel.seekSensitivity.collectAsStateWithLifecycle()
+    val showHiddenFiles by settingsViewModel.showHiddenFiles.collectAsStateWithLifecycle()
 
     if (showApiKeyDialog) {
         OpenSubtitlesApiKeyDialog(
@@ -155,6 +157,13 @@ fun SettingsScreen(
                                 checked = true,
                                 onCheckedChange = {},
                             )
+                            SettingsSliderItem(
+                                title = "Gesture seek sensitivity",
+                                subtitle = String.format(java.util.Locale.US, "Multiplier: %.2fx", seekSensitivity),
+                                value = seekSensitivity,
+                                onValueChange = { settingsViewModel.saveSeekSensitivity(it) },
+                                valueRange = 0.2f..3.0f,
+                            )
                         }
                     },
                 )
@@ -249,7 +258,7 @@ fun SettingsScreen(
                                 title = "Show hidden files",
                                 subtitle = "Display hidden files in browser",
                                 checked = showHiddenFiles,
-                                onCheckedChange = { showHiddenFiles = it },
+                                onCheckedChange = { settingsViewModel.setShowHiddenFiles(it) },
                             )
                         }
                     },
