@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    ExoPlayer PlayerView with SurfaceView surface type.
+
+    SurfaceView bypasses standard View rendering and has its own dedicated layer
+    composited directly by the Hardware Composer. This enables true 10-bit HDR
+    color rendering (HDR10, HDR10+, Dolby Vision) to display correctly without
+    being washed out.
+-->
+<androidx.media3.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/exo_player_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="surface_view"
+    app:use_controller="false" />

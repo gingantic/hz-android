@@ -1,14 +1,11 @@
 package com.rhnxdev.hzplayer.presentation.browse
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,13 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.SdStorage
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,8 +30,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -43,14 +41,15 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rhnxdev.hzplayer.core.components.BreadcrumbBar
+import com.rhnxdev.hzplayer.core.components.DirectoryBrowsePane
+import com.rhnxdev.hzplayer.core.components.FileItemData
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
-import com.rhnxdev.hzplayer.core.components.MediaErrorState
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.domain.model.FolderItem
-import com.rhnxdev.hzplayer.presentation.browse.components.FileListItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 @Composable
@@ -64,7 +63,9 @@ fun FileBrowserScreen(
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
 
     val onNavigateUp: (() -> Unit)? =
-        if (uiState.mode == FileBrowserMode.BROWSING) viewModel::onNavigateUp else null
+        if (uiState.mode == FileBrowserMode.BROWSING) {
+            { viewModel.onNavigateUp() }
+        } else null
 
     HzPlayerSearchableScaffold(
         title = if (uiState.mode == FileBrowserMode.ROOTS) "Browse" else "Files",
@@ -84,15 +85,14 @@ fun FileBrowserScreen(
                 onRootClicked = viewModel::onStorageRootClicked,
                 onRefresh = viewModel::onRefresh,
             )
-            FileBrowserMode.BROWSING -> DirectoryContent(
-                uiState = uiState,
+            FileBrowserMode.BROWSING -> DirectoryStackContent(
+                layers = uiState.layers,
                 searchQuery = searchQuery,
                 isSearchActive = isSearchActive,
                 onFolderClicked = viewModel::onFolderClicked,
                 onBreadcrumbClicked = viewModel::onBreadcrumbClicked,
                 onRetry = viewModel::onRetry,
                 onRefresh = viewModel::onRefresh,
-                onBackToRoots = viewModel::onBackToRoots,
                 onFileClicked = onFileClicked,
             )
         }
@@ -219,140 +219,110 @@ private fun StorageRootCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Renders directory layers as a stack in a [Box].
+ *
+ * Only the top layer is visible and interactive. Older layers stay composed
+ * (invisible, behind the top layer) so their LazyListState survives.
+ *
+ * Each layer has its own `rememberLazyListState()` — when the user goes back
+ * and the old layer becomes top again, its scroll position is intact because
+ * it was never removed from composition.
+ */
 @Composable
-private fun DirectoryContent(
-    uiState: FileBrowserUiState,
+private fun DirectoryStackContent(
+    layers: List<DirectoryLayer>,
     searchQuery: String,
     isSearchActive: Boolean,
     onFolderClicked: (FolderItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
-    onBackToRoots: () -> Unit,
     onFileClicked: (FolderItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val displayItems = if (!isSearchActive || searchQuery.isBlank()) uiState.items
-        else uiState.items.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    Box(modifier = modifier.fillMaxSize()) {
+        // Keep ALL layers in composition at the same nesting level.
+        // This means every layer's rememberLazyListState survives forever,
+        // no matter how deep the user navigates or how many times they go back.
+        //
+        // Only the top layer is visible + interactive; all others use alpha(0)
+        // and noop callbacks so they're invisible and don't respond to touch.
+        val topIndex = layers.lastIndex
+        val noopAction: () -> Unit = {}
+        val noopFolder: (FolderItem) -> Unit = {}
+        val noopBreadcrumb: (String) -> Unit = {}
 
-    Column(modifier = modifier.fillMaxSize()) {
-        // Breadcrumb bar
-        BreadcrumbBar(
-            breadcrumbs = uiState.breadcrumbs,
-            onBreadcrumbClicked = onBreadcrumbClicked,
-        )
-
-        // Content
-        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-            val pullState = rememberPullToRefreshState()
-            PullToRefreshBox(
-                isRefreshing = uiState.isLoading,
-                onRefresh = onRefresh,
-                state = pullState,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                when {
-                    uiState.error != null -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            MediaErrorState(
-                                title = "Could not load files",
-                                subtitle = uiState.error ?: "",
-                                onRetry = onRetry,
-                            )
-                        }
-                    }
-                    uiState.isEmpty -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            MediaEmptyState(
-                                icon = Icons.Filled.Folder,
-                                title = "This folder is empty",
-                                subtitle = "Nothing to show here.",
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                    }
-                    else -> {
-                        if (displayItems.isEmpty() && isSearchActive) {
-                            Box(
-                                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                MediaEmptyState(
-                                    icon = Icons.Filled.Search,
-                                    title = "No results for \"$searchQuery\"",
-                                    subtitle = "Try a different search term.",
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = Spacing.lg),
-                                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-                            ) {
-                                items(displayItems, key = { it.id }) { item ->
-                                    FileListItem(
-                                        item = item,
-                                        onClick = {
-                                            if (item.isDirectory) onFolderClicked(item)
-                                            else onFileClicked(item)
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            } // PullToRefreshBox
-        }
-    }
-}
-
-@Composable
-private fun BreadcrumbBar(
-    breadcrumbs: List<Breadcrumb>,
-    onBreadcrumbClicked: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        breadcrumbs.forEachIndexed { index, crumb ->
-            val isLast = index == breadcrumbs.lastIndex
-
-            Text(
-                text = crumb.name,
-                style = MaterialTheme.typography.labelLarge,
-                color = if (isLast) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = if (!isLast) Modifier.clickable { onBreadcrumbClicked(crumb.path) }
-                else Modifier,
-            )
-
-            if (!isLast) {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .width(16.dp).height(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        layers.forEachIndexed { index, layer ->
+            val isTop = index == topIndex
+            key(layer.path) {
+                DirectoryLayerView(
+                    layer = layer,
+                    searchQuery = if (isTop) searchQuery else "",
+                    isSearchActive = if (isTop) isSearchActive else false,
+                    onFolderClicked = if (isTop) onFolderClicked else noopFolder,
+                    onBreadcrumbClicked = if (isTop) onBreadcrumbClicked else noopBreadcrumb,
+                    onRetry = if (isTop) onRetry else noopAction,
+                    onRefresh = if (isTop) onRefresh else noopAction,
+                    onFileClicked = if (isTop) onFileClicked else noopFolder,
+                    modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
             }
         }
     }
 }
+
+@Composable
+private fun DirectoryLayerView(
+    layer: DirectoryLayer,
+    searchQuery: String,
+    isSearchActive: Boolean,
+    onFolderClicked: (FolderItem) -> Unit,
+    onBreadcrumbClicked: (String) -> Unit,
+    onRetry: () -> Unit,
+    onRefresh: () -> Unit,
+    onFileClicked: (FolderItem) -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    // Each layer gets its own rememberLazyListState — stays alive as long
+    // as this composable is in the tree (i.e. until popped from layers).
+    val listState = rememberLazyListState()
+
+    Column(modifier = modifier.fillMaxSize()) {
+        BreadcrumbBar(
+            breadcrumbs = layer.breadcrumbs,
+            onBreadcrumbClicked = onBreadcrumbClicked,
+        )
+
+        DirectoryBrowsePane(
+            items = layer.items.map { it.toFileItemData() },
+            isLoading = layer.isLoading,
+            isEmpty = layer.isEmpty,
+            error = layer.error,
+            searchQuery = searchQuery,
+            isSearchActive = isSearchActive,
+            onItemClick = { data ->
+                val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
+                if (data.isDirectory) onFolderClicked(item)
+                else onFileClicked(item)
+            },
+            onRefresh = onRefresh,
+            onRetry = onRetry,
+            listState = listState,
+            modifier = Modifier.weight(1f).fillMaxSize(),
+        )
+    }
+}
+
+private fun FolderItem.toFileItemData() = FileItemData(
+    id = id,
+    name = name,
+    path = path,
+    isDirectory = isDirectory,
+    fileSize = fileSize,
+    childCount = childCount,
+    mimeType = mimeType,
+)
 
 @PreviewLightDark
 @Preview

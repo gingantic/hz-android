@@ -2,6 +2,8 @@ package com.rhnxdev.hzplayer.presentation.network
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
+import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
@@ -24,12 +26,9 @@ class NetworkViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(NetworkUiState())
     val uiState: StateFlow<NetworkUiState> = _uiState.asStateFlow()
 
-    private val navigationStack = mutableListOf<String>()
+    private val dirCache = DirectoryLruCache<RemoteFileItem>()
 
-    init {
-        observeServers()
-        observeHistory()
-    }
+    init { observeServers(); observeHistory() }
 
     private fun observeServers() {
         viewModelScope.launch {
@@ -47,8 +46,6 @@ class NetworkViewModel @Inject constructor(
         }
     }
 
-    // ── Stream URL ────────────────────────────────────────────
-
     fun onStreamUrlChanged(url: String) {
         _uiState.update { it.copy(streamUrl = url, streamUrlError = null) }
     }
@@ -60,117 +57,83 @@ class NetworkViewModel @Inject constructor(
             return null
         }
         viewModelScope.launch {
-            val title = url.substringAfterLast("/").ifEmpty { url }
-            networkRepository.addStreamToHistory(url, title)
+            networkRepository.addStreamToHistory(url, url.substringAfterLast("/").ifEmpty { url })
         }
         return url
     }
 
     fun onPlayHistoryItem(item: StreamHistoryItem): String {
-        viewModelScope.launch {
-            networkRepository.addStreamToHistory(item.url, item.title)
-        }
+        viewModelScope.launch { networkRepository.addStreamToHistory(item.url, item.title) }
         return item.url
     }
 
     private fun isValidStreamUrl(url: String): Boolean {
         val lower = url.lowercase()
-        return lower.startsWith("http://") ||
-            lower.startsWith("https://") ||
-            lower.startsWith("rtsp://") ||
-            lower.startsWith("rtp://") ||
-            lower.startsWith("mms://") ||
-            lower.startsWith("mmsh://")
+        return lower.startsWith("http://") || lower.startsWith("https://") ||
+            lower.startsWith("rtsp://") || lower.startsWith("rtp://") ||
+            lower.startsWith("mms://") || lower.startsWith("mmsh://")
     }
 
-    // ── Server management ─────────────────────────────────────
-
-    fun onAddServerClicked() {
-        _uiState.update { it.copy(showServerDialog = true, editingServer = null) }
-    }
-
-    fun onEditServer(server: ServerConfig) {
-        _uiState.update { it.copy(showServerDialog = true, editingServer = server) }
-    }
-
-    fun onDismissServerDialog() {
-        _uiState.update { it.copy(showServerDialog = false, editingServer = null) }
-    }
+    fun onAddServerClicked() { _uiState.update { it.copy(showServerDialog = true, editingServer = null) } }
+    fun onEditServer(server: ServerConfig) { _uiState.update { it.copy(showServerDialog = true, editingServer = server) } }
+    fun onDismissServerDialog() { _uiState.update { it.copy(showServerDialog = false, editingServer = null) } }
 
     fun onSaveServer(server: ServerConfig) {
         viewModelScope.launch {
-            if (server.id == 0L) {
-                networkRepository.saveServer(server)
-            } else {
-                networkRepository.updateServer(server)
-            }
+            if (server.id == 0L) networkRepository.saveServer(server)
+            else networkRepository.updateServer(server)
             _uiState.update { it.copy(showServerDialog = false, editingServer = null) }
         }
     }
 
-    fun onDeleteServer(id: Long) {
-        viewModelScope.launch {
-            networkRepository.deleteServer(id)
-        }
-    }
-
-    // ── Remote browsing ───────────────────────────────────────
+    fun onDeleteServer(id: Long) { viewModelScope.launch { networkRepository.deleteServer(id) } }
 
     fun onBrowseServer(server: ServerConfig) {
-        navigationStack.clear()
+        dirCache.clear()
         _uiState.update {
             it.copy(
                 mode = NetworkScreenMode.SERVER_BROWSE,
                 browsingServer = server,
-                currentRemotePath = server.basePath,
-                remoteItems = emptyList(),
-                remoteBrowseError = null,
+                remoteLayers = emptyList(),
             )
         }
-        browseRemoteDirectory(server, server.basePath)
+        pushRemoteLayer(server, server.basePath)
     }
 
     fun onRemoteFolderClicked(item: RemoteFileItem) {
         if (item.isDirectory) {
             val server = _uiState.value.browsingServer ?: return
-            navigationStack.add(_uiState.value.currentRemotePath)
-            browseRemoteDirectory(server, item.path)
+            pushRemoteLayer(server, item.path)
         }
     }
 
     fun onRemoteBreadcrumbClicked(path: String) {
-        val server = _uiState.value.browsingServer ?: return
-        val idx = navigationStack.indexOf(path)
+        val layers = _uiState.value.remoteLayers
+        val idx = layers.indexOfFirst { it.path == path }
         if (idx >= 0) {
-            val toRemove = navigationStack.size - idx - 1
-            repeat(toRemove) { navigationStack.removeLastOrNull() }
+            _uiState.update { it.copy(remoteLayers = layers.take(idx + 1)) }
         } else {
-            navigationStack.clear()
+            val server = _uiState.value.browsingServer ?: return
+            _uiState.update { it.copy(remoteLayers = emptyList()) }
+            pushRemoteLayer(server, path)
         }
-        browseRemoteDirectory(server, path)
     }
 
     fun onRemoteNavigateUp(): Boolean {
-        if (navigationStack.isNotEmpty()) {
-            val server = _uiState.value.browsingServer ?: return false
-            val previous = navigationStack.removeLast()
-            browseRemoteDirectory(server, previous)
-            return true
+        val layers = _uiState.value.remoteLayers
+        return if (layers.size > 1) {
+            _uiState.update { it.copy(remoteLayers = layers.dropLast(1)) }
+            true
+        } else {
+            onBackToHome(); true
         }
-        onBackToHome()
-        return true
     }
 
     fun onBackToHome() {
-        navigationStack.clear()
+        dirCache.clear()
         _uiState.update {
-            it.copy(
-                mode = NetworkScreenMode.HOME,
-                browsingServer = null,
-                remoteItems = emptyList(),
-                remoteBreadcrumbs = emptyList(),
-                remoteBrowseError = null,
-            )
+            it.copy(mode = NetworkScreenMode.HOME, browsingServer = null,
+                remoteLayers = emptyList())
         }
     }
 
@@ -179,71 +142,84 @@ class NetworkViewModel @Inject constructor(
         return remoteBrowseRepository.buildPlaybackUri(server, remotePath)
     }
 
-    fun onRetryBrowse() {
-        val server = _uiState.value.browsingServer ?: return
-        browseRemoteDirectory(server, _uiState.value.currentRemotePath)
-    }
+    fun onRetryBrowse() { onRefreshBrowse() }
 
     fun onRefreshBrowse() {
         val server = _uiState.value.browsingServer ?: return
-        browseRemoteDirectory(server, _uiState.value.currentRemotePath)
+        val layers = _uiState.value.remoteLayers
+        if (layers.isNotEmpty()) {
+            val idx = layers.lastIndex
+            val path = layers[idx].path
+            dirCache.remove(path)
+            loadRemoteDirectory(server, path, idx)
+        }
     }
 
-    private fun browseRemoteDirectory(server: ServerConfig, path: String) {
+    private fun pushRemoteLayer(server: ServerConfig, path: String) {
+        val layer = RemoteDirectoryLayer(
+            path = path,
+            breadcrumbs = buildRemoteBreadcrumbs(server.name, path),
+            isLoading = true,
+        )
+        _uiState.update {
+            it.copy(
+                mode = NetworkScreenMode.SERVER_BROWSE,
+                remoteLayers = it.remoteLayers + layer,
+            )
+        }
+        loadRemoteDirectory(server, path, _uiState.value.remoteLayers.lastIndex)
+    }
+
+    private fun loadRemoteDirectory(server: ServerConfig, path: String, layerIndex: Int) {
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    remoteBrowseLoading = true,
-                    remoteBrowseError = null,
-                    currentRemotePath = path,
-                    remoteBreadcrumbs = buildRemoteBreadcrumbs(server.name, path),
-                )
+            updateRemoteLayer(layerIndex) { it.copy(isLoading = true, error = null) }
+
+            val cached = dirCache.get(path)
+            if (cached != null) {
+                updateRemoteLayer(layerIndex) {
+                    it.copy(items = cached, isLoading = false)
+                }
+                return@launch
             }
+
             val result = remoteBrowseRepository.listDirectory(server, path)
             result.fold(
                 onSuccess = { items ->
-                    _uiState.update {
-                        it.copy(
-                            remoteItems = items,
-                            remoteBrowseLoading = false,
-                        )
+                    dirCache.put(path, items)
+                    updateRemoteLayer(layerIndex) {
+                        it.copy(items = items, isEmpty = items.isEmpty(), isLoading = false)
+                    }
+                    // Enrich children in background if there are directories
+                    if (items.any { it.isDirectory }) {
+                        launch {
+                            val enriched = remoteBrowseRepository.enrichDirectory(server, items)
+                            dirCache.put(path, enriched)
+                            updateRemoteLayer(layerIndex) {
+                                it.copy(items = enriched)
+                            }
+                        }
                     }
                 },
                 onFailure = { e ->
-                    _uiState.update {
-                        it.copy(
-                            remoteBrowseError = e.message ?: "Connection failed",
-                            remoteBrowseLoading = false,
-                        )
+                    updateRemoteLayer(layerIndex) {
+                        it.copy(error = e.message ?: "Connection failed", isLoading = false)
                     }
                 },
             )
         }
     }
 
-    private fun buildRemoteBreadcrumbs(serverName: String, path: String): List<RemoteBreadcrumb> {
-        val crumbs = mutableListOf(RemoteBreadcrumb(serverName, "/"))
-        if (path == "/" || path.isEmpty()) return crumbs
-        val parts = path.trimStart('/').split("/").filter { it.isNotEmpty() }
-        var accumulated = ""
-        for (part in parts) {
-            accumulated = "$accumulated/$part"
-            crumbs.add(RemoteBreadcrumb(part, accumulated))
+    private fun updateRemoteLayer(index: Int, transform: (RemoteDirectoryLayer) -> RemoteDirectoryLayer) {
+        _uiState.update { state ->
+            val layers = state.remoteLayers.toMutableList()
+            if (index in layers.indices) {
+                layers[index] = transform(layers[index])
+            }
+            state.copy(remoteLayers = layers)
         }
-        return crumbs
     }
 
-    // ── History ───────────────────────────────────────────────
-
-    fun onToggleFavorite(id: Long) {
-        viewModelScope.launch { networkRepository.toggleFavorite(id) }
-    }
-
-    fun onDeleteHistoryItem(id: Long) {
-        viewModelScope.launch { networkRepository.deleteHistoryItem(id) }
-    }
-
-    fun onClearHistory() {
-        viewModelScope.launch { networkRepository.clearHistory() }
-    }
+    fun onToggleFavorite(id: Long) { viewModelScope.launch { networkRepository.toggleFavorite(id) } }
+    fun onDeleteHistoryItem(id: Long) { viewModelScope.launch { networkRepository.deleteHistoryItem(id) } }
+    fun onClearHistory() { viewModelScope.launch { networkRepository.clearHistory() } }
 }

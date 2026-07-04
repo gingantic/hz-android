@@ -1,8 +1,6 @@
 package com.rhnxdev.hzplayer.presentation.network
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,17 +16,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -38,23 +33,26 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rhnxdev.hzplayer.core.components.BreadcrumbBar
+import com.rhnxdev.hzplayer.core.components.DirectoryBrowsePane
+import com.rhnxdev.hzplayer.core.components.FileItemData
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
-import com.rhnxdev.hzplayer.core.components.MediaEmptyState
-import com.rhnxdev.hzplayer.core.components.MediaErrorState
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
-import com.rhnxdev.hzplayer.presentation.network.components.RemoteFileListItem
 import com.rhnxdev.hzplayer.presentation.network.components.ServerCard
 import com.rhnxdev.hzplayer.presentation.network.components.ServerConfigDialog
 import com.rhnxdev.hzplayer.presentation.network.components.StreamHistoryListItem
@@ -117,17 +115,16 @@ fun NetworkScreen(
                 onClearHistory = viewModel::onClearHistory,
             )
 
-            NetworkScreenMode.SERVER_BROWSE -> ServerBrowseContent(
+            NetworkScreenMode.SERVER_BROWSE -> ServerBrowseStackContent(
                 uiState = uiState,
-                onFolderClicked = viewModel::onRemoteFolderClicked,
+                onFolderClicked = { item -> viewModel.onRemoteFolderClicked(item) },
                 onFileClicked = { item ->
-                    val uri = viewModel.buildPlaybackUri(item.path) ?: return@ServerBrowseContent
+                    val uri = viewModel.buildPlaybackUri(item.path) ?: return@ServerBrowseStackContent
                     onPlayRemoteFile(uri, item.name, isVideoUrl(item.name))
                 },
                 onBreadcrumbClicked = viewModel::onRemoteBreadcrumbClicked,
                 onRetry = viewModel::onRetryBrowse,
                 onRefresh = viewModel::onRefreshBrowse,
-                onBackToHome = viewModel::onBackToHome,
             )
         }
     }
@@ -312,151 +309,93 @@ private fun NetworkHomeContent(
     }
 }
 
-// ── Server browse content (mirrors FileBrowserScreen) ──────────────
+// ── Server browse — layer stack ────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Renders remote directory layers as a stack in a [Box].
+ * Each layer keeps its own [LazyListState] naturally — no save/restore needed.
+ */
 @Composable
-private fun ServerBrowseContent(
+private fun ServerBrowseStackContent(
     uiState: NetworkUiState,
     onFolderClicked: (RemoteFileItem) -> Unit,
     onFileClicked: (RemoteFileItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
-    onBackToHome: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
-        // Breadcrumb bar — identical to FileBrowserScreen
-        NetworkBreadcrumbBar(
-            breadcrumbs = uiState.remoteBreadcrumbs,
-            onBreadcrumbClicked = onBreadcrumbClicked,
-        )
+    Box(modifier = modifier.fillMaxSize()) {
+        val topIndex = uiState.remoteLayers.lastIndex
+        val noopAction: () -> Unit = {}
+        val noopFolder: (RemoteFileItem) -> Unit = {}
+        val noopBreadcrumb: (String) -> Unit = {}
 
-        // Content with pull-to-refresh — identical pattern to FileBrowserScreen
-        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-            PullToRefreshBox(
-                isRefreshing = uiState.remoteBrowseLoading && uiState.remoteItems.isNotEmpty(),
-                onRefresh = onRefresh,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                when {
-                    uiState.remoteBrowseLoading && uiState.remoteItems.isEmpty() -> {
-                        // Shimmer loading state
-                        com.rhnxdev.hzplayer.core.components.MediaLoadingState(
-                            itemCount = 6,
-                            shape = com.rhnxdev.hzplayer.core.components.ShimmerShape.LIST_ITEM,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-
-                    uiState.remoteBrowseError != null -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState()),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            MediaErrorState(
-                                title = "Could not load files",
-                                subtitle = uiState.remoteBrowseError,
-                                onRetry = onRetry,
-                            )
-                        }
-                    }
-
-                    !uiState.remoteBrowseLoading && uiState.remoteItems.isEmpty() -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState()),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            MediaEmptyState(
-                                icon = Icons.Filled.Folder,
-                                title = "This folder is empty",
-                                subtitle = "Nothing to show here.",
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                    }
-
-                    else -> {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = Spacing.lg),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-                        ) {
-                            items(
-                                items = uiState.remoteItems,
-                                key = { it.path },
-                            ) { item ->
-                                RemoteFileListItem(
-                                    item = item,
-                                    onClick = {
-                                        if (item.isDirectory) onFolderClicked(item)
-                                        else onFileClicked(item)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ── Breadcrumb bar — identical to FileBrowserScreen ────────────────
-
-@Composable
-private fun NetworkBreadcrumbBar(
-    breadcrumbs: List<RemoteBreadcrumb>,
-    onBreadcrumbClicked: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        breadcrumbs.forEachIndexed { index, crumb ->
-            val isLast = index == breadcrumbs.lastIndex
-
-            Text(
-                text = crumb.name,
-                style = MaterialTheme.typography.labelLarge,
-                color = if (isLast) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = if (!isLast) Modifier.clickable { onBreadcrumbClicked(crumb.path) }
-                else Modifier,
-            )
-
-            if (!isLast) {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .width(16.dp)
-                        .height(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        uiState.remoteLayers.forEachIndexed { index, layer ->
+            val isTop = index == topIndex
+            key(layer.path) {
+                RemoteDirectoryLayerView(
+                    layer = layer,
+                    onFolderClicked = if (isTop) onFolderClicked else noopFolder,
+                    onFileClicked = if (isTop) onFileClicked else noopFolder,
+                    onBreadcrumbClicked = if (isTop) onBreadcrumbClicked else noopBreadcrumb,
+                    onRetry = if (isTop) onRetry else noopAction,
+                    onRefresh = if (isTop) onRefresh else noopAction,
+                    modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
             }
         }
     }
 }
 
-// ── Utility ────────────────────────────────────────────────────────
+@Composable
+private fun RemoteDirectoryLayerView(
+    layer: RemoteDirectoryLayer,
+    onFolderClicked: (RemoteFileItem) -> Unit,
+    onFileClicked: (RemoteFileItem) -> Unit,
+    onBreadcrumbClicked: (String) -> Unit,
+    onRetry: () -> Unit,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
 
-private val VIDEO_EXTENSIONS = setOf(
-    "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "3gp",
-    "m4v", "mpg", "mpeg", "ts", "mts", "vob", "m3u8", "mpd",
+    Column(modifier = modifier.fillMaxSize()) {
+        BreadcrumbBar(
+            breadcrumbs = layer.breadcrumbs,
+            onBreadcrumbClicked = onBreadcrumbClicked,
+        )
+
+        DirectoryBrowsePane(
+            items = layer.items.map { it.toFileItemData() },
+            isLoading = layer.isLoading,
+            isEmpty = layer.isEmpty,
+            error = layer.error,
+            searchQuery = "",
+            isSearchActive = false,
+            onItemClick = { data ->
+                val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
+                if (data.isDirectory) onFolderClicked(item)
+                else onFileClicked(item)
+            },
+            onRefresh = onRefresh,
+            onRetry = onRetry,
+            listState = listState,
+            modifier = Modifier.weight(1f).fillMaxSize(),
+        )
+    }
+}
+
+private fun RemoteFileItem.toFileItemData() = FileItemData(
+    id = path,
+    name = name,
+    path = path,
+    isDirectory = isDirectory,
+    fileSize = fileSize,
+    childCount = childCount,
+    mimeType = mimeType,
 )
 
-private fun isVideoUrl(urlOrName: String): Boolean {
-    val ext = urlOrName.substringAfterLast('.', "").substringBefore('?').lowercase()
-    return ext in VIDEO_EXTENSIONS
-}
+// ── Utility ────────────────────────────────────────────────────────
+
+private fun isVideoUrl(urlOrName: String): Boolean = isVideoExtension(urlOrName)

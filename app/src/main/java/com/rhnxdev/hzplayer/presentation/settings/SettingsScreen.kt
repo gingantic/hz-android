@@ -41,7 +41,6 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
-    playerViewModel: PlayerViewModel = hiltViewModel(),
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     onRequestPermissions: () -> Unit = {},
 ) {
@@ -50,7 +49,6 @@ fun SettingsScreen(
     var resumePlayback by remember { mutableStateOf(true) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
 
-    val currentEngine = playerViewModel.activeEngineType
     val currentApiKey by settingsViewModel.openSubtitlesApiKey.collectAsStateWithLifecycle()
     val seekSensitivity by settingsViewModel.seekSensitivity.collectAsStateWithLifecycle()
     val showHiddenFiles by settingsViewModel.showHiddenFiles.collectAsStateWithLifecycle()
@@ -106,18 +104,8 @@ fun SettingsScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
                                 title = "Media engine",
-                                subtitle = when (currentEngine) {
-                                    EngineType.EXO_PLAYER -> "ExoPlayer (default)"
-                                    EngineType.VLC -> "libVLC"
-                                },
-                                onClick = {
-                                    // Toggle between engines
-                                    val next = when (currentEngine) {
-                                        EngineType.EXO_PLAYER -> EngineType.VLC
-                                        EngineType.VLC -> EngineType.EXO_PLAYER
-                                    }
-                                    playerViewModel.switchEngine(next)
-                                },
+                                subtitle = "ExoPlayer",
+                                onClick = {},
                             )
                         }
                     },

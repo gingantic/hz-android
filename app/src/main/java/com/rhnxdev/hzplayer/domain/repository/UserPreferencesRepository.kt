@@ -14,6 +14,7 @@ interface UserPreferencesRepository {
     val openSubtitlesApiKey: Flow<String>
     val seekSensitivity: Flow<Float>
     val showHiddenFiles: Flow<Boolean>
+    val useSurfaceView: Flow<Boolean>
 
     fun getViewMode(key: String): Flow<ViewMode>
     fun getSortType(key: String): Flow<SortType>
@@ -25,6 +26,7 @@ interface UserPreferencesRepository {
     suspend fun setOpenSubtitlesApiKey(key: String)
     suspend fun setSeekSensitivity(sensitivity: Float)
     suspend fun setShowHiddenFiles(enabled: Boolean)
+    suspend fun setUseSurfaceView(enabled: Boolean)
     suspend fun setViewMode(key: String, mode: ViewMode)
     suspend fun setSortType(key: String, sort: SortType)
 }

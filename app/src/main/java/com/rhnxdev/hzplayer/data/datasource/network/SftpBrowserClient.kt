@@ -1,13 +1,11 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
-import android.webkit.MimeTypeMap
+import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.sftp.SFTPClient
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
-import java.net.URLConnection
 
 class SftpBrowserClient(
     private val host: String,
@@ -16,22 +14,15 @@ class SftpBrowserClient(
     private val password: String,
 ) : RemoteBrowserClient {
 
-    private var sshClient: SSHClient? = null
-    private var sftpClient: SFTPClient? = null
-
     override suspend fun connect() = withContext(Dispatchers.IO) {
-        val ssh = SSHClient()
-        ssh.addHostKeyVerifier(PromiscuousVerifier())
-        ssh.connectTimeout = 10_000
-        ssh.connect(host, port)
-        ssh.authPassword(username, password)
-        sshClient = ssh
-        sftpClient = ssh.newSFTPClient()
+        ConnectionPool.borrowSftpBrowser(host, port, username, password)
+        Unit
     }
 
     override suspend fun listDirectory(path: String): List<RemoteFileItem> =
         withContext(Dispatchers.IO) {
-            val sftp = sftpClient ?: throw IllegalStateException("Not connected")
+            val ssh = ConnectionPool.borrowSftpBrowser(host, port, username, password)
+            val sftp = ssh.newSFTPClient()
             sftp.ls(path)
                 .filter { it.name != "." && it.name != ".." }
                 .map { entry ->
@@ -49,19 +40,14 @@ class SftpBrowserClient(
                 .sortedWith(compareByDescending<RemoteFileItem> { it.isDirectory }.thenBy { it.name.lowercase() })
         }
 
-    override suspend fun disconnect() = withContext(Dispatchers.IO) {
+    override suspend fun countChildren(path: String): Int = withContext(Dispatchers.IO) {
+        val ssh = ConnectionPool.borrowSftpBrowser(host, port, username, password)
         try {
-            sftpClient?.close()
-            sshClient?.disconnect()
-        } catch (_: Exception) {
-        }
-        sftpClient = null
-        sshClient = null
+            ssh.newSFTPClient().ls(path).count { it.isDirectory }
+        } catch (_: Exception) { 0 }
     }
 
-    private fun guessMimeType(name: String): String? {
-        val ext = name.substringAfterLast('.', "").lowercase()
-        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
-        return mime ?: URLConnection.guessContentTypeFromName(name)
+    override suspend fun disconnect() = withContext(Dispatchers.IO) {
+        ConnectionPool.returnSftpBrowser(host, port)
     }
 }

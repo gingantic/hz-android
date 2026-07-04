@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
@@ -64,6 +63,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rhnxdev.hzplayer.core.components.BreadcrumbBar
+import com.rhnxdev.hzplayer.core.components.BreadcrumbItem
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaErrorState
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
@@ -71,7 +72,6 @@ import com.rhnxdev.hzplayer.core.designsystem.stableNavBarPaddingValues
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
-import com.rhnxdev.hzplayer.presentation.player.SubtitleBreadcrumb
 import com.rhnxdev.hzplayer.presentation.player.SubtitleBrowserMode
 import com.rhnxdev.hzplayer.presentation.player.SubtitleBrowserUiState
 import com.rhnxdev.hzplayer.presentation.player.SubtitleBrowserViewModel
@@ -186,15 +186,21 @@ fun SubtitleFileBrowserBottomSheet(
             }
 
             // Breadcrumb bar (only in browsing modes)
-            if (uiState.mode == SubtitleBrowserMode.BROWSING_LOCAL) {
+            val crumbs = when (uiState.mode) {
+                SubtitleBrowserMode.BROWSING_LOCAL -> uiState.localBreadcrumbs
+                SubtitleBrowserMode.BROWSING_REMOTE -> uiState.remoteBreadcrumbs
+                else -> emptyList()
+            }
+            if (crumbs.isNotEmpty()) {
                 BreadcrumbBar(
-                    breadcrumbs = uiState.localBreadcrumbs,
-                    onBreadcrumbClicked = viewModel::onLocalBreadcrumbClicked,
-                )
-            } else if (uiState.mode == SubtitleBrowserMode.BROWSING_REMOTE) {
-                BreadcrumbBar(
-                    breadcrumbs = uiState.remoteBreadcrumbs,
-                    onBreadcrumbClicked = viewModel::onRemoteBreadcrumbClicked,
+                    breadcrumbs = crumbs,
+                    onBreadcrumbClicked = { path ->
+                        when (uiState.mode) {
+                            SubtitleBrowserMode.BROWSING_LOCAL -> viewModel.onLocalBreadcrumbClicked(path)
+                            SubtitleBrowserMode.BROWSING_REMOTE -> viewModel.onRemoteBreadcrumbClicked(path)
+                            else -> {}
+                        }
+                    },
                 )
             }
 
@@ -275,45 +281,6 @@ fun SubtitleFileBrowserBottomSheet(
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BreadcrumbBar(
-    breadcrumbs: List<SubtitleBreadcrumb>,
-    onBreadcrumbClicked: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        breadcrumbs.forEachIndexed { index, crumb ->
-            val isLast = index == breadcrumbs.lastIndex
-
-            Text(
-                text = crumb.name,
-                style = MaterialTheme.typography.labelLarge,
-                color = if (isLast) MaterialTheme.colorScheme.primary
-                else Color.White.copy(alpha = 0.6f),
-                modifier = if (!isLast) Modifier.clickable { onBreadcrumbClicked(crumb.path) }
-                else Modifier,
-            )
-
-            if (!isLast) {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(16.dp),
-                    tint = Color.White.copy(alpha = 0.3f),
-                )
             }
         }
     }

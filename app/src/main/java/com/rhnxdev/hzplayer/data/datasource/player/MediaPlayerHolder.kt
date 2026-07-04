@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.data.datasource.player
 import android.content.Context
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.text.Cue
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.datasource.DataSource
@@ -10,6 +11,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
@@ -26,30 +28,51 @@ class MediaPlayerHolder @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private val trackSelector = DefaultTrackSelector(context).apply {
+        setParameters(
+            buildUponParameters()
+                .setTunnelingEnabled(true)
+        )
+    }
+
+    /** Whether the device display supports HDR (queried once at init). */
+    private val _displayNeedsSurfaceView = MutableStateFlow(false)
+    val displayNeedsSurfaceView: StateFlow<Boolean> = _displayNeedsSurfaceView.asStateFlow()
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     val player: ExoPlayer = ExoPlayer.Builder(context)
+        .setTrackSelector(trackSelector)
         .setRenderersFactory(
-            // EXTENSION_RENDERER_MODE_PREFER: picks extension (or best hardware) decoders
-            // first, which correctly handle limited-range YUV → RGB color conversion.
-            // Without this, some devices fall back to software decoders that skip the
-            // color-range fixup and produce muted / washed-out colors on BT.709 content.
             DefaultRenderersFactory(context)
-                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
                 .setEnableDecoderFallback(true)
         )
         .setMediaSourceFactory(
-            // Composite DataSource: smb:// URIs go to SmbDataSource (jcifs-ng) so that
-            // ExoPlayer can play SMB files directly with full HDR10/HDR10+ colour support.
-            // All other schemes (file://, http://, https://, content://) use the
-            // default Android DataSource stack.
             DefaultMediaSourceFactory(context)
                 .setDataSourceFactory(buildCompositeDataSourceFactory(context))
         )
         .setAudioAttributes(AudioAttributes.DEFAULT, true)
         .setHandleAudioBecomingNoisy(true)
-        .build()
+        .build().also { exo ->
+            val display = context.getSystemService(Context.DISPLAY_SERVICE)?.let {
+                (it as? android.hardware.display.DisplayManager)?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+            }
+            if (display != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
+                val hdrCaps = display.isHdr
+                val hdrTypes = display.hdrCapabilities?.supportedHdrTypes
+                val typesStr = hdrTypes?.joinToString() ?: "none"
+                android.util.Log.d(TAG, "Display HDR supported=$hdrCaps types=[$typesStr] sdk=${android.os.Build.VERSION.SDK_INT}")
+                // If display supports HDR, SurfaceView is required for 10-bit passthrough
+                _displayNeedsSurfaceView.value = hdrCaps
+            }
+            android.util.Log.d(TAG, "ExoPlayer built: extensionRendererMode=ON enableDecoderFallback=true tunneling=${trackSelector.parameters.tunnelingEnabled}")
+        }
 
     private val _playbackStateInfo = MutableStateFlow(PlayerStateInfo())
     val playbackStateInfo: StateFlow<PlayerStateInfo> = _playbackStateInfo.asStateFlow()
+
+    private val _subtitleCues = MutableStateFlow<List<Cue>>(emptyList())
+    val subtitleCues: StateFlow<List<Cue>> = _subtitleCues.asStateFlow()
 
     init {
         player.addListener(
@@ -103,9 +126,6 @@ class MediaPlayerHolder @Inject constructor(
                     )
                 }
 
-                // Bug 2 fix: update bufferedPosition on every event, not just state changes.
-                // Keeps the StateFlow snapshot fresh for the position poller (important for
-                // HLS/DASH where buffer fills continuously, not just at state transitions).
                 override fun onEvents(player: Player, events: Player.Events) {
                     _playbackStateInfo.value = _playbackStateInfo.value.copy(
                         bufferedPosition = player.bufferedPosition.coerceAtLeast(0),
@@ -113,14 +133,12 @@ class MediaPlayerHolder @Inject constructor(
                 }
             },
         )
-    }
 
-    fun updatePosition(positionMs: Long, durationMs: Long, bufferedMs: Long) {
-        _playbackStateInfo.value = _playbackStateInfo.value.copy(
-            currentPosition = positionMs,
-            duration = durationMs,
-            bufferedPosition = bufferedMs,
-        )
+        player.addListener(object : Player.Listener {
+            override fun onCues(cues: MutableList<Cue>) {
+                _subtitleCues.value = cues.toList()
+            }
+        })
     }
 
     fun updateSpeed(speed: Float) {
@@ -146,43 +164,40 @@ class MediaPlayerHolder @Inject constructor(
     }
 
     companion object {
-        /**
-         * Builds a [DataSource.Factory] that routes requests by URI scheme:
-         * - `smb://` → [SmbDataSourceFactory] (jcifs-ng, HDR-capable ExoPlayer path)
-         * - everything else → [DefaultDataSource.Factory] (Android HTTP / file stack)
-         */
+        private const val TAG = "MediaPlayerHolder"
+
         @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
         fun buildCompositeDataSourceFactory(context: Context): DataSource.Factory {
             val defaultFactory = DefaultDataSource.Factory(context)
-            val smbFactory = SmbDataSourceFactory()
             return DataSource.Factory {
-                // The DataSpec is not yet available at factory-creation time, so we
-                // return a delegating DataSource that picks the right backend on open().
-                SmbRoutingDataSource(defaultFactory, smbFactory)
+                ProtocolRoutingDataSource(defaultFactory)
             }
         }
     }
 }
 
 /**
- * A [DataSource] that delegates to [SmbDataSource] for `smb://` URIs and to the
- * default [DefaultDataSource] stack for everything else. The delegation decision
- * is made in [open] where the full [DataSpec] (and therefore the URI) is available.
+ * A [DataSource] that delegates to the correct backend based on URI scheme:
+ * - `smb://` → [SmbDataSource] (jcifs-ng)
+ * - `ftp://` → [FtpDataSource] (Apache Commons Net)
+ * - `sftp://` → [SftpDataSource] (SSHJ)
+ * - everything else → [DefaultDataSource] (native HTTP/file/content)
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private class SmbRoutingDataSource(
+private class ProtocolRoutingDataSource(
     private val defaultFactory: DefaultDataSource.Factory,
-    private val smbFactory: SmbDataSourceFactory,
 ) : androidx.media3.datasource.DataSource {
 
     private var delegate: androidx.media3.datasource.DataSource? = null
 
     override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
-        delegate = if (dataSpec.uri.scheme?.lowercase() == "smb") {
-            smbFactory.createDataSource()
-        } else {
-            defaultFactory.createDataSource()
+        delegate = when (dataSpec.uri.scheme?.lowercase()) {
+            "smb" -> SmbDataSource()
+            "ftp" -> FtpDataSource()
+            "sftp" -> SftpDataSource()
+            else -> defaultFactory.createDataSource()
         }
+        android.util.Log.d("ProtocolRoutingDataSource", "routing scheme=${dataSpec.uri.scheme} -> ${delegate!!::class.java.simpleName}")
         return delegate!!.open(dataSpec)
     }
 
@@ -202,4 +217,3 @@ private class SmbRoutingDataSource(
         try { delegate?.close() } finally { delegate = null }
     }
 }
-

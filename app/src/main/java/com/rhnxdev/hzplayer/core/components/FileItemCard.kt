@@ -1,6 +1,5 @@
-package com.rhnxdev.hzplayer.presentation.browse.components
+package com.rhnxdev.hzplayer.core.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,26 +28,37 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.formatFileSize
-import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
+/**
+ * Unified file/directory item card used by both local and remote file browsers.
+ *
+ * Replace both [com.rhnxdev.hzplayer.presentation.browse.components.FileListItem]
+ * and [com.rhnxdev.hzplayer.presentation.network.components.RemoteFileListItem].
+ */
 @Composable
-fun FileListItem(
-    item: FolderItem,
+fun FileItemCard(
+    name: String,
+    isDirectory: Boolean,
+    fileSize: Long,
+    childCount: Int,
+    mimeType: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val icon: ImageVector = when {
-        item.isDirectory -> Icons.Filled.Folder
-        item.mimeType?.startsWith("video") == true -> Icons.Filled.Movie
-        item.mimeType?.startsWith("audio") == true -> Icons.Filled.Audiotrack
+        isDirectory -> Icons.Filled.Folder
+        mimeType?.startsWith("video") == true -> Icons.Filled.Movie
+        mimeType?.startsWith("audio") == true -> Icons.Filled.Audiotrack
         else -> Icons.Filled.Description
     }
 
     val subtitle = when {
-        item.isDirectory -> "${item.childCount} items"
-        item.mimeType == null -> formatFileSize(item.fileSize)
-        else -> "${item.mimeType} • ${formatFileSize(item.fileSize)}"
+        isDirectory && childCount >= 0 -> "$childCount items"
+        isDirectory -> "- items"
+        mimeType != null -> "$mimeType • ${formatFileSize(fileSize)}"
+        fileSize > 0 -> formatFileSize(fileSize)
+        else -> "- bytes"
     }
 
     Card(
@@ -70,18 +80,15 @@ fun FileListItem(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(28.dp),
-                tint = if (item.isDirectory) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                tint = if (isDirectory) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.width(Spacing.md))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.name,
+                    text = name,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -101,19 +108,30 @@ fun FileListItem(
 @PreviewLightDark
 @Preview
 @Composable
-private fun FileListItemPreview() {
+private fun FileItemCardPreview() {
     HzPlayerTheme {
-        FileListItem(
-            item = FolderItem(
-                id = 1,
-                name = "Movies",
-                path = "/storage/Movies",
-                isDirectory = true,
-                childCount = 15,
-                dateModified = 1_700_000_000_000,
-            ),
+        FileItemCard(
+            name = "Movie.mp4",
+            isDirectory = false,
+            fileSize = 256_000_000,
+            childCount = 0,
+            mimeType = "video/mp4",
             onClick = {},
-            modifier = Modifier.padding(horizontal = Spacing.lg),
+        )
+    }
+}
+
+@PreviewLightDark
+@Preview
+@Composable
+private fun FileItemCardDirectoryPreview() {
+    HzPlayerTheme {
+        FileItemCard(
+            name = "Movies",
+            isDirectory = true,
+            fileSize = 0,
+            childCount = 12,
+            onClick = {},
         )
     }
 }

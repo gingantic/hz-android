@@ -308,7 +308,6 @@ fun HzPlayerApp(
                                 },
                             )
                             4 -> SettingsScreen(
-                                playerViewModel = playerViewModel,
                                 onRequestPermissions = onRequestPermissions,
                             )
                         }
@@ -403,23 +402,7 @@ fun HzPlayerApp(
 }
 
 /** Common video file extensions for file-browser detection. */
-private val VIDEO_EXTENSIONS = setOf(
-    "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "3gp",
-    "m4v", "mpg", "mpeg", "ts", "mts", "vob",
-)
+private fun isVideoExtension(name: String): Boolean = com.rhnxdev.hzplayer.core.util.isVideoExtension(name)
 
 /** Common audio file extensions for file-browser detection. */
-private val AUDIO_EXTENSIONS = setOf(
-    "mp3", "flac", "wav", "ogg", "aac", "wma", "m4a",
-    "opus", "ape", "aiff", "dsf", "dff",
-)
-
-private fun isVideoExtension(name: String): Boolean {
-    val ext = name.substringAfterLast('.', "").lowercase()
-    return ext in VIDEO_EXTENSIONS
-}
-
-private fun isAudioExtension(name: String): Boolean {
-    val ext = name.substringAfterLast('.', "").lowercase()
-    return ext in AUDIO_EXTENSIONS
-}
+private fun isAudioExtension(name: String): Boolean = com.rhnxdev.hzplayer.core.util.isAudioExtension(name)

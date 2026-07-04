@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,6 +41,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import android.media.AudioManager
 import android.provider.Settings
 import android.view.Window
@@ -48,9 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import com.rhnxdev.hzplayer.data.datasource.player.VlcEngine
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
-import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerControlsOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.SeekIndicator
 import com.rhnxdev.hzplayer.presentation.player.components.DragSeekIndicator
@@ -63,7 +65,6 @@ import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSelectionDial
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSearchDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleStylingDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleFileBrowserBottomSheet
-import com.rhnxdev.hzplayer.presentation.player.components.VlcVideoSurface
 import kotlinx.coroutines.delay
 
 /** Duration in ms for double-tap fixed seeks (left/right thirds). */
@@ -79,8 +80,10 @@ fun VideoPlayerScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val view = LocalView.current
-    val audioManager = remember { view.context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val window = remember { (view.context as? android.app.Activity)?.window }
+    val context = view.context
+    val activity = remember(view) { context as? android.app.Activity }
+    val window = remember(activity) { activity?.window }
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
     BackHandler { onBack() }
 
@@ -141,13 +144,7 @@ fun VideoPlayerScreen(
                     viewModel.pause()
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_START -> {
-                    // App is returning from background — resume playback.
-                    // For VLC: resume() sets pendingPlay so onSurfaceTextureAvailable
-                    //           triggers play (or calls mp.play() directly if attached).
-                    // For ExoPlayer: PlayerView.onResume() below handles reconnect.
-                    if (viewModel.activeEngineType == EngineType.VLC) {
-                        viewModel.resume()
-                    }
+                    // App is returning from background — PlayerView.onResume() below handles reconnect.
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
                     // Reconnect ExoPlayer's PlayerView; VLC handled via TextureView callbacks.
@@ -159,6 +156,10 @@ fun VideoPlayerScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            // Reset color mode on leave
+            if (activity != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                activity.window.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
+            }
         }
     }
 
@@ -234,72 +235,85 @@ fun VideoPlayerScreen(
     }
 
     // ── Determine which video surface to render ────────────────
-    val activeEngineType = uiState.activeEngineType
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        // Video surface + subtitle overlay — choose the rendering path based on engine
-        when (activeEngineType) {
-            EngineType.EXO_PLAYER -> {
-                // Standard ExoPlayer PlayerView (inflated with TextureView surface type)
-                AndroidView(
-                    factory = { ctx ->
-                        // Inflate from XML so `app:surface_type="texture_view"` takes effect.
-                        // PlayerView surface type is fixed at construction time — there is no
-                        // programmatic setter.  TextureView keeps its last decoded frame in
-                        // GPU memory through onStop(), eliminating the black flash when the
-                        // user briefly switches apps and returns.
-                        // Colour accuracy: MediaPlayerHolder uses EXTENSION_RENDERER_MODE_PREFER
-                        // + enableDecoderFallback which enforces correct limited-range YUV→RGB
-                        // conversion regardless of view type — no colour regression.
-                        val playerView = android.view.LayoutInflater.from(ctx)
-                            .inflate(com.rhnxdev.hzplayer.R.layout.view_exo_player, null, false)
-                            as PlayerView
-                        playerView.player = viewModel.getExoPlayer()
-                        playerView.useController = false
-                        playerViewRef.value = playerView
-                        playerView
-                    },
-                    update = { playerView ->
-                        playerView.player = viewModel.getExoPlayer()
-                        // Map our AspectRatioMode to Media3 PlayerView resize modes.
-                        // RATIO_16_9 / RATIO_4_3 fall through to FIT — ExoPlayer's
-                        // PlayerView doesn't expose a forced-ratio API; the VLC engine
-                        // handles those natively via setAspectRatio().
-                        playerView.resizeMode = when (uiState.aspectRatioMode) {
-                            AspectRatioMode.AUTO,
-                            AspectRatioMode.RATIO_16_9,
-                            AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        // Video surface — ExoPlayer PlayerView (inflated dynamically with TextureView or SurfaceView surface type)
+        android.util.Log.d("VideoPlayerScreen", "Rendering path: EXO_PLAYER useSurfaceView=${uiState.useSurfaceView}")
+        key(uiState.useSurfaceView) {
+            AndroidView(
+                factory = { ctx ->
+                    // Inflate from XML so the correct `app:surface_type` takes effect.
+                    // PlayerView surface type is fixed at construction time — there is no
+                    // programmatic setter.  TextureView keeps its last decoded frame in
+                    // GPU memory through onStop(), eliminating the black flash when the
+                    // user briefly switches apps and returns.
+                    // SurfaceView bypasses UI composition and provides direct 10-bit HDR rendering.
+                    val layoutRes = if (uiState.useSurfaceView) {
+                        com.rhnxdev.hzplayer.R.layout.view_exo_player_surface
+                    } else {
+                        com.rhnxdev.hzplayer.R.layout.view_exo_player
+                    }
+                    val playerView = android.view.LayoutInflater.from(ctx)
+                        .inflate(layoutRes, null, false)
+                        as PlayerView
+                    playerView.player = viewModel.getExoPlayer()
+                    playerView.useController = false
+                    // Use built-in subtitle rendering with transparent background
+                    val subtitleView = playerView.subtitleView
+                    if (subtitleView != null) {
+                        // For HDR content, SurfaceView renders at 10-bit luminance.
+                        // SDR white text appears dim against HDR video. Use a
+                        // semi-transparent black background + thick outline to
+                        // ensure legibility regardless of HDR peak brightness.
+                        subtitleView.setStyle(
+                            androidx.media3.ui.CaptionStyleCompat(
+                                0xFFFFFFFF.toInt(), // foregroundColor — pure white
+                                0xCC000000.toInt(), // backgroundColor — solid dark (75% black)
+                                0x00000000,         // windowColor — transparent
+                                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                0xFF000000.toInt(), // edgeColor — black
+                                null // typeface
+                            )
+                        )
+                    }
+
+                    // Force direct hardware composer secure composition to maintain 10-bit HDR colors
+                    if (uiState.useSurfaceView) {
+                        val surfaceView = playerView.videoSurfaceView
+                        if (surfaceView is android.view.SurfaceView) {
+                            surfaceView.setSecure(true)
                         }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                    }
 
-                // Custom subtitle overlay for ExoPlayer (styled rendering)
-                SubtitleOverlay(
-                    cues = emptyList(), // TODO: wire TextOutput listener to populate cue list
-                    style = uiState.subtitleStyle,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-
-            EngineType.VLC -> {
-                // libVLC custom surface (renders subtitles natively)
-                val vlcEngine = viewModel.getActiveEngine()
-                if (vlcEngine is VlcEngine) {
-                    VlcVideoSurface(
-                        engine = vlcEngine,
-                        aspectRatioMode = uiState.aspectRatioMode,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-            }
+                    playerViewRef.value = playerView
+                    playerView
+                },
+                update = { playerView ->
+                    playerView.player = viewModel.getExoPlayer()
+                    // Map our AspectRatioMode to Media3 PlayerView resize modes.
+                    playerView.resizeMode = when (uiState.aspectRatioMode) {
+                        AspectRatioMode.AUTO,
+                        AspectRatioMode.RATIO_16_9,
+                        AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
-        // Gesture overlay — same for both engines, disabled when locked
+        // (built-in subtitle rendering used — see factory block above)
+        // SubtitleOverlay removed: refine custom subtitle overlay later
+        // SubtitleOverlay(
+        //     cues = uiState.subtitleCueTexts,
+        //     style = uiState.subtitleStyle,
+        //     modifier = Modifier.fillMaxSize(),
+        // )
+
+        // Gesture overlay
         Box(
             modifier = if (!uiState.playerLocked) Modifier
                 .fillMaxSize()
@@ -491,8 +505,8 @@ fun VideoPlayerScreen(
                     onLockClick = { viewModel.onToggleLock() },
                     onAspectRatioClick = { viewModel.onAspectRatioChange(uiState.aspectRatioMode.next()) },
                     onOrientationClick = {
-                        val activity = view.context as? android.app.Activity
-                        if (activity != null) viewModel.onToggleOrientation(activity)
+                        val act = view.context as? android.app.Activity
+                        if (act != null) viewModel.onToggleOrientation(act)
                     },
                     onInteract = { hudInteractionTick++ },
                     modifier = Modifier.fillMaxSize(),
