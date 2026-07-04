@@ -3,17 +3,28 @@ package com.rhnxdev.hzplayer.presentation.player
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -516,35 +527,20 @@ fun VideoPlayerScreen(
                 )
             }
 
-            // Unlock overlay — shown on tap when locked
+            // Unlock overlay — pill in the center, swipe left/right to unlock
             if (uiState.playerLocked && showUnlockOverlay) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        ) {
+                        .background(Color.Black.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    UnlockPill(
+                        onUnlock = {
                             viewModel.onToggleLock()
                             showUnlockOverlay = false
                         },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = "Locked",
-                            tint = Color.White,
-                            modifier = Modifier.size(48.dp),
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Tap to unlock",
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
+                    )
                 }
             }
 
@@ -691,6 +687,78 @@ fun VideoPlayerScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Pill-shaped lock centered on screen when player is locked.
+ * Swipe left or right on the pill to unlock.
+ */
+@Composable
+private fun UnlockPill(
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    val pillWidth = 160.dp
+    val pillHeight = 64.dp
+    val threshold = pillWidth * 0.35f
+
+    Box(
+        modifier = modifier
+            .offset(x = offsetX.dp)
+            .width(pillWidth)
+            .height(pillHeight)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(32.dp))
+            .background(Color.White.copy(alpha = 0.15f))
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (kotlin.math.abs(offsetX) >= threshold.value) {
+                            onUnlock()
+                        }
+                        offsetX = 0f
+                    },
+                    onDragCancel = { offsetX = 0f },
+                    onHorizontalDrag = { _, dragAmount ->
+                        offsetX = (offsetX + dragAmount).coerceIn(-pillWidth.value, pillWidth.value)
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = kotlin.math.abs(offsetX) < threshold.value,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Swipe to unlock",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = kotlin.math.abs(offsetX) >= threshold.value,
+        ) {
+            Icon(
+                imageVector = Icons.Default.LockOpen,
+                contentDescription = "Unlocked",
+                tint = Color(0xFF4CAF50),
+                modifier = Modifier.size(28.dp),
+            )
         }
     }
 }
