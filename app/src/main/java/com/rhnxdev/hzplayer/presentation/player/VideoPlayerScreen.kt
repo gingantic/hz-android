@@ -295,10 +295,13 @@ fun VideoPlayerScreen(
                 update = { playerView ->
                     playerView.player = viewModel.getExoPlayer()
                     // Map our AspectRatioMode to Media3 PlayerView resize modes.
-                    playerView.resizeMode = when (uiState.aspectRatioMode) {
-                        AspectRatioMode.AUTO,
-                        AspectRatioMode.RATIO_16_9,
-                        AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    // AUTO → fit the video within the container, preserving its original ratio.
+                    // 16:9 → zoom to fill the container, cropping to 16:9 rectangle.
+                    // 4:3  → stretch to fill the container (distorts if source is 16:9).
+                    when (uiState.aspectRatioMode) {
+                        AspectRatioMode.AUTO -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        AspectRatioMode.RATIO_16_9 -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        AspectRatioMode.RATIO_4_3 -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
