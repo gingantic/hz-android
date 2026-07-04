@@ -131,6 +131,14 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
+    override val selectedTabIndex: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[SELECTED_TAB_INDEX] ?: 0
+    }.distinctUntilChanged()
+
+    override suspend fun setSelectedTabIndex(index: Int) {
+        dataStore.edit { prefs -> prefs[SELECTED_TAB_INDEX] = index }
+    }
+
     override suspend fun setShowHiddenFiles(enabled: Boolean) {
         dataStore.edit { prefs -> prefs[SHOW_HIDDEN_FILES] = enabled }
     }
@@ -152,5 +160,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         private val SEEK_SENSITIVITY = floatPreferencesKey("seek_sensitivity")
         private val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
         private val USE_SURFACE_VIEW = booleanPreferencesKey("use_surface_view")
+        private val SELECTED_TAB_INDEX = intPreferencesKey("selected_tab_index")
     }
 }

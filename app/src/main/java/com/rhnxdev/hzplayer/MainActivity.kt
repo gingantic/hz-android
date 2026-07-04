@@ -39,6 +39,8 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,8 +50,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.content.ContextCompat
-import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.rhnxdev.hzplayer.presentation.main.MainViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -196,11 +201,39 @@ fun HzPlayerApp(
         currentRoute == NavRoutes.AUDIO_PLAYER ||
         currentRoute?.startsWith("video_player") == true
 
+    // Shared player ViewModel (activity-scoped — same instance everywhere)
+    val playerViewModel: PlayerViewModel = hiltViewModel()
+
+    // ViewModel for tab persistence
+    val mainViewModel: MainViewModel = hiltViewModel()
+    val mainUiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+
     val pagerState = rememberPagerState(pageCount = { bottomNavDestinations.size })
     val scope = rememberCoroutineScope()
 
-    // Shared player ViewModel (activity-scoped — same instance everywhere)
-    val playerViewModel: PlayerViewModel = hiltViewModel()
+    // Restore saved tab once DataStore loads
+    LaunchedEffect(mainUiState.isReady) {
+        if (mainUiState.isReady && pagerState.currentPage != mainUiState.selectedTabIndex) {
+            pagerState.scrollToPage(mainUiState.selectedTabIndex)
+        }
+    }
+
+    // Save current tab index in memory instantly (no disk I/O on tab switch)
+    LaunchedEffect(pagerState.currentPage) {
+        mainViewModel.setSelectedTabIndex(pagerState.currentPage)
+    }
+
+    // Persist to DataStore only when app goes to background
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                mainViewModel.persistTabIndex()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Box(
         modifier = Modifier
@@ -255,65 +288,65 @@ fun HzPlayerApp(
                                 .statusBarsPadding()
                                 .padding(stableNavBarHorizontalPadding()),
                         ) { page ->
-                        when (page) {
-                            0 -> VideoLibraryScreen(
-                                onVideoClicked = { videoId ->
-                                    playerViewModel.onVideoStarted()
-                                    navController.navigate("video_player/$videoId")
-                                },
-                            )
-                            1 -> AudioBrowserScreen(
-                                onSongClicked = { audio ->
-                                    playerViewModel.playAudio(audio)
-                                    navController.navigate(NavRoutes.AUDIO_PLAYER)
-                                },
-                            )
-                            2 -> FileBrowserScreen(
-                                fullScreenOverlay = isFullScreen,
-                                onFileClicked = { file ->
-                                    val isVideoFile = file.mimeType?.startsWith("video/") == true ||
-                                        isVideoExtension(file.name)
-                                    // Play media files directly from the file browser
-                                    playerViewModel.playUri(file.path, file.name, isVideo = isVideoFile)
-                                    when {
-                                        isVideoFile -> {
-                                            navController.navigate(
-                                                "video_player/${file.id}"
-                                            )
+                            when (page) {
+                                0 -> VideoLibraryScreen(
+                                    onVideoClicked = { videoId ->
+                                        playerViewModel.onVideoStarted()
+                                        navController.navigate("video_player/$videoId")
+                                    },
+                                )
+                                1 -> AudioBrowserScreen(
+                                    onSongClicked = { audio ->
+                                        playerViewModel.playAudio(audio)
+                                        navController.navigate(NavRoutes.AUDIO_PLAYER)
+                                    },
+                                )
+                                2 -> FileBrowserScreen(
+                                    fullScreenOverlay = isFullScreen,
+                                    onFileClicked = { file ->
+                                        val isVideoFile = file.mimeType?.startsWith("video/") == true ||
+                                            isVideoExtension(file.name)
+                                        // Play media files directly from the file browser
+                                        playerViewModel.playUri(file.path, file.name, isVideo = isVideoFile)
+                                        when {
+                                            isVideoFile -> {
+                                                navController.navigate(
+                                                    "video_player/${file.id}"
+                                                )
+                                            }
+                                            file.mimeType?.startsWith("audio/") == true ||
+                                                isAudioExtension(file.name) -> {
+                                                navController.navigate(NavRoutes.AUDIO_PLAYER)
+                                            }
                                         }
-                                        file.mimeType?.startsWith("audio/") == true ||
-                                            isAudioExtension(file.name) -> {
+                                    },
+                                )
+                                3 -> NetworkScreen(
+                                    fullScreenOverlay = isFullScreen,
+                                    onPlayStream = { url, title, isVideo ->
+                                        playerViewModel.playNetworkUri(url, title, isVideo)
+                                        if (isVideo) {
+                                            navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+                                        } else {
                                             navController.navigate(NavRoutes.AUDIO_PLAYER)
                                         }
-                                    }
-                                },
-                            )
-                            3 -> NetworkScreen(
-                                fullScreenOverlay = isFullScreen,
-                                onPlayStream = { url, title, isVideo ->
-                                    playerViewModel.playNetworkUri(url, title, isVideo)
-                                    if (isVideo) {
-                                        navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
-                                    } else {
-                                        navController.navigate(NavRoutes.AUDIO_PLAYER)
-                                    }
-                                },
-                                onPlayRemoteFile = { uri, title, isVideo ->
-                                    playerViewModel.playNetworkUri(uri, title, isVideo)
-                                    if (isVideo) {
-                                        navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
-                                    } else {
-                                        navController.navigate(NavRoutes.AUDIO_PLAYER)
-                                    }
-                                },
-                            )
-                            4 -> SettingsScreen(
-                                onRequestPermissions = onRequestPermissions,
-                            )
+                                    },
+                                    onPlayRemoteFile = { uri, title, isVideo ->
+                                        playerViewModel.playNetworkUri(uri, title, isVideo)
+                                        if (isVideo) {
+                                            navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+                                        } else {
+                                            navController.navigate(NavRoutes.AUDIO_PLAYER)
+                                        }
+                                    },
+                                )
+                                4 -> SettingsScreen(
+                                    onRequestPermissions = onRequestPermissions,
+                                )
+                            }
                         }
                     }
                 }
-            }
 
                 // Mini player above bottom nav
                 val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()

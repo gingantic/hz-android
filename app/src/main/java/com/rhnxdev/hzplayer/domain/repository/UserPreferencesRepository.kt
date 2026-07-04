@@ -29,4 +29,8 @@ interface UserPreferencesRepository {
     suspend fun setUseSurfaceView(enabled: Boolean)
     suspend fun setViewMode(key: String, mode: ViewMode)
     suspend fun setSortType(key: String, sort: SortType)
+
+    val selectedTabIndex: Flow<Int>
+
+    suspend fun setSelectedTabIndex(index: Int)
 }
