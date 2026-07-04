@@ -79,6 +79,18 @@ fun DirectoryBrowsePane(
     val displayItems = if (!isSearchActive || searchQuery.isBlank()) items
     else items.filter { it.name.contains(searchQuery, ignoreCase = true) }
 
+    // Initial loading (no items yet) — show shimmer directly.
+    // Pull-to-refresh is only used for refreshing already-loaded content
+    // to avoid showing two loading indicators at once.
+    if (isLoading && items.isEmpty()) {
+        MediaLoadingState(
+            itemCount = 6,
+            shape = ShimmerShape.FILE_LIST_ITEM,
+            modifier = modifier.fillMaxSize(),
+        )
+        return
+    }
+
     val pullState = rememberPullToRefreshState()
     PullToRefreshBox(
         isRefreshing = isLoading,
@@ -87,13 +99,6 @@ fun DirectoryBrowsePane(
         modifier = modifier.fillMaxSize(),
     ) {
         when {
-            isLoading && items.isEmpty() -> {
-                MediaLoadingState(
-                    itemCount = 6,
-                    shape = ShimmerShape.FILE_LIST_ITEM,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
             error != null -> {
                 Box(
                     modifier = Modifier
