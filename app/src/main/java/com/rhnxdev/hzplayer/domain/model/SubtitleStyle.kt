@@ -15,7 +15,7 @@ data class SubtitleStyle(
     val fontSizeSp: Int = DEFAULT_FONT_SIZE,
     /** ARGB int for text color (e.g. 0xFFFFFFFF = white). */
     val textColorArgb: Int = DEFAULT_TEXT_COLOR,
-    /** ARGB int for background color (e.g. 0x80000000 = semi-transparent black). */
+    /** ARGB int for background color (e.g. 0x80000000 = semi-transparent black). 0 = transparent. */
     val backgroundColorArgb: Int = DEFAULT_BG_COLOR,
     /** Outline style: 0 = none, 1 = outline, 2 = drop shadow. */
     val edgeStyle: Int = 1,
@@ -25,7 +25,7 @@ data class SubtitleStyle(
     companion object {
         private const val DEFAULT_FONT_SIZE = 18
         private const val DEFAULT_TEXT_COLOR = 0xFFFFFFFF.toInt()
-        private const val DEFAULT_BG_COLOR = 0x80000000.toInt()
+        private const val DEFAULT_BG_COLOR = 0x00000000.toInt() // transparent — no gray box
 
         val DEFAULT = SubtitleStyle()
     }

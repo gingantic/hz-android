@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.defaultPort
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 
@@ -193,8 +194,4 @@ fun ServerConfigDialog(
     )
 }
 
-private fun defaultPort(protocol: NetworkProtocol): Int = when (protocol) {
-    NetworkProtocol.FTP -> 21
-    NetworkProtocol.SFTP -> 22
-    NetworkProtocol.SMB -> 445
-}
+private fun defaultPort(protocol: NetworkProtocol): Int = com.rhnxdev.hzplayer.core.util.defaultPort(protocol)

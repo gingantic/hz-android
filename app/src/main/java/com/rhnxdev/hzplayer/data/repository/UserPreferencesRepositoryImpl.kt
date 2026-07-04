@@ -14,6 +14,7 @@ import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,11 +26,11 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override val isDarkTheme: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[DARK_THEME_KEY] ?: false
-    }
+    }.distinctUntilChanged()
 
     override val useDynamicColors: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[DYNAMIC_COLORS_KEY] ?: true
-    }
+    }.distinctUntilChanged()
 
     override val activeEngine: Flow<EngineType> = dataStore.data.map { prefs ->
         val name = prefs[ENGINE_KEY]
@@ -38,19 +39,23 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         } catch (_: IllegalArgumentException) {
             EngineType.EXO_PLAYER
         }
-    }
+    }.distinctUntilChanged()
 
     override val openSubtitlesApiKey: Flow<String> = dataStore.data.map { prefs ->
         prefs[OPENSUBTITLES_API_KEY] ?: ""
-    }
+    }.distinctUntilChanged()
 
     override val seekSensitivity: Flow<Float> = dataStore.data.map { prefs ->
         prefs[SEEK_SENSITIVITY] ?: 1.0f
-    }
+    }.distinctUntilChanged()
 
     override val showHiddenFiles: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[SHOW_HIDDEN_FILES] ?: false
-    }
+    }.distinctUntilChanged()
+
+    override val useSurfaceView: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[USE_SURFACE_VIEW] ?: true
+    }.distinctUntilChanged()
 
     override val subtitleStyle: Flow<SubtitleStyle> = dataStore.data.map { prefs ->
         SubtitleStyle(
@@ -60,7 +65,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
             edgeStyle = prefs[SUB_EDGE_STYLE] ?: SubtitleStyle.DEFAULT.edgeStyle,
             enabled = prefs[SUB_ENABLED] ?: SubtitleStyle.DEFAULT.enabled,
         )
-    }
+    }.distinctUntilChanged()
 
     override fun getViewMode(key: String): Flow<ViewMode> = dataStore.data.map { prefs ->
         val name = prefs[stringPreferencesKey("view_mode_$key")]
@@ -69,7 +74,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         } catch (_: IllegalArgumentException) {
             ViewMode.GRID
         }
-    }
+    }.distinctUntilChanged()
 
     override fun getSortType(key: String): Flow<SortType> = dataStore.data.map { prefs ->
         val name = prefs[stringPreferencesKey("sort_type_$key")]
@@ -130,6 +135,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[SHOW_HIDDEN_FILES] = enabled }
     }
 
+    override suspend fun setUseSurfaceView(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[USE_SURFACE_VIEW] = enabled }
+    }
+
     companion object {
         private val DARK_THEME_KEY = booleanPreferencesKey("dark_theme")
         private val DYNAMIC_COLORS_KEY = booleanPreferencesKey("dynamic_colors")
@@ -142,5 +151,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         private val OPENSUBTITLES_API_KEY = stringPreferencesKey("opensubtitles_api_key")
         private val SEEK_SENSITIVITY = floatPreferencesKey("seek_sensitivity")
         private val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
+        private val USE_SURFACE_VIEW = booleanPreferencesKey("use_surface_view")
     }
 }

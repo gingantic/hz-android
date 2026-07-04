@@ -2,87 +2,73 @@ package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.content.Context
 import android.net.Uri
-import android.view.Surface
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
-import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
-import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * [IPlayerEngine] implementation backed by Media3 [ExoPlayer].
- *
- * This is a thin adapter over [MediaPlayerHolder] that exposes the
- * same interface as [VlcEngine], allowing the app to switch between
- * engines transparently.
- *
- * The underlying [ExoPlayer] instance is available via [getExoPlayer]
- * so that `PlayerView` and [MediaPlaybackService] can bind to it
- * directly.
- */
 @Singleton
 class ExoPlayerEngine @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val playerHolder: MediaPlayerHolder,
 ) : IPlayerEngine {
 
-    /** The raw ExoPlayer instance for `PlayerView` / service binding. */
     val player: Player get() = playerHolder.player
+
+    val subtitleCues: StateFlow<List<androidx.media3.common.text.Cue>>
+        get() = playerHolder.subtitleCues
+
+    val displayNeedsSurfaceView: StateFlow<Boolean>
+        get() = playerHolder.displayNeedsSurfaceView
 
     override val playbackState: StateFlow<PlayerStateInfo>
         get() = playerHolder.playbackStateInfo
 
-    /** The active engine type identifier. */
-    val engineType: EngineType get() = EngineType.EXO_PLAYER
-
-    // ── Current media tracking for external subtitles ──────────
-
     private var currentMediaUri: String? = null
     private var currentMediaTitle: String? = null
-    private val externalSubtitleUris = mutableListOf<Uri>()
 
     companion object {
         private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "sub")
         private val SUBTITLE_SCHEMES_WITH_DIR = setOf("file", "smb", "ftp", "sftp")
     }
 
-    // ── IPlayerEngine ──────────────────────────────────────────
-
     override fun play(uri: String, title: String, isVideo: Boolean) {
         currentMediaUri = uri
         currentMediaTitle = title
         subtitleConfigs.clear()
-        externalSubtitleUris.clear()
 
-        // Auto-discover neighbor subtitle files (same dir, same base name)
-        val neighborSubs = findNeighborSubtitleFiles(uri)
-        for (subUri in neighborSubs) {
-            val mimeType = inferSubtitleMimeType(subUri)
-            subtitleConfigs.add(
-                MediaItem.SubtitleConfiguration.Builder(subUri)
-                    .setMimeType(mimeType)
-                    .setLanguage("und")
-                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                    .build()
-            )
+        // Discover subtitles off main thread (SMB/network listing must not block UI)
+        // but synchronously before prepare() to avoid mid-playback re-prepare flash.
+        val neighborSubs = try {
+            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                findNeighborSubtitleFiles(uri)
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (neighborSubs.isNotEmpty()) {
+            for (subUri in neighborSubs) {
+                val mimeType = inferSubtitleMimeType(subUri)
+                subtitleConfigs.add(
+                    MediaItem.SubtitleConfiguration.Builder(subUri)
+                        .setMimeType(mimeType)
+                        .setLanguage("und")
+                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                        .build()
+                )
+            }
         }
 
-        // Do NOT call player.stop() here — that emits STATE_IDLE which causes
-        // observePlaybackState to briefly set isLoading=false, producing the
-        // blank-screen artifact at startup. setMediaItem() alone replaces the
-        // current item and transitions directly to BUFFERING via prepare().
         player.setMediaItem(buildMediaItemWithSubtitles(uri, title))
         player.prepare()
         player.play()
@@ -121,16 +107,10 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun getCurrentPosition(): Long = player.currentPosition.coerceAtLeast(0)
 
-    /** Reads buffered position directly from ExoPlayer — always live, no StateFlow lag. */
     override fun getBufferedPosition(): Long = player.bufferedPosition.coerceAtLeast(0)
 
     override fun setPlaybackSpeed(speed: Float) {
         playerHolder.updateSpeed(speed)
-    }
-
-    override fun setVideoSurface(surface: Surface?) {
-        // ExoPlayer's PlayerView manages the surface internally.
-        // This is a no-op for ExoPlayer.
     }
 
     // ── Subtitle delay ─────────────────────────────────────────────
@@ -145,10 +125,8 @@ class ExoPlayerEngine @Inject constructor(
 
     // ── External subtitles ─────────────────────────────────────────
 
-    /** All subtitle configurations currently associated with the media item. */
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
 
-    /** Build a [MediaItem] with the current media URI and all subtitle configs. */
     private fun buildMediaItemWithSubtitles(uri: String, title: String): MediaItem {
         val builder = MediaItem.Builder()
             .setUri(uri)
@@ -172,14 +150,12 @@ class ExoPlayerEngine @Inject constructor(
                 .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                 .build()
             subtitleConfigs.add(config)
-            externalSubtitleUris.add(uri)
 
             val currentUri = currentMediaUri
             val currentTitle = currentMediaTitle
             if (currentUri != null) {
                 val position = player.currentPosition
                 val wasPlaying = player.isPlaying
-                // Same as play(): skip stop() to avoid the IDLE flash.
                 player.setMediaItem(buildMediaItemWithSubtitles(currentUri, currentTitle ?: ""))
                 player.prepare()
                 player.seekTo(position)
@@ -191,7 +167,7 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    // ── Subtitle / CC track selection ───────────────────────────
+    // ── Subtitle track selection ───────────────────────────────
 
     private data class ExoTrackInfo(
         val group: Tracks.Group,
@@ -331,36 +307,70 @@ class ExoPlayerEngine @Inject constructor(
 
     // ── External subtitle helpers ────────────────────────────────
 
-    /**
-     * Find subtitle files matching the video's base name.
-     *
-     * - **Local** (`file://`): scans sibling files in the parent dir.
-     * - **Network** (smb/ftp/sftp/http): swaps the extension — the remote server
-     *   must serve the subtitle file (ExoPlayer/Media3 will attempt to fetch).
-     */
     private fun findNeighborSubtitleFiles(videoUri: String): List<Uri> {
         val androidUri = Uri.parse(videoUri)
         val scheme = androidUri.scheme?.lowercase() ?: "file"
+        return when (scheme) {
+            "file" -> findLocalNeighborSubtitles(androidUri)
+            "smb" -> findSmbNeighborSubtitles(androidUri)
+            "ftp", "sftp" -> findRemoteExtensionSwapSubtitles(androidUri)
+            else -> emptyList()
+        }
+    }
 
-        // Only auto-discover for local files and SMB/FTP schemes where we can reasonably
-        // expect subtitle files to exist. HTTP/HTTPS streams rarely have side-by-side subs.
-        return if (scheme == "file" || SUBTITLE_SCHEMES_WITH_DIR.contains(scheme)) {
-            val videoPath = androidUri.path ?: return emptyList()
-            val videoFile = File(videoPath)
-            val parentDir = videoFile.parentFile ?: return emptyList()
-            val baseName = videoFile.nameWithoutExtension
+    private fun findLocalNeighborSubtitles(androidUri: Uri): List<Uri> {
+        val videoPath = androidUri.path ?: return emptyList()
+        val videoFile = File(videoPath)
+        val parentDir = videoFile.parentFile ?: return emptyList()
+        val baseName = videoFile.nameWithoutExtension
+        return parentDir.listFiles()
+            ?.filter { file ->
+                val ext = file.extension.lowercase()
+                file.nameWithoutExtension.equals(baseName, ignoreCase = true) &&
+                    SUBTITLE_EXTENSIONS.contains(ext)
+            }
+            ?.map { Uri.fromFile(it) }
+            ?: emptyList()
+    }
 
-            parentDir.listFiles()
-                ?.filter { file ->
-                    val ext = file.extension.lowercase()
-                    file.nameWithoutExtension.equals(baseName, ignoreCase = true) &&
+    private fun findSmbNeighborSubtitles(androidUri: Uri): List<Uri> {
+        return try {
+            val userInfo = androidUri.userInfo ?: ""
+            val parts = userInfo.split(":", limit = 2)
+            val user = Uri.decode(parts.getOrNull(0) ?: "")
+            val pass = Uri.decode(parts.getOrNull(1) ?: "")
+            val host = androidUri.host ?: return emptyList()
+            val port = androidUri.port.takeIf { it > 0 } ?: 445
+            val path = androidUri.path ?: return emptyList()
+            val parentPath = path.substringBeforeLast('/').ifEmpty { "/" }
+            val videoName = path.substringAfterLast('/')
+            val baseName = videoName.substringBeforeLast('.')
+            val ctx = ConnectionPool.borrowSmbContext(host, port, user, pass)
+            val dirUrl = "smb://$host:$port$parentPath/"
+            val dir = jcifs.smb.SmbFile(dirUrl, ctx)
+            val siblings = dir.listFiles()?.toList() ?: return emptyList()
+            val credPrefix = if (user.isNotEmpty()) "${Uri.encode(user)}:${Uri.encode(pass)}@" else ""
+            siblings
+                .filter { file ->
+                    val name = file.name.trimEnd('/')
+                    val ext = name.substringAfterLast('.', "").lowercase()
+                    name.substringBeforeLast('.').equals(baseName, ignoreCase = true) &&
                         SUBTITLE_EXTENSIONS.contains(ext)
                 }
-                ?.map { Uri.fromFile(it) }
-                ?: emptyList()
-        } else {
-            // http/https/other schemes: no auto-discovery to avoid unnecessary HTTP probes
+                .map { file ->
+                    Uri.parse("smb://$credPrefix$host:$port$parentPath/${file.name.trimEnd('/')}")
+                }
+        } catch (e: Exception) {
+            android.util.Log.w("ExoPlayerEngine", "SMB subtitle discovery failed for $androidUri", e)
             emptyList()
+        }
+    }
+
+    private fun findRemoteExtensionSwapSubtitles(androidUri: Uri): List<Uri> {
+        val path = androidUri.path ?: return emptyList()
+        val basePath = path.substringBeforeLast('.')
+        return SUBTITLE_EXTENSIONS.map { ext ->
+            androidUri.buildUpon().path("$basePath.$ext").build()
         }
     }
 

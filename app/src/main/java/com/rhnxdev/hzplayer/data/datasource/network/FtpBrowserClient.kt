@@ -1,12 +1,11 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
-import android.webkit.MimeTypeMap
+import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
-import java.net.URLConnection
 
 class FtpBrowserClient(
     private val host: String,
@@ -15,22 +14,14 @@ class FtpBrowserClient(
     private val password: String,
 ) : RemoteBrowserClient {
 
-    private var client: FTPClient? = null
-
     override suspend fun connect() = withContext(Dispatchers.IO) {
-        val ftp = FTPClient()
-        ftp.connectTimeout = 10_000
-        ftp.defaultTimeout = 10_000
-        ftp.connect(host, port)
-        ftp.login(username.ifEmpty { "anonymous" }, password.ifEmpty { "" })
-        ftp.enterLocalPassiveMode()
-        ftp.setFileType(FTP.BINARY_FILE_TYPE)
-        client = ftp
+        ConnectionPool.borrowFtpBrowser(host, port, username, password)
+        Unit
     }
 
     override suspend fun listDirectory(path: String): List<RemoteFileItem> =
         withContext(Dispatchers.IO) {
-            val ftp = client ?: throw IllegalStateException("Not connected")
+            val ftp = ConnectionPool.borrowFtpBrowser(host, port, username, password)
             ftp.listFiles(path)
                 .filter { it.name != "." && it.name != ".." }
                 .map { file ->
@@ -48,18 +39,14 @@ class FtpBrowserClient(
                 .sortedWith(compareByDescending<RemoteFileItem> { it.isDirectory }.thenBy { it.name.lowercase() })
         }
 
-    override suspend fun disconnect() = withContext(Dispatchers.IO) {
+    override suspend fun countChildren(path: String): Int = withContext(Dispatchers.IO) {
+        val ftp = ConnectionPool.borrowFtpBrowser(host, port, username, password)
         try {
-            client?.logout()
-            client?.disconnect()
-        } catch (_: Exception) {
-        }
-        client = null
+            ftp.listFiles(path).count { it.isDirectory }
+        } catch (_: Exception) { 0 }
     }
 
-    private fun guessMimeType(name: String): String? {
-        val ext = name.substringAfterLast('.', "").lowercase()
-        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
-        return mime ?: URLConnection.guessContentTypeFromName(name)
+    override suspend fun disconnect() = withContext(Dispatchers.IO) {
+        ConnectionPool.returnFtpBrowser(host, port)
     }
 }

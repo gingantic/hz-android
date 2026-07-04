@@ -24,13 +24,8 @@ class SearchViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
 ) : ViewModel() {
 
-    fun playVideo(video: VideoItem) {
-        playerRepository.playVideo(video)
-    }
-
-    fun playAudio(audio: AudioItem) {
-        playerRepository.playAudio(audio)
-    }
+    fun playVideo(video: VideoItem) { playerRepository.playVideo(video) }
+    fun playAudio(audio: AudioItem) { playerRepository.playAudio(audio) }
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
@@ -43,46 +38,31 @@ class SearchViewModel @Inject constructor(
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             if (query.isBlank()) {
-                _uiState.update {
-                    it.copy(
-                        videoResults = emptyList(),
-                        audioResults = emptyList(),
-                        isSearching = false,
-                        hasSearched = false,
-                    )
-                }
+                _uiState.update { it.copy(videoResults = emptyList(), audioResults = emptyList(), isSearching = false, hasSearched = false) }
                 return@launch
             }
 
             _uiState.update { it.copy(isSearching = true) }
             delay(300) // Debounce
 
-            mediaRepository.searchVideos(query).collect { videos ->
-                _uiState.update {
-                    it.copy(
-                        videoResults = videos,
-                        isSearching = false,
-                        hasSearched = true,
-                    )
+            // Parallel search — both launch simultaneously
+            val videoJob = launch {
+                mediaRepository.searchVideos(query).collect { videos ->
+                    _uiState.update { it.copy(videoResults = videos, isSearching = false, hasSearched = true) }
                 }
             }
-
-            audioRepository.searchSongs(query).collect { songs ->
-                _uiState.update {
-                    it.copy(
-                        audioResults = songs,
-                        isSearching = false,
-                        hasSearched = true,
-                    )
+            val audioJob = launch {
+                audioRepository.searchSongs(query).collect { songs ->
+                    _uiState.update { it.copy(audioResults = songs, isSearching = false, hasSearched = true) }
                 }
             }
+            videoJob.join()
+            audioJob.join()
         }
     }
 
     fun onClearQuery() {
-        _uiState.update {
-            SearchUiState()
-        }
+        _uiState.update { SearchUiState() }
         searchJob?.cancel()
     }
 }

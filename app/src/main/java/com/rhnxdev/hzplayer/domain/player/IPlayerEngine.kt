@@ -1,19 +1,10 @@
 package com.rhnxdev.hzplayer.domain.player
 
 import android.net.Uri
-import android.view.Surface
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import kotlinx.coroutines.flow.StateFlow
 
-/**
- * Abstraction over a media playback engine.
- *
- * Two implementations exist:
- * - [com.rhnxdev.hzplayer.data.datasource.player.ExoPlayerEngine] — Media3 ExoPlayer
- * - [com.rhnxdev.hzplayer.data.datasource.player.VlcEngine] — libVLC
- *
- * The active engine is switched at runtime via [PlayerRepository].
- */
+/** Abstraction over a media playback engine (only ExoPlayer). */
 interface IPlayerEngine {
 
     /** Observable playback state emitted by the engine. */
@@ -61,18 +52,6 @@ interface IPlayerEngine {
     /** Set playback speed (1.0 = normal). */
     fun setPlaybackSpeed(speed: Float)
 
-    /**
-     * Provide a [Surface] for video output.
-     *
-     * - **VlcEngine**: required — call **before** [play] with the
-     *   [Surface] from a `SurfaceView` or `TextureView`.
-     * - **ExoPlayerEngine**: ignored — video surfaces are managed
-     *   internally by `PlayerView`.
-     *
-     * Pass `null` to detach the surface.
-     */
-    fun setVideoSurface(surface: Surface?)
-
     // ── Subtitle / CC track selection ───────────────────────────
 
     /** Get the list of subtitle track names/languages. */
@@ -93,10 +72,10 @@ interface IPlayerEngine {
     fun addExternalSubtitle(uri: Uri): Boolean
 
     /** Set subtitle timing offset in milliseconds (positive = later, negative = earlier). */
-    fun setSubtitleDelay(delayMs: Long)
+    fun setSubtitleDelay(delayMs: Long) {}
 
     /** Get current subtitle timing offset in milliseconds, or 0 if unset. */
-    fun getSubtitleDelay(): Long
+    fun getSubtitleDelay(): Long = 0
 
     // ── Audio track selection ──────────────────────────────────
 

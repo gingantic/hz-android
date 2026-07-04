@@ -24,6 +24,9 @@ class SettingsViewModel @Inject constructor(
     val showHiddenFiles: StateFlow<Boolean> = prefs.showHiddenFiles
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val useSurfaceView: StateFlow<Boolean> = prefs.useSurfaceView
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     fun saveOpenSubtitlesApiKey(key: String) {
         viewModelScope.launch { prefs.setOpenSubtitlesApiKey(key) }
     }
@@ -34,5 +37,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setShowHiddenFiles(enabled: Boolean) {
         viewModelScope.launch { prefs.setShowHiddenFiles(enabled) }
+    }
+
+    fun saveUseSurfaceView(enabled: Boolean) {
+        viewModelScope.launch { prefs.setUseSurfaceView(enabled) }
     }
 }
