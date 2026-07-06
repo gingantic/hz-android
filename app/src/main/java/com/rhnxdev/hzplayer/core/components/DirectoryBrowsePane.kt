@@ -21,9 +21,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 
 /**
  * A generic file-item to be rendered in the [DirectoryBrowsePane].
@@ -37,6 +42,10 @@ data class FileItemData(
     val fileSize: Long = 0,
     val childCount: Int = 0,
     val mimeType: String? = null,
+    val dateModified: Long = 0,
+    val durationMs: Long = 0,
+    val playbackPositionMs: Long = 0,
+    val playbackUri: String? = null,
 )
 
 /**
@@ -69,6 +78,7 @@ fun DirectoryBrowsePane(
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    mediaMode: Boolean = false,
     listState: androidx.compose.foundation.lazy.LazyListState? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = Spacing.lg),
     emptyTitle: String = "This folder is empty",
@@ -149,7 +159,7 @@ fun DirectoryBrowsePane(
                     state = actualListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = contentPadding,
-                    verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     items(displayItems, key = { it.id }) { item ->
                         FileItemCard(
@@ -159,6 +169,19 @@ fun DirectoryBrowsePane(
                             childCount = item.childCount,
                             mimeType = item.mimeType,
                             onClick = { onItemClick(item) },
+                            marqueeTitle = true,
+                            durationMs = item.durationMs,
+                            playbackPositionMs = item.playbackPositionMs,
+                            leadingThumbnail = if (mediaMode && !item.isDirectory) {
+                                {
+                                    AsyncImage(
+                                        model = VideoFrame(item.playbackUri ?: item.path, item.dateModified),
+                                        contentDescription = item.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                }
+                            } else null,
                         )
                     }
                 }

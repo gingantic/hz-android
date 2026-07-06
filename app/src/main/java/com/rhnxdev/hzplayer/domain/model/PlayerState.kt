@@ -18,4 +18,7 @@ data class PlayerStateInfo(
     val shuffleModeEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.NONE,
     val errorMessage: String? = null,
+    val currentTitle: String? = null,
+    val currentArtist: String? = null,
+    val currentUri: String? = null,
 )

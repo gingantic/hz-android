@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.rhnxdev.hzplayer.data.datasource.local.room.HzPlayerDatabase
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao
+import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlaybackPositionDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.ServerConfigDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.StreamHistoryDao
 import dagger.Module
@@ -36,4 +37,8 @@ object DatabaseModule {
 
     @Provides
     fun provideStreamHistoryDao(database: HzPlayerDatabase): StreamHistoryDao = database.streamHistoryDao()
+
+    @Provides
+    fun providePlaybackPositionDao(database: HzPlayerDatabase): PlaybackPositionDao =
+        database.playbackPositionDao()
 }

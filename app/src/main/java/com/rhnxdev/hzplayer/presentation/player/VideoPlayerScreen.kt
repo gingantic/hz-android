@@ -1,10 +1,12 @@
 package com.rhnxdev.hzplayer.presentation.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -75,6 +77,7 @@ import com.rhnxdev.hzplayer.presentation.player.components.SlideType
 import com.rhnxdev.hzplayer.presentation.player.components.SpeedSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSelectionDialog
+import com.rhnxdev.hzplayer.presentation.player.components.PlaylistDrawer
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSearchDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleStylingDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleFileBrowserBottomSheet
@@ -104,6 +107,7 @@ fun VideoPlayerScreen(
     var seekDelta by remember { mutableLongStateOf(0L) }
     var seekVisible by remember { mutableStateOf(false) }
     var isDragSeeking by remember { mutableStateOf(false) }
+    var isSeekForward by remember { mutableStateOf(true) }
 
     // --- Slide indicator local state (brightness / volume) ---
     var slideVisible by remember { mutableStateOf(false) }
@@ -255,7 +259,6 @@ fun VideoPlayerScreen(
             .background(Color.Black),
     ) {
         // Video surface — ExoPlayer PlayerView (inflated dynamically with TextureView or SurfaceView surface type)
-        android.util.Log.d("VideoPlayerScreen", "Rendering path: EXO_PLAYER useSurfaceView=${uiState.useSurfaceView}")
         key(uiState.useSurfaceView) {
             AndroidView(
                 factory = { ctx ->
@@ -285,7 +288,7 @@ fun VideoPlayerScreen(
                         subtitleView.setStyle(
                             androidx.media3.ui.CaptionStyleCompat(
                                 0xFFFFFFFF.toInt(), // foregroundColor — pure white
-                                0xCC000000.toInt(), // backgroundColor — solid dark (75% black)
+                                0,                  // backgroundColor — transparent
                                 0x00000000,         // windowColor — transparent
                                 androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
                                 0xFF000000.toInt(), // edgeColor — black
@@ -347,12 +350,14 @@ fun VideoPlayerScreen(
                             when {
                                 offset.x < third -> {
                                     isDragSeeking = false
+                                    isSeekForward = false
                                     viewModel.onSeekBy(-TAP_SEEK_MS)
                                     seekDelta = -TAP_SEEK_MS
                                     seekVisible = true
                                 }
                                 offset.x > third * 2 -> {
                                     isDragSeeking = false
+                                    isSeekForward = true
                                     viewModel.onSeekBy(TAP_SEEK_MS)
                                     seekDelta = TAP_SEEK_MS
                                     seekVisible = true
@@ -477,6 +482,7 @@ fun VideoPlayerScreen(
                                     val maxSwipeMs = (300_000L * uiState.seekSensitivity).toLong()
                                     val ratio = offsetAccumulated.x / widthPx
                                     val rawDelta = (ratio * maxSwipeMs).toLong()
+                                    isSeekForward = rawDelta >= 0
                                     seekDelta = rawDelta.coerceIn(
                                         -uiState.currentPosition,
                                         (durationMs - uiState.currentPosition).coerceAtLeast(0L)
@@ -524,6 +530,13 @@ fun VideoPlayerScreen(
                         val act = view.context as? android.app.Activity
                         if (act != null) viewModel.onToggleOrientation(act)
                     },
+                    onPlaylistClick = { viewModel.onTogglePlaylistDrawer() },
+                    onSkipToNext = if (uiState.videoPlaylist.isNotEmpty()) {
+                        { viewModel.onPlaylistNext() }
+                    } else null,
+                    onSkipToPrevious = if (uiState.videoPlaylist.isNotEmpty()) {
+                        { viewModel.onPlaylistPrevious() }
+                    } else null,
                     onInteract = { hudInteractionTick++ },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -631,6 +644,7 @@ fun VideoPlayerScreen(
                     durationMs = uiState.duration,
                     visible = seekVisible,
                     modifier = Modifier.fillMaxSize(),
+                    isForward = isSeekForward,
                 )
             } else {
                 SeekIndicator(
@@ -638,6 +652,7 @@ fun VideoPlayerScreen(
                     currentPositionMs = uiState.currentPosition,
                     visible = seekVisible,
                     modifier = Modifier.fillMaxSize(),
+                    isForward = isSeekForward,
                 )
             }
 
@@ -648,6 +663,17 @@ fun VideoPlayerScreen(
                 visible = slideVisible,
                 modifier = Modifier.fillMaxSize(),
             )
+
+            // Playlist drawer (right side overlay)
+            if (uiState.showPlaylistDrawer && uiState.videoPlaylist.isNotEmpty()) {
+                PlaylistDrawer(
+                    playlist = uiState.videoPlaylist,
+                    currentIndex = uiState.currentPlaylistIndex,
+                    onSelect = viewModel::onPlaylistSelect,
+                    onDismiss = viewModel::onTogglePlaylistDrawer,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
 
             // Buffering loader
             if (uiState.isLoading && uiState.errorMessage == null) {

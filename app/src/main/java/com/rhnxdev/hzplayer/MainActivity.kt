@@ -35,6 +35,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -77,7 +78,6 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 import com.rhnxdev.hzplayer.presentation.video.VideoLibraryScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CoroutineScope
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -98,7 +98,16 @@ class MainActivity : ComponentActivity() {
         requestMediaPermissions()
         window.setBackgroundDrawableResource(android.R.color.black)
         setContent {
-            HzPlayerTheme {
+            val mainViewModel: MainViewModel = hiltViewModel()
+            val themeMode by mainViewModel.themeMode.collectAsStateWithLifecycle()
+            val appColorArgb by mainViewModel.appColorArgb.collectAsStateWithLifecycle()
+            val useDynamicColors by mainViewModel.useDynamicColors.collectAsStateWithLifecycle()
+
+            HzPlayerTheme(
+                themeMode = themeMode,
+                appColorArgb = appColorArgb,
+                dynamicColor = useDynamicColors
+            ) {
                 HzPlayerApp(
                     permissionDenied = permissionDenied,
                     onRequestPermissions = { requestMediaPermissions() },
@@ -240,6 +249,30 @@ fun HzPlayerApp(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        val suiteItemColors = NavigationSuiteDefaults.itemColors(
+            navigationBarItemColors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                selectedTextColor = MaterialTheme.colorScheme.primary,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+            navigationRailItemColors = androidx.compose.material3.NavigationRailItemDefaults.colors(
+                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                selectedTextColor = MaterialTheme.colorScheme.primary,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+            navigationDrawerItemColors = androidx.compose.material3.NavigationDrawerItemDefaults.colors(
+                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                selectedTextColor = MaterialTheme.colorScheme.primary,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        )
+
         // Layer 1: Main swipeable tabs + bottom nav (always composed to support smooth transitions and state retention)
         NavigationSuiteScaffold(
             navigationSuiteItems = {
@@ -254,13 +287,22 @@ fun HzPlayerApp(
                         label = { Text(dest.label) },
                         selected = pagerState.currentPage == index,
                         onClick = {
+                            // Instant tab switch — no animation for snappy feel on weak SOCs
                             scope.launch {
-                                pagerState.animateScrollToPage(index)
+                                pagerState.scrollToPage(index)
                             }
                         },
+                        colors = suiteItemColors
                     )
                 }
             },
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            navigationSuiteColors = NavigationSuiteDefaults.colors(
+                navigationBarContainerColor = MaterialTheme.colorScheme.surface,
+                navigationRailContainerColor = MaterialTheme.colorScheme.surface,
+                navigationDrawerContainerColor = MaterialTheme.colorScheme.surface,
+            ),
         ) {
             Column(
                 modifier = Modifier
@@ -282,7 +324,7 @@ fun HzPlayerApp(
                     CompositionLocalProvider(LocalViewConfiguration provides customViewConfig) {
                         HorizontalPager(
                             state = pagerState,
-                            beyondViewportPageCount = 1,
+                            beyondViewportPageCount = 0,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .statusBarsPadding()
@@ -296,8 +338,8 @@ fun HzPlayerApp(
                                     },
                                 )
                                 1 -> AudioBrowserScreen(
-                                    onSongClicked = { audio ->
-                                        playerViewModel.playAudio(audio)
+                                    onSongClicked = { audio, playlist ->
+                                        playerViewModel.playAudioPlaylist(playlist, playlist.indexOf(audio))
                                         navController.navigate(NavRoutes.AUDIO_PLAYER)
                                     },
                                 )
@@ -319,6 +361,10 @@ fun HzPlayerApp(
                                                 navController.navigate(NavRoutes.AUDIO_PLAYER)
                                             }
                                         }
+                                    },
+                                    onPlayAllVideos = { playlist ->
+                                        playerViewModel.playVideoPlaylist(playlist)
+                                        navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                     },
                                 )
                                 3 -> NetworkScreen(
@@ -348,24 +394,11 @@ fun HzPlayerApp(
                     }
                 }
 
-                // Mini player above bottom nav
-                val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
-                val progress = if (playerState.duration > 0) {
-                    (playerState.currentPosition.toFloat() / playerState.duration.toFloat())
-                        .coerceIn(0f, 1f)
-                } else 0f
-                // Mini player only shown for audio — video has its own
-                // full-screen player and shouldn't show this card.
-                MiniPlayerBar(
-                    title = playerState.currentTitle ?: "",
-                    subtitle = playerState.currentArtist ?: "",
-                    isPlaying = playerState.isPlaying,
-                    progress = progress,
-                    onPlayPause = { playerViewModel.onPlayPause() },
-                    onNext = { playerViewModel.onSkipForward() },
-                    onClick = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
-                    onDismiss = { playerViewModel.stop() },
-                    visible = playerState.currentTitle != null && !playerState.isVideo && !isFullScreen,
+                // Mini player above bottom nav (scoped to its own composable — position updates don't recompose full tree)
+                MiniPlayerSection(
+                    playerViewModel = playerViewModel,
+                    isFullScreen = isFullScreen,
+                    onNavigateToPlayer = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
                 )
             }
         }
@@ -391,8 +424,8 @@ fun HzPlayerApp(
                         playerViewModel.playVideo(video)
                         navController.navigate("video_player/${video.id}")
                     },
-                    onAudioClicked = { audio ->
-                        playerViewModel.playAudio(audio)
+                    onAudioClicked = { audio, playlist ->
+                        playerViewModel.playAudioPlaylist(playlist, playlist.indexOf(audio))
                         navController.navigate(NavRoutes.AUDIO_PLAYER)
                     },
                 )
@@ -432,6 +465,34 @@ fun HzPlayerApp(
             }
         }
     }
+}
+
+/**
+ * Scoped mini-player composable — isolates player state collection so 250ms
+ * position updates don't recompose the entire app tree.
+ */
+@Composable
+private fun MiniPlayerSection(
+    playerViewModel: PlayerViewModel,
+    isFullScreen: Boolean,
+    onNavigateToPlayer: () -> Unit,
+) {
+    val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
+    val progress = if (playerState.duration > 0) {
+        (playerState.currentPosition.toFloat() / playerState.duration.toFloat())
+            .coerceIn(0f, 1f)
+    } else 0f
+    MiniPlayerBar(
+        title = playerState.currentTitle ?: "",
+        subtitle = playerState.currentArtist ?: "",
+        isPlaying = playerState.isPlaying,
+        progress = progress,
+        onPlayPause = { playerViewModel.onPlayPause() },
+        onNext = { playerViewModel.onSkipNext() },
+        onClick = onNavigateToPlayer,
+        onDismiss = { playerViewModel.stop() },
+        visible = playerState.currentTitle != null && !playerState.isVideo && !isFullScreen,
+    )
 }
 
 /** Common video file extensions for file-browser detection. */

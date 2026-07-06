@@ -24,6 +24,7 @@ commonsNet = "3.11.1"
 sshj = "0.39.0"
 jcifsNg = "2.1.10"
 securityCrypto = "1.1.0-alpha06"
+okhttp = "4.12.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -73,6 +74,7 @@ commons-net = { group = "commons-net", name = "commons-net", version.ref = "comm
 sshj = { group = "com.hierynomus", name = "sshj", version.ref = "sshj" }
 jcifs-ng = { group = "eu.agno3.jcifs", name = "jcifs-ng", version.ref = "jcifsNg" }
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

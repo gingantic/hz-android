@@ -20,12 +20,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +58,7 @@ import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoLibraryScreen(
     viewModel: VideoLibraryViewModel = hiltViewModel(),
@@ -103,57 +107,65 @@ fun VideoLibraryScreen(
             },
         ) {
             // Content
-            Box(modifier = Modifier.weight(1f)) {
-                when {
-                    uiState.isLoading -> {
-                        MediaLoadingState(
-                            itemCount = 3,
-                            shape = if (uiState.viewMode == ViewMode.GRID) ShimmerShape.VIDEO_CATEGORY else ShimmerShape.LIST_ITEM,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                    uiState.error != null -> {
-                        MediaErrorState(
-                            title = "Could not load videos",
-                            subtitle = uiState.error ?: "",
-                            onRetry = viewModel::onRetry,
-                        )
-                    }
-                    uiState.isEmpty && !isSearchActive -> {
-                        MediaEmptyState(
-                            icon = Icons.Filled.VideoLibrary,
-                            title = "No videos found",
-                            subtitle = "Tap browse to find media on your device.",
-                        )
-                    }
-                    isSearchActive -> {
-                        SearchResultsContent(
-                            videos = uiState.filteredVideos,
-                            viewMode = uiState.viewMode,
-                            onVideoClicked = { v ->
-                                viewModel.onVideoClicked(v)
-                                onVideoClicked(v.id)
-                            },
-                            searchQuery = searchQuery,
-                        )
-                    }
-                    uiState.viewMode == ViewMode.GRID -> {
-                        GridContent(
-                            categories = uiState.categories,
-                            onVideoClicked = { v ->
-                                viewModel.onVideoClicked(v)
-                                onVideoClicked(v.id)
-                            },
-                        )
-                    }
-                    else -> {
-                        ListContent(
-                            videos = uiState.allVideos,
-                            onVideoClicked = { v ->
-                                viewModel.onVideoClicked(v)
-                                onVideoClicked(v.id)
-                            },
-                        )
+            val pullState = rememberPullToRefreshState()
+            PullToRefreshBox(
+                isRefreshing = uiState.isLoading,
+                onRefresh = viewModel::onRefresh,
+                state = pullState,
+                modifier = Modifier.weight(1f).fillMaxSize(),
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when {
+                        uiState.isLoading && uiState.allVideos.isEmpty() -> {
+                            MediaLoadingState(
+                                itemCount = 3,
+                                shape = if (uiState.viewMode == ViewMode.GRID) ShimmerShape.VIDEO_CATEGORY else ShimmerShape.LIST_ITEM,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                        uiState.error != null -> {
+                            MediaErrorState(
+                                title = "Could not load videos",
+                                subtitle = uiState.error ?: "",
+                                onRetry = viewModel::onRetry,
+                            )
+                        }
+                        uiState.isEmpty && !isSearchActive -> {
+                            MediaEmptyState(
+                                icon = Icons.Filled.VideoLibrary,
+                                title = "No videos found",
+                                subtitle = "Tap browse to find media on your device.",
+                            )
+                        }
+                        isSearchActive -> {
+                            SearchResultsContent(
+                                videos = uiState.filteredVideos,
+                                viewMode = uiState.viewMode,
+                                onVideoClicked = { v ->
+                                    viewModel.onVideoClicked(v)
+                                    onVideoClicked(v.id)
+                                },
+                                searchQuery = searchQuery,
+                            )
+                        }
+                        uiState.viewMode == ViewMode.GRID -> {
+                            GridContent(
+                                categories = uiState.categories,
+                                onVideoClicked = { v ->
+                                    viewModel.onVideoClicked(v)
+                                    onVideoClicked(v.id)
+                                },
+                            )
+                        }
+                        else -> {
+                            ListContent(
+                                videos = uiState.allVideos,
+                                onVideoClicked = { v ->
+                                    viewModel.onVideoClicked(v)
+                                    onVideoClicked(v.id)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -218,7 +230,7 @@ private fun ListContent(
 ) {
     LazyColumn(
         contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         items(videos, key = { it.id }) { video ->
             MediaListItem(
@@ -269,7 +281,7 @@ private fun SearchResultsContent(
     } else {
         LazyColumn(
             contentPadding = PaddingValues(Spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             items(videos, key = { it.id }) { video ->
                 MediaListItem(

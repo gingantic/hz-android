@@ -1,7 +1,9 @@
 package com.rhnxdev.hzplayer.presentation.browse
 
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.rhnxdev.hzplayer.core.components.BreadcrumbItem
 import com.rhnxdev.hzplayer.domain.model.FolderItem
+import com.rhnxdev.hzplayer.domain.model.SortType
 
 /**
  * One directory level in the browsing stack.
@@ -17,13 +19,24 @@ data class DirectoryLayer(
     val isEmpty: Boolean = false,
 )
 
+data class FavoriteShortcut(
+    val name: String,
+    val path: String,
+    val icon: ImageVector,
+    val itemCount: Int = 0,
+)
+
 data class FileBrowserUiState(
     val mode: FileBrowserMode = FileBrowserMode.ROOTS,
     val roots: List<FolderItem> = emptyList(),
+    val favorites: List<FavoriteShortcut> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
     /** Layers in order: index 0 = first directory, last = topmost visible */
     val layers: List<DirectoryLayer> = emptyList(),
+    val sortType: SortType = SortType.TITLE,
+    /** When true, browsing shows only video files (+ folders) as large thumbnails. */
+    val isMediaMode: Boolean = false,
 )
 
 enum class FileBrowserMode {

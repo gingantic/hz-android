@@ -29,23 +29,24 @@ class AudioRepositoryImpl @Inject constructor(
         val cached = mediaDao.getAllAudio().first()
         if (cached.isNotEmpty()) {
             emit(cached.map { it.toAudioItem() })
-            return@flow
+        } else {
+            // Show preview instantly
+            emit(PreviewMedia.songs)
         }
 
-        val scanned = mediaScanner.scanAudio().first()
-        if (scanned.isNotEmpty()) {
-            mediaDao.insertAll(scanned)
-            emit(scanned.map { it.toAudioItem() })
-            return@flow
-        }
-
-        emit(PreviewMedia.songs)
+        try {
+            val scanned = mediaScanner.scanAudio().first()
+            if (scanned.isNotEmpty()) {
+                mediaDao.deleteAudio()
+                mediaDao.insertAll(scanned)
+                emit(scanned.map { it.toAudioItem() })
+            }
+        } catch (_: Exception) { /* preview already emitted */ }
     }.flowOn(Dispatchers.IO)
 
     override fun getAlbums(): Flow<List<Album>> = flow {
         val cached = mediaDao.getAlbums().first()
         if (cached.isNotEmpty()) {
-            // Get track counts per album
             val albums = cached.map { projection ->
                 val count = mediaDao.getSongsByAlbum(projection.album).first().size
                 projection.toAlbum(count)
@@ -53,6 +54,7 @@ class AudioRepositoryImpl @Inject constructor(
             emit(albums)
             return@flow
         }
+        // Preview fallback — will be replaced when songs are scanned
         emit(PreviewMedia.albums)
     }.flowOn(Dispatchers.IO)
 
@@ -62,6 +64,7 @@ class AudioRepositoryImpl @Inject constructor(
             emit(cached.map { it.toArtist() })
             return@flow
         }
+        // Preview fallback
         emit(PreviewMedia.artists)
     }.flowOn(Dispatchers.IO)
 

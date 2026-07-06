@@ -11,4 +11,6 @@ data class FolderItem(
     val childCount: Int = 0,
     val dateModified: Long = 0,
     val mimeType: String? = null,
+    val durationMs: Long = 0,
+    val playbackPositionMs: Long = 0,
 )

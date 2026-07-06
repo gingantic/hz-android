@@ -32,11 +32,30 @@ import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import com.rhnxdev.hzplayer.presentation.player.PlayerViewModel
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.RadioButton
+import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsItem
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsSection
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsToggleItem
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsSliderItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Slider
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.mutableFloatStateOf
 
 @Composable
 fun SettingsScreen(
@@ -44,14 +63,20 @@ fun SettingsScreen(
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     onRequestPermissions: () -> Unit = {},
 ) {
-    var darkTheme by remember { mutableStateOf(false) }
-    var dynamicColors by remember { mutableStateOf(true) }
+    var showThemeDialog by remember { mutableStateOf(false) }
+    var showColorDialog by remember { mutableStateOf(false) }
     var resumePlayback by remember { mutableStateOf(true) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
+
+    val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
+    val appColorArgb by settingsViewModel.appColorArgb.collectAsStateWithLifecycle()
+    val dynamicColors by settingsViewModel.useDynamicColors.collectAsStateWithLifecycle()
 
     val currentApiKey by settingsViewModel.openSubtitlesApiKey.collectAsStateWithLifecycle()
     val seekSensitivity by settingsViewModel.seekSensitivity.collectAsStateWithLifecycle()
     val showHiddenFiles by settingsViewModel.showHiddenFiles.collectAsStateWithLifecycle()
+    val useSurfaceView by settingsViewModel.useSurfaceView.collectAsStateWithLifecycle()
+    val minSongDurationSecs by settingsViewModel.minSongDurationSecs.collectAsStateWithLifecycle()
 
     if (showApiKeyDialog) {
         OpenSubtitlesApiKeyDialog(
@@ -60,6 +85,28 @@ fun SettingsScreen(
             onSave = { key ->
                 settingsViewModel.saveOpenSubtitlesApiKey(key)
                 showApiKeyDialog = false
+            },
+        )
+    }
+
+    if (showThemeDialog) {
+        ThemeSelectionDialog(
+            currentTheme = themeMode,
+            onDismiss = { showThemeDialog = false },
+            onSelect = { mode ->
+                settingsViewModel.saveThemeMode(mode)
+                showThemeDialog = false
+            },
+        )
+    }
+
+    if (showColorDialog) {
+        ColorPickerDialog(
+            currentColorArgb = appColorArgb,
+            onDismiss = { showColorDialog = false },
+            onSelect = { argb ->
+                settingsViewModel.saveAppColorArgb(argb)
+                showColorDialog = false
             },
         )
     }
@@ -79,17 +126,25 @@ fun SettingsScreen(
                     title = "Display",
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            SettingsToggleItem(
-                                title = "Dark theme",
-                                subtitle = "Use dark background",
-                                checked = darkTheme,
-                                onCheckedChange = { darkTheme = it },
+                            SettingsItem(
+                                title = "Theme",
+                                subtitle = when (themeMode) {
+                                    ThemeMode.LIGHT -> "Light"
+                                    ThemeMode.DARK -> "Dark"
+                                    ThemeMode.VOID -> "Void"
+                                },
+                                onClick = { showThemeDialog = true },
+                            )
+                            SettingsItem(
+                                title = "Theme color",
+                                subtitle = String.format("#%06X", 0xFFFFFF and appColorArgb),
+                                onClick = { showColorDialog = true },
                             )
                             SettingsToggleItem(
                                 title = "Dynamic colors",
                                 subtitle = "Use system accent color",
                                 checked = dynamicColors,
-                                onCheckedChange = { dynamicColors = it },
+                                onCheckedChange = { settingsViewModel.saveDynamicColors(it) },
                             )
                         }
                     },
@@ -196,6 +251,15 @@ fun SettingsScreen(
                                 checked = false,
                                 onCheckedChange = {},
                             )
+                            SettingsSliderItem(
+                                title = "Min song duration",
+                                subtitle = if (minSongDurationSecs == 0) "Disabled (show all songs)"
+                                else "Hide songs under ${minSongDurationSecs}s",
+                                value = minSongDurationSecs.toFloat(),
+                                onValueChange = { settingsViewModel.saveMinSongDurationSecs(it.toInt()) },
+                                valueRange = 0f..60f,
+                                steps = 11,
+                            )
                         }
                     },
                 )
@@ -262,7 +326,7 @@ fun SettingsScreen(
                             SettingsItem(
                                 title = "Clear media cache",
                                 subtitle = "Free up storage space",
-                                onClick = {},
+                                onClick = { settingsViewModel.clearAllCache() },
                             )
                             SettingsItem(
                                 title = "About Hz Player",
@@ -297,6 +361,287 @@ private fun SettingsScreenPreview() {
 }
 
 @Composable
+private fun ThemeSelectionDialog(
+    currentTheme: ThemeMode,
+    onDismiss: () -> Unit,
+    onSelect: (ThemeMode) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Theme") },
+        text = {
+            Column {
+                ThemeMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(mode) }
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentTheme == mode,
+                            onClick = { onSelect(mode) }
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = when (mode) {
+                                ThemeMode.LIGHT -> "Light"
+                                ThemeMode.DARK -> "Dark"
+                                ThemeMode.VOID -> "Void"
+                            },
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ColorPickerDialog(
+    currentColorArgb: Int,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit,
+) {
+    val colorObj = remember(currentColorArgb) { Color(currentColorArgb) }
+    var redValue by remember(currentColorArgb) { mutableFloatStateOf(colorObj.red * 255f) }
+    var greenValue by remember(currentColorArgb) { mutableFloatStateOf(colorObj.green * 255f) }
+    var blueValue by remember(currentColorArgb) { mutableFloatStateOf(colorObj.blue * 255f) }
+
+    val presetColors = listOf(
+        0xFFE85E00.toInt() to "VLC Orange",
+        0xFF1E88E5.toInt() to "Blue",
+        0xFF43A047.toInt() to "Green",
+        0xFFD32F2F.toInt() to "Red",
+        0xFF7B1FA2.toInt() to "Purple",
+        0xFFC2185B.toInt() to "Pink",
+        0xFF009688.toInt() to "Teal",
+        0xFFFFEB3B.toInt() to "Yellow"
+    )
+
+    val selectedColorArgb = remember(redValue, greenValue, blueValue) {
+        android.graphics.Color.rgb(redValue.toInt(), greenValue.toInt(), blueValue.toInt())
+    }
+
+    var hexInput by remember(currentColorArgb) {
+        mutableStateOf(String.format("%06X", 0xFFFFFF and currentColorArgb))
+    }
+
+    // Sync input field when sliders are moved
+    androidx.compose.runtime.LaunchedEffect(selectedColorArgb) {
+        val currentHex = String.format("%06X", 0xFFFFFF and selectedColorArgb)
+        if (hexInput.uppercase() != currentHex) {
+            hexInput = currentHex
+        }
+    }
+
+    val onHexChanged = { input: String ->
+        // Keep only valid hex characters and cap at 6 digits
+        val filtered = input.filter { it.isDigit() || it.uppercaseChar() in 'A'..'F' }.take(6)
+        hexInput = filtered
+        if (filtered.length == 6) {
+            try {
+                val parsedColor = android.graphics.Color.parseColor("#$filtered")
+                val c = Color(parsedColor)
+                redValue = c.red * 255f
+                greenValue = c.green * 255f
+                blueValue = c.blue * 255f
+            } catch (_: IllegalArgumentException) {}
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Theme Color Picker") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Color Preview Box
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(selectedColorArgb)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val contentColor = if ((redValue * 0.299f + greenValue * 0.587f + blueValue * 0.114f) > 186f) Color.Black else Color.White
+                    Row(
+                        modifier = Modifier
+                            .border(
+                                width = 1.dp,
+                                color = contentColor.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "#",
+                            color = contentColor,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = hexInput,
+                            onValueChange = onHexChanged,
+                            textStyle = MaterialTheme.typography.titleMedium.copy(
+                                color = contentColor,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(contentColor),
+                            singleLine = true,
+                            modifier = Modifier.width(70.dp)
+                        )
+                    }
+                }
+
+                // Grid of Presets
+                Text(
+                    text = "Presets",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        presetColors.take(4).forEach { (argb, _) ->
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(argb))
+                                    .clickable {
+                                        val c = Color(argb)
+                                        redValue = c.red * 255f
+                                        greenValue = c.green * 255f
+                                        blueValue = c.blue * 255f
+                                    }
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        presetColors.drop(4).take(4).forEach { (argb, _) ->
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(argb))
+                                    .clickable {
+                                        val c = Color(argb)
+                                        redValue = c.red * 255f
+                                        greenValue = c.green * 255f
+                                        blueValue = c.blue * 255f
+                                    }
+                            )
+                        }
+                    }
+                }
+
+                // RGB sliders
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Custom RGB Colors",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+
+                    // Red Slider
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Red", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
+                            Text("${redValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Slider(
+                            value = redValue,
+                            onValueChange = { redValue = it },
+                            valueRange = 0f..255f,
+                            colors = androidx.compose.material3.SliderDefaults.colors(
+                                activeTrackColor = Color.Red,
+                                thumbColor = Color.Red
+                            )
+                        )
+                    }
+
+                    // Green Slider
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Green", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
+                            Text("${greenValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Slider(
+                            value = greenValue,
+                            onValueChange = { greenValue = it },
+                            valueRange = 0f..255f,
+                            colors = androidx.compose.material3.SliderDefaults.colors(
+                                activeTrackColor = Color.Green,
+                                thumbColor = Color.Green
+                            )
+                        )
+                    }
+
+                    // Blue Slider
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Blue", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
+                            Text("${blueValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Slider(
+                            value = blueValue,
+                            onValueChange = { blueValue = it },
+                            valueRange = 0f..255f,
+                            colors = androidx.compose.material3.SliderDefaults.colors(
+                                activeTrackColor = Color.Blue,
+                                thumbColor = Color.Blue
+                            )
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSelect(selectedColorArgb) }) {
+                Text("Select")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
 private fun OpenSubtitlesApiKeyDialog(
     currentKey: String,
     onDismiss: () -> Unit,
@@ -320,6 +665,10 @@ private fun OpenSubtitlesApiKeyDialog(
                     singleLine = true,
                     placeholder = { Text("e.g. abc123xyz…") },
                     modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    )
                 )
             }
         },

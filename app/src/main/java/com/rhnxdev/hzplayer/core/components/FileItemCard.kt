@@ -1,13 +1,18 @@
 package com.rhnxdev.hzplayer.core.components
 
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Description
@@ -27,6 +32,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
@@ -45,6 +51,10 @@ fun FileItemCard(
     mimeType: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    leadingThumbnail: (@Composable () -> Unit)? = null,
+    marqueeTitle: Boolean = false,
+    durationMs: Long = 0,
+    playbackPositionMs: Long = 0,
 ) {
     val icon: ImageVector = when {
         isDirectory -> Icons.Filled.Folder
@@ -56,7 +66,14 @@ fun FileItemCard(
     val subtitle = when {
         isDirectory && childCount >= 0 -> "$childCount items"
         isDirectory -> "- items"
-        mimeType != null -> "$mimeType • ${formatFileSize(fileSize)}"
+        durationMs > 0 -> {
+            val sizeStr = if (fileSize > 0) formatFileSize(fileSize) else "- bytes"
+            if (playbackPositionMs > 0) {
+                "$sizeStr • ${formatDuration(playbackPositionMs)} / ${formatDuration(durationMs)}"
+            } else {
+                "$sizeStr • ${formatDuration(durationMs)}"
+            }
+        }
         fileSize > 0 -> formatFileSize(fileSize)
         else -> "- bytes"
     }
@@ -76,23 +93,44 @@ fun FileItemCard(
                 .padding(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(28.dp),
-                tint = if (isDirectory) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (leadingThumbnail != null) {
+                // Thumbnail occupies ~42% of the row width on the left (40% bigger than 30%).
+                Box(
+                    modifier = Modifier
+                        .weight(0.42f)
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(Spacing.xs)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    leadingThumbnail()
+                }
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = if (isDirectory) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             Spacer(modifier = Modifier.width(Spacing.md))
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(if (leadingThumbnail != null) 0.58f else 1f)) {
                 Text(
                     text = name,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
+                    overflow = if (marqueeTitle) TextOverflow.Clip else TextOverflow.Ellipsis,
+                    modifier = if (marqueeTitle) Modifier.basicMarquee() else Modifier,
                 )
                 Text(
                     text = subtitle,

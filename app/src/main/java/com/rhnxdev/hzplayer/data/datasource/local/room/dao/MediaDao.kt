@@ -20,6 +20,12 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE id = :id")
     suspend fun getById(id: Long): MediaEntity?
 
+    @Query("SELECT * FROM media WHERE uri = :uri LIMIT 1")
+    suspend fun getByUri(uri: String): MediaEntity?
+
+    @Query("SELECT * FROM media WHERE uri IN (:uris)")
+    suspend fun getByUris(uris: List<String>): List<MediaEntity>
+
     @Query("SELECT * FROM media WHERE mediaType = 'audio' AND album = :albumTitle")
     fun getSongsByAlbum(albumTitle: String): Flow<List<MediaEntity>>
 
@@ -61,6 +67,12 @@ interface MediaDao {
 
     @Query("DELETE FROM media")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM media WHERE mediaType = 'video'")
+    suspend fun deleteVideos()
+
+    @Query("DELETE FROM media WHERE mediaType = 'audio'")
+    suspend fun deleteAudio()
 }
 
 data class AlbumProjection(

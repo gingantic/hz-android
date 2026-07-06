@@ -5,15 +5,17 @@ import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
+import okhttp3.OkHttpClient
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
- * Singleton pool of persistent connections for FTP, SFTP, and SMB.
+ * Singleton pool of persistent connections for FTP, SFTP, SMB, and WebDAV.
  *
  * Keyed by `"scheme://host:port:user"`. For SMB, this shares the [CIFSContext]
  * across all [SmbDataSource] instances, reusing the same SMB transport session
@@ -27,12 +29,14 @@ internal object ConnectionPool {
     private val ftpPool = ConcurrentHashMap<String, PooledFtpConnection>()
     private val sftpPool = ConcurrentHashMap<String, PooledSshConnection>()
     private val smbPool = ConcurrentHashMap<String, CIFSContext>()
+    private val webdavPool = ConcurrentHashMap<String, OkHttpClient>()
 
     // Browser-level pooling — separate from DataSource pool to allow
     // simultaneous browse + stream connections to the same server.
     private val ftpBrowserPool = ConcurrentHashMap<String, FTPClient>()
     private val sftpBrowserPool = ConcurrentHashMap<String, SSHClient>()
     private val smbBrowserPool = ConcurrentHashMap<String, CIFSContext>()
+    private val webdavBrowserPool = ConcurrentHashMap<String, OkHttpClient>()
 
     private fun key(scheme: String, host: String, port: Int, user: String): String =
         "$scheme://$host:$port:$user"
@@ -120,7 +124,56 @@ internal object ConnectionPool {
         }
     }
 
+    /** Borrow (or create) a shared [CIFSContext] for remote SMB thumbnails with tight timeouts. */
+    fun borrowSmbThumbnailContext(host: String, port: Int, user: String, pass: String): CIFSContext {
+        val k = key("smb_thumb", host, port, user)
+        return smbPool.getOrPut(k) {
+            val props = Properties().apply {
+                setProperty("jcifs.smb.client.minVersion", "SMB202")
+                setProperty("jcifs.smb.client.maxVersion", "SMB311")
+                setProperty("jcifs.smb.client.responseTimeout", "10000") // 10 seconds timeout for thumbnails
+                setProperty("jcifs.smb.client.soTimeout", "10000")       // 10 seconds socket timeout for thumbnails
+                setProperty("jcifs.smb.client.dfs.disabled", "true")
+                setProperty("jcifs.resolveOrder", "DNS")
+            }
+            val base = BaseContext(PropertyConfiguration(props))
+            val ctx = if (user.isNotEmpty()) {
+                val auth = NtlmPasswordAuthenticator("", user, pass)
+                base.withCredentials(auth)
+            } else {
+                base.withGuestCrendentials()
+            }
+            android.util.Log.d("ConnectionPool", "SMB new thumbnail context $k")
+            ctx
+        }
+    }
+
     fun returnSmbContext(host: String, port: Int, user: String) {} // keep alive
+
+    // ── WebDAV (DataSource) ──────────────────────────────────────
+
+    /** Borrow a reusable [OkHttpClient] for WebDAV streaming. */
+    fun borrowWebDavClient(
+        host: String,
+        port: Int,
+        useTls: Boolean,
+        user: String,
+        pass: String,
+    ): OkHttpClient {
+        val k = webdavKey(host, port, useTls, user)
+        return webdavPool.getOrPut(k) {
+            OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(15, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .build()
+                .also { android.util.Log.d("ConnectionPool", "WebDAV new client $k") }
+        }
+    }
+
+    fun returnWebDavClient(host: String, port: Int, useTls: Boolean) {} // keep alive
 
     // ── Browser-level pooling ─────────────────────────────────────
 
@@ -197,6 +250,37 @@ internal object ConnectionPool {
         smbBrowserPool.remove(k)
     }
 
+    // ── WebDAV (Browser) ────────────────────────────────────────
+
+    fun borrowWebDavBrowser(host: String, port: Int, useTls: Boolean): OkHttpClient {
+        val k = webdavBrowserKey(host, port, useTls)
+        return webdavBrowserPool.getOrPut(k) {
+            OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .writeTimeout(10, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .build()
+                .also { android.util.Log.d("ConnectionPool", "WebDAV browser new $k") }
+        }
+    }
+
+    fun returnWebDavBrowser(host: String, port: Int, useTls: Boolean) {
+        val k = webdavBrowserKey(host, port, useTls)
+        webdavBrowserPool.remove(k)
+    }
+
+    // ── WebDAV keys ─────────────────────────────────────────────
+    // WebDAV uses OkHttp which is stateless (auth goes in headers),
+    // so browser and data-source clients share the same key space.
+
+    private fun webdavKey(host: String, port: Int, useTls: Boolean, user: String): String =
+        "webdav${if (useTls) "s" else ""}://$host:$port:$user"
+
+    private fun webdavBrowserKey(host: String, port: Int, useTls: Boolean): String =
+        "webdav${if (useTls) "s" else ""}://$host:$port"
+
     // ── Cleanup ─────────────────────────────────────────────────
 
     /** Release all pooled connections (call from application onDestroy). */
@@ -223,6 +307,17 @@ internal object ConnectionPool {
 
         smbPool.clear()
         smbBrowserPool.clear()
+
+        webdavPool.values.forEach {
+            try { it.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}
+            try { it.connectionPool.evictAll() } catch (_: Exception) {}
+        }
+        webdavPool.clear()
+        webdavBrowserPool.values.forEach {
+            try { it.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}
+            try { it.connectionPool.evictAll() } catch (_: Exception) {}
+        }
+        webdavBrowserPool.clear()
     }
 
     private class PooledFtpConnection(val client: FTPClient)

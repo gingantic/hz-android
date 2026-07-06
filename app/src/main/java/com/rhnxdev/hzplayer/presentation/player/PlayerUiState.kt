@@ -5,6 +5,7 @@ import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
+import com.rhnxdev.hzplayer.domain.model.VideoItem
 
 data class PlayerUiState(
     val currentTitle: String? = null,
@@ -34,4 +35,7 @@ data class PlayerUiState(
     val seekSensitivity: Float = 1.0f,
     val aspectRatioMode: AspectRatioMode = AspectRatioMode.AUTO,
     val useSurfaceView: Boolean = true,
+    val videoPlaylist: List<VideoItem> = emptyList(),
+    val currentPlaylistIndex: Int = 0,
+    val showPlaylistDrawer: Boolean = false,
 )

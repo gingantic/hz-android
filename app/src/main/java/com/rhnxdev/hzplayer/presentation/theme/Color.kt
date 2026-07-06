@@ -4,10 +4,10 @@ import androidx.compose.ui.graphics.Color
 
 // ── Dark theme palette ──────────────────────────────────────────
 
-val DarkPrimary = Color(0xFFFF8A50)
-val DarkOnPrimary = Color(0xFF241A00)
-val DarkPrimaryContainer = Color(0xFF3A2A00)
-val DarkOnPrimaryContainer = Color(0xFFFFDEC2)
+val DarkPrimary = Color(0xFFE85E00) // VLC Spanish Orange
+val DarkOnPrimary = Color(0xFFFFFFFF)
+val DarkPrimaryContainer = Color(0xFF5E2000)
+val DarkOnPrimaryContainer = Color(0xFFFFDBC6)
 
 val DarkSecondary = Color(0xFF56CCCC)
 val DarkOnSecondary = Color(0xFF003737)
@@ -35,7 +35,7 @@ val DarkOnError = Color(0xFF690005)
 
 // ── Light theme palette ─────────────────────────────────────────
 
-val LightPrimary = Color(0xFFCC5500)
+val LightPrimary = Color(0xFFE85E00) // VLC Spanish Orange
 val LightOnPrimary = Color.White
 val LightPrimaryContainer = Color(0xFFFFDBC6)
 val LightOnPrimaryContainer = Color(0xFF421500)

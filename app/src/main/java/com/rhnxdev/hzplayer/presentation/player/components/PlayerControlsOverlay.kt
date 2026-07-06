@@ -22,8 +22,11 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.ScreenRotationAlt
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,6 +81,9 @@ fun PlayerControlsOverlay(
     onLockClick: () -> Unit = {},
     onAspectRatioClick: () -> Unit = {},
     onOrientationClick: () -> Unit = {},
+    onPlaylistClick: () -> Unit = {},
+    onSkipToNext: (() -> Unit)? = null,
+    onSkipToPrevious: (() -> Unit)? = null,
     onInteract: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -103,12 +109,12 @@ fun PlayerControlsOverlay(
                 .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
                     tint = Color.White,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(26.dp),
                 )
             }
 
@@ -122,18 +128,20 @@ fun PlayerControlsOverlay(
                 modifier = Modifier.weight(1f).padding(horizontal = Spacing.xs),
             )
 
-            // Network speed indicator
-            NetworkSpeedChip(uiState.networkTraffic)
+            // Network speed indicator — only for remote streams, not local files
+            if (uiState.currentPlaybackUri?.let { isRemoteUri(it) } == true) {
+                NetworkSpeedChip(uiState.networkTraffic)
+            }
 
             Spacer(modifier = Modifier.width(Spacing.xs))
 
             // Lock
-            IconButton(onClick = onLockClick, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = onLockClick) {
                 Icon(
                     imageVector = if (uiState.playerLocked) Icons.Default.Lock else Icons.Default.LockOpen,
                     contentDescription = if (uiState.playerLocked) "Unlock" else "Lock",
                     tint = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
 
@@ -149,8 +157,21 @@ fun PlayerControlsOverlay(
                     .clip(CircleShape)
                     .clickable(onClick = onAspectRatioClick)
                     .background(Color.White.copy(alpha = 0.12f))
-                    .padding(horizontal = 7.dp, vertical = 4.dp),
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
             )
+
+            // Playlist toggle
+            if (uiState.videoPlaylist.size > 1) {
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(onClick = onPlaylistClick) {
+                    Icon(
+                        imageVector = Icons.Default.PlaylistPlay,
+                        contentDescription = "Playlist",
+                        tint = if (uiState.showPlaylistDrawer) Color(0xFF4CAF50) else Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
         }
 
         // ── Bottom panel: seekbar + play controls + secondary row ──
@@ -180,6 +201,21 @@ fun PlayerControlsOverlay(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (onSkipToPrevious != null) {
+                    IconButton(
+                        onClick = onSkipToPrevious,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Previous",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.md))
+                }
+
                 IconButton(
                     onClick = onSkipBackward,
                     modifier = Modifier.size(44.dp),
@@ -192,7 +228,7 @@ fun PlayerControlsOverlay(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(Spacing.xxl))
+                Spacer(modifier = Modifier.width(Spacing.lg))
 
                 Box(
                     modifier = Modifier
@@ -214,7 +250,7 @@ fun PlayerControlsOverlay(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(Spacing.xxl))
+                Spacer(modifier = Modifier.width(Spacing.lg))
 
                 IconButton(
                     onClick = onSkipForward,
@@ -226,6 +262,21 @@ fun PlayerControlsOverlay(
                         tint = Color.White,
                         modifier = Modifier.size(28.dp),
                     )
+                }
+
+                if (onSkipToNext != null) {
+                    Spacer(modifier = Modifier.width(Spacing.md))
+                    IconButton(
+                        onClick = onSkipToNext,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Next",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
             }
 
@@ -303,6 +354,10 @@ private fun formatSpeed(bytesPerSec: Long): String = when {
     bytesPerSec < 1024 * 1024 -> "%.1f KB/s".format(bytesPerSec / 1024.0)
     else -> "%.1f MB/s".format(bytesPerSec / (1024.0 * 1024.0))
 }
+
+// ponytail: keep in sync with PlayerRepositoryImpl.startTrafficPolling
+private fun isRemoteUri(uri: String): Boolean =
+    uri.contains("://") && !uri.startsWith("file://") && !uri.startsWith("content://")
 
 @PreviewLightDark
 @Preview(widthDp = 640, heightDp = 320)

@@ -33,28 +33,34 @@ class VideoLibraryViewModel @Inject constructor(
 
     val search = SearchDelegate()
 
-    /** Fallback preview data used when MediaStore has no results. */
-    private val previewVideos: List<VideoItem> = PreviewMedia.videoMovies.mapIndexed { index, item ->
-        VideoItem(
-            id = index.toLong(),
-            title = item["title"] as? String ?: "",
-            uri = item["uri"] as? String ?: "",
-            durationMs = (item["durationMs"] as? Long) ?: 0,
-            resolution = item["resolution"] as? String,
-            dateAdded = System.currentTimeMillis() - (index * 86_400_000L),
-        )
+    companion object {
+        /** Cached preview lists — avoid re-allocation per VM init. */
+        private val PREVIEW_VIDEOS: List<VideoItem> = PreviewMedia.videoMovies.mapIndexed { index, item ->
+            VideoItem(
+                id = index.toLong(),
+                title = item["title"] as? String ?: "",
+                uri = item["uri"] as? String ?: "",
+                durationMs = (item["durationMs"] as? Long) ?: 0,
+                resolution = item["resolution"] as? String,
+                dateAdded = System.currentTimeMillis() - (index * 86_400_000L),
+            )
+        }
+
+        private val PREVIEW_RECENT: List<VideoItem> = PreviewMedia.recentVideos.mapIndexed { index, item ->
+            VideoItem(
+                id = (100 + index).toLong(),
+                title = item["title"] as? String ?: "",
+                uri = item["uri"] as? String ?: "",
+                durationMs = (item["durationMs"] as? Long) ?: 0,
+                watchedProgress = ((item["progress"] as? Double)?.toFloat()) ?: 0f,
+                dateAdded = System.currentTimeMillis() - (index * 3_600_000L),
+            )
+        }
     }
 
-    private val previewRecent: List<VideoItem> = PreviewMedia.recentVideos.mapIndexed { index, item ->
-        VideoItem(
-            id = (100 + index).toLong(),
-            title = item["title"] as? String ?: "",
-            uri = item["uri"] as? String ?: "",
-            durationMs = (item["durationMs"] as? Long) ?: 0,
-            watchedProgress = ((item["progress"] as? Double)?.toFloat()) ?: 0f,
-            dateAdded = System.currentTimeMillis() - (index * 3_600_000L),
-        )
-    }
+    /** Fallback preview data used when MediaStore has no results. — reused companion cache */
+    private val previewVideos: List<VideoItem> = PREVIEW_VIDEOS
+    private val previewRecent: List<VideoItem> = PREVIEW_RECENT
 
     init {
         loadVideos()
@@ -181,6 +187,10 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     fun onRetry() {
+        loadVideos()
+    }
+
+    fun onRefresh() {
         loadVideos()
     }
 

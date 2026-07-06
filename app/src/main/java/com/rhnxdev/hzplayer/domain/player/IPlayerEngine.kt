@@ -13,7 +13,7 @@ interface IPlayerEngine {
     // ── Playback control ────────────────────────────────────────
 
     /** Load a URI for playback. Call [resume] to start. */
-    fun play(uri: String, title: String, isVideo: Boolean = false)
+    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false)
 
     /** Pause the active playback. */
     fun pause()

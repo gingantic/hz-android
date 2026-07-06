@@ -17,6 +17,10 @@ interface PlayerRepository {
     fun playVideo(video: VideoItem)
     fun playAudio(audio: AudioItem)
     fun playUri(uri: String, title: String, isVideo: Boolean = false)
+    fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int = 0, startPositionMs: Long = 0)
+    fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int = 0)
+    fun getCurrentMediaItemIndex(): Int
+    fun getMediaItemCount(): Int
     fun togglePlayPause()
     fun seekTo(positionMs: Long)
     fun skipForward(ms: Long = 10000)

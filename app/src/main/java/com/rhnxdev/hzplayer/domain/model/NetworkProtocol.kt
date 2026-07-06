@@ -4,4 +4,6 @@ enum class NetworkProtocol {
     FTP,
     SFTP,
     SMB,
+    WEBDAV,
+    WEBDAVS,
 }

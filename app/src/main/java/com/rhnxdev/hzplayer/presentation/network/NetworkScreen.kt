@@ -24,7 +24,12 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -37,6 +42,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -50,9 +57,12 @@ import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isDocumentExtension
+import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
+import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.presentation.network.components.ServerCard
 import com.rhnxdev.hzplayer.presentation.network.components.ServerConfigDialog
 import com.rhnxdev.hzplayer.presentation.network.components.StreamHistoryListItem
@@ -67,6 +77,8 @@ fun NetworkScreen(
     viewModel: NetworkViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
+    val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
 
     // Intercept back button when browsing a remote server
     BackHandler(
@@ -91,6 +103,60 @@ fun NetworkScreen(
             },
             showBack = uiState.mode == NetworkScreenMode.SERVER_BROWSE,
             onBack = { viewModel.onRemoteNavigateUp() },
+            actions = {
+                if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) {
+                    if (!isSearchActive) {
+                        // Media mode toggle
+                        androidx.compose.material3.IconButton(onClick = viewModel::onToggleMediaMode) {
+                            androidx.compose.material3.Icon(
+                                imageVector = if (uiState.isMediaMode) Icons.AutoMirrored.Filled.ViewList
+                                else Icons.Filled.PhotoLibrary,
+                                contentDescription = if (uiState.isMediaMode) "List view" else "Media view",
+                            )
+                        }
+                        // Search toggle
+                        androidx.compose.material3.IconButton(onClick = viewModel::onSearchToggle) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = "Search",
+                            )
+                        }
+                    }
+                    var showSortMenu by remember { mutableStateOf(false) }
+                    androidx.compose.material3.IconButton(onClick = { showSortMenu = true }) {
+                        androidx.compose.material3.Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Sort,
+                            contentDescription = "Sort",
+                        )
+                    }
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = showSortMenu,
+                        onDismissRequest = { showSortMenu = false },
+                    ) {
+                        listOf(
+                            SortType.TITLE to "Sort by Name",
+                            SortType.DATE_MODIFIED to "Sort by Date",
+                            SortType.FILE_SIZE to "Sort by Size",
+                        ).forEach { (type, label) ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { androidx.compose.material3.Text(label) },
+                                onClick = {
+                                    viewModel.onSortChanged(type)
+                                    showSortMenu = false
+                                },
+                                leadingIcon = if (uiState.sortType == type) {
+                                    {
+                                        androidx.compose.material3.Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                        )
+                                    }
+                                } else null,
+                            )
+                        }
+                    }
+                }
+            },
         )
 
         when (uiState.mode) {
@@ -117,6 +183,11 @@ fun NetworkScreen(
 
             NetworkScreenMode.SERVER_BROWSE -> ServerBrowseStackContent(
                 uiState = uiState,
+                searchQuery = searchQuery,
+                isSearchActive = isSearchActive,
+                onSearchToggle = viewModel::onSearchToggle,
+                onSearchQueryChanged = viewModel::onSearchQueryChanged,
+                onClearSearch = viewModel::onClearSearch,
                 onFolderClicked = { item -> viewModel.onRemoteFolderClicked(item) },
                 onFileClicked = { item ->
                     val uri = viewModel.buildPlaybackUri(item.path) ?: return@ServerBrowseStackContent
@@ -125,6 +196,7 @@ fun NetworkScreen(
                 onBreadcrumbClicked = viewModel::onRemoteBreadcrumbClicked,
                 onRetry = viewModel::onRetryBrowse,
                 onRefresh = viewModel::onRefreshBrowse,
+                buildPlaybackUri = { path -> viewModel.buildPlaybackUri(path) },
             )
         }
     }
@@ -318,11 +390,17 @@ private fun NetworkHomeContent(
 @Composable
 private fun ServerBrowseStackContent(
     uiState: NetworkUiState,
+    searchQuery: String,
+    isSearchActive: Boolean,
+    onSearchToggle: () -> Unit,
+    onSearchQueryChanged: (String) -> Unit,
+    onClearSearch: () -> Unit,
     onFolderClicked: (RemoteFileItem) -> Unit,
     onFileClicked: (RemoteFileItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
+    buildPlaybackUri: (String) -> String?,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -331,16 +409,21 @@ private fun ServerBrowseStackContent(
         val noopFolder: (RemoteFileItem) -> Unit = {}
         val noopBreadcrumb: (String) -> Unit = {}
 
+        val topLayer = uiState.remoteLayers.getOrNull(topIndex)
         uiState.remoteLayers.forEachIndexed { index, layer ->
             val isTop = index == topIndex
             key(layer.path) {
                 RemoteDirectoryLayerView(
                     layer = layer,
+                    searchQuery = if (isTop) searchQuery else "",
+                    isSearchActive = if (isTop) isSearchActive else false,
+                    mediaMode = uiState.isMediaMode,
                     onFolderClicked = if (isTop) onFolderClicked else noopFolder,
                     onFileClicked = if (isTop) onFileClicked else noopFolder,
                     onBreadcrumbClicked = if (isTop) onBreadcrumbClicked else noopBreadcrumb,
                     onRetry = if (isTop) onRetry else noopAction,
                     onRefresh = if (isTop) onRefresh else noopAction,
+                    buildPlaybackUri = buildPlaybackUri,
                     modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
             }
@@ -351,14 +434,25 @@ private fun ServerBrowseStackContent(
 @Composable
 private fun RemoteDirectoryLayerView(
     layer: RemoteDirectoryLayer,
+    searchQuery: String,
+    isSearchActive: Boolean,
+    mediaMode: Boolean,
     onFolderClicked: (RemoteFileItem) -> Unit,
     onFileClicked: (RemoteFileItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
+    buildPlaybackUri: (String) -> String?,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+
+    val visibleItems = remember(layer.items, mediaMode) {
+        when {
+            mediaMode -> layer.items.filter { it.isDirectory || isVideoExtension(it.name) }
+            else -> layer.items.filter { it.isDirectory || (!isDocumentExtension(it.name) && !isBinaryExtension(it.name)) }
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         BreadcrumbBar(
@@ -367,12 +461,13 @@ private fun RemoteDirectoryLayerView(
         )
 
         DirectoryBrowsePane(
-            items = layer.items.map { it.toFileItemData() },
+            items = visibleItems.map { it.toFileItemData(buildPlaybackUri(it.path)) },
             isLoading = layer.isLoading,
-            isEmpty = layer.isEmpty,
+            isEmpty = if (mediaMode) visibleItems.isEmpty() else layer.isEmpty,
             error = layer.error,
-            searchQuery = "",
-            isSearchActive = false,
+            searchQuery = searchQuery,
+            isSearchActive = isSearchActive,
+            mediaMode = mediaMode,
             onItemClick = { data ->
                 val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
                 if (data.isDirectory) onFolderClicked(item)
@@ -386,14 +481,16 @@ private fun RemoteDirectoryLayerView(
     }
 }
 
-private fun RemoteFileItem.toFileItemData() = FileItemData(
+private fun RemoteFileItem.toFileItemData(playbackUri: String? = null) = FileItemData(
     id = path,
     name = name,
     path = path,
     isDirectory = isDirectory,
     fileSize = fileSize,
     childCount = childCount,
+    dateModified = dateModified,
     mimeType = mimeType,
+    playbackUri = playbackUri,
 )
 
 // ── Utility ────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
+import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
@@ -24,12 +25,27 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     private val dataStore: DataStore<Preferences>,
 ) : UserPreferencesRepository {
 
-    override val isDarkTheme: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[DARK_THEME_KEY] ?: false
+    override val themeMode: Flow<ThemeMode> = dataStore.data.map { prefs ->
+        val themeName = prefs[THEME_MODE_KEY]
+        if (themeName != null) {
+            try {
+                ThemeMode.valueOf(themeName)
+            } catch (_: IllegalArgumentException) {
+                ThemeMode.DARK
+            }
+        } else {
+            // Check legacy boolean key
+            val isDark = prefs[DARK_THEME_KEY] ?: false
+            if (isDark) ThemeMode.DARK else ThemeMode.LIGHT
+        }
+    }.distinctUntilChanged()
+
+    override val appColorArgb: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[APP_COLOR_ARGB_KEY] ?: 0xFFE85E00.toInt()
     }.distinctUntilChanged()
 
     override val useDynamicColors: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[DYNAMIC_COLORS_KEY] ?: true
+        prefs[DYNAMIC_COLORS_KEY] ?: false
     }.distinctUntilChanged()
 
     override val activeEngine: Flow<EngineType> = dataStore.data.map { prefs ->
@@ -55,6 +71,14 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override val useSurfaceView: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[USE_SURFACE_VIEW] ?: true
+    }.distinctUntilChanged()
+
+    override val fileBrowserMediaMode: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[FILE_BROWSER_MEDIA_MODE] ?: false
+    }.distinctUntilChanged()
+
+    override val minSongDurationSecs: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[MIN_SONG_DURATION_SECS] ?: 0
     }.distinctUntilChanged()
 
     override val subtitleStyle: Flow<SubtitleStyle> = dataStore.data.map { prefs ->
@@ -85,8 +109,12 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun setDarkTheme(enabled: Boolean) {
-        dataStore.edit { prefs -> prefs[DARK_THEME_KEY] = enabled }
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { prefs -> prefs[THEME_MODE_KEY] = mode.name }
+    }
+
+    override suspend fun setAppColorArgb(argb: Int) {
+        dataStore.edit { prefs -> prefs[APP_COLOR_ARGB_KEY] = argb }
     }
 
     override suspend fun setDynamicColors(enabled: Boolean) {
@@ -147,7 +175,17 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[USE_SURFACE_VIEW] = enabled }
     }
 
+    override suspend fun setFileBrowserMediaMode(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[FILE_BROWSER_MEDIA_MODE] = enabled }
+    }
+
+    override suspend fun setMinSongDurationSecs(seconds: Int) {
+        dataStore.edit { prefs -> prefs[MIN_SONG_DURATION_SECS] = seconds }
+    }
+
     companion object {
+        private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
+        private val APP_COLOR_ARGB_KEY = intPreferencesKey("app_color_argb")
         private val DARK_THEME_KEY = booleanPreferencesKey("dark_theme")
         private val DYNAMIC_COLORS_KEY = booleanPreferencesKey("dynamic_colors")
         private val ENGINE_KEY = stringPreferencesKey("active_engine")
@@ -160,6 +198,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         private val SEEK_SENSITIVITY = floatPreferencesKey("seek_sensitivity")
         private val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
         private val USE_SURFACE_VIEW = booleanPreferencesKey("use_surface_view")
+        private val FILE_BROWSER_MEDIA_MODE = booleanPreferencesKey("file_browser_media_mode")
         private val SELECTED_TAB_INDEX = intPreferencesKey("selected_tab_index")
+        private val MIN_SONG_DURATION_SECS = intPreferencesKey("min_song_duration_secs")
     }
 }

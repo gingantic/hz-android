@@ -6,6 +6,7 @@ import com.rhnxdev.hzplayer.data.datasource.network.FtpBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.RemoteBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.SftpBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.SmbBrowserClient
+import com.rhnxdev.hzplayer.data.datasource.network.WebDavBrowserClient
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
@@ -80,5 +81,7 @@ class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository 
         NetworkProtocol.FTP -> FtpBrowserClient(server.host, server.port, server.username, server.password)
         NetworkProtocol.SFTP -> SftpBrowserClient(server.host, server.port, server.username, server.password)
         NetworkProtocol.SMB -> SmbBrowserClient(server.host, server.port, server.username, server.password)
+        NetworkProtocol.WEBDAV -> WebDavBrowserClient(server.host, server.port, server.username, server.password, useTls = false)
+        NetworkProtocol.WEBDAVS -> WebDavBrowserClient(server.host, server.port, server.username, server.password, useTls = true)
     }
 }
