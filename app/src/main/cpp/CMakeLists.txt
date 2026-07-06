@@ -18,7 +18,7 @@ find_library(LOG log)
 
 add_library(thumbnail-extractor SHARED ThumbnailExtractor.cpp)
 target_include_directories(thumbnail-extractor PRIVATE
-    ${CMAKE_SOURCE_DIR}/../jniLibs/${CMAKE_ANDROID_ARCH_ABI}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_link_libraries(thumbnail-extractor
     avformat avcodec avutil swscale
