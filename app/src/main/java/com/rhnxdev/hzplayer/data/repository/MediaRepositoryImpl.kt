@@ -26,35 +26,47 @@ class MediaRepositoryImpl @Inject constructor(
         VideoItem(
             id = index.toLong(),
             title = item["title"] as? String ?: "",
-            uri = "",
+            uri = item["uri"] as? String ?: "",
             durationMs = (item["durationMs"] as? Long) ?: 0,
             resolution = item["resolution"] as? String,
         )
     }
 
     override fun getAllVideos(sortType: SortType): Flow<List<VideoItem>> = flow {
-        // Try Room cache first
+        // Phase 1: Try Room cache (instant — emitted immediately if populated)
         val cached = mediaDao.getAllVideos().first()
         if (cached.isNotEmpty()) {
             emit(applySort(cached.map { it.toVideoItem() }, sortType))
-            return@flow
+        } else {
+            // Phase 2: No cache — emit preview data immediately so UI never shows a blank shimmer.
+            emit(applySort(previewVideos, sortType))
         }
 
-        // Scan from MediaStore
-        val scanned = mediaScanner.scanVideos().first()
-        if (scanned.isNotEmpty()) {
-            mediaDao.insertAll(scanned)
-            emit(applySort(scanned.map { it.toVideoItem() }, sortType))
-            return@flow
+        try {
+            val scanned = mediaScanner.scanVideos().first()
+            if (scanned.isNotEmpty()) {
+                mediaDao.deleteVideos()
+                mediaDao.insertAll(scanned)
+                emit(applySort(scanned.map { it.toVideoItem() }, sortType))
+            }
+            // If scan is also empty, preview already emitted — no-op.
+        } catch (_: Exception) {
+            // Preview already emitted — silent fallback.
         }
-
-        // Fallback to preview data
-        emit(applySort(previewVideos, sortType))
     }.flowOn(Dispatchers.IO)
 
     override suspend fun getVideoById(id: Long): VideoItem? {
         return mediaDao.getById(id)?.toVideoItem()
             ?: previewVideos.find { it.id == id }
+    }
+
+    override suspend fun getVideosByUris(uris: List<String>): List<VideoItem> {
+        if (uris.isEmpty()) return emptyList()
+        val localVideos = mediaDao.getByUris(uris).map { it.toVideoItem() }
+        val localUris = localVideos.map { it.uri }.toSet()
+        val remainingUris = uris.filter { it !in localUris }
+        val matchingPreviews = previewVideos.filter { it.uri in remainingUris }
+        return localVideos + matchingPreviews
     }
 
     override suspend fun toggleFavorite(id: Long, isFavorite: Boolean) {

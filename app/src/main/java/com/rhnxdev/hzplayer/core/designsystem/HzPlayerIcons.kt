@@ -4,12 +4,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -30,6 +33,8 @@ object HzPlayerIcons {
     val Settings: ImageVector get() = Icons.Filled.Settings
     val Browse: ImageVector get() = Icons.Filled.Folder
     val Network: ImageVector get() = Icons.Filled.Language
+    val Download: ImageVector get() = Icons.Filled.Download
+    val PhotoLibrary: ImageVector get() = Icons.Filled.PhotoLibrary
 
     val Video: ImageVector get() = Icons.Filled.Movie
     val Audio: ImageVector get() = Icons.Filled.MusicNote
@@ -49,4 +54,5 @@ object HzPlayerIcons {
     val RepeatAll: ImageVector get() = Icons.Filled.Repeat
     val RepeatOne: ImageVector get() = Icons.Filled.RepeatOne
     val Volume: ImageVector get() = Icons.Filled.VolumeUp
+    val Lock: ImageVector get() = Icons.Filled.Lock
 }

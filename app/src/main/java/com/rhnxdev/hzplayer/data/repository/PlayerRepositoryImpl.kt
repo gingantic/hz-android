@@ -37,6 +37,16 @@ class PlayerRepositoryImpl @Inject constructor(
     private var trafficPollJob: Job? = null
     private val appUid = Process.myUid()
 
+    init {
+        scope.launch {
+            playbackStateInfo.collect { info ->
+                info.currentUri?.let { uri ->
+                    savedPlaybackUri = uri
+                }
+            }
+        }
+    }
+
     val exoPlayer: Player get() = exoPlayerEngine.player
 
     override val networkTraffic: Flow<NetworkTraffic> = _networkTraffic.asStateFlow()
@@ -50,6 +60,12 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private fun startTrafficPolling() {
         trafficPollJob?.cancel()
+        val uri = savedPlaybackUri ?: return
+        // Only poll network traffic for remote URIs — local file playback doesn't consume network
+        if (!uri.contains("://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+            _networkTraffic.value = NetworkTraffic.DEFAULT
+            return
+        }
         trafficPollJob = scope.launch(Dispatchers.Default) {
             var lastRx = TrafficStats.getUidRxBytes(appUid).coerceAtLeast(0)
             var smoothedSpeed = 0f
@@ -84,7 +100,7 @@ class PlayerRepositoryImpl @Inject constructor(
     override fun playAudio(audio: AudioItem) {
         savedPlaybackUri = audio.uri
         startTrafficPolling()
-        exoPlayerEngine.play(audio.uri, audio.title, isVideo = false)
+        exoPlayerEngine.play(audio.uri, audio.title, artist = audio.artist, isVideo = false)
     }
 
     override fun playUri(uri: String, title: String, isVideo: Boolean) {
@@ -92,6 +108,24 @@ class PlayerRepositoryImpl @Inject constructor(
         startTrafficPolling()
         exoPlayerEngine.play(uri, title, isVideo = isVideo)
     }
+
+    override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
+        savedPlaybackUri = items.getOrNull(startIndex)?.first
+        startTrafficPolling()
+        exoPlayerEngine.playPlaylist(items, startIndex, startPositionMs)
+    }
+
+    override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
+        savedPlaybackUri = items.getOrNull(startIndex)?.uri
+        startTrafficPolling()
+        exoPlayerEngine.playAudioPlaylist(items, startIndex)
+    }
+
+    override fun getCurrentMediaItemIndex(): Int =
+        exoPlayerEngine.player.currentMediaItemIndex
+
+    override fun getMediaItemCount(): Int =
+        exoPlayerEngine.player.mediaItemCount
 
     override fun togglePlayPause() {
         if (exoPlayerEngine.isPlaying()) exoPlayerEngine.pause()

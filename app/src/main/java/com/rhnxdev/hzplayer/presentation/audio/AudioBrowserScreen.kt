@@ -12,11 +12,14 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -39,10 +42,11 @@ import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.presentation.audio.components.AlbumCard
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioBrowserScreen(
     viewModel: AudioBrowserViewModel = hiltViewModel(),
-    onSongClicked: ((AudioItem) -> Unit)? = null,
+    onSongClicked: ((AudioItem, List<AudioItem>) -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
@@ -78,34 +82,47 @@ fun AudioBrowserScreen(
         }
 
         // Tab content using AnimatedContent (bypasses horizontal pager interception)
-        AnimatedContent(
-            targetState = uiState.currentTab,
+        val pullState = rememberPullToRefreshState()
+        val isRefreshing = when (uiState.currentTab) {
+            AudioTab.SONGS -> uiState.isLoadingSongs
+            AudioTab.ALBUMS -> uiState.isLoadingAlbums
+            AudioTab.ARTISTS -> uiState.isLoadingArtists
+        }
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = viewModel::onRefresh,
+            state = pullState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            label = "tab_transition"
-        ) { targetTab ->
-            when (targetTab) {
-                AudioTab.SONGS -> SongsTab(
-                    songs = if (isSearchActive) uiState.filteredSongs else uiState.songs,
-                    isLoading = uiState.isLoadingSongs,
-                    searchQuery = if (isSearchActive) searchQuery else null,
-                    onSongClicked = { song ->
-                        viewModel.onSongClicked(song)
-                        onSongClicked?.invoke(song)
-                    },
-                    modifier = Modifier,
-                )
-                AudioTab.ALBUMS -> AlbumsTab(
-                    albums = uiState.albums,
-                    isLoading = uiState.isLoadingAlbums,
-                    onAlbumClicked = { viewModel.onAlbumClicked(it) },
-                    modifier = Modifier,
-                )
-                AudioTab.ARTISTS -> ArtistsTab(
-                    artists = uiState.artists,
-                    isLoading = uiState.isLoadingArtists,
-                    onArtistClicked = { viewModel.onArtistClicked(it) },
-                    modifier = Modifier,
-                )
+        ) {
+            AnimatedContent(
+                targetState = uiState.currentTab,
+                modifier = Modifier.fillMaxSize(),
+                label = "tab_transition"
+            ) { targetTab ->
+                when (targetTab) {
+                    AudioTab.SONGS -> SongsTab(
+                        songs = uiState.filteredSongs,
+                        isLoading = uiState.isLoadingSongs && uiState.songs.isEmpty(),
+                        searchQuery = if (isSearchActive) searchQuery else null,
+                        onSongClicked = { song ->
+                            viewModel.onSongClicked(song)
+                            onSongClicked?.invoke(song, uiState.filteredSongs)
+                        },
+                        modifier = Modifier,
+                    )
+                    AudioTab.ALBUMS -> AlbumsTab(
+                        albums = uiState.albums,
+                        isLoading = uiState.isLoadingAlbums && uiState.albums.isEmpty(),
+                        onAlbumClicked = { viewModel.onAlbumClicked(it) },
+                        modifier = Modifier,
+                    )
+                    AudioTab.ARTISTS -> ArtistsTab(
+                        artists = uiState.artists,
+                        isLoading = uiState.isLoadingArtists && uiState.artists.isEmpty(),
+                        onArtistClicked = { viewModel.onArtistClicked(it) },
+                        modifier = Modifier,
+                    )
+                }
             }
         }
     }
@@ -135,7 +152,7 @@ private fun SongsTab(
             LazyColumn(
                 modifier = modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 items(songs, key = { it.id }) { song ->
                     MediaListItem(
@@ -216,7 +233,7 @@ private fun ArtistsTab(
             LazyColumn(
                 modifier = modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 items(artists, key = { it.id }) { artist ->
                     MediaListItem(

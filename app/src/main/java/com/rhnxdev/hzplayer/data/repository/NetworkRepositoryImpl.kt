@@ -8,7 +8,9 @@ import com.rhnxdev.hzplayer.data.mapper.toEntity
 import com.rhnxdev.hzplayer.data.security.PasswordCrypto
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
+import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
+import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -19,6 +21,7 @@ class NetworkRepositoryImpl @Inject constructor(
     private val serverConfigDao: ServerConfigDao,
     private val streamHistoryDao: StreamHistoryDao,
     private val passwordCrypto: PasswordCrypto,
+    private val userPreferences: UserPreferencesRepository,
 ) : NetworkRepository {
 
     override fun getSavedServers(): Flow<List<ServerConfig>> =
@@ -78,4 +81,11 @@ class NetworkRepositoryImpl @Inject constructor(
 
     override suspend fun clearHistory() =
         streamHistoryDao.clearNonFavorites()
+
+    override fun getSortType(key: String): Flow<SortType> =
+        userPreferences.getSortType(key)
+
+    override suspend fun setSortType(key: String, sort: SortType) {
+        userPreferences.setSortType(key, sort)
+    }
 }

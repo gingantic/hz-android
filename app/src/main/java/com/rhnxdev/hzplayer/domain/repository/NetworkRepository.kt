@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.domain.repository
 
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
+import com.rhnxdev.hzplayer.domain.model.SortType
 import kotlinx.coroutines.flow.Flow
 
 interface NetworkRepository {
@@ -17,4 +18,7 @@ interface NetworkRepository {
     suspend fun toggleFavorite(id: Long)
     suspend fun deleteHistoryItem(id: Long)
     suspend fun clearHistory()
+
+    fun getSortType(key: String): Flow<SortType>
+    suspend fun setSortType(key: String, sort: SortType)
 }

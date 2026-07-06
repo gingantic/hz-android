@@ -2,17 +2,20 @@ package com.rhnxdev.hzplayer.presentation.network
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
 import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
+import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
 import com.rhnxdev.hzplayer.domain.repository.RemoteBrowseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,7 +31,17 @@ class NetworkViewModel @Inject constructor(
 
     private val dirCache = DirectoryLruCache<RemoteFileItem>()
 
-    init { observeServers(); observeHistory() }
+    private val sortKey = "network_browser"
+
+    val search = SearchDelegate()
+
+    init { 
+        observeServers(); observeHistory() 
+        viewModelScope.launch {
+            val savedSort = networkRepository.getSortType(sortKey).first()
+            _uiState.update { it.copy(sortType = savedSort) }
+        }
+    }
 
     private fun observeServers() {
         viewModelScope.launch {
@@ -144,6 +157,14 @@ class NetworkViewModel @Inject constructor(
 
     fun onRetryBrowse() { onRefreshBrowse() }
 
+    fun onSortChanged(sort: SortType) {
+        _uiState.update { it.copy(sortType = sort) }
+        viewModelScope.launch {
+            networkRepository.setSortType(sortKey, sort)
+        }
+        reapplyRemoteSort()
+    }
+
     fun onRefreshBrowse() {
         val server = _uiState.value.browsingServer ?: return
         val layers = _uiState.value.remoteLayers
@@ -176,8 +197,9 @@ class NetworkViewModel @Inject constructor(
 
             val cached = dirCache.get(path)
             if (cached != null) {
+                val sorted = sortRemoteItems(cached, _uiState.value.sortType)
                 updateRemoteLayer(layerIndex) {
-                    it.copy(items = cached, isLoading = false)
+                    it.copy(items = sorted, isLoading = false)
                 }
                 return@launch
             }
@@ -186,8 +208,9 @@ class NetworkViewModel @Inject constructor(
             result.fold(
                 onSuccess = { items ->
                     dirCache.put(path, items)
+                    val sorted = sortRemoteItems(items, _uiState.value.sortType)
                     updateRemoteLayer(layerIndex) {
-                        it.copy(items = items, isEmpty = items.isEmpty(), isLoading = false)
+                        it.copy(items = sorted, isEmpty = items.isEmpty(), isLoading = false)
                     }
                     // Enrich children in background if there are directories
                     if (items.any { it.isDirectory }) {
@@ -218,6 +241,39 @@ class NetworkViewModel @Inject constructor(
             state.copy(remoteLayers = layers)
         }
     }
+
+    private fun reapplyRemoteSort() {
+        val state = _uiState.value
+        val sortedLayers = state.remoteLayers.map { layer ->
+            layer.copy(items = sortRemoteItems(layer.items, state.sortType))
+        }
+        _uiState.update { it.copy(remoteLayers = sortedLayers) }
+    }
+
+    private fun sortRemoteItems(items: List<RemoteFileItem>, sort: SortType): List<RemoteFileItem> {
+        val (dirs, files) = items.partition { it.isDirectory }
+        val sortedDirs = when (sort) {
+            SortType.TITLE -> dirs.sortedBy { it.name.lowercase() }
+            SortType.DATE_MODIFIED -> dirs.sortedByDescending { it.dateModified }
+            SortType.FILE_SIZE -> dirs.sortedByDescending { it.fileSize }
+            else -> dirs.sortedBy { it.name.lowercase() }
+        }
+        val sortedFiles = when (sort) {
+            SortType.TITLE -> files.sortedBy { it.name.lowercase() }
+            SortType.DATE_MODIFIED -> files.sortedByDescending { it.dateModified }
+            SortType.FILE_SIZE -> files.sortedByDescending { it.fileSize }
+            else -> files.sortedBy { it.name.lowercase() }
+        }
+        return sortedDirs + sortedFiles
+    }
+
+    fun onToggleMediaMode() {
+        _uiState.update { it.copy(isMediaMode = !it.isMediaMode) }
+    }
+
+    fun onSearchToggle() = search.toggle()
+    fun onSearchQueryChanged(query: String) = search.queryChanged(query)
+    fun onClearSearch() = search.clear()
 
     fun onToggleFavorite(id: Long) { viewModelScope.launch { networkRepository.toggleFavorite(id) } }
     fun onDeleteHistoryItem(id: Long) { viewModelScope.launch { networkRepository.deleteHistoryItem(id) } }

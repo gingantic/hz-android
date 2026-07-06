@@ -15,6 +15,34 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+import androidx.compose.ui.graphics.Color
+import com.rhnxdev.hzplayer.domain.model.ThemeMode
+
+private val VoidColorScheme = darkColorScheme(
+    primary = DarkPrimary,
+    onPrimary = DarkOnPrimary,
+    primaryContainer = DarkPrimaryContainer,
+    onPrimaryContainer = DarkOnPrimaryContainer,
+    secondary = DarkSecondary,
+    onSecondary = DarkOnSecondary,
+    secondaryContainer = DarkSecondaryContainer,
+    onSecondaryContainer = DarkOnSecondaryContainer,
+    tertiary = DarkTertiary,
+    onTertiary = DarkOnTertiary,
+    tertiaryContainer = DarkTertiaryContainer,
+    onTertiaryContainer = DarkOnTertiaryContainer,
+    background = androidx.compose.ui.graphics.Color.Black,
+    onBackground = androidx.compose.ui.graphics.Color.White,
+    surface = androidx.compose.ui.graphics.Color.Black,
+    onSurface = androidx.compose.ui.graphics.Color.White,
+    surfaceVariant = androidx.compose.ui.graphics.Color(0xFF121212),
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    outline = DarkOutline,
+    outlineVariant = DarkOutlineVariant,
+    error = DarkError,
+    onError = DarkOnError,
+)
+
 private val DarkColorScheme = darkColorScheme(
     primary = DarkPrimary,
     onPrimary = DarkOnPrimary,
@@ -67,17 +95,43 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun HzPlayerTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    themeMode: ThemeMode = ThemeMode.DARK,
+    appColorArgb: Int = 0xFFE85E00.toInt(),
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
+    val isDark = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK, ThemeMode.VOID -> true
+    }
+
+    val baseColorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> DarkColorScheme
+        themeMode == ThemeMode.VOID -> VoidColorScheme
+        themeMode == ThemeMode.DARK -> DarkColorScheme
         else -> LightColorScheme
+    }
+
+    val colorScheme = if (!dynamicColor) {
+        val primary = Color(appColorArgb)
+        // Dynamically compute primaryContainer and onPrimaryContainer based on lightness
+        val primaryContainer = if (isDark) {
+            primary.copy(alpha = 0.25f)
+        } else {
+            primary.copy(alpha = 0.15f)
+        }
+        val onPrimaryContainer = primary
+        
+        baseColorScheme.copy(
+            primary = primary,
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = onPrimaryContainer
+        )
+    } else {
+        baseColorScheme
     }
 
     val view = LocalView.current
@@ -85,7 +139,9 @@ fun HzPlayerTheme(
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.surface.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = !isDark
+            insetsController.isAppearanceLightNavigationBars = !isDark
         }
     }
 

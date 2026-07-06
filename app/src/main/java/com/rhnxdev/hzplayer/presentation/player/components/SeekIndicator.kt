@@ -36,8 +36,8 @@ fun SeekIndicator(
     currentPositionMs: Long,
     visible: Boolean,
     modifier: Modifier = Modifier,
+    isForward: Boolean = deltaMs >= 0,
 ) {
-    val isForward = deltaMs >= 0
     val targetMs = (currentPositionMs + deltaMs).coerceAtLeast(0)
 
     val deltaSeconds = (deltaMs / 1000).let {

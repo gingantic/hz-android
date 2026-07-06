@@ -97,6 +97,9 @@ dependencies {
     implementation(libs.sshj)
     implementation(libs.jcifs.ng)
 
+    // WebDAV (uses OkHttp)
+    implementation(libs.okhttp)
+
     // Security
     implementation(libs.security.crypto)
 

@@ -58,7 +58,7 @@ fun MediaListItem(
             // Thumbnail
             Box(
                 modifier = Modifier
-                    .size(width = 56.dp, height = 40.dp)
+                    .size(width = 78.dp, height = 56.dp)
                     .clip(clipShape),
             ) {
                 thumbnailContent()

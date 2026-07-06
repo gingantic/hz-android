@@ -8,6 +8,7 @@ import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.repository.AudioRepository
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
+import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,7 @@ import javax.inject.Inject
 class AudioBrowserViewModel @Inject constructor(
     private val audioRepository: AudioRepository,
     private val playerRepository: PlayerRepository,
+    private val userPrefs: UserPreferencesRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AudioBrowserUiState())
@@ -30,6 +32,9 @@ class AudioBrowserViewModel @Inject constructor(
 
     /** Reusable search state holder. */
     val search = SearchDelegate()
+
+    /** Cached min song duration for non-coroutine reads. */
+    private var cachedMinSecs: Int = 0
 
     init {
         loadAll()
@@ -41,17 +46,32 @@ class AudioBrowserViewModel @Inject constructor(
                 it.copy(isLoadingSongs = true, isLoadingAlbums = true, isLoadingArtists = true)
             }
 
+            // Cache initial value
+            cachedMinSecs = userPrefs.minSongDurationSecs.first()
+
             // Launch parallel collection for songs, albums, and artists
             val songJob = launch {
                 audioRepository.getAllSongs()
                     .catch { /* fallback handled below */ }
                     .collect { songs ->
                         if (songs.isNotEmpty()) {
+                            val minSecs = userPrefs.minSongDurationSecs.first()
+                            val filtered = Companion.filterSongs(songs, "", minSecs)
                             _uiState.update {
-                                it.copy(songs = songs, filteredSongs = songs, isLoadingSongs = false)
+                                it.copy(songs = songs, filteredSongs = filtered, isLoadingSongs = false)
                             }
                         }
                     }
+            }
+
+            // Reactively re-filter when min duration preference changes
+            val minDurationJob = launch {
+                userPrefs.minSongDurationSecs.collect { minSecs ->
+                    cachedMinSecs = minSecs
+                    val currentSongs = _uiState.value.songs
+                    val filtered = Companion.filterSongs(currentSongs, "", minSecs)
+                    _uiState.update { it.copy(filteredSongs = filtered) }
+                }
             }
 
             val albumJob = launch {
@@ -74,9 +94,9 @@ class AudioBrowserViewModel @Inject constructor(
                     }
             }
 
-            // If after 10s any collection is still empty, fall back to preview
+            // If after 2s any collection is still loading (edge-case fallback), force preview
             launch {
-                kotlinx.coroutines.delay(10_000)
+                kotlinx.coroutines.delay(2_000)
                 val state = _uiState.value
                 if (state.isLoadingSongs || state.isLoadingAlbums || state.isLoadingArtists) {
                     applyPreviewFallback()
@@ -86,16 +106,19 @@ class AudioBrowserViewModel @Inject constructor(
     }
 
     private fun applyPreviewFallback() {
-        _uiState.update {
-            it.copy(
-                songs = PreviewMedia.songs,
-                albums = PreviewMedia.albums,
-                artists = PreviewMedia.artists,
-                filteredSongs = PreviewMedia.songs,
-                isLoadingSongs = false,
-                isLoadingAlbums = false,
-                isLoadingArtists = false,
-            )
+        viewModelScope.launch {
+            val minSecs = userPrefs.minSongDurationSecs.first()
+            _uiState.update {
+                it.copy(
+                    songs = PreviewMedia.songs,
+                    albums = PreviewMedia.albums,
+                    artists = PreviewMedia.artists,
+                    filteredSongs = Companion.filterSongs(PreviewMedia.songs, "", minSecs),
+                    isLoadingSongs = false,
+                    isLoadingAlbums = false,
+                    isLoadingArtists = false,
+                )
+            }
         }
     }
 
@@ -103,28 +126,37 @@ class AudioBrowserViewModel @Inject constructor(
         _uiState.update { it.copy(currentTab = tab) }
     }
 
+    companion object {
+        internal fun filterSongs(songs: List<AudioItem>, query: String, minSecs: Int): List<AudioItem> {
+            val durationFiltered = if (minSecs > 0) songs.filter { it.durationMs >= minSecs * 1000L } else songs
+            return if (query.isBlank()) durationFiltered
+            else durationFiltered.filter { song ->
+                song.title.contains(query, ignoreCase = true) ||
+                    (song.artist?.contains(query, ignoreCase = true) == true) ||
+                    (song.album?.contains(query, ignoreCase = true) == true)
+            }
+        }
+    }
+
     fun onSearchToggle() {
         search.toggle()
-        _uiState.update { it.copy(filteredSongs = it.songs) }
+        _uiState.update {
+            it.copy(filteredSongs = Companion.filterSongs(it.songs, "", cachedMinSecs))
+        }
     }
 
     fun onSearchQueryChanged(query: String) {
         search.queryChanged(query)
         _uiState.update {
-            it.copy(
-                filteredSongs = if (query.isBlank()) it.songs
-                else it.songs.filter { song ->
-                    song.title.contains(query, ignoreCase = true) ||
-                        (song.artist?.contains(query, ignoreCase = true) == true) ||
-                        (song.album?.contains(query, ignoreCase = true) == true)
-                },
-            )
+            it.copy(filteredSongs = Companion.filterSongs(it.songs, query, cachedMinSecs))
         }
     }
 
     fun onClearSearch() {
         search.clear()
-        _uiState.update { it.copy(filteredSongs = it.songs) }
+        _uiState.update {
+            it.copy(filteredSongs = Companion.filterSongs(it.songs, "", cachedMinSecs))
+        }
     }
 
     fun onSongClicked(song: AudioItem) {
@@ -140,6 +172,10 @@ class AudioBrowserViewModel @Inject constructor(
     }
 
     fun onRetry() {
+        loadAll()
+    }
+
+    fun onRefresh() {
         loadAll()
     }
 }

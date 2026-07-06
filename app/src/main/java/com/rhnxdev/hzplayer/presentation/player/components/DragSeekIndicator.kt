@@ -38,10 +38,10 @@ fun DragSeekIndicator(
     durationMs: Long,
     visible: Boolean,
     modifier: Modifier = Modifier,
+    isForward: Boolean = deltaMs >= 0,
 ) {
     val targetMs = (currentPositionMs + deltaMs).coerceIn(0L, durationMs)
     val fraction = if (durationMs > 0) (targetMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-    val isForward = deltaMs >= 0
 
     val deltaSeconds = (deltaMs / 1000).let {
         if (it == 0L) "" else if (it > 0) "+${it}s" else "${it}s"

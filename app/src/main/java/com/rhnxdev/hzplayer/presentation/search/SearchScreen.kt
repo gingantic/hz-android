@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.domain.model.AudioItem
@@ -44,7 +45,7 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
     onVideoClicked: (VideoItem) -> Unit = {},
-    onAudioClicked: (AudioItem) -> Unit = {},
+    onAudioClicked: (AudioItem, List<AudioItem>) -> Unit = { _, _ -> },
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -116,7 +117,7 @@ fun SearchScreen(
                         onVideoClicked(video)
                     },
                     onAudioClicked = { audio ->
-                        onAudioClicked(audio)
+                        onAudioClicked(audio, uiState.audioResults)
                     },
                 )
             }
@@ -143,6 +144,7 @@ private fun SearchResults(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = Spacing.xxl),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         // Video results
         if (uiState.videoResults.isNotEmpty()) {

@@ -80,6 +80,8 @@ class SubtitleBrowserViewModel @Inject constructor(
             "ftp" -> NetworkProtocol.FTP
             "sftp" -> NetworkProtocol.SFTP
             "smb" -> NetworkProtocol.SMB
+            "webdav" -> NetworkProtocol.WEBDAV
+            "webdavs" -> NetworkProtocol.WEBDAVS
             else -> return null
         }
 
@@ -98,6 +100,8 @@ class SubtitleBrowserViewModel @Inject constructor(
                 NetworkProtocol.FTP -> 21
                 NetworkProtocol.SFTP -> 22
                 NetworkProtocol.SMB -> 445
+                NetworkProtocol.WEBDAV -> 80
+                NetworkProtocol.WEBDAVS -> 443
             }
         }
 

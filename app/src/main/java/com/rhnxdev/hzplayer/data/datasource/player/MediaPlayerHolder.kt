@@ -12,6 +12,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.SeekParameters
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
@@ -35,6 +37,16 @@ class MediaPlayerHolder @Inject constructor(
         )
     }
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private val loadControl = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+            /* minBufferMs = */ 15_000,
+            /* maxBufferMs = */ 30_000,
+            /* bufferForPlaybackMs = */ 500,
+            /* bufferForPlaybackAfterUserActionMs = */ 500
+        )
+        .build()
+
     /** Whether the device display supports HDR (queried once at init). */
     private val _displayNeedsSurfaceView = MutableStateFlow(false)
     val displayNeedsSurfaceView: StateFlow<Boolean> = _displayNeedsSurfaceView.asStateFlow()
@@ -42,6 +54,7 @@ class MediaPlayerHolder @Inject constructor(
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     val player: ExoPlayer = ExoPlayer.Builder(context)
         .setTrackSelector(trackSelector)
+        .setLoadControl(loadControl)
         .setRenderersFactory(
             DefaultRenderersFactory(context)
                 .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
@@ -54,6 +67,7 @@ class MediaPlayerHolder @Inject constructor(
         .setAudioAttributes(AudioAttributes.DEFAULT, true)
         .setHandleAudioBecomingNoisy(true)
         .build().also { exo ->
+            exo.setSeekParameters(SeekParameters.CLOSEST_SYNC)
             val display = context.getSystemService(Context.DISPLAY_SERVICE)?.let {
                 (it as? android.hardware.display.DisplayManager)?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
             }
@@ -77,6 +91,16 @@ class MediaPlayerHolder @Inject constructor(
     init {
         player.addListener(
             object : Player.Listener {
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    val metadata = mediaItem?.mediaMetadata
+                    val uri = mediaItem?.localConfiguration?.uri?.toString()
+                    _playbackStateInfo.value = _playbackStateInfo.value.copy(
+                        currentTitle = metadata?.title?.toString(),
+                        currentArtist = metadata?.artist?.toString(),
+                        currentUri = uri
+                    )
+                }
+
                 override fun onPlaybackStateChanged(state: Int) {
                     _playbackStateInfo.value = _playbackStateInfo.value.copy(
                         state = when (state) {
@@ -181,6 +205,7 @@ class MediaPlayerHolder @Inject constructor(
  * - `smb://` → [SmbDataSource] (jcifs-ng)
  * - `ftp://` → [FtpDataSource] (Apache Commons Net)
  * - `sftp://` → [SftpDataSource] (SSHJ)
+ * - `webdav://` / `webdavs://` → [WebDavDataSource] (OkHttp)
  * - everything else → [DefaultDataSource] (native HTTP/file/content)
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
@@ -195,6 +220,7 @@ private class ProtocolRoutingDataSource(
             "smb" -> SmbDataSource()
             "ftp" -> FtpDataSource()
             "sftp" -> SftpDataSource()
+            "webdav", "webdavs" -> WebDavDataSource()
             else -> defaultFactory.createDataSource()
         }
         android.util.Log.d("ProtocolRoutingDataSource", "routing scheme=${dataSpec.uri.scheme} -> ${delegate!!::class.java.simpleName}")

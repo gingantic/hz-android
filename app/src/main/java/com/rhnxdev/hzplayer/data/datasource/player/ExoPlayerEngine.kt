@@ -8,6 +8,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -36,40 +37,55 @@ class ExoPlayerEngine @Inject constructor(
 
     private var currentMediaUri: String? = null
     private var currentMediaTitle: String? = null
+    private var currentPlaylist: List<androidx.media3.common.MediaItem>? = null
 
     companion object {
         private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "sub")
-        private val SUBTITLE_SCHEMES_WITH_DIR = setOf("file", "smb", "ftp", "sftp")
+        private val SUBTITLE_SCHEMES_WITH_DIR = setOf("file", "smb", "ftp", "sftp", "webdav", "webdavs")
     }
 
-    override fun play(uri: String, title: String, isVideo: Boolean) {
+    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean) {
         currentMediaUri = uri
         currentMediaTitle = title
+        currentPlaylist = null
         subtitleConfigs.clear()
+        discoverNeighborSubtitles(uri)
+        player.setMediaItem(buildMediaItemWithSubtitles(uri, title, artist))
+        player.prepare()
+        player.play()
+    }
 
-        // Discover subtitles off main thread (SMB/network listing must not block UI)
-        // but synchronously before prepare() to avoid mid-playback re-prepare flash.
-        val neighborSubs = try {
-            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                findNeighborSubtitleFiles(uri)
+    fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
+        if (items.isEmpty()) return
+        currentPlaylist = null
+        subtitleConfigs.clear()
+        val mediaItems = items.map { (uri, title) ->
+            // Only discover subtitles for the first item (startIndex); others get plain items
+            if (uri == items[startIndex].first) {
+                currentMediaUri = uri
+                currentMediaTitle = title
+                discoverNeighborSubtitles(uri)
             }
-        } catch (_: Exception) {
-            emptyList()
+            buildMediaItemWithSubtitles(uri, title)
         }
-        if (neighborSubs.isNotEmpty()) {
-            for (subUri in neighborSubs) {
-                val mimeType = inferSubtitleMimeType(subUri)
-                subtitleConfigs.add(
-                    MediaItem.SubtitleConfiguration.Builder(subUri)
-                        .setMimeType(mimeType)
-                        .setLanguage("und")
-                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                        .build()
-                )
-            }
-        }
+        player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), startPositionMs)
+        player.prepare()
+        player.play()
+    }
 
-        player.setMediaItem(buildMediaItemWithSubtitles(uri, title))
+    fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
+        if (items.isEmpty()) return
+        currentPlaylist = null
+        subtitleConfigs.clear()
+        val mediaItems = items.map { audio ->
+            if (audio.uri == items[startIndex].uri) {
+                currentMediaUri = audio.uri
+                currentMediaTitle = audio.title
+                discoverNeighborSubtitles(audio.uri)
+            }
+            buildMediaItemWithSubtitles(audio.uri, audio.title, audio.artist)
+        }
+        player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), 0L)
         player.prepare()
         player.play()
     }
@@ -84,6 +100,7 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun stop() {
         player.stop()
+        currentPlaylist = null
     }
 
     override fun seekTo(positionMs: Long) {
@@ -127,12 +144,13 @@ class ExoPlayerEngine @Inject constructor(
 
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
 
-    private fun buildMediaItemWithSubtitles(uri: String, title: String): MediaItem {
+    private fun buildMediaItemWithSubtitles(uri: String, title: String, artist: String? = null): MediaItem {
         val builder = MediaItem.Builder()
             .setUri(uri)
             .setMediaMetadata(
                 androidx.media3.common.MediaMetadata.Builder()
                     .setTitle(title)
+                    .setArtist(artist)
                     .build(),
             )
         if (subtitleConfigs.isNotEmpty()) {
@@ -305,6 +323,27 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.release()
     }
 
+    // ── Subtitle discovery ───────────────────────────────────────
+
+    private fun discoverNeighborSubtitles(uri: String) {
+        val subs = try {
+            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                findNeighborSubtitleFiles(uri)
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (subs.isNotEmpty()) {
+            subtitleConfigs.addAll(subs.map { subUri ->
+                MediaItem.SubtitleConfiguration.Builder(subUri)
+                    .setMimeType(inferSubtitleMimeType(subUri))
+                    .setLanguage("und")
+                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                    .build()
+            })
+        }
+    }
+
     // ── External subtitle helpers ────────────────────────────────
 
     private fun findNeighborSubtitleFiles(videoUri: String): List<Uri> {
@@ -313,7 +352,7 @@ class ExoPlayerEngine @Inject constructor(
         return when (scheme) {
             "file" -> findLocalNeighborSubtitles(androidUri)
             "smb" -> findSmbNeighborSubtitles(androidUri)
-            "ftp", "sftp" -> findRemoteExtensionSwapSubtitles(androidUri)
+            "ftp", "sftp", "webdav", "webdavs" -> findRemoteExtensionSwapSubtitles(androidUri)
             else -> emptyList()
         }
     }
