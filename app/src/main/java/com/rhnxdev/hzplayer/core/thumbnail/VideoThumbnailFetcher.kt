@@ -2,7 +2,9 @@ package com.rhnxdev.hzplayer.core.thumbnail
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
+import android.util.Log
 import coil3.ImageLoader
 import coil3.decode.DataSource
 import coil3.decode.ImageSource
@@ -11,15 +13,15 @@ import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.key.Keyer
 import coil3.request.Options
+import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
+import jcifs.smb.SmbFile
+import jcifs.smb.SmbRandomAccessFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import okio.FileSystem
 import okio.Path.Companion.toPath
-import android.media.MediaDataSource
-import android.net.Uri
-import android.util.Log
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -107,20 +109,30 @@ class VideoFrameFetcher(
 
     private fun extractSmbFrame(remoteUri: String): Bitmap? {
         Log.d(TAG, "extractSmbFrame: start $remoteUri")
-        val retriever = MediaMetadataRetriever()
-        var dataSource: SmbThumbnailDataSource? = null
+        val androidUri = Uri.parse(remoteUri)
+        val username = Uri.decode(androidUri.userInfo?.substringBefore(':') ?: "")
+        val password = Uri.decode(androidUri.userInfo?.substringAfter(':', "") ?: "")
+        val host = androidUri.host ?: run {
+            Log.w(TAG, "extractSmbFrame: no host in $remoteUri"); return null
+        }
+        val port = androidUri.port.takeIf { it > 0 } ?: 445
+        val path = androidUri.path ?: "/"
+        val cleanUrl = "smb://$host:$port$path"
+
         return try {
-            dataSource = SmbThumbnailDataSource(remoteUri, options.context)
-            retriever.setDataSource(dataSource as MediaDataSource)
-            val frame = extractBestFrame(retriever)
-            Log.d(TAG, "extractSmbFrame: frame=${frame != null} size=${frame?.width}x${frame?.height}")
-            frame
+            val ctx = ConnectionPool.borrowSmbThumbnailContext(host, port, username, password)
+            val file = SmbFile(cleanUrl, ctx)
+            val size = file.length()
+            val raf = SmbRandomAccessFile(file, "r")
+            val bridge = RandomAccessBridge(raf, size)
+            try {
+                NativeThumbnailExtractor.extractThumbnail(bridge, 0.40f, THUMB_MAX_WIDTH)
+            } finally {
+                bridge.close()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "extractSmbFrame: failed", e)
             null
-        } finally {
-            runCatching { dataSource?.close() }
-            runCatching { retriever.release() }
         }
     }
 
