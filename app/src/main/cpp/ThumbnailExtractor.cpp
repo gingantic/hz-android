@@ -275,7 +275,8 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
             if (ret < 0) break;
 
-            if (frame->pts >= targetTs) {
+            if (frame->pts >= targetTs ||
+                (frame->pts == AV_NOPTS_VALUE && !foundFrame)) {
                 // We got our frame — transfer ownership
                 foundFrame = av_frame_clone(frame);
                 if (foundFrame) found = 1;
