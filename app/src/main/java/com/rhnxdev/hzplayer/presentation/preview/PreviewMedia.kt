@@ -1,20 +1,19 @@
 package com.rhnxdev.hzplayer.presentation.preview
 
+import com.rhnxdev.hzplayer.BuildConfig
 import com.rhnxdev.hzplayer.domain.model.Album
 import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.FolderItem
-import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
-import com.rhnxdev.hzplayer.domain.model.MediaItem as DomainMediaItem
 
 object PreviewMedia {
 
     // ── Videos ──────────────────────────────────────────────────────
 
-    val videoMovies: List<Map<String, Any>> = listOf(
+    val videoMovies: List<Map<String, Any>> = if (BuildConfig.DEBUG) listOf(
         mapOf(
             "title" to "Blade Runner 2049",
             "subtitle" to "2017 • Sci-Fi",
@@ -79,11 +78,11 @@ object PreviewMedia {
             "resolution" to "HD",
             "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
         ),
-    )
+    ) else emptyList()
 
     // ── Recent Videos (partially watched) ──────────────────────────
 
-    val recentVideos: List<Map<String, Any>> = listOf(
+    val recentVideos: List<Map<String, Any>> = if (BuildConfig.DEBUG) listOf(
         mapOf(
             "title" to "Blade Runner 2049",
             "subtitle" to "45% watched",
@@ -98,11 +97,11 @@ object PreviewMedia {
             "progress" to 0.72f,
             "uri" to "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
         ),
-    )
+    ) else emptyList()
 
     // ── Albums ──────────────────────────────────────────────────────
 
-    val albums: List<Album> = listOf(
+    val albums: List<Album> = if (BuildConfig.DEBUG) listOf(
         Album(id = 1, title = "Random Access Memories", artist = "Daft Punk", trackCount = 13, year = 2013),
         Album(id = 2, title = "After Hours", artist = "The Weeknd", trackCount = 14, year = 2020),
         Album(id = 3, title = "Inception (OST)", artist = "Hans Zimmer", trackCount = 12, year = 2010),
@@ -111,11 +110,11 @@ object PreviewMedia {
         Album(id = 6, title = "To Pimp a Butterfly", artist = "Kendrick Lamar", trackCount = 16, year = 2015),
         Album(id = 7, title = "Currents", artist = "Tame Impala", trackCount = 13, year = 2015),
         Album(id = 8, title = "Dawn FM", artist = "The Weeknd", trackCount = 16, year = 2022),
-    )
+    ) else emptyList()
 
     // ── Artists ────────────────────────────────────────────────────
 
-    val artists: List<Artist> = listOf(
+    val artists: List<Artist> = if (BuildConfig.DEBUG) listOf(
         Artist(id = 1, name = "Daft Punk", albumCount = 4, trackCount = 52),
         Artist(id = 2, name = "Hans Zimmer", albumCount = 30, trackCount = 150),
         Artist(id = 3, name = "The Weeknd", albumCount = 5, trackCount = 72),
@@ -124,11 +123,11 @@ object PreviewMedia {
         Artist(id = 6, name = "Tame Impala", albumCount = 4, trackCount = 40),
         Artist(id = 7, name = "Radiohead", albumCount = 9, trackCount = 88),
         Artist(id = 8, name = "Miles Davis", albumCount = 50, trackCount = 200),
-    )
+    ) else emptyList()
 
     // ── Songs ──────────────────────────────────────────────────────
 
-    val songs: List<AudioItem> = listOf(
+    val songs: List<AudioItem> = if (BuildConfig.DEBUG) listOf(
         AudioItem(id = 1, title = "Get Lucky", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", artist = "Daft Punk", album = "Random Access Memories", durationMs = 369_000, trackNumber = 1),
         AudioItem(id = 2, title = "Blinding Lights", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", artist = "The Weeknd", album = "After Hours", durationMs = 200_000, trackNumber = 3),
         AudioItem(id = 3, title = "Time", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", artist = "Hans Zimmer", album = "Inception (OST)", durationMs = 290_000, trackNumber = 1),
@@ -141,11 +140,11 @@ object PreviewMedia {
         AudioItem(id = 10, title = "Let It Happen", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3", artist = "Tame Impala", album = "Currents", durationMs = 498_000, trackNumber = 1),
         AudioItem(id = 11, title = "Ivy", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3", artist = "Frank Ocean", album = "Blonde", durationMs = 249_000, trackNumber = 2),
         AudioItem(id = 12, title = "Interstellar (Main Theme)", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3", artist = "Hans Zimmer", album = "Interstellar (OST)", durationMs = 475_000, trackNumber = 1),
-    )
+    ) else emptyList()
 
     // ── Files/Folders ─────────────────────────────────────────────
 
-    val folders: List<FolderItem> = listOf(
+    val folders: List<FolderItem> = if (BuildConfig.DEBUG) listOf(
         FolderItem(id = 1, name = "Movies", path = "/storage/emulated/0/Movies", isDirectory = true, childCount = 15, dateModified = 1_700_000_000_000),
         FolderItem(id = 2, name = "TV Shows", path = "/storage/emulated/0/TV", isDirectory = true, childCount = 8, dateModified = 1_690_000_000_000),
         FolderItem(id = 3, name = "Music", path = "/storage/emulated/0/Music", isDirectory = true, childCount = 42, dateModified = 1_710_000_000_000),
@@ -155,20 +154,20 @@ object PreviewMedia {
         FolderItem(id = 11, name = "interstellar.mkv", path = "/storage/emulated/0/Movies/interstellar.mkv", isDirectory = false, fileSize = 15_800_000_000, dateModified = 1_700_000_000_000, mimeType = "video/x-matroska"),
         FolderItem(id = 12, name = "lecture_notes.pdf", path = "/storage/emulated/0/Download/lecture_notes.pdf", isDirectory = false, fileSize = 2_400_000, dateModified = 1_712_000_000_000, mimeType = "application/pdf"),
         FolderItem(id = 13, name = "photo_2024.jpg", path = "/storage/emulated/0/Download/photo_2024.jpg", isDirectory = false, fileSize = 3_200_000, dateModified = 1_714_000_000_000, mimeType = "image/jpeg"),
-    )
+    ) else emptyList()
 
     // ── Network Servers ─────────────────────────────────────────────
 
-    val servers: List<ServerConfig> = listOf(
+    val servers: List<ServerConfig> = if (BuildConfig.DEBUG) listOf(
         ServerConfig(id = 1, name = "Home NAS", protocol = NetworkProtocol.SMB, host = "192.168.1.100", port = 445, username = "user"),
         ServerConfig(id = 2, name = "Office FTP", protocol = NetworkProtocol.FTP, host = "ftp.office.com", port = 21, username = "admin"),
         ServerConfig(id = 3, name = "Dev Server", protocol = NetworkProtocol.SFTP, host = "dev.example.com", port = 22, username = "deploy"),
-    )
+    ) else emptyList()
 
     // ── Stream History ──────────────────────────────────────────────
 
-    val streamHistory: List<StreamHistoryItem> = listOf(
+    val streamHistory: List<StreamHistoryItem> = if (BuildConfig.DEBUG) listOf(
         StreamHistoryItem(id = 1, url = "https://example.com/live/stream.m3u8", title = "Live Stream", isFavorite = true, lastPlayedAt = System.currentTimeMillis() - 3_600_000),
         StreamHistoryItem(id = 2, url = "rtsp://camera.local/feed", title = "Security Camera", isFavorite = false, lastPlayedAt = System.currentTimeMillis() - 86_400_000),
-    )
+    ) else emptyList()
 }

@@ -7,6 +7,7 @@ import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
+import com.rhnxdev.hzplayer.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -22,23 +23,26 @@ class MediaRepositoryImpl @Inject constructor(
     private val mediaScanner: MediaScanner,
 ) : MediaRepository {
 
-    private val previewVideos: List<VideoItem> = PreviewMedia.videoMovies.mapIndexed { index, item ->
-        VideoItem(
-            id = index.toLong(),
-            title = item["title"] as? String ?: "",
-            uri = item["uri"] as? String ?: "",
-            durationMs = (item["durationMs"] as? Long) ?: 0,
-            resolution = item["resolution"] as? String,
-        )
-    }
+    private val previewVideos: List<VideoItem> = if (BuildConfig.DEBUG) {
+        PreviewMedia.videoMovies.mapIndexed { index, item ->
+            VideoItem(
+                id = index.toLong(),
+                title = item["title"] as? String ?: "",
+                uri = item["uri"] as? String ?: "",
+                durationMs = (item["durationMs"] as? Long) ?: 0,
+                resolution = item["resolution"] as? String,
+            )
+        }
+    } else emptyList()
 
     override fun getAllVideos(sortType: SortType): Flow<List<VideoItem>> = flow {
         // Phase 1: Try Room cache (instant — emitted immediately if populated)
         val cached = mediaDao.getAllVideos().first()
         if (cached.isNotEmpty()) {
             emit(applySort(cached.map { it.toVideoItem() }, sortType))
-        } else {
+        } else if (BuildConfig.DEBUG) {
             // Phase 2: No cache — emit preview data immediately so UI never shows a blank shimmer.
+            // Debug only: release builds get empty list until scan completes.
             emit(applySort(previewVideos, sortType))
         }
 
@@ -57,7 +61,7 @@ class MediaRepositoryImpl @Inject constructor(
 
     override suspend fun getVideoById(id: Long): VideoItem? {
         return mediaDao.getById(id)?.toVideoItem()
-            ?: previewVideos.find { it.id == id }
+            ?: if (BuildConfig.DEBUG) previewVideos.find { it.id == id } else null
     }
 
     override suspend fun getVideosByUris(uris: List<String>): List<VideoItem> {
@@ -65,7 +69,7 @@ class MediaRepositoryImpl @Inject constructor(
         val localVideos = mediaDao.getByUris(uris).map { it.toVideoItem() }
         val localUris = localVideos.map { it.uri }.toSet()
         val remainingUris = uris.filter { it !in localUris }
-        val matchingPreviews = previewVideos.filter { it.uri in remainingUris }
+        val matchingPreviews = if (BuildConfig.DEBUG) previewVideos.filter { it.uri in remainingUris } else emptyList()
         return localVideos + matchingPreviews
     }
 

@@ -37,6 +37,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -77,7 +79,7 @@ fun SubtitleSearchDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Search Subtitles Online",
+                    text = stringResource(R.string.search_subtitles_online),
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -95,7 +97,7 @@ fun SubtitleSearchDialog(
                 OutlinedTextField(
                     value = uiState.query,
                     onValueChange = viewModel::onQueryChange,
-                    placeholder = { Text("Movie or show name...", color = Color.Gray) },
+                    placeholder = { Text(stringResource(R.string.subtitle_search_placeholder), color = Color.Gray) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
@@ -110,7 +112,7 @@ fun SubtitleSearchDialog(
                 IconButton(onClick = viewModel::search) {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
+                        contentDescription = stringResource(R.string.search),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
@@ -140,7 +142,7 @@ fun SubtitleSearchDialog(
             // Results
             if (uiState.results.isEmpty() && !uiState.isSearching && uiState.error == null) {
                 Text(
-                    text = "Enter a name and tap search.",
+                    text = stringResource(R.string.subtitle_search_hint),
                     color = Color.Gray,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 12.dp),
@@ -175,7 +177,7 @@ fun SubtitleSearchDialog(
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text(text = "Close", color = Color.White.copy(alpha = 0.7f))
+                    Text(text = stringResource(R.string.close), color = Color.White.copy(alpha = 0.7f))
                 }
             }
         }
@@ -197,7 +199,7 @@ private fun SearchResultRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = result.releaseName.ifBlank { "Unknown" },
+                text = result.releaseName.ifBlank { stringResource(R.string.unknown) },
                 style = MaterialTheme.typography.bodyMedium.copy(
                     color = Color.White,
                     fontWeight = FontWeight.Medium,
@@ -211,14 +213,14 @@ private fun SearchResultRow(
                     style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.primary),
                 )
                 Text(
-                    text = " • ${result.downloadCount} downloads",
+                    text = stringResource(R.string.downloads_count, result.downloadCount),
                     style = MaterialTheme.typography.labelSmall.copy(color = Color.Gray),
                 )
             }
         }
         Icon(
             imageVector = Icons.Default.Download,
-            contentDescription = "Download",
+            contentDescription = stringResource(R.string.download),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .size(22.dp)

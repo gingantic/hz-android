@@ -57,10 +57,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
@@ -99,8 +101,8 @@ fun MiniPlayerBar(
 
     AnimatedVisibility(
         visible = visible,
-        enter = slideInVertically(animationSpec = tween(durationMillis = 300)) { it } + fadeIn(animationSpec = tween(durationMillis = 300)),
-        exit = slideOutVertically(animationSpec = tween(durationMillis = 300)) { it } + fadeOut(animationSpec = tween(durationMillis = 300)),
+        enter = slideInVertically(animationSpec = tween(durationMillis = 300)) { it },
+        exit = slideOutVertically(animationSpec = tween(durationMillis = 300)) { it },
     ) {
         key(lastNonEmptyTitle) {
             val dismissState = rememberSwipeToDismissBoxState(
@@ -141,7 +143,7 @@ fun MiniPlayerBar(
                     // Left X icon (visible when swiping from start to end)
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(R.string.close),
                         tint = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier
                             .padding(start = Spacing.xl)
@@ -155,7 +157,7 @@ fun MiniPlayerBar(
                     // Right X icon (visible when swiping from end to start)
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(R.string.close),
                         tint = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier
                             .padding(end = Spacing.xl)
@@ -246,14 +248,14 @@ fun MiniPlayerBar(
                         IconButton(onClick = onPlayPause) {
                             Icon(
                                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                contentDescription = stringResource(if (isPlaying) R.string.pause else R.string.play),
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
                         IconButton(onClick = onNext) {
                             Icon(
                                 imageVector = Icons.Default.SkipNext,
-                                contentDescription = "Next",
+                                contentDescription = stringResource(R.string.next),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

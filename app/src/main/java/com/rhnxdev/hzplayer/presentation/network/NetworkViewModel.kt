@@ -140,13 +140,13 @@ class NetworkViewModel @Inject constructor(
     }
 
     fun onStreamUrlChanged(url: String) {
-        _uiState.update { it.copy(streamUrl = url, streamUrlError = null) }
+        _uiState.update { it.copy(streamUrl = url, isStreamUrlError = false) }
     }
 
     fun onPlayStream(): String? {
         val url = _uiState.value.streamUrl.trim()
         if (!isValidStreamUrl(url)) {
-            _uiState.update { it.copy(streamUrlError = "Enter a valid URL (http, https, rtsp)") }
+            _uiState.update { it.copy(isStreamUrlError = true) }
             return null
         }
         viewModelScope.launch {

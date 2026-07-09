@@ -42,6 +42,13 @@ private val VoidColorScheme = darkColorScheme(
     outlineVariant = DarkOutlineVariant,
     error = DarkError,
     onError = DarkOnError,
+    errorContainer = Color(0xFF3F080A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    surfaceContainerLowest = androidx.compose.ui.graphics.Color.Black,
+    surfaceContainerLow = Color(0xFF0D0D0D),
+    surfaceContainer = Color(0xFF151515),
+    surfaceContainerHigh = Color(0xFF1F1F1F),
+    surfaceContainerHighest = Color(0xFF2B2B2B),
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -67,6 +74,13 @@ private val DarkColorScheme = darkColorScheme(
     outlineVariant = DarkOutlineVariant,
     error = DarkError,
     onError = DarkOnError,
+    errorContainer = Color(0xFF8C1D18),
+    onErrorContainer = Color(0xFFFFDAD6),
+    surfaceContainerLowest = Color(0xFF0F0F0F),
+    surfaceContainerLow = Color(0xFF1E1E1E),
+    surfaceContainer = Color(0xFF222222),
+    surfaceContainerHigh = Color(0xFF2A2A2A),
+    surfaceContainerHighest = Color(0xFF363636),
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -92,6 +106,13 @@ private val LightColorScheme = lightColorScheme(
     outlineVariant = LightOutlineVariant,
     error = LightError,
     onError = LightOnError,
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFAF4EE),
+    surfaceContainer = Color(0xFFEFE9E3),
+    surfaceContainerHigh = Color(0xFFE5DDD5),
+    surfaceContainerHighest = Color(0xFFDCD4CB),
 )
 
 @Composable

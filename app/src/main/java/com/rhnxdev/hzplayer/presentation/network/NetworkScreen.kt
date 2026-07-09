@@ -63,6 +63,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -146,14 +148,14 @@ fun NetworkScreen(
                             androidx.compose.material3.Icon(
                                 imageVector = if (uiState.isMediaMode) Icons.AutoMirrored.Filled.ViewList
                                 else Icons.Filled.PhotoLibrary,
-                                contentDescription = if (uiState.isMediaMode) "List view" else "Media view",
+                                contentDescription = if (uiState.isMediaMode) stringResource(R.string.list_view) else stringResource(R.string.media_view),
                             )
                         }
                         // Search toggle
                         androidx.compose.material3.IconButton(onClick = viewModel::onSearchToggle) {
                             androidx.compose.material3.Icon(
                                 imageVector = Icons.Filled.Search,
-                                contentDescription = "Search",
+                                contentDescription = stringResource(R.string.network_search_cd),
                             )
                         }
                     }
@@ -161,7 +163,7 @@ fun NetworkScreen(
                     androidx.compose.material3.IconButton(onClick = { showSortMenu = true }) {
                         androidx.compose.material3.Icon(
                             imageVector = Icons.AutoMirrored.Filled.Sort,
-                            contentDescription = "Sort",
+                            contentDescription = stringResource(R.string.network_sort_cd),
                         )
                     }
                     androidx.compose.material3.DropdownMenu(
@@ -169,9 +171,9 @@ fun NetworkScreen(
                         onDismissRequest = { showSortMenu = false },
                     ) {
                         listOf(
-                            SortType.TITLE to "Sort by Name",
-                            SortType.DATE_MODIFIED to "Sort by Date",
-                            SortType.FILE_SIZE to "Sort by Size",
+                            SortType.TITLE to stringResource(R.string.sort_by_name),
+                            SortType.DATE_MODIFIED to stringResource(R.string.sort_by_date),
+                            SortType.FILE_SIZE to stringResource(R.string.sort_by_size),
                         ).forEach { (type, label) ->
                             androidx.compose.material3.DropdownMenuItem(
                                 text = { androidx.compose.material3.Text(label) },
@@ -290,7 +292,7 @@ private fun NetworkHomeContent(
         item {
             Column(modifier = Modifier.padding(horizontal = Spacing.lg)) {
                 Text(
-                    text = "Open Network Stream",
+                    text = stringResource(R.string.open_network_stream),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -299,11 +301,11 @@ private fun NetworkHomeContent(
                     value = uiState.streamUrl,
                     onValueChange = onStreamUrlChanged,
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("http://, https://, rtsp://...") },
-                    isError = uiState.streamUrlError != null,
-                    supportingText = uiState.streamUrlError?.let { error ->
-                        { Text(error) }
-                    },
+                    placeholder = { Text(stringResource(R.string.stream_url_placeholder)) },
+                    isError = uiState.isStreamUrlError,
+                    supportingText = if (uiState.isStreamUrlError) {
+                        { Text(stringResource(R.string.stream_url_error)) }
+                    } else null,
                     singleLine = true,
                     shape = RoundedCornerShape(Spacing.md),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -328,11 +330,11 @@ private fun NetworkHomeContent(
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.PlayArrow,
-                                contentDescription = "Play",
+                                contentDescription = stringResource(R.string.play),
                                 modifier = Modifier.size(20.dp),
                             )
                             Spacer(modifier = Modifier.width(Spacing.xs))
-                            Text("Play")
+                            Text(stringResource(R.string.play))
                         }
                     },
                 )
@@ -350,21 +352,21 @@ private fun NetworkHomeContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Saved Servers",
+                        text = stringResource(R.string.saved_servers),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     IconButton(onClick = onAddServer) {
                         Icon(
                             imageVector = HzPlayerIcons.Add,
-                            contentDescription = "Add server",
+                            contentDescription = stringResource(R.string.add_server_cd),
                         )
                     }
                 }
 
                 if (uiState.savedServers.isEmpty()) {
                     Text(
-                        text = "No servers added yet",
+                        text = stringResource(R.string.no_servers_title),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -420,7 +422,7 @@ private fun NetworkHomeContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Discovery Servers",
+                        text = stringResource(R.string.discovery_servers),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -434,7 +436,7 @@ private fun NetworkHomeContent(
                             )
                             Icon(
                                 imageVector = HzPlayerIcons.Network,
-                                contentDescription = if (uiState.isDiscovering) "Stop scan" else "Scan network",
+                                contentDescription = if (uiState.isDiscovering) stringResource(R.string.stop_scan_cd) else stringResource(R.string.scan_network_cd),
                                 modifier = Modifier.size(24.dp).then(if (uiState.isDiscovering) Modifier.alpha(alpha) else Modifier),
                             )
                         }
@@ -443,7 +445,7 @@ private fun NetworkHomeContent(
 
                 if (!uiState.isDiscovering && uiState.discoveredServers.isEmpty()) {
                     Text(
-                        text = "No servers discovered",
+                        text = stringResource(R.string.no_servers_discovered),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -498,13 +500,13 @@ private fun NetworkHomeContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Stream History",
+                    text = stringResource(R.string.stream_history),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 if (uiState.streamHistory.isNotEmpty()) {
                     TextButton(onClick = onClearHistory) {
-                        Text("Clear")
+                        Text(stringResource(R.string.clear))
                     }
                 }
             }
@@ -513,7 +515,7 @@ private fun NetworkHomeContent(
         if (uiState.streamHistory.isEmpty()) {
             item {
                 Text(
-                    text = "No streams played yet",
+                    text = stringResource(R.string.no_streams_title),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -668,21 +670,21 @@ private fun CredentialDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Text(
-                    text = "${server.protocol.name} • ${server.host}",
+                    text = stringResource(R.string.server_summary, server.protocol.name, server.host),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text("Username") },
+                    label = { Text(stringResource(R.string.label_username)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.label_password)) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
@@ -695,7 +697,7 @@ private fun CredentialDialog(
                         onCheckedChange = { saveToSaved = it },
                     )
                     Text(
-                        text = "Save to Saved Servers",
+                        text = stringResource(R.string.save_to_saved),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -703,12 +705,12 @@ private fun CredentialDialog(
         },
         confirmButton = {
             TextButton(onClick = { onProvided(username, password, saveToSaved) }) {
-                Text("Connect")
+                Text(stringResource(R.string.connect))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.dialog_cancel))
             }
         },
     )

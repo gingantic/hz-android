@@ -39,8 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 
 @Composable
@@ -51,7 +53,7 @@ fun ThemeSelectionDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Select Theme") },
+        title = { Text(stringResource(R.string.theme_selection_title)) },
         text = {
             Column {
                 ThemeMode.entries.forEach { mode ->
@@ -69,9 +71,9 @@ fun ThemeSelectionDialog(
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(
                             text = when (mode) {
-                                ThemeMode.LIGHT -> "Light"
-                                ThemeMode.DARK -> "Dark"
-                                ThemeMode.VOID -> "Void"
+                                ThemeMode.LIGHT -> stringResource(R.string.theme_light)
+                                ThemeMode.DARK -> stringResource(R.string.theme_dark)
+                                ThemeMode.VOID -> stringResource(R.string.theme_void)
                             },
                             style = MaterialTheme.typography.bodyLarge
                         )
@@ -81,7 +83,7 @@ fun ThemeSelectionDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.dialog_cancel))
             }
         }
     )
@@ -142,7 +144,7 @@ fun ColorPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Theme Color Picker") },
+        title = { Text(stringResource(R.string.color_picker_title)) },
         text = {
             Column(
                 modifier = Modifier
@@ -193,7 +195,7 @@ fun ColorPickerDialog(
 
                 // Grid of Presets
                 Text(
-                    text = "Presets",
+                    text = stringResource(R.string.color_presets),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -243,7 +245,7 @@ fun ColorPickerDialog(
                 // RGB sliders
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Custom RGB Colors",
+                        text = stringResource(R.string.color_custom_rgb),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -255,7 +257,7 @@ fun ColorPickerDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Red", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.color_red), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("${redValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
                         Slider(
@@ -275,7 +277,7 @@ fun ColorPickerDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Green", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.color_green), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("${greenValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
                         Slider(
@@ -295,7 +297,7 @@ fun ColorPickerDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Blue", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.color_blue), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("${blueValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
                         Slider(
@@ -313,12 +315,12 @@ fun ColorPickerDialog(
         },
         confirmButton = {
             TextButton(onClick = { onSelect(selectedColorArgb) }) {
-                Text("Select")
+                Text(stringResource(R.string.dialog_select))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.dialog_cancel))
             }
         }
     )
@@ -334,11 +336,11 @@ fun OpenSubtitlesApiKeyDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("OpenSubtitles API Key") },
+        title = { Text(stringResource(R.string.opensubtitles_title)) },
         text = {
             Column {
                 Text(
-                    text = "Enter your API key from opensubtitles.com. Required for online subtitle search.",
+                    text = stringResource(R.string.opensubtitles_desc),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
@@ -346,7 +348,7 @@ fun OpenSubtitlesApiKeyDialog(
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    placeholder = { Text("e.g. abc123xyz…") },
+                    placeholder = { Text(stringResource(R.string.opensubtitles_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -357,12 +359,12 @@ fun OpenSubtitlesApiKeyDialog(
         },
         confirmButton = {
             TextButton(onClick = { onSave(text.trim()) }) {
-                Text("Save")
+                Text(stringResource(R.string.dialog_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.dialog_cancel))
             }
         }
     )

@@ -13,4 +13,339 @@
     <string name="player_error_unknown">Something went wrong during playback.</string>
 
     <string name="player_action_retry">Retry</string>
+
+    <!-- Video library -->
+    <string name="video_sort_cd">Sort</string>
+    <string name="sort_by_title">Sort by Title</string>
+    <string name="sort_by_duration">Sort by Duration</string>
+    <string name="sort_by_name">Sort by Name</string>
+    <string name="sort_by_size">Sort by Size</string>
+    <string name="video_load_error">Could not load videos</string>
+    <string name="video_empty_title">No videos found</string>
+    <string name="video_empty_subtitle">Tap browse to find media on your device.</string>
+    <string name="no_results_title">No results</string>
+    <string name="video_search_empty">No videos found for \"%1$s\".</string>
+    <string name="cat_recent">Recent</string>
+    <string name="cat_all_videos">All Videos</string>
+
+    <!-- Search -->
+    <string name="search_placeholder">Search media...</string>
+    <string name="search_videos_placeholder">Search videos...</string>
+    <string name="search_cd">Search</string>
+    <string name="clear_cd">Clear</string>
+    <string name="search_empty_title">Search your media</string>
+    <string name="search_empty_subtitle">Find videos and music across your device.</string>
+    <string name="search_empty">No media found for \"%1$s\".</string>
+    <string name="search_videos_count">Videos (%1$d)</string>
+    <string name="search_music_count">Music (%1$d)</string>
+
+    <!-- Browse -->
+    <string name="browse_sort_cd">Sort</string>
+    <string name="play_all_cd">Play All</string>
+    <string name="storage_empty_title">No storage found</string>
+    <string name="storage_empty_subtitle">Could not detect any storage volumes.</string>
+    <string name="favorites">Favorites</string>
+    <string name="item_count">%1$d items</string>
+
+    <!-- Navigation destinations -->
+    <string name="nav_video">Video</string>
+    <string name="nav_audio">Audio</string>
+    <string name="nav_browse">Browse</string>
+    <string name="nav_network">Network</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Player common -->
+    <string name="back_cd">Back</string>
+
+    <!-- Server list / cards -->
+    <string name="options_cd">Options</string>
+    <string name="edit">Edit</string>
+    <string name="delete">Delete</string>
+    <string name="server_summary">%1$s • %2$s</string>
+
+    <!-- Subtitle search -->
+    <string name="subtitle_search_placeholder">Movie or show name...</string>
+
+    <!-- Network screen -->
+    <string name="network_search_cd">Search</string>
+    <string name="network_sort_cd">Sort</string>
+    <string name="open_network_stream">Open Network Stream</string>
+    <string name="saved_servers">Saved Servers</string>
+    <string name="add_server_cd">Add server</string>
+    <string name="no_servers_title">No servers added yet</string>
+    <string name="discovery_servers">Discovery Servers</string>
+    <string name="no_servers_discovered">No servers discovered</string>
+    <string name="stream_history">Stream History</string>
+    <string name="no_streams_title">No streams played yet</string>
+    <string name="save_to_saved">Save to Saved Servers</string>
+    <string name="stream_url_placeholder">http://, https://, rtsp://...</string>
+    <string name="clear">Clear</string>
+    <string name="connect">Connect</string>
+    <string name="stream_url_error">Enter a valid URL (http, https, rtsp)</string>
+
+    <!-- Network scan -->
+    <string name="scan_network_cd">Scan network</string>
+    <string name="stop_scan_cd">Stop scan</string>
+
+    <!-- Credential / server config field labels -->
+    <string name="label_username">Username</string>
+    <string name="label_password">Password</string>
+
+    <!-- Shared dialog controls -->
+    <string name="dialog_save">Save</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_select">Select</string>
+
+    <!-- Not-implemented suffix (concatenated where needed) -->
+    <string name="not_implemented">(Not implemented)</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_display">Display</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_color">Theme color</string>
+    <string name="settings_dynamic_colors">Dynamic colors</string>
+    <string name="settings_dynamic_colors_sub">Use system accent color</string>
+    <string name="settings_playback_engine">Playback Engine</string>
+    <string name="settings_media_engine">Media engine</string>
+    <string name="settings_video">Video</string>
+    <string name="settings_default_subtitle">Default subtitle track</string>
+    <string name="settings_video_hdr">Enable HDR playback</string>
+    <string name="settings_video_hdr_sub">In progress — preference is saved but HDR/SDR mode currently ignores this toggle.</string>
+    <string name="settings_resume_playback">Resume playback</string>
+    <string name="settings_resume_playback_sub">Continue from where you left off</string>
+    <string name="settings_background_play">Background play</string>
+    <string name="settings_background_play_sub">Continue audio when video is minimized</string>
+    <string name="settings_gesture_sensitivity">Gesture seek sensitivity</string>
+    <string name="settings_jump_delay">Jump delay</string>
+    <string name="settings_long_jump_delay">Long jump delay</string>
+    <string name="settings_subtitles">Subtitles</string>
+    <string name="settings_opensubtitles_key">OpenSubtitles API Key</string>
+    <string name="settings_opensubtitles_not_configured">Not configured — get one at opensubtitles.com</string>
+    <string name="settings_audio">Audio</string>
+    <string name="settings_audio_jump_delay">Audio jump delay</string>
+    <string name="settings_equalizer">Equalizer</string>
+    <string name="settings_equalizer_sub">Adjust frequency bands</string>
+    <string name="settings_audio_track_info">Audio track info</string>
+    <string name="settings_audio_track_info_sub">Show technical details</string>
+    <string name="settings_min_song_duration">Min song duration</string>
+    <string name="settings_min_song_duration_disabled">Disabled (show all songs)</string>
+    <string name="settings_min_song_duration_hidden">Hide songs under %1$d seconds</string>
+    <string name="settings_playback">Playback</string>
+    <string name="settings_default_speed">Default playback speed</string>
+    <string name="settings_storage_permissions">Storage &amp; Permissions</string>
+    <string name="settings_request_media_perms">Request media permissions</string>
+    <string name="settings_request_media_perms_sub">Grant access to photos, video, and audio</string>
+    <string name="settings_full_storage">Full storage access</string>
+    <string name="settings_full_storage_granted">Already granted</string>
+    <string name="settings_full_storage_sub">Allow access to all files on device</string>
+    <string name="settings_media_dirs">Media directories</string>
+    <string name="settings_media_dirs_sub">Select folders to scan</string>
+    <string name="settings_show_hidden">Show hidden files</string>
+    <string name="settings_show_hidden_sub">Display hidden files in browser</string>
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_clear_cache">Clear media cache</string>
+    <string name="settings_clear_cache_sub">Free up storage space</string>
+    <string name="settings_stats_nerds">Stats for nerds</string>
+    <string name="settings_stats_nerds_sub">Show video/audio codec info in player overlay</string>
+    <string name="settings_about">About Hz Player</string>
+    <string name="settings_version">Version 1.0</string>
+    <string name="settings_licenses">Open source licenses</string>
+    <string name="settings_licenses_sub">View third-party licenses</string>
+
+    <!-- Server config dialog -->
+    <string name="label_name">Name</string>
+    <string name="placeholder_name">My Server</string>
+    <string name="error_name_required">Name is required</string>
+    <string name="label_host">Host</string>
+    <string name="placeholder_host">192.168.1.100</string>
+    <string name="error_host_required">Host is required</string>
+    <string name="label_port">Port</string>
+    <string name="placeholder_anonymous">anonymous</string>
+    <string name="error_username_required">Username required (or enable anonymous)</string>
+    <string name="label_base_path">Base Path</string>
+    <string name="placeholder_base_path">/</string>
+    <string name="protocol_label">Protocol</string>
+    <string name="checkbox_allow_anonymous">Allow anonymous login</string>
+    <string name="edit_server">Edit Server</string>
+    <string name="add_server">Add Server</string>
+    <string name="hide">Hide</string>
+    <string name="show">Show</string>
+
+    <!-- Settings dialogs -->
+    <string name="theme_selection_title">Select Theme</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_void">Void</string>
+    <string name="color_picker_title">Theme Color Picker</string>
+    <string name="color_red">Red</string>
+    <string name="color_green">Green</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_presets">Presets</string>
+    <string name="color_custom_rgb">Custom RGB Colors</string>
+    <string name="opensubtitles_title">OpenSubtitles API Key</string>
+    <string name="opensubtitles_desc">Enter your API key from opensubtitles.com. Required for online subtitle search.</string>
+    <string name="opensubtitles_placeholder">e.g. abc123xyz…</string>
+
+    <!-- Debug overlay -->
+    <string name="debug_stats_title">Stats for nerds</string>
+    <string name="debug_close">Close</string>
+    <string name="debug_section_video">Video</string>
+    <string name="debug_section_audio">Audio</string>
+    <string name="debug_section_network">Network</string>
+    <string name="debug_section_device">Device</string>
+    <string name="debug_stat_codec">Codec</string>
+    <string name="debug_stat_decoder">Decoder</string>
+    <string name="debug_stat_resolution">Resolution</string>
+    <string name="debug_stat_bitrate">Avg bitrate</string>
+    <string name="debug_stat_fps">FPS (rendered)</string>
+    <string name="debug_stat_dropped">Dropped</string>
+    <string name="debug_stat_color">Color</string>
+    <string name="debug_stat_hdr">HDR</string>
+    <string name="debug_stat_sample_rate">Sample rate</string>
+    <string name="debug_stat_channels">Channels</string>
+    <string name="debug_stat_language">Language</string>
+    <string name="debug_stat_speed">Speed</string>
+    <string name="debug_stat_downloaded">Downloaded</string>
+
+    <!-- Audio player sheet -->
+    <string name="no_track">No track</string>
+    <string name="unknown_artist">Unknown artist</string>
+
+    <!-- Audio selection dialog -->
+    <string name="no_alternate_audio">No alternate audio tracks available</string>
+
+    <!-- Subtitle browser bottom sheet -->
+    <string name="browse_subtitles">Browse Subtitles</string>
+    <string name="navigate_up">Navigate up</string>
+    <string name="select_storage">Select storage</string>
+    <string name="network_path">Network path</string>
+    <string name="could_not_load_files">Could not load files</string>
+    <string name="no_subtitle_files">No subtitle files found</string>
+    <string name="subtitles_empty_hint">Folders and subtitles will show up here.</string>
+
+    <!-- Subtitle selection dialog -->
+    <string name="subtitle_tracks">Tracks</string>
+    <string name="subtitle_off">Off</string>
+    <string name="add_subtitle_file">Add subtitle file…</string>
+    <string name="search_online">Search online…</string>
+    <string name="subtitle_delay">Delay</string>
+
+    <!-- Subtitle search dialog -->
+    <string name="subtitle_search_hint">Enter a name and tap search.</string>
+
+    <!-- Subtitle search/browser error strings (shown in composable, not ViewModel) -->
+    <string name="search_failed">Search failed</string>
+    <string name="download_failed">Download failed: %1$s</string>
+    <string name="connection_failed">Connection failed</string>
+
+    <!-- Audio browser -->
+    <string name="audio_music">Music</string>
+    <string name="no_albums">No albums found</string>
+    <string name="no_albums_hint">Albums will appear here once music is scanned.</string>
+    <string name="no_artists">No artists found</string>
+    <string name="no_artists_hint">Artists will appear here once music is scanned.</string>
+
+    <!-- Shared player UI -->
+    <string name="close">Close</string>
+    <string name="storages">Storages</string>
+    <string name="local_storage">Local Storage</string>
+    <string name="folder_label">Folder</string>
+    <string name="subtitles_cc">Subtitles &amp; CC</string>
+    <string name="style">Style</string>
+    <string name="collapse">Collapse</string>
+    <string name="expand">Expand</string>
+    <string name="reset">Reset</string>
+    <string name="audio_track">Audio Track</string>
+    <string name="search_songs">Search songs…</string>
+
+    <!-- Player controls overlay -->
+    <string name="back">Back</string>
+    <string name="now_playing">Now Playing</string>
+    <string name="stats">Stats</string>
+    <string name="unlock">Unlock</string>
+    <string name="lock">Lock</string>
+    <string name="playlist">Playlist</string>
+    <string name="previous">Previous</string>
+    <string name="next">Next</string>
+    <string name="pause">Pause</string>
+    <string name="play">Play</string>
+    <string name="replay_10s">Replay 10s</string>
+    <string name="forward_10s">Forward 10s</string>
+    <string name="audio">Audio</string>
+    <string name="subtitles">Subtitles</string>
+    <string name="orientation">Orientation</string>
+    <string name="shuffle">Shuffle</string>
+    <string name="repeat">Repeat</string>
+    <string name="playback_speed">Playback Speed</string>
+    <string name="speed_value">%1$.1fx</string>
+    <string name="playlist_count">Playlist (%1$d)</string>
+    <string name="playback_error">Playback Error</string>
+    <string name="go_back">Go Back</string>
+    <string name="retry">Retry</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="swipe">Swipe</string>
+    <string name="unlocked">Unlocked</string>
+
+    <!-- Subtitle styling -->
+    <string name="color_white">White</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="subtitle_style">Subtitle Style</string>
+    <string name="size_label">Size %1$dsp</string>
+    <string name="color_label">Color</string>
+    <string name="background_label">Background</string>
+    <string name="background_none">None</string>
+    <string name="background_semi">Semi</string>
+    <string name="background_full">Full</string>
+    <string name="apply">Apply</string>
+
+    <!-- Subtitle search -->
+    <string name="search_subtitles_online">Search Subtitles Online</string>
+    <string name="search">Search</string>
+    <string name="unknown">Unknown</string>
+    <string name="downloads_count">• %1$d downloads</string>
+    <string name="download">Download</string>
+
+    <!-- Network sort menu -->
+    <string name="list_view">List view</string>
+    <string name="media_view">Media view</string>
+    <string name="sort_by_date">Sort by Date</string>
+
+    <!-- Audio browser -->
+    <string name="no_results_for">No results for "%1$s"</string>
+    <string name="no_songs">No songs found</string>
+    <string name="try_different_search">Try a different search term.</string>
+    <string name="tap_browse">Tap browse to find music on your device.</string>
+    <string name="artist_subtitle">%1$d albums • %2$d tracks</string>
+    <string name="track_count">%1$d songs</string>
+
+    <!-- File browser -->
+    <string name="downloads">Downloads</string>
+    <string name="movies">Movies</string>
+    <string name="storage_info">%1$s free of %2$s</string>
+
+    <!-- Subtitle browser -->
+    <string name="items_count">%1$d items</string>
+    <string name="internal_storage">Internal Storage</string>
+    <string name="server_name_format">%1$s Server (%2$s)</string>
+
+    <!-- Duration / time format -->
+    <string name="duration_hm">%1$dh%2$dm</string>
+    <string name="duration_m">%1$dm</string>
+
+    <!-- Delay buttons -->
+    <string name="delay_decrease">–100 ms</string>
+    <string name="delay_value">%1$d ms</string>
+    <string name="delay_increase">+100 ms</string>
+
+    <!-- Bitrate / speed / size format -->
+    <string name="bitrate_bps">%1$d bps</string>
+    <string name="bitrate_kbps">%1$d kbps</string>
+    <string name="bitrate_mbps">%1$.2f Mbps</string>
+    <string name="speed_bps">%1$d B/s</string>
+    <string name="speed_kbps">%1$.1f KB/s</string>
+    <string name="speed_mbps">%1$.1f MB/s</string>
+    <string name="size_bytes">%1$d B</string>
+    <string name="network_speed_format">↓ %1$s</string>
 </resources>

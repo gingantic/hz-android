@@ -31,9 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,7 +67,7 @@ fun AudioSelectionDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Audio Track",
+                    text = stringResource(R.string.audio_track),
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -83,7 +85,7 @@ fun AudioSelectionDialog(
             ) {
                 if (audioTracks.isEmpty()) {
                     Text(
-                        text = "No alternate audio tracks available",
+                        text = stringResource(R.string.no_alternate_audio),
                         style = MaterialTheme.typography.bodyMedium.copy(
                             color = Color.White.copy(alpha = 0.5f),
                         ),
@@ -106,7 +108,7 @@ fun AudioSelectionDialog(
                     onClick = onDismiss,
                     modifier = Modifier.align(Alignment.End),
                 ) {
-                    Text(text = "Close", color = Color.White.copy(alpha = 0.7f))
+                    Text(text = stringResource(R.string.close), color = Color.White.copy(alpha = 0.7f))
                 }
             }
         }

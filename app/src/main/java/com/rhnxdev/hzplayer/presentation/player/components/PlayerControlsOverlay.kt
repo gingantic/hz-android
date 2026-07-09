@@ -51,8 +51,10 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.windowInsetsPadding
 import com.rhnxdev.hzplayer.core.designsystem.stableNavBarPaddingValues
 import com.rhnxdev.hzplayer.core.designsystem.stableStatusBarTopDp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.presentation.player.PlayerUiState
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
@@ -113,14 +115,14 @@ fun PlayerControlsOverlay(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.back),
                     tint = Color.White,
                     modifier = Modifier.size(26.dp),
                 )
             }
 
             Text(
-                text = title ?: "Now Playing",
+                text = title ?: stringResource(R.string.now_playing),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White,
                 fontWeight = FontWeight.Medium,
@@ -139,7 +141,7 @@ fun PlayerControlsOverlay(
             // Debug (Stats for nerds) — only when debugMode enabled
             if (onDebugClick != null) {
                 Text(
-                    text = "Stats",
+                    text = stringResource(R.string.stats),
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
@@ -156,7 +158,7 @@ fun PlayerControlsOverlay(
             IconButton(onClick = onLockClick) {
                 Icon(
                     imageVector = if (uiState.playerLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                    contentDescription = if (uiState.playerLocked) "Unlock" else "Lock",
+                    contentDescription = stringResource(if (uiState.playerLocked) R.string.unlock else R.string.lock),
                     tint = Color.White.copy(alpha = 0.7f),
                     modifier = Modifier.size(24.dp),
                 )
@@ -183,7 +185,7 @@ fun PlayerControlsOverlay(
                 IconButton(onClick = onPlaylistClick) {
                     Icon(
                         imageVector = Icons.Default.PlaylistPlay,
-                        contentDescription = "Playlist",
+                        contentDescription = stringResource(R.string.playlist),
                         tint = if (uiState.showPlaylistDrawer) Color(0xFF4CAF50) else Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.size(24.dp),
                     )
@@ -225,7 +227,7 @@ fun PlayerControlsOverlay(
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
-                            contentDescription = "Previous",
+                            contentDescription = stringResource(R.string.previous),
                             tint = Color.White,
                             modifier = Modifier.size(24.dp),
                         )
@@ -239,7 +241,7 @@ fun PlayerControlsOverlay(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Replay10,
-                        contentDescription = "Replay 10s",
+                        contentDescription = stringResource(R.string.replay_10s),
                         tint = Color.White,
                         modifier = Modifier.size(28.dp),
                     )
@@ -260,7 +262,7 @@ fun PlayerControlsOverlay(
                     ) {
                         Icon(
                             imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                            contentDescription = stringResource(if (uiState.isPlaying) R.string.pause else R.string.play),
                             tint = Color.White,
                             modifier = Modifier.size(36.dp),
                         )
@@ -275,7 +277,7 @@ fun PlayerControlsOverlay(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Forward10,
-                        contentDescription = "Forward 10s",
+                        contentDescription = stringResource(R.string.forward_10s),
                         tint = Color.White,
                         modifier = Modifier.size(28.dp),
                     )
@@ -289,7 +291,7 @@ fun PlayerControlsOverlay(
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
+                            contentDescription = stringResource(R.string.next),
                             tint = Color.White,
                             modifier = Modifier.size(24.dp),
                         )
@@ -307,7 +309,7 @@ fun PlayerControlsOverlay(
             ) {
                 // Speed
                 Text(
-                    text = "${uiState.playbackSpeed}x",
+                    text = stringResource(R.string.speed_value, uiState.playbackSpeed),
                     color = Color.White.copy(alpha = 0.8f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
@@ -322,7 +324,7 @@ fun PlayerControlsOverlay(
                 IconButton(onClick = onAudioClick, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = Icons.Default.MusicNote,
-                        contentDescription = "Audio",
+                        contentDescription = stringResource(R.string.audio),
                         tint = Color.White,
                         modifier = Modifier.size(22.dp),
                     )
@@ -332,7 +334,7 @@ fun PlayerControlsOverlay(
                 IconButton(onClick = onSubtitleClick, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = Icons.Default.Subtitles,
-                        contentDescription = "Subtitles",
+                        contentDescription = stringResource(R.string.subtitles),
                         tint = Color.White,
                         modifier = Modifier.size(22.dp),
                     )
@@ -342,7 +344,7 @@ fun PlayerControlsOverlay(
                 IconButton(onClick = onOrientationClick, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = Icons.Default.ScreenRotationAlt,
-                        contentDescription = "Orientation",
+                        contentDescription = stringResource(R.string.orientation),
                         tint = Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.size(22.dp),
                     )
@@ -355,7 +357,7 @@ fun PlayerControlsOverlay(
 @Composable
 private fun NetworkSpeedChip(traffic: NetworkTraffic) {
     Text(
-        text = "↓ ${formatSpeed(traffic.speedDown)}",
+        text = stringResource(R.string.network_speed_format, formatSpeed(traffic.speedDown)),
         color = Color.White.copy(alpha = 0.85f),
         fontSize = 11.sp,
         fontWeight = FontWeight.Medium,

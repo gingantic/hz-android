@@ -26,10 +26,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.domain.model.DebugStats
 
 private val bgAlpha = Color.Black.copy(alpha = 0.88f)
@@ -62,14 +64,14 @@ fun DebugOverlay(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Stats for nerds",
+                    text = stringResource(R.string.debug_stats_title),
                     color = Color(0xFF8AB4F8),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
                 IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.debug_close), tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
                 }
             }
 
@@ -82,32 +84,32 @@ fun DebugOverlay(
                     .padding(horizontal = 10.dp, vertical = 2.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                SectionHeader("Video")
-                StatRow("Codec", stats.videoCodec.ifEmpty { stats.videoCodecMime })
-                StatRow("Decoder", stats.videoDecoderLabel)
-                StatRow("Resolution", stats.resolution)
-                StatRow("Avg bitrate", stats.videoBitrateEstimated)
-                StatRow("FPS (rendered)", stats.renderedFps)
-                StatRow("Dropped", stats.droppedFrames)
-                StatRow("Color", stats.colorInfo)
-                StatRow("HDR", stats.hdrInfo)
+                SectionHeader(stringResource(R.string.debug_section_video))
+                StatRow(stringResource(R.string.debug_stat_codec), stats.videoCodec.ifEmpty { stats.videoCodecMime })
+                StatRow(stringResource(R.string.debug_stat_decoder), stats.videoDecoderLabel)
+                StatRow(stringResource(R.string.debug_stat_resolution), stats.resolution)
+                StatRow(stringResource(R.string.debug_stat_bitrate), stats.videoBitrateEstimated)
+                StatRow(stringResource(R.string.debug_stat_fps), stats.renderedFps)
+                StatRow(stringResource(R.string.debug_stat_dropped), stats.droppedFrames)
+                StatRow(stringResource(R.string.debug_stat_color), stats.colorInfo)
+                StatRow(stringResource(R.string.debug_stat_hdr), stats.hdrInfo)
 
                 Spacer(Modifier.height(2.dp))
-                SectionHeader("Audio")
-                StatRow("Codec", stats.audioCodec.ifEmpty { stats.audioCodecMime })
-                StatRow("Decoder", stats.audioDecoderLabel)
-                StatRow("Avg bitrate", stats.audioBitrateEstimated)
-                StatRow("Sample rate", stats.sampleRate)
-                StatRow("Channels", stats.channelCount)
-                StatRow("Language", stats.audioLanguage)
+                SectionHeader(stringResource(R.string.debug_section_audio))
+                StatRow(stringResource(R.string.debug_stat_codec), stats.audioCodec.ifEmpty { stats.audioCodecMime })
+                StatRow(stringResource(R.string.debug_stat_decoder), stats.audioDecoderLabel)
+                StatRow(stringResource(R.string.debug_stat_bitrate), stats.audioBitrateEstimated)
+                StatRow(stringResource(R.string.debug_stat_sample_rate), stats.sampleRate)
+                StatRow(stringResource(R.string.debug_stat_channels), stats.channelCount)
+                StatRow(stringResource(R.string.debug_stat_language), stats.audioLanguage)
 
                 Spacer(Modifier.height(2.dp))
-                SectionHeader("Network")
-                StatRow("Speed", stats.networkSpeed)
-                StatRow("Downloaded", stats.bytesDownloaded)
+                SectionHeader(stringResource(R.string.debug_section_network))
+                StatRow(stringResource(R.string.debug_stat_speed), stats.networkSpeed)
+                StatRow(stringResource(R.string.debug_stat_downloaded), stats.bytesDownloaded)
 
                 Spacer(Modifier.height(2.dp))
-                SectionHeader("Device")
+                SectionHeader(stringResource(R.string.debug_section_device))
                 StatRow("Model", stats.deviceModel)
                 StatRow("OS", stats.androidVersion)
                 StatRow("SoC", stats.soCInfo)

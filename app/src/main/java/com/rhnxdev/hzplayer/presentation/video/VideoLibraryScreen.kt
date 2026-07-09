@@ -36,6 +36,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -73,20 +75,20 @@ fun VideoLibraryScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         HzPlayerSearchableScaffold(
-            title = "Hz Player",
+            title = stringResource(R.string.app_name),
             isSearchActive = isSearchActive,
             searchQuery = searchQuery,
             onSearchToggle = viewModel::onSearchToggle,
             onSearchQueryChanged = viewModel::onSearchQueryChanged,
             onClearSearch = viewModel::onClearSearch,
-            searchPlaceholder = "Search videos...",
+            searchPlaceholder = stringResource(R.string.search_videos_placeholder),
             actions = {
                 var showSortMenu by remember { mutableStateOf(false) }
                 Box {
                     IconButton(onClick = { showSortMenu = true }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Sort,
-                            contentDescription = "Sort",
+                            contentDescription = stringResource(R.string.video_sort_cd),
                         )
                     }
                     DropdownMenu(
@@ -94,15 +96,15 @@ fun VideoLibraryScreen(
                         onDismissRequest = { showSortMenu = false },
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Sort by Title") },
+                            text = { Text(stringResource(R.string.sort_by_title)) },
                             onClick = { viewModel.onSortChanged(SortType.TITLE); showSortMenu = false },
                         )
                         DropdownMenuItem(
-                            text = { Text("Sort by Date") },
+                            text = { Text(stringResource(R.string.sort_by_date)) },
                             onClick = { viewModel.onSortChanged(SortType.DATE_ADDED); showSortMenu = false },
                         )
                         DropdownMenuItem(
-                            text = { Text("Sort by Duration") },
+                            text = { Text(stringResource(R.string.sort_by_duration)) },
                             onClick = { viewModel.onSortChanged(SortType.DURATION); showSortMenu = false },
                         )
                     }
@@ -128,7 +130,7 @@ fun VideoLibraryScreen(
                         }
                         uiState.error != null -> {
                             MediaErrorState(
-                                title = "Could not load videos",
+                                title = stringResource(R.string.video_load_error),
                                 subtitle = uiState.error ?: "",
                                 onRetry = viewModel::onRetry,
                             )
@@ -136,8 +138,8 @@ fun VideoLibraryScreen(
                         uiState.isEmpty && !isSearchActive -> {
                             MediaEmptyState(
                                 icon = Icons.Filled.VideoLibrary,
-                                title = "No videos found",
-                                subtitle = "Tap browse to find media on your device.",
+                                title = stringResource(R.string.video_empty_title),
+                                subtitle = stringResource(R.string.video_empty_subtitle),
                             )
                         }
                         isSearchActive -> {
@@ -196,7 +198,7 @@ private fun GridContent(
         items(categories, key = { it.title }) { category ->
             Column {
                 Text(
-                    text = category.title,
+                    text = if (category.isRecent) stringResource(R.string.cat_recent) else category.title,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -281,8 +283,8 @@ private fun SearchResultsContent(
     if (videos.isEmpty()) {
         MediaEmptyState(
             icon = Icons.Default.Search,
-            title = "No results",
-            subtitle = "No videos found for \"$searchQuery\".",
+            title = stringResource(R.string.no_results_title),
+            subtitle = stringResource(R.string.video_search_empty, searchQuery),
         )
     } else if (viewMode == ViewMode.GRID) {
         LazyVerticalGrid(

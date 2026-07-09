@@ -37,9 +37,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
+import com.rhnxdev.hzplayer.R
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -739,7 +741,7 @@ fun VideoPlayerScreen(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
-                            text = "Playback Error",
+                            text = stringResource(R.string.playback_error),
                             color = Color.White,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
@@ -768,7 +770,7 @@ fun VideoPlayerScreen(
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text(text = "Go Back")
+                                Text(text = stringResource(R.string.go_back))
                             }
 
                             // Retry only for recoverable errors (network/timeout/auth/file).
@@ -788,7 +790,7 @@ fun VideoPlayerScreen(
                                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Text(text = "Retry")
+                                    Text(text = stringResource(R.string.retry))
                                 }
                             }
 
@@ -800,7 +802,7 @@ fun VideoPlayerScreen(
                                 ),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text(text = "Dismiss")
+                                Text(text = stringResource(R.string.dismiss))
                             }
                         }
                     }
@@ -867,7 +869,7 @@ private fun UnlockPill(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Swipe",
+                        text = stringResource(R.string.swipe),
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
@@ -879,7 +881,7 @@ private fun UnlockPill(
             ) {
                 Icon(
                     imageVector = Icons.Default.LockOpen,
-                    contentDescription = "Unlocked",
+                    contentDescription = stringResource(R.string.unlocked),
                     tint = Color(0xFF4CAF50),
                     modifier = Modifier.size(28.dp),
                 )

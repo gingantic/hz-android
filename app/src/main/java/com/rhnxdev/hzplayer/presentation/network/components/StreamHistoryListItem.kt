@@ -16,6 +16,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
@@ -85,7 +87,7 @@ fun StreamHistoryListItem(
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = HzPlayerIcons.Delete,
-                    contentDescription = "Delete",
+                    contentDescription = stringResource(R.string.delete),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

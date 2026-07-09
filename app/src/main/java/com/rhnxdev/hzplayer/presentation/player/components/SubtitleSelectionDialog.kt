@@ -45,9 +45,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +91,7 @@ fun SubtitleSelectionDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Subtitles & CC",
+                    text = stringResource(R.string.subtitles_cc),
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -108,14 +110,14 @@ fun SubtitleSelectionDialog(
             ) {
                 // ═══ Track list ═══
                 SectionHeader(
-                    title = "Tracks",
+                    title = stringResource(R.string.subtitle_tracks),
                     expanded = tracksExpanded,
                     onToggle = { tracksExpanded = !tracksExpanded },
                 )
                 if (tracksExpanded) {
                     // Off
                     TrackRow(
-                        name = "Off",
+                        name = stringResource(R.string.subtitle_off),
                         isSelected = selectedTrackIndex == -1,
                         onClick = { onTrackSelected(-1); onDismiss() },
                     )
@@ -130,12 +132,12 @@ fun SubtitleSelectionDialog(
                     // External addition
                     ActionRow(
                         icon = Icons.Default.Add,
-                        text = "Add subtitle file...",
+                        text = stringResource(R.string.add_subtitle_file),
                         onClick = onAddExternalSubtitleClick,
                     )
                     ActionRow(
                         icon = Icons.Default.Search,
-                        text = "Search online...",
+                        text = stringResource(R.string.search_online),
                         onClick = onSearchOnlineClick,
                     )
                 }
@@ -146,7 +148,7 @@ fun SubtitleSelectionDialog(
 
                 // ═══ Delay ═══
                 SectionHeader(
-                    title = "Delay",
+                    title = stringResource(R.string.subtitle_delay),
                     expanded = delayExpanded,
                     onToggle = { delayExpanded = !delayExpanded },
                 )
@@ -160,10 +162,10 @@ fun SubtitleSelectionDialog(
                             onClick = { onSubtitleDelayChange(subtitleDelayMs - 100) },
                             enabled = subtitleDelayMs > -5000,
                         ) {
-                            Text(text = "–100 ms", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
+                            Text(text = stringResource(R.string.delay_decrease), color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
                         }
                         Text(
-                            text = "${subtitleDelayMs} ms",
+                            text = stringResource(R.string.delay_value, subtitleDelayMs),
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 color = Color.White,
                                 fontWeight = FontWeight.SemiBold,
@@ -173,7 +175,7 @@ fun SubtitleSelectionDialog(
                             onClick = { onSubtitleDelayChange(subtitleDelayMs + 100) },
                             enabled = subtitleDelayMs < 5000,
                         ) {
-                            Text(text = "+100 ms", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
+                            Text(text = stringResource(R.string.delay_increase), color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
                         }
                     }
                     Row(
@@ -185,7 +187,7 @@ fun SubtitleSelectionDialog(
                             enabled = subtitleDelayMs != 0L,
                         ) {
                             Text(
-                                text = "Reset",
+                                text = stringResource(R.string.reset),
                                 color = if (subtitleDelayMs != 0L) MaterialTheme.colorScheme.primary else Color.Gray,
                                 fontSize = 13.sp,
                             )
@@ -203,10 +205,10 @@ fun SubtitleSelectionDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     TextButton(onClick = onStyleClick) {
-                        Text(text = "Style", color = MaterialTheme.colorScheme.primary)
+                        Text(text = stringResource(R.string.style), color = MaterialTheme.colorScheme.primary)
                     }
                     TextButton(onClick = onDismiss) {
-                        Text(text = "Close", color = Color.White.copy(alpha = 0.7f))
+                        Text(text = stringResource(R.string.close), color = Color.White.copy(alpha = 0.7f))
                     }
                 }
             }
@@ -236,7 +238,7 @@ private fun SectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit
         Spacer(modifier = Modifier.weight(1f))
         Icon(
             imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-            contentDescription = if (expanded) "Collapse" else "Expand",
+            contentDescription = if (expanded) stringResource(R.string.collapse) else stringResource(R.string.expand),
             tint = Color.Gray,
             modifier = Modifier.size(20.dp),
         )

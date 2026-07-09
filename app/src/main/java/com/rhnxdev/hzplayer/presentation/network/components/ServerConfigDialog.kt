@@ -31,9 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.defaultPort
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
@@ -136,7 +138,7 @@ fun ServerConfigDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isEditing) "Edit Server" else "Add Server") },
+        title = { Text(stringResource(if (isEditing) R.string.edit_server else R.string.add_server)) },
         text = {
             Column(
                 modifier = Modifier
@@ -148,17 +150,17 @@ fun ServerConfigDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; nameError = false },
-                    label = { Text("Name") },
-                    placeholder = { Text("My Server") },
+                    label = { Text(stringResource(R.string.label_name)) },
+                    placeholder = { Text(stringResource(R.string.placeholder_name)) },
                     isError = nameError,
-                    supportingText = if (nameError) {{ Text("Name is required") }} else null,
+                    supportingText = if (nameError) {{ Text(stringResource(R.string.error_name_required)) }} else null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 // ── Protocol groups ───────────────────────────────
                 Text(
-                    text = "Protocol",
+                    text = stringResource(R.string.protocol_label),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -196,10 +198,10 @@ fun ServerConfigDialog(
                 OutlinedTextField(
                     value = host,
                     onValueChange = { host = it; hostError = false },
-                    label = { Text("Host") },
-                    placeholder = { Text("192.168.1.100") },
+                    label = { Text(stringResource(R.string.label_host)) },
+                    placeholder = { Text(stringResource(R.string.placeholder_host)) },
                     isError = hostError,
-                    supportingText = if (hostError) {{ Text("Host is required") }} else null,
+                    supportingText = if (hostError) {{ Text(stringResource(R.string.error_host_required)) }} else null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -208,7 +210,7 @@ fun ServerConfigDialog(
                 OutlinedTextField(
                     value = port,
                     onValueChange = { port = it.filter { c -> c.isDigit() } },
-                    label = { Text("Port") },
+                    label = { Text(stringResource(R.string.label_port)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -218,11 +220,11 @@ fun ServerConfigDialog(
                 OutlinedTextField(
                     value = if (allowAnonymous) "anonymous" else username,
                     onValueChange = { username = it; usernameError = false },
-                    label = { Text("Username") },
-                    placeholder = { Text("anonymous") },
+                    label = { Text(stringResource(R.string.label_username)) },
+                    placeholder = { Text(stringResource(R.string.placeholder_anonymous)) },
                     enabled = !allowAnonymous,
                     isError = usernameError,
-                    supportingText = if (usernameError) {{ Text("Username required (or enable anonymous)") }} else null,
+                    supportingText = if (usernameError) {{ Text(stringResource(R.string.error_username_required)) }} else null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -246,7 +248,7 @@ fun ServerConfigDialog(
                             },
                         )
                         Text(
-                            text = "Allow anonymous login",
+                            text = stringResource(R.string.checkbox_allow_anonymous),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -256,7 +258,7 @@ fun ServerConfigDialog(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.label_password)) },
                     singleLine = true,
                     visualTransformation = if (showPassword) {
                         VisualTransformation.None
@@ -271,7 +273,7 @@ fun ServerConfigDialog(
                                 } else {
                                     Icons.Filled.Visibility
                                 },
-                                contentDescription = if (showPassword) "Hide" else "Show",
+                                contentDescription = stringResource(if (showPassword) R.string.hide else R.string.show),
                             )
                         }
                     },
@@ -282,8 +284,8 @@ fun ServerConfigDialog(
                 OutlinedTextField(
                     value = basePath,
                     onValueChange = { basePath = it },
-                    label = { Text("Base Path") },
-                    placeholder = { Text("/") },
+                    label = { Text(stringResource(R.string.label_base_path)) },
+                    placeholder = { Text(stringResource(R.string.placeholder_base_path)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -316,12 +318,12 @@ fun ServerConfigDialog(
                     )
                 },
             ) {
-                Text("Save")
+                Text(stringResource(R.string.dialog_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.dialog_cancel))
             }
         },
     )
