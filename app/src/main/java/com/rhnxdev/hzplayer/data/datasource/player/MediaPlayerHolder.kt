@@ -40,7 +40,10 @@ class MediaPlayerHolder @Inject constructor(
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildTrackSelector(): DefaultTrackSelector =
         DefaultTrackSelector(context).apply {
-            setParameters(buildUponParameters().setTunnelingEnabled(true))
+            // Tunneling disabled: on 4K HDR HEVC the tunneled codec stalls ~1-2s
+            // after a seek (shows the seek frame while audio keeps playing), then
+            // resumes already synced. 1080p hides it. Off = default, fixes the stall.
+            setParameters(buildUponParameters().setTunnelingEnabled(false))
         }
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)

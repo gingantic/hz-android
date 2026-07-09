@@ -25,7 +25,7 @@ class SmbBrowserClient(
             SmbFile("smb://$host:${if (port > 0) port else 445}/", ctx).listFiles()
         } catch (_: SmbAuthException) {
             ConnectionPool.returnSmbBrowser(host, port, username)
-            throw java.io.IOException("Authentication failed")
+            throw com.rhnxdev.hzplayer.domain.model.RemoteAuthException()
         }
         Unit
     }

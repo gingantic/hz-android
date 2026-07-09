@@ -16,11 +16,17 @@ import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.domain.repository.RemoteBrowseRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository {
+
+    companion object {
+        /** Hard cap so a hung connection can't leave pull-to-refresh stuck forever. */
+        private const val REMOTE_OP_TIMEOUT_MS = 30_000L
+    }
 
     override suspend fun listDirectory(
         server: ServerConfig,
@@ -28,8 +34,10 @@ class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository 
     ): Result<List<RemoteFileItem>> = withContext(Dispatchers.IO) {
         val client = createClient(server)
         runCatching {
-            client.connect()
-            client.listDirectory(path)
+            withTimeout(REMOTE_OP_TIMEOUT_MS) {
+                client.connect()
+                client.listDirectory(path)
+            }
         }.also {
             // Always release the pooled connection so credentialed contexts don't
             // linger for the process lifetime.
@@ -45,23 +53,25 @@ class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository 
         withContext(Dispatchers.IO) {
             val client = createClient(server)
             runCatching {
-                client.connect()
-                // One shared connection: list each folder's children once and classify
-                // them (subfolders / files / media) so the badge can show the breakdown.
-                // Report each folder's result as soon as it's ready.
-                items.forEach { item ->
-                    if (item.isDirectory) {
-                        val counts = runCatching {
-                            val children = client.listDirectory(item.path)
-                            val folders = children.count { it.isDirectory }
-                            val files = children.size - folders
-                            val media = children.count {
-                                !it.isDirectory &&
-                                    (isVideoExtension(it.name) || isAudioExtension(it.name))
-                            }
-                            FolderCounts(folders = folders, files = files, media = media)
-                        }.getOrDefault(FolderCounts())
-                        onCount(item.path, counts)
+                withTimeout(REMOTE_OP_TIMEOUT_MS) {
+                    client.connect()
+                    // One shared connection: list each folder's children once and classify
+                    // them (subfolders / files / media) so the badge can show the breakdown.
+                    // Report each folder's result as soon as it's ready.
+                    items.forEach { item ->
+                        if (item.isDirectory) {
+                            val counts = runCatching {
+                                val children = client.listDirectory(item.path)
+                                val folders = children.count { it.isDirectory }
+                                val files = children.size - folders
+                                val media = children.count {
+                                    !it.isDirectory &&
+                                        (isVideoExtension(it.name) || isAudioExtension(it.name))
+                                }
+                                FolderCounts(folders = folders, files = files, media = media)
+                            }.getOrDefault(FolderCounts())
+                            onCount(item.path, counts)
+                        }
                     }
                 }
             }.also {

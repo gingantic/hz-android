@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.net.Uri
+import com.rhnxdev.hzplayer.domain.model.RemoteAuthException
 import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
@@ -199,7 +200,12 @@ internal object ConnectionPool {
                 connectTimeout = 10000
                 defaultTimeout = 10000
                 connect(host, port)
-                login(user.ifEmpty { "anonymous" }, pass.ifEmpty { "" })
+                // login() returns false on bad credentials without throwing — check it,
+                // else getOrPut caches a connected-but-unauthenticated client.
+                if (!login(user.ifEmpty { "anonymous" }, pass.ifEmpty { "" })) {
+                    try { disconnect() } catch (_: Exception) {}
+                    throw RemoteAuthException()
+                }
                 enterLocalPassiveMode()
                 setFileType(FTP.BINARY_FILE_TYPE)
             }.also { android.util.Log.d("ConnectionPool", "FTP browser new $k") }
@@ -226,7 +232,12 @@ internal object ConnectionPool {
                 addHostKeyVerifier(PromiscuousVerifier())
                 connectTimeout = 10000
                 connect(host, port)
-                authPassword(user, pass)
+                try {
+                    authPassword(user, pass)
+                } catch (e: net.schmizz.sshj.userauth.UserAuthException) {
+                    try { disconnect() } catch (_: Exception) {}
+                    throw RemoteAuthException()
+                }
             }.also { android.util.Log.d("ConnectionPool", "SFTP browser new $k") }
         }
     }

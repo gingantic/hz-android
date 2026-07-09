@@ -78,6 +78,7 @@ fun FileBrowserScreen(
     onFileClicked: (FolderItem) -> Unit = {},
     onPlayAllVideos: (List<VideoItem>) -> Unit = {},
     fullScreenOverlay: Boolean = false,
+    isActive: Boolean = true,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
@@ -98,6 +99,7 @@ fun FileBrowserScreen(
         onNavigateUp = onNavigateUp,
         searchPlaceholder = "Search files...",
         fullScreenOverlay = fullScreenOverlay,
+        isActive = isActive,
         actions = {
             if (uiState.mode == FileBrowserMode.BROWSING) {
                 if (!isSearchActive) {
@@ -477,7 +479,9 @@ private fun DirectoryLayerView(
             onBreadcrumbClicked = onBreadcrumbClicked,
         )
 
-        if (!layer.isLoading) {
+        // Show whenever items exist. They persist across refresh (not cleared while
+        // isLoading), so the count stays put instead of vanishing and reappearing.
+        if (visibleItems.isNotEmpty()) {
             val folders = visibleItems.count { it.isDirectory }
             val others = visibleItems.count { !it.isDirectory }
             Text(
@@ -488,9 +492,7 @@ private fun DirectoryLayerView(
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
+                modifier = Modifier.padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
             )
         }
 

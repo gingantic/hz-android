@@ -88,7 +88,7 @@ fun DirectoryBrowsePane(
     modifier: Modifier = Modifier,
     mediaMode: Boolean = false,
     listState: androidx.compose.foundation.lazy.LazyListState? = null,
-    contentPadding: PaddingValues = PaddingValues(horizontal = Spacing.lg),
+    contentPadding: PaddingValues = PaddingValues(horizontal = Spacing.sm),
     emptyTitle: String = "This folder is empty",
     emptySubtitle: String = "Nothing to show here.",
     noSearchResultsTitle: String = "No results",

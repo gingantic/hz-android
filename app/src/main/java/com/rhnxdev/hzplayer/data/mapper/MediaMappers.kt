@@ -39,7 +39,9 @@ fun MediaEntity.toAudioItem(): AudioItem = AudioItem(
 )
 
 fun AlbumProjection.toAlbum(trackCount: Int = 0): Album = Album(
-    id = album.hashCode().toLong(),
+    // Same album title can appear under different artists — key on both to avoid
+    // duplicate list keys (LazyGrid crashes on collisions).
+    id = "$album|$artist".hashCode().toLong(),
     title = album,
     artist = artist,
     albumArtUri = albumArtUri,

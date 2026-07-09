@@ -37,13 +37,14 @@ fun HzPlayerSearchableScaffold(
     onNavigateUp: (() -> Unit)? = null,
     searchPlaceholder: String = "Search...",
     fullScreenOverlay: Boolean = false,
+    isActive: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // Back-press: close search first, then navigate up
     val canNavigateUp = onNavigateUp != null
     BackHandler(
-        enabled = (isSearchActive || canNavigateUp) && !fullScreenOverlay,
+        enabled = isActive && (isSearchActive || canNavigateUp) && !fullScreenOverlay,
     ) {
         if (isSearchActive) onClearSearch()
         else onNavigateUp?.invoke()

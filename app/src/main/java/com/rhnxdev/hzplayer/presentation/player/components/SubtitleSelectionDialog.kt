@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
@@ -33,7 +32,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import com.rhnxdev.hzplayer.core.designsystem.stableNavBarPaddingValues
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -76,7 +74,8 @@ fun SubtitleSelectionDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(stableNavBarPaddingValues())
+                // ModalBottomSheet already insets for the nav bar; don't add it again
+                // or the bottom gap is doubled.
                 .padding(horizontal = 24.dp, vertical = 16.dp),
         ) {
             // ── Header ──
@@ -272,14 +271,6 @@ private fun TrackRow(name: String, isSelected: Boolean, onClick: () -> Unit) {
             ),
             modifier = Modifier.weight(1f),
         )
-        if (isSelected) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-        }
     }
 }
 

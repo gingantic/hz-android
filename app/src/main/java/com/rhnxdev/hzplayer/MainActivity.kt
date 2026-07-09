@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import com.rhnxdev.hzplayer.core.designsystem.stableNavBarHorizontalPadding
+import com.rhnxdev.hzplayer.core.designsystem.stableContentStartPadding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -39,6 +40,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -66,6 +72,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.rhnxdev.hzplayer.presentation.audio.AudioBrowserScreen
+import com.rhnxdev.hzplayer.presentation.audio.AlbumDetailScreen
+import com.rhnxdev.hzplayer.presentation.audio.ArtistDetailScreen
 import com.rhnxdev.hzplayer.presentation.browse.FileBrowserScreen
 import com.rhnxdev.hzplayer.presentation.navigation.AppDestination
 import com.rhnxdev.hzplayer.presentation.navigation.NavRoutes
@@ -222,7 +230,9 @@ fun HzPlayerApp(
     // Full-screen overlay routes draw over the main tab layout
     val isFullScreen = currentRoute == NavRoutes.SEARCH ||
         currentRoute == NavRoutes.AUDIO_PLAYER ||
-        currentRoute?.startsWith("video_player") == true
+        currentRoute?.startsWith("video_player") == true ||
+        currentRoute?.startsWith("album_detail") == true ||
+        currentRoute?.startsWith("artist_detail") == true
 
     // Shared player ViewModel (activity-scoped — same instance everywhere)
     val playerViewModel: PlayerViewModel = hiltViewModel()
@@ -284,8 +294,19 @@ fun HzPlayerApp(
             )
         )
 
+        // Landscape: use a navigation rail so the bottom edge is free for content.
+        val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val navLayoutType = if (isLandscape) NavigationSuiteType.NavigationRail
+            else NavigationSuiteType.NavigationBar
+        // Force the rail to the RIGHT by flipping layout direction for the scaffold only;
+        // content re-flips back to the real direction so it reads normally.
+        val realDirection = LocalLayoutDirection.current
+        val scaffoldDirection = if (isLandscape) LayoutDirection.Rtl else realDirection
+
         // Layer 1: Main swipeable tabs + bottom nav (always composed to support smooth transitions and state retention)
+        CompositionLocalProvider(LocalLayoutDirection provides scaffoldDirection) {
         NavigationSuiteScaffold(
+            layoutType = navLayoutType,
             navigationSuiteItems = {
                 bottomNavDestinations.forEachIndexed { index, dest ->
                     item(
@@ -315,11 +336,15 @@ fun HzPlayerApp(
                 navigationDrawerContainerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
+            CompositionLocalProvider(LocalLayoutDirection provides realDirection) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
-                    .navigationBarsPadding()
+                    // Portrait: dodge the bottom nav bar. Landscape: the rail owns the end
+                    // edge and the pager dodges the start edge, so a full inset here would
+                    // double-pad the rail side (dead gap).
+                    .then(if (isLandscape) Modifier else Modifier.navigationBarsPadding())
             ) {
                 // Main content area
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -340,7 +365,13 @@ fun HzPlayerApp(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .statusBarsPadding()
-                                .padding(stableNavBarHorizontalPadding()),
+                                // Landscape: rail is on the end edge (owns its own inset), so only
+                                // dodge the notch/nav-bar on the START edge — avoids a dead gap
+                                // between content and the rail. Portrait: full horizontal inset.
+                                .padding(
+                                    if (isLandscape) stableContentStartPadding()
+                                    else stableNavBarHorizontalPadding()
+                                ),
                         ) { page ->
                             when (page) {
                                 0 -> VideoLibraryScreen(
@@ -356,9 +387,12 @@ fun HzPlayerApp(
                                         playerViewModel.playAudioPlaylist(playlist, playlist.indexOf(audio))
                                         navController.navigate(NavRoutes.AUDIO_PLAYER)
                                     },
+                                    onAlbumClicked = { navController.navigate(NavRoutes.albumDetail(it.title)) },
+                                    onArtistClicked = { navController.navigate(NavRoutes.artistDetail(it.name)) },
                                 )
                                 2 -> FileBrowserScreen(
                                     fullScreenOverlay = isFullScreen,
+                                    isActive = pagerState.currentPage == page,
                                     onFileClicked = { file ->
                                         val isVideoFile = file.mimeType?.startsWith("video/") == true ||
                                             isVideoExtension(file.name)
@@ -383,6 +417,7 @@ fun HzPlayerApp(
                                 )
                                 3 -> NetworkScreen(
                                     fullScreenOverlay = isFullScreen,
+                                    isActive = pagerState.currentPage == page,
                                     onPlayStream = { url, title, isVideo ->
                                         playerViewModel.playNetworkUri(url, title, isVideo)
                                         if (isVideo) {
@@ -421,7 +456,9 @@ fun HzPlayerApp(
                     )
                 }
             }
+            } // content re-flip provider
         }
+        } // scaffold direction provider
 
         // Layer 2: Full-screen NavHost overlay (always composed — preserves state)
         NavHost(
@@ -481,6 +518,39 @@ fun HzPlayerApp(
                 AudioPlayerScreen(
                     viewModel = playerViewModel,
                     onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(
+                route = NavRoutes.ALBUM_DETAIL,
+                arguments = listOf(navArgument("title") { type = NavType.StringType }),
+                enterTransition = { slideInHorizontally { it } },
+                exitTransition = { slideOutHorizontally { -it } },
+                popEnterTransition = { slideInHorizontally { -it } },
+                popExitTransition = { slideOutHorizontally { it } },
+            ) { backStackEntry ->
+                val title = backStackEntry.arguments?.getString("title").orEmpty()
+                AlbumDetailScreen(
+                    albumTitle = title,
+                    onBack = { navController.popBackStack() },
+                    onSongPlayed = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
+                )
+            }
+
+            composable(
+                route = NavRoutes.ARTIST_DETAIL,
+                arguments = listOf(navArgument("name") { type = NavType.StringType }),
+                enterTransition = { slideInHorizontally { it } },
+                exitTransition = { slideOutHorizontally { -it } },
+                popEnterTransition = { slideInHorizontally { -it } },
+                popExitTransition = { slideOutHorizontally { it } },
+            ) { backStackEntry ->
+                val name = backStackEntry.arguments?.getString("name").orEmpty()
+                ArtistDetailScreen(
+                    artistName = name,
+                    onBack = { navController.popBackStack() },
+                    onSongPlayed = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
+                    onAlbumClicked = { navController.navigate(NavRoutes.albumDetail(it)) },
                 )
             }
         }
