@@ -93,6 +93,7 @@ fun NetworkScreen(
     onPlayStream: (url: String, title: String, isVideo: Boolean) -> Unit = { _, _, _ -> },
     onPlayRemoteFile: (uri: String, title: String, isVideo: Boolean) -> Unit = { _, _, _ -> },
     fullScreenOverlay: Boolean = false,
+    isActive: Boolean = true,
     modifier: Modifier = Modifier,
     viewModel: NetworkViewModel = hiltViewModel(),
 ) {
@@ -102,7 +103,7 @@ fun NetworkScreen(
 
     // Intercept back button when browsing a remote server
     BackHandler(
-        enabled = uiState.mode == NetworkScreenMode.SERVER_BROWSE && !fullScreenOverlay,
+        enabled = isActive && uiState.mode == NetworkScreenMode.SERVER_BROWSE && !fullScreenOverlay,
     ) {
         viewModel.onRemoteNavigateUp()
     }
@@ -118,6 +119,7 @@ fun NetworkScreen(
     uiState.discoveredServerCredential?.let { request ->
         CredentialDialog(
             server = request.server,
+            error = request.error,
             onProvided = request.onProvided,
             onDismiss = viewModel::onDismissCredentialDialog,
         )
@@ -620,21 +622,27 @@ private fun RemoteDirectoryLayerView(
             onBreadcrumbClicked = onBreadcrumbClicked,
         )
 
-        if (!layer.isLoading) {
-            val folders = visibleItems.count { it.isDirectory }
-            val others = visibleItems.count { !it.isDirectory }
-            Text(
-                text = if (mediaMode) {
-                    stringResource(R.string.dir_summary_media, folders, others)
-                } else {
-                    stringResource(R.string.dir_summary, folders, others)
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
-            )
+        // Reserve the summary's space at all times so it appearing/disappearing on
+        // refresh doesn't shift the list and disrupt the scroll position.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
+        ) {
+            if (!layer.isLoading) {
+                val folders = visibleItems.count { it.isDirectory }
+                val others = visibleItems.count { !it.isDirectory }
+                Text(
+                    text = if (mediaMode) {
+                        stringResource(R.string.dir_summary_media, folders, others)
+                    } else {
+                        stringResource(R.string.dir_summary, folders, others)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         DirectoryBrowsePane(
@@ -680,8 +688,9 @@ private fun CredentialDialog(
     server: ServerConfig,
     onProvided: (username: String, password: String, saveToSaved: Boolean) -> Unit,
     onDismiss: () -> Unit,
+    error: String? = null,
 ) {
-    var username by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf(server.username) }
     var password by remember { mutableStateOf("") }
     var saveToSaved by remember { mutableStateOf(true) }
 
@@ -695,6 +704,13 @@ private fun CredentialDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (error != null) {
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },

@@ -276,6 +276,8 @@
     <string name="subtitles">Subtitles</string>
     <string name="orientation">Orientation</string>
     <string name="shuffle">Shuffle</string>
+    <string name="albums">Albums</string>
+    <string name="songs">Songs</string>
     <string name="repeat">Repeat</string>
     <string name="playback_speed">Playback Speed</string>
     <string name="speed_value">%1$.1fx</string>

@@ -2,8 +2,6 @@ package com.rhnxdev.hzplayer.data.repository
 
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao
 import com.rhnxdev.hzplayer.data.datasource.media.MediaScanner
-import com.rhnxdev.hzplayer.data.mapper.toAlbum
-import com.rhnxdev.hzplayer.data.mapper.toArtist
 import com.rhnxdev.hzplayer.data.mapper.toAudioItem
 import com.rhnxdev.hzplayer.domain.model.Album
 import com.rhnxdev.hzplayer.domain.model.Artist
@@ -65,12 +63,26 @@ class AudioRepositoryImpl @Inject constructor(
             emit(memCache)
             return@flow
         }
-        val cached = mediaDao.getAlbums().first()
-        if (cached.isNotEmpty()) {
-            val albums = cached.map { projection ->
-                val count = mediaDao.getSongsByAlbum(projection.album).first().size
-                projection.toAlbum(count)
-            }
+        // Group by album title only. A single album can have per-track artist tags
+        // (compilations, "feat." credits) — DISTINCT album+artist would split it into
+        // many cards. One card per title; artist = the album's common/first artist.
+        val songs = mediaDao.getAllAudio().first().map { it.toAudioItem() }
+        if (songs.isNotEmpty()) {
+            val albums = songs
+                .filter { !it.album.isNullOrBlank() }
+                .groupBy { it.album!! }
+                .map { (title, albumSongs) ->
+                    val artists = albumSongs.mapNotNull { it.artist }.distinct()
+                    Album(
+                        id = title.hashCode().toLong(),
+                        title = title,
+                        // Single artist → name; multiple → "Various artists".
+                        artist = if (artists.size == 1) artists.first() else "Various artists",
+                        albumArtUri = albumSongs.firstNotNullOfOrNull { it.albumArtUri },
+                        trackCount = albumSongs.size,
+                    )
+                }
+                .sortedBy { it.title.lowercase() }
             cachedAlbums = albums
             emit(albums)
             return@flow
@@ -89,9 +101,24 @@ class AudioRepositoryImpl @Inject constructor(
             emit(memCache)
             return@flow
         }
-        val cached = mediaDao.getArtists().first()
-        if (cached.isNotEmpty()) {
-            val artists = cached.map { it.toArtist() }
+        // Build artists from the full song list so we can compute real album/track
+        // counts + a cover (first song's album art). DISTINCT-artist projection alone
+        // can't give counts. Artist identity is the name string (no ARTIST_ID scanned).
+        val songs = mediaDao.getAllAudio().first().map { it.toAudioItem() }
+        if (songs.isNotEmpty()) {
+            val artists = songs
+                .filter { !it.artist.isNullOrBlank() }
+                .groupBy { it.artist!! }
+                .map { (name, artistSongs) ->
+                    Artist(
+                        id = name.hashCode().toLong(),
+                        name = name,
+                        albumCount = artistSongs.mapNotNull { it.album }.distinct().size,
+                        trackCount = artistSongs.size,
+                        albumArtUri = artistSongs.firstNotNullOfOrNull { it.albumArtUri },
+                    )
+                }
+                .sortedBy { it.name.lowercase() }
             cachedArtists = artists
             emit(artists)
             return@flow
@@ -104,16 +131,22 @@ class AudioRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun getSongsByAlbum(albumId: Long): Flow<List<AudioItem>> {
-        val album = if (BuildConfig.DEBUG) PreviewMedia.albums.find { it.id == albumId } else null
-        return mediaDao.getSongsByAlbum(album?.title ?: "").map { entities ->
+    override fun getSongsByAlbum(albumTitle: String): Flow<List<AudioItem>> {
+        if (BuildConfig.DEBUG) {
+            val preview = PreviewMedia.songs.filter { it.album == albumTitle }
+            if (preview.isNotEmpty()) return flow { emit(preview) }
+        }
+        return mediaDao.getSongsByAlbum(albumTitle).map { entities ->
             entities.map { it.toAudioItem() }
         }
     }
 
-    override fun getSongsByArtist(artistId: Long): Flow<List<AudioItem>> {
-        val artist = if (BuildConfig.DEBUG) PreviewMedia.artists.find { it.id == artistId } else null
-        return mediaDao.getSongsByArtist(artist?.name ?: "").map { entities ->
+    override fun getSongsByArtist(artistName: String): Flow<List<AudioItem>> {
+        if (BuildConfig.DEBUG) {
+            val preview = PreviewMedia.songs.filter { it.artist == artistName }
+            if (preview.isNotEmpty()) return flow { emit(preview) }
+        }
+        return mediaDao.getSongsByArtist(artistName).map { entities ->
             entities.map { it.toAudioItem() }
         }
     }

@@ -223,7 +223,8 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     fun onRefresh() {
-        loadVideos()
+        if (_uiState.value.isLoading) return
+        loadVideos(forceRefresh = true)
     }
 
     /** Called when this tab regains focus — refresh from source without blocking the cached view. */

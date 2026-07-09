@@ -103,14 +103,14 @@ fun FileItemCard(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(Spacing.sm),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = Color.Transparent,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.sm),
+                .padding(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (leadingThumbnail != null) {
@@ -125,7 +125,7 @@ fun FileItemCard(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(32.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     leadingThumbnail()
@@ -134,7 +134,7 @@ fun FileItemCard(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(40.dp),
                     tint = if (isDirectory) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )

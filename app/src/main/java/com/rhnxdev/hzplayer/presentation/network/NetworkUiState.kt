@@ -51,6 +51,8 @@ data class NetworkUiState(
 data class ServerCredentialRequest(
     val server: ServerConfig,
     val onProvided: (username: String, password: String, saveToSaved: Boolean) -> Unit,
+    /** Non-null when re-prompting after a rejected login — shown as an error in the dialog. */
+    val error: String? = null,
 )
 
 enum class NetworkScreenMode {

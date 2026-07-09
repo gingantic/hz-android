@@ -43,6 +43,10 @@ class WebDavBrowserClient(
             .method("OPTIONS", null)
             .build()
         client.newCall(request).execute().use { response ->
+            if (response.code == 401 || response.code == 403) {
+                ConnectionPool.returnWebDavBrowser(host, port, useTls)
+                throw com.rhnxdev.hzplayer.domain.model.RemoteAuthException()
+            }
             if (!response.isSuccessful) {
                 throw IOException("WebDAV server at $baseUrl returned ${response.code}")
             }

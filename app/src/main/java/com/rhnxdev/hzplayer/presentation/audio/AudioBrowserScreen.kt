@@ -55,6 +55,8 @@ import com.rhnxdev.hzplayer.R
 fun AudioBrowserScreen(
     viewModel: AudioBrowserViewModel = hiltViewModel(),
     onSongClicked: ((AudioItem, List<AudioItem>) -> Unit)? = null,
+    onAlbumClicked: (Album) -> Unit = {},
+    onArtistClicked: (Artist) -> Unit = {},
     isActive: Boolean = true,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -132,13 +134,13 @@ fun AudioBrowserScreen(
                     AudioTab.ALBUMS -> AlbumsTab(
                         albums = uiState.albums,
                         isLoading = uiState.isLoadingAlbums && uiState.albums.isEmpty(),
-                        onAlbumClicked = { viewModel.onAlbumClicked(it) },
+                        onAlbumClicked = onAlbumClicked,
                         modifier = Modifier,
                     )
                     AudioTab.ARTISTS -> ArtistsTab(
                         artists = uiState.artists,
                         isLoading = uiState.isLoadingArtists && uiState.artists.isEmpty(),
-                        onArtistClicked = { viewModel.onArtistClicked(it) },
+                        onArtistClicked = onArtistClicked,
                         modifier = Modifier,
                     )
                 }

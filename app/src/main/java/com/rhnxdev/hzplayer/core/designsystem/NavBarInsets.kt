@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalDensity
@@ -57,6 +59,24 @@ fun stableNavBarPaddingValues(): PaddingValues {
 @Composable
 fun stableNavBarHorizontalPadding(): PaddingValues {
     return WindowInsets.navigationBarsIgnoringVisibility
+        .union(WindowInsets.displayCutout)
         .only(WindowInsetsSides.Horizontal)
+        .asPaddingValues()
+}
+
+/**
+ * Nav-bar ∪ cutout inset for the **start edge only**.
+ *
+ * Landscape with a nav rail pinned on the end side: the scaffold owns the rail
+ * (and its system-inset dodging) on the end, so content only needs to clear the
+ * system bar / notch on the opposite (start) edge. Padding both edges leaves a
+ * dead gap between content and the rail.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun stableContentStartPadding(): PaddingValues {
+    return WindowInsets.navigationBarsIgnoringVisibility
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Start)
         .asPaddingValues()
 }

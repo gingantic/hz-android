@@ -3,8 +3,6 @@ package com.rhnxdev.hzplayer.presentation.audio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
-import com.rhnxdev.hzplayer.domain.model.Album
-import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.repository.AudioRepository
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
@@ -176,19 +174,13 @@ class AudioBrowserViewModel @Inject constructor(
         playerRepository.playAudio(song)
     }
 
-    fun onAlbumClicked(album: Album) {
-        // Future: show album detail
-    }
-
-    fun onArtistClicked(artist: Artist) {
-        // Future: show artist detail
-    }
-
     fun onRetry() {
         loadAll()
     }
 
     fun onRefresh() {
+        val state = _uiState.value
+        if (state.isLoadingSongs || state.isLoadingAlbums || state.isLoadingArtists) return
         loadAll(forceRefresh = true)
     }
 }

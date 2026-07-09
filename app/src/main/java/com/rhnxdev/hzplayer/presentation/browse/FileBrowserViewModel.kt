@@ -88,14 +88,16 @@ class FileBrowserViewModel @Inject constructor(
         val state = _uiState.value
         when {
             state.mode == FileBrowserMode.ROOTS -> {
+                if (state.isLoading) return
                 cache.clear()
                 loadRoots()
             }
             state.layers.isNotEmpty() -> {
-                val path = state.layers.last().path
+                val lastIdx = state.layers.lastIndex
+                if (state.layers[lastIdx].isLoading) return
+                val path = state.layers[lastIdx].path
                 if (path.isNotEmpty()) {
                     cache.remove(path)
-                    val lastIdx = state.layers.lastIndex
                     updateLayer(lastIdx) { it.copy(isLoading = true) }
                     loadDirectory(path, lastIdx)
                 }
@@ -115,9 +117,11 @@ class FileBrowserViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
+            val minDelayJob = launch { kotlinx.coroutines.delay(300) }
             fileRepository.getStorageRoots()
-                .catch { /* fallback empty */ }
+                .catch { emit(emptyList()) }
                 .collect { roots ->
+                    minDelayJob.join()
                     _uiState.update {
                         it.copy(roots = roots, isLoading = false)
                     }
@@ -274,10 +278,12 @@ class FileBrowserViewModel @Inject constructor(
             }
 
             try {
+                val minDelayJob = launch { kotlinx.coroutines.delay(300) }
                 fileRepository.listDirectory(path, showHidden).collect { items ->
                     cache.put(path, items)
                     val enriched = enrichItemsWithPlaybackMetadata(items)
                     val sorted = sortItems(enriched, _uiState.value.sortType)
+                    minDelayJob.join()
                     updateLayer(layerIndex) {
                         it.copy(items = sorted, isEmpty = items.isEmpty(), error = null, isLoading = false)
                     }
