@@ -84,8 +84,13 @@ class FtpDataSource : BaseDataSource(/* isNetwork = */ true) {
 
     override fun close() {
         uri = null
+        val ftp = client
         try { inputStream?.close() } catch (_: Exception) {}
         inputStream = null
+        // FTP leaves the control connection in a "transfer pending" state until
+        // completePendingCommand() is called. Without it the pooled client is
+        // half-dead for the next borrow (stuck mid-transfer) → seeks fail.
+        try { ftp?.completePendingCommand() } catch (_: Exception) {}
         client = null // release reference — control connection stays pooled
         ftpHost?.let { host ->
             ConnectionPool.returnFtp(host, ftpPort, ftpUser ?: "")

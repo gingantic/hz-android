@@ -239,6 +239,8 @@ class FileBrowserViewModel @Inject constructor(
         val progressMap = resumeRepository.getPlaybackProgressList(paths)
         val localVideos = mediaRepository.getVideosByUris(paths)
         val durationMap = localVideos.associate { it.uri to it.durationMs }
+        val resolutionMap = localVideos.associate { it.uri to it.resolution }
+        val dateAddedMap = localVideos.associate { it.uri to it.dateAdded }
 
         return items.map { item ->
             if (item.isDirectory) {
@@ -249,7 +251,9 @@ class FileBrowserViewModel @Inject constructor(
                 val position = progress?.positionMs ?: 0L
                 item.copy(
                     durationMs = duration,
-                    playbackPositionMs = position
+                    playbackPositionMs = position,
+                    resolution = resolutionMap[item.path],
+                    dateAdded = dateAddedMap[item.path] ?: 0L
                 )
             }
         }

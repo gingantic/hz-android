@@ -40,6 +40,14 @@ class FileRepositoryImpl @Inject constructor(
                     else showHidden || !f.name.startsWith(".")
                 }
                 .map { f ->
+                    val creationTime = try {
+                        val nioPath = java.nio.file.Paths.get(f.absolutePath)
+                        val attrs = java.nio.file.Files.readAttributes(nioPath, java.nio.file.attribute.BasicFileAttributes::class.java)
+                        attrs.creationTime().toMillis()
+                    } catch (_: Exception) {
+                        f.lastModified()
+                    }
+
                     FolderItem(
                         id = f.hashCode().toLong(),
                         name = f.name,
@@ -51,6 +59,7 @@ class FileRepositoryImpl @Inject constructor(
                         } else 0,
                         dateModified = f.lastModified(),
                         mimeType = if (f.isFile) guessMimeType(f.name) else null,
+                        dateAdded = creationTime / 1000L,
                     )
                 }.sortedWith(
                     compareByDescending<FolderItem> { it.isDirectory }
@@ -78,10 +87,6 @@ class FileRepositoryImpl @Inject constructor(
                 )
             )
         }
-
-        val externalDirs = listOfNotNull(
-            Environment.getExternalStorageDirectory().parentFile?.let { File(it, "emulated") },
-        ) + Environment.getExternalStorageDirectory()
 
         // Use getExternalFilesDirs to discover all real mount points
         val seen = mutableSetOf(internalStorage.absolutePath)

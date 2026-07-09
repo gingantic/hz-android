@@ -99,6 +99,7 @@ class MainActivity : ComponentActivity() {
         window.setBackgroundDrawableResource(android.R.color.black)
         setContent {
             val mainViewModel: MainViewModel = hiltViewModel()
+            val mainUiState by mainViewModel.uiState.collectAsStateWithLifecycle()
             val themeMode by mainViewModel.themeMode.collectAsStateWithLifecycle()
             val appColorArgb by mainViewModel.appColorArgb.collectAsStateWithLifecycle()
             val useDynamicColors by mainViewModel.useDynamicColors.collectAsStateWithLifecycle()
@@ -108,10 +109,19 @@ class MainActivity : ComponentActivity() {
                 appColorArgb = appColorArgb,
                 dynamicColor = useDynamicColors
             ) {
-                HzPlayerApp(
-                    permissionDenied = permissionDenied,
-                    onRequestPermissions = { requestMediaPermissions() },
-                )
+                if (mainUiState.isReady) {
+                    HzPlayerApp(
+                        initialTabIndex = mainUiState.selectedTabIndex,
+                        permissionDenied = permissionDenied,
+                        onRequestPermissions = { requestMediaPermissions() },
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    )
+                }
             }
         }
     }
@@ -198,6 +208,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun HzPlayerApp(
+    initialTabIndex: Int,
     permissionDenied: Boolean = false,
     onRequestPermissions: () -> Unit = {},
 ) {
@@ -215,17 +226,14 @@ fun HzPlayerApp(
 
     // ViewModel for tab persistence
     val mainViewModel: MainViewModel = hiltViewModel()
-    val mainUiState by mainViewModel.uiState.collectAsStateWithLifecycle()
 
-    val pagerState = rememberPagerState(pageCount = { bottomNavDestinations.size })
+    val pagerState = rememberPagerState(
+        initialPage = initialTabIndex,
+        pageCount = { bottomNavDestinations.size }
+    )
     val scope = rememberCoroutineScope()
 
-    // Restore saved tab once DataStore loads
-    LaunchedEffect(mainUiState.isReady) {
-        if (mainUiState.isReady && pagerState.currentPage != mainUiState.selectedTabIndex) {
-            pagerState.scrollToPage(mainUiState.selectedTabIndex)
-        }
-    }
+
 
     // Save current tab index in memory instantly (no disk I/O on tab switch)
     LaunchedEffect(pagerState.currentPage) {
@@ -325,6 +333,7 @@ fun HzPlayerApp(
                         HorizontalPager(
                             state = pagerState,
                             beyondViewportPageCount = 0,
+                            userScrollEnabled = false,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .statusBarsPadding()
@@ -492,6 +501,7 @@ private fun MiniPlayerSection(
         onClick = onNavigateToPlayer,
         onDismiss = { playerViewModel.stop() },
         visible = playerState.currentTitle != null && !playerState.isVideo && !isFullScreen,
+        artworkUri = playerState.currentArtworkUri,
     )
 }
 

@@ -1,5 +1,8 @@
 package com.rhnxdev.hzplayer.presentation.player
 
+import androidx.compose.runtime.Immutable
+
+@Immutable
 data class SubtitleSearchUiState(
     val query: String = "",
     val isSearching: Boolean = false,
@@ -7,6 +10,7 @@ data class SubtitleSearchUiState(
     val error: String? = null,
 )
 
+@Immutable
 data class SubtitleSearchResultItem(
     val id: String,
     val fileId: Long,

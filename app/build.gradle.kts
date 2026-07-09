@@ -44,6 +44,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     externalNativeBuild {
@@ -107,6 +108,9 @@ dependencies {
     implementation(libs.sshj)
     implementation(libs.jcifs.ng)
 
+    // mDNS service discovery
+    implementation(libs.jmDNS)
+
     // WebDAV (uses OkHttp)
     implementation(libs.okhttp)
 
@@ -115,6 +119,7 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

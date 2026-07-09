@@ -30,12 +30,15 @@ import coil3.compose.AsyncImage
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 
+import androidx.compose.runtime.Immutable
+
 /**
  * A generic file-item to be rendered in the [DirectoryBrowsePane].
  * Can be sourced from either local [FolderItem] or remote [RemoteFileItem].
  */
+@Immutable
 data class FileItemData(
-    val id: Any,
+    val id: String,
     val name: String,
     val path: String,
     val isDirectory: Boolean,
@@ -46,6 +49,8 @@ data class FileItemData(
     val durationMs: Long = 0,
     val playbackPositionMs: Long = 0,
     val playbackUri: String? = null,
+    val resolution: String? = null,
+    val dateAdded: Long = 0,
 )
 
 /**
@@ -86,8 +91,10 @@ fun DirectoryBrowsePane(
     noSearchResultsTitle: String = "No results",
     noSearchResultsSubtitle: String = "Try a different search term.",
 ) {
-    val displayItems = if (!isSearchActive || searchQuery.isBlank()) items
-    else items.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    val displayItems = remember(items, searchQuery, isSearchActive) {
+        if (!isSearchActive || searchQuery.isBlank()) items
+        else items.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
 
     // Initial loading (no items yet) — show shimmer directly.
     // Pull-to-refresh is only used for refreshing already-loaded content
@@ -162,18 +169,10 @@ fun DirectoryBrowsePane(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     items(displayItems, key = { it.id }) { item ->
-                        FileItemCard(
-                            name = item.name,
-                            isDirectory = item.isDirectory,
-                            fileSize = item.fileSize,
-                            childCount = item.childCount,
-                            mimeType = item.mimeType,
-                            onClick = { onItemClick(item) },
-                            marqueeTitle = true,
-                            durationMs = item.durationMs,
-                            playbackPositionMs = item.playbackPositionMs,
-                            leadingThumbnail = if (mediaMode && !item.isDirectory) {
-                                {
+                        val onItemClicked = remember(item, onItemClick) { { onItemClick(item) } }
+                        val thumbnail: @Composable (() -> Unit)? = if (mediaMode && !item.isDirectory) {
+                            remember(item.playbackUri, item.path, item.dateModified, item.name) {
+                                @Composable {
                                     AsyncImage(
                                         model = VideoFrame(item.playbackUri ?: item.path, item.dateModified),
                                         contentDescription = item.name,
@@ -181,7 +180,22 @@ fun DirectoryBrowsePane(
                                         contentScale = ContentScale.Crop,
                                     )
                                 }
-                            } else null,
+                            }
+                        } else null
+
+                        FileItemCard(
+                            name = item.name,
+                            isDirectory = item.isDirectory,
+                            fileSize = item.fileSize,
+                            childCount = item.childCount,
+                            mimeType = item.mimeType,
+                            onClick = onItemClicked,
+                            marqueeTitle = true,
+                            durationMs = item.durationMs,
+                            playbackPositionMs = item.playbackPositionMs,
+                            leadingThumbnail = thumbnail,
+                            resolution = if (mediaMode) item.resolution else null,
+                            isNew = !item.isDirectory && item.dateAdded > 0L && (System.currentTimeMillis() / 1000L - item.dateAdded < 3600L),
                         )
                     }
                 }

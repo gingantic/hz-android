@@ -1,6 +1,13 @@
 package com.rhnxdev.hzplayer.presentation.network
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,16 +27,26 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.core.content.ContextCompat
+import android.os.Build
+import android.content.pm.PackageManager
+import com.rhnxdev.hzplayer.core.util.ServerDiscoverer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -95,6 +112,14 @@ fun NetworkScreen(
         )
     }
 
+    uiState.discoveredServerCredential?.let { request ->
+        CredentialDialog(
+            server = request.server,
+            onProvided = request.onProvided,
+            onDismiss = viewModel::onDismissCredentialDialog,
+        )
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         HzPlayerTopBar(
             title = when (uiState.mode) {
@@ -103,7 +128,17 @@ fun NetworkScreen(
             },
             showBack = uiState.mode == NetworkScreenMode.SERVER_BROWSE,
             onBack = { viewModel.onRemoteNavigateUp() },
+            marqueeTitle = uiState.mode == NetworkScreenMode.SERVER_BROWSE,
             actions = {
+                if (uiState.mode == NetworkScreenMode.HOME) {
+                    IconButton(onClick = viewModel::onToggleHomeView) {
+                        Icon(
+                            imageVector = if (uiState.isHomeListView) Icons.Filled.ViewModule
+                            else Icons.AutoMirrored.Filled.ViewList,
+                            contentDescription = if (uiState.isHomeListView) "Card view" else "List view",
+                        )
+                    }
+                }
                 if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) {
                     if (!isSearchActive) {
                         // Media mode toggle
@@ -168,10 +203,15 @@ fun NetworkScreen(
                     val title = url.substringAfterLast("/").ifEmpty { url }
                     onPlayStream(url, title, isVideoUrl(url))
                 },
+                onScanNetwork = viewModel::onScanNetwork,
+                onStopScan = viewModel::onStopScan,
                 onAddServer = viewModel::onAddServerClicked,
                 onBrowseServer = viewModel::onBrowseServer,
                 onEditServer = viewModel::onEditServer,
                 onDeleteServer = viewModel::onDeleteServer,
+                onDiscoveredServerTapped = viewModel::onDiscoveredServerTapped,
+                onSaveDiscoveredServer = viewModel::onSaveDiscoveredServer,
+                onDismissDiscoveredServer = viewModel::onDismissDiscoveredServer,
                 onPlayHistoryItem = { item ->
                     val url = viewModel.onPlayHistoryItem(item)
                     onPlayStream(url, item.title, isVideoUrl(url))
@@ -207,12 +247,17 @@ fun NetworkScreen(
 @Composable
 private fun NetworkHomeContent(
     uiState: NetworkUiState,
+    onScanNetwork: () -> Unit,
+    onStopScan: () -> Unit,
     onStreamUrlChanged: (String) -> Unit,
     onPlayStream: () -> Unit,
     onAddServer: () -> Unit,
     onBrowseServer: (ServerConfig) -> Unit,
     onEditServer: (ServerConfig) -> Unit,
     onDeleteServer: (Long) -> Unit,
+    onDiscoveredServerTapped: (ServerConfig) -> Unit,
+    onSaveDiscoveredServer: (ServerConfig) -> Unit,
+    onDismissDiscoveredServer: (ServerConfig) -> Unit,
     onPlayHistoryItem: (StreamHistoryItem) -> Unit,
     onToggleFavorite: (Long) -> Unit,
     onDeleteHistoryItem: (Long) -> Unit,
@@ -222,10 +267,24 @@ private fun NetworkHomeContent(
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
+    val context = LocalContext.current
+    val nearbyWifiPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) onScanNetwork() }
+    val onScanClick: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, ServerDiscoverer.NEARBY_WIFI_PERMISSION) != PackageManager.PERMISSION_GRANTED
+        ) {
+            nearbyWifiPermissionLauncher.launch(ServerDiscoverer.NEARBY_WIFI_PERMISSION)
+        } else {
+            onScanNetwork()
+        }
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = Spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(Spacing.lg),
+        contentPadding = PaddingValues(vertical = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xl),
     ) {
         // Open Stream section
         item {
@@ -310,6 +369,24 @@ private fun NetworkHomeContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = Spacing.lg),
                     )
+                } else if (uiState.isHomeListView) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = Spacing.lg),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        uiState.savedServers.forEach { server ->
+                            key(server.id) {
+                                ServerCard(
+                                    server = server,
+                                    onClick = { onBrowseServer(server) },
+                                    onEdit = { onEditServer(server) },
+                                    onDelete = { onDeleteServer(server.id) },
+                                    dense = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
                 } else {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = Spacing.lg),
@@ -324,7 +401,87 @@ private fun NetworkHomeContent(
                                 onClick = { onBrowseServer(server) },
                                 onEdit = { onEditServer(server) },
                                 onDelete = { onDeleteServer(server.id) },
+                                modifier = Modifier.width(180.dp),
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Discovery Servers section (only when on compatible network)
+        if (uiState.isOnCompatibleNetwork) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Discovery Servers",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { if (uiState.isDiscovering) onStopScan() else onScanClick() }) {
+                            val transition = rememberInfiniteTransition(label = "scan")
+                            val alpha by transition.animateFloat(
+                                initialValue = 0.3f, targetValue = 1f,
+                                animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+                                label = "alpha",
+                            )
+                            Icon(
+                                imageVector = HzPlayerIcons.Network,
+                                contentDescription = if (uiState.isDiscovering) "Stop scan" else "Scan network",
+                                modifier = Modifier.size(24.dp).then(if (uiState.isDiscovering) Modifier.alpha(alpha) else Modifier),
+                            )
+                        }
+                    }
+                }
+
+                if (!uiState.isDiscovering && uiState.discoveredServers.isEmpty()) {
+                    Text(
+                        text = "No servers discovered",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = Spacing.lg),
+                    )
+                } else if (uiState.discoveredServers.isNotEmpty()) {
+                    if (uiState.isHomeListView) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = Spacing.lg),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        uiState.discoveredServers.forEach { server ->
+                            key(server.host) {
+                                ServerCard(
+                                    server = server,
+                                    onClick = { onDiscoveredServerTapped(server) },
+                                    showMenu = false,
+                                    dense = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                    } else {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = Spacing.lg),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        ) {
+                            items(
+                                items = uiState.discoveredServers,
+                                key = { it.host },
+                            ) { server ->
+                                ServerCard(
+                                    server = server,
+                                    onClick = { onDiscoveredServerTapped(server) },
+                                    showMenu = false,
+                                    modifier = Modifier.width(180.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -492,6 +649,70 @@ private fun RemoteFileItem.toFileItemData(playbackUri: String? = null) = FileIte
     mimeType = mimeType,
     playbackUri = playbackUri,
 )
+
+// ── Credential dialog for discovered servers ──────────────────────
+
+@Composable
+private fun CredentialDialog(
+    server: ServerConfig,
+    onProvided: (username: String, password: String, saveToSaved: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var saveToSaved by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(server.name) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Text(
+                    text = "${server.protocol.name} • ${server.host}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = saveToSaved,
+                        onCheckedChange = { saveToSaved = it },
+                    )
+                    Text(
+                        text = "Save to Saved Servers",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onProvided(username, password, saveToSaved) }) {
+                Text("Connect")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
 
 // ── Utility ────────────────────────────────────────────────────────
 

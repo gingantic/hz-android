@@ -11,18 +11,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.runtime.remember
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
-
-enum class MediaType {
-    VIDEO,
-    AUDIO,
-    FOLDER,
-    FILE,
-}
+import com.rhnxdev.hzplayer.domain.model.MediaType
 
 @Composable
 fun ThumbnailPlaceholder(
@@ -35,11 +30,91 @@ fun ThumbnailPlaceholder(
         MediaType.FOLDER -> HzPlayerIcons.Folder
         MediaType.FILE -> HzPlayerIcons.Audio
     }
-    val gradient = when (mediaType) {
-        MediaType.VIDEO -> Gradient.VIDEO
-        MediaType.AUDIO -> Gradient.AUDIO
-        MediaType.FOLDER -> Gradient.FOLDER
-        MediaType.FILE -> Gradient.FILE
+
+    val primary = MaterialTheme.colorScheme.primary
+    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
+    val secondaryContainer = MaterialTheme.colorScheme.secondaryContainer
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
+
+    val surface = MaterialTheme.colorScheme.surface
+    val gradient = remember(mediaType, primary, primaryContainer, secondaryContainer, surfaceVariant, surface, isLight) {
+        when (mediaType) {
+            MediaType.VIDEO -> {
+                if (isLight) {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            primaryContainer.copy(alpha = 0.8f),
+                            secondaryContainer.copy(alpha = 0.5f),
+                        )
+                    )
+                } else {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            primaryContainer.copy(alpha = 0.25f),
+                            surface,
+                        )
+                    )
+                }
+            }
+            MediaType.AUDIO -> {
+                if (isLight) {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            secondaryContainer.copy(alpha = 0.8f),
+                            primaryContainer.copy(alpha = 0.4f),
+                        )
+                    )
+                } else {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            secondaryContainer.copy(alpha = 0.25f),
+                            surface,
+                        )
+                    )
+                }
+            }
+            MediaType.FOLDER -> {
+                if (isLight) {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            surfaceVariant.copy(alpha = 0.9f),
+                            primaryContainer.copy(alpha = 0.2f),
+                        )
+                    )
+                } else {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            surface,
+                            surfaceVariant,
+                        )
+                    )
+                }
+            }
+            MediaType.FILE -> {
+                if (isLight) {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            surfaceVariant.copy(alpha = 0.7f),
+                            surfaceVariant.copy(alpha = 0.3f),
+                        )
+                    )
+                } else {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            surface,
+                            surfaceVariant,
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    val iconTint = if (isLight) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
     }
 
     Box(
@@ -51,37 +126,10 @@ fun ThumbnailPlaceholder(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.6f),
+            tint = iconTint,
             modifier = Modifier.size(32.dp),
         )
     }
-}
-
-private object Gradient {
-    val VIDEO = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFF2D1B00),
-            Color(0xFF1A1A2E),
-        ),
-    )
-    val AUDIO = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFF1A2E1A),
-            Color(0xFF002B36),
-        ),
-    )
-    val FOLDER = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFF1A1A2E),
-            Color(0xFF2D1B00),
-        ),
-    )
-    val FILE = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFF2A2A2A),
-            Color(0xFF1A1A1A),
-        ),
-    )
 }
 
 @Preview

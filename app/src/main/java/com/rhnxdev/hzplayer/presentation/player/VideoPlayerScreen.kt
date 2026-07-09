@@ -27,12 +27,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
@@ -68,6 +72,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
+import com.rhnxdev.hzplayer.presentation.player.components.DebugOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerControlsOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.SeekIndicator
 import com.rhnxdev.hzplayer.presentation.player.components.DragSeekIndicator
@@ -258,8 +263,15 @@ fun VideoPlayerScreen(
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        // Video surface — ExoPlayer PlayerView (inflated dynamically with TextureView or SurfaceView surface type)
-        key(uiState.useSurfaceView) {
+        // Video surface — selection driven by View-preference (SurfaceView for low-latency
+        // direct rendering, TextureView for compositor-friendly rendering that survives brief
+        // app switches via retained GPU state).
+        //
+        // HDR/SDR handling lives entirely in the player stack now: the toggle in
+        // settings stores `enableHdrPlayback` but is currently a no-op while the
+        // colour-correction work is in progress. The window keeps its default color mode.
+        val surfaceIsSurfaceView = uiState.useSurfaceView
+        key(surfaceIsSurfaceView) {
             AndroidView(
                 factory = { ctx ->
                     // Inflate from XML so the correct `app:surface_type` takes effect.
@@ -268,7 +280,7 @@ fun VideoPlayerScreen(
                     // GPU memory through onStop(), eliminating the black flash when the
                     // user briefly switches apps and returns.
                     // SurfaceView bypasses UI composition and provides direct 10-bit HDR rendering.
-                    val layoutRes = if (uiState.useSurfaceView) {
+                    val layoutRes = if (surfaceIsSurfaceView) {
                         com.rhnxdev.hzplayer.R.layout.view_exo_player_surface
                     } else {
                         com.rhnxdev.hzplayer.R.layout.view_exo_player
@@ -297,13 +309,10 @@ fun VideoPlayerScreen(
                         )
                     }
 
-                    // Force direct hardware composer secure composition to maintain 10-bit HDR colors
-                    if (uiState.useSurfaceView) {
-                        val surfaceView = playerView.videoSurfaceView
-                        if (surfaceView is android.view.SurfaceView) {
-                            surfaceView.setSecure(true)
-                        }
-                    }
+                    // (setSecure / DRM-gating removed: surface is left as-is. The
+                    // HDR/SDR toggle is currently a no-op while the colour-correction
+                    // work is in progress; secured composition will be reintroduced
+                    // together with that work.)
 
                     playerViewRef.value = playerView
                     playerView
@@ -531,6 +540,7 @@ fun VideoPlayerScreen(
                         if (act != null) viewModel.onToggleOrientation(act)
                     },
                     onPlaylistClick = { viewModel.onTogglePlaylistDrawer() },
+                    onDebugClick = if (uiState.debugMode) { { viewModel.onToggleDebugOverlay() } } else null,
                     onSkipToNext = if (uiState.videoPlaylist.isNotEmpty()) {
                         { viewModel.onPlaylistNext() }
                     } else null,
@@ -675,6 +685,15 @@ fun VideoPlayerScreen(
                 )
             }
 
+            // Debug overlay (stats for nerds) — floating top-right
+            if (uiState.debugOverlayVisible) {
+                DebugOverlay(
+                    stats = uiState.debugStats,
+                    onDismiss = { viewModel.onToggleDebugOverlay() },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
             // Buffering loader
             if (uiState.isLoading && uiState.errorMessage == null) {
                 CircularProgressIndicator(
@@ -685,29 +704,105 @@ fun VideoPlayerScreen(
 
             // Error overlay (network timeout, disconnected, etc.)
             val errorMsg = uiState.errorMessage
+            val errorKind = uiState.errorKind
             if (errorMsg != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.6f))
+                        .background(Color.Black.copy(alpha = 0.85f))
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
                         ) { /* consume clicks */ },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(32.dp))
+                                .background(Color.Red.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Error,
+                                contentDescription = null,
+                                tint = Color(0xFFEF5350),
+                                modifier = Modifier.size(32.dp),
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         Text(
-                            text = "⚠",
-                            fontSize = 36.sp,
-                            color = Color.White.copy(alpha = 0.7f),
+                            text = "Playback Error",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         Text(
                             text = errorMsg,
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyLarge,
+                            color = Color.White.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = onBack,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Color.White,
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(text = "Go Back")
+                            }
+
+                            // Retry only for recoverable errors (network/timeout/auth/file).
+                            // Format/DRM/decoder failures won't succeed on retry.
+                            val canRetry = errorKind in setOf(
+                                com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind.NETWORK,
+                                com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind.TIMEOUT,
+                                com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind.AUTH,
+                                com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind.FILE_NOT_FOUND,
+                            )
+                            if (canRetry) {
+                                OutlinedButton(
+                                    onClick = viewModel::retry,
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = Color.White,
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(text = "Retry")
+                                }
+                            }
+
+                            Button(
+                                onClick = viewModel::clearError,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(text = "Dismiss")
+                            }
+                        }
                     }
                 }
             }

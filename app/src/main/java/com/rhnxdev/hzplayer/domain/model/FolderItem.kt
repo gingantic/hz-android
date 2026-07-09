@@ -13,4 +13,7 @@ data class FolderItem(
     val mimeType: String? = null,
     val durationMs: Long = 0,
     val playbackPositionMs: Long = 0,
+    val resolution: String? = null,
+    /** Seconds since Unix epoch (not milliseconds!). */
+    val dateAdded: Long = 0,
 )

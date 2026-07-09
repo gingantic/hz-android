@@ -4,7 +4,9 @@ import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
+import okhttp3.HttpUrl
 import okhttp3.Request
+import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 
@@ -44,15 +46,25 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
         val pass = Uri.decode(parts.getOrNull(1) ?: "")
         val host = dataSpec.uri.host ?: throw IOException("No host in URI")
         val port = dataSpec.uri.port.takeIf { it > 0 } ?: if (isTls) 443 else 80
-        val path = dataSpec.uri.path ?: "/"
+        val path = dataSpec.uri.encodedPath ?: "/"
 
         httpHost = host
         httpPort = port
         useTls = isTls
 
-        // Build the real HTTP(S) URL
+        // Build the real HTTP(S) URL. Use HttpUrl.Builder so IPv6 literals are
+        // bracketed and the query is preserved (string concat dropped it).
         val httpScheme = if (isTls) "https" else "http"
-        val httpUrl = "$httpScheme://$host:$port$path"
+        val androidUri = dataSpec.uri
+        val httpUrl = HttpUrl.Builder()
+            .scheme(httpScheme)
+            .host(androidUri.host?.removeSurrounding("[", "]") ?: host)
+            .port(port)
+            .encodedPath(androidUri.encodedPath ?: path)
+            .query(androidUri.encodedQuery)
+            .build()
+        // Credential-free URL for logs/errors (never leak user:pass).
+        val safeUrl = httpUrl.newBuilder().username("").password("").build().toString()
 
         val okhttp = ConnectionPool.borrowWebDavClient(host, port, isTls, user, pass)
 
@@ -69,22 +81,58 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
             requestBuilder.header("Range", "bytes=${dataSpec.position}-")
         }
 
-        val httpResponse = okhttp.newCall(requestBuilder.build()).execute()
+        // Open with brief retry/backoff for transient network drops (Wi-Fi
+        // handoff). Connection-stage only — HTTP status errors are not retried.
+        val httpResponse = run {
+            val backoffMs = longArrayOf(250, 750, 2000)
+            var lastErr: IOException? = null
+            repeat(backoffMs.size + 1) { attempt ->
+                try {
+                    val resp = okhttp.newCall(requestBuilder.build()).execute()
+                    if (!resp.isSuccessful) {
+                        resp.close()
+                        throw IOException("WebDAV HTTP ${resp.code} for $safeUrl")
+                    }
+                    return@run resp
+                } catch (e: IOException) {
+                    lastErr = e
+                    // HTTP status errors are not transient — surface immediately.
+                    if (e.message?.startsWith("WebDAV HTTP") == true) throw e
+                    if (attempt < backoffMs.size) {
+                        android.util.Log.w(TAG, "WebDAV open attempt $attempt failed, retrying", e)
+                        Thread.sleep(backoffMs[attempt])
+                    }
+                }
+            }
+            throw lastErr ?: IOException("WebDAV open failed for $safeUrl")
+        }
         response = httpResponse
 
-        if (!httpResponse.isSuccessful) {
-            httpResponse.close()
-            throw IOException("WebDAV HTTP ${httpResponse.code} for $httpUrl")
-        }
+        val body = httpResponse.body ?: throw IOException("No response body from $safeUrl")
+        var stream = body.byteStream()
 
-        val body = httpResponse.body ?: throw IOException("No response body from $httpUrl")
-        inputStream = body.byteStream()
+        // Some servers ignore the Range header and answer 200 with the *whole*
+        // file. Skip to the requested offset so ExoPlayer gets the right bytes.
+        if (httpResponse.code == 200 && dataSpec.position > 0) {
+            var remaining = dataSpec.position
+            while (remaining > 0) {
+                val skipped = stream.skip(remaining)
+                if (skipped > 0) {
+                    remaining -= skipped
+                } else if (stream.read() == -1) {
+                    throw IOException("WebDAV unexpected EOF during seek for $safeUrl")
+                } else {
+                    remaining--
+                }
+            }
+        }
+        inputStream = stream
 
         // Determine content length
         val contentLength = body.contentLength()
         bytesRemaining = when {
             dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
-            contentLength != -1L -> contentLength
+            contentLength != -1L -> contentLength - if (httpResponse.code == 200) dataSpec.position else 0
             else -> C.LENGTH_UNSET.toLong()
         }
 

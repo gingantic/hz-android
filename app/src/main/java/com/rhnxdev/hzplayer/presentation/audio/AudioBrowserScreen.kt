@@ -33,7 +33,7 @@ import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
-import com.rhnxdev.hzplayer.core.components.MediaType
+import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.domain.model.Album
@@ -41,6 +41,8 @@ import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.presentation.audio.components.AlbumCard
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import coil3.compose.SubcomposeAsyncImage
+import androidx.compose.ui.layout.ContentScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,8 +161,24 @@ private fun SongsTab(
                         title = song.title,
                         subtitle = buildSongSubtitle(song),
                         durationMs = song.durationMs,
+                        isSquareThumbnail = true,
                         thumbnailContent = {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                            if (song.albumArtUri != null) {
+                                SubcomposeAsyncImage(
+                                    model = song.albumArtUri,
+                                    contentDescription = song.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                    error = {
+                                        ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                    },
+                                    loading = {
+                                        ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                    }
+                                )
+                            } else {
+                                ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                            }
                         },
                         onClick = { onSongClicked(song) },
                     )
@@ -202,6 +220,7 @@ private fun AlbumsTab(
                         title = album.title,
                         artist = album.artist,
                         trackCount = album.trackCount,
+                        albumArtUri = album.albumArtUri,
                         onClick = { onAlbumClicked(album) },
                     )
                 }
@@ -239,8 +258,24 @@ private fun ArtistsTab(
                     MediaListItem(
                         title = artist.name,
                         subtitle = "${artist.albumCount} albums • ${artist.trackCount} tracks",
+                        isSquareThumbnail = true,
                         thumbnailContent = {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                            if (artist.albumArtUri != null) {
+                                SubcomposeAsyncImage(
+                                    model = artist.albumArtUri,
+                                    contentDescription = artist.name,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                    error = {
+                                        ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                    },
+                                    loading = {
+                                        ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                    }
+                                )
+                            } else {
+                                ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                            }
                         },
                         onClick = { onArtistClicked(artist) },
                     )

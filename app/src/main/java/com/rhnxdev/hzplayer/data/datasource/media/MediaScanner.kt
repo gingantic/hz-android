@@ -79,6 +79,7 @@ class MediaScanner @Inject constructor(
             MediaStore.Audio.Media.SIZE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.TRACK,
             MediaStore.Audio.Media.DATE_ADDED,
             MediaStore.Audio.Media.DATE_MODIFIED,
@@ -101,12 +102,15 @@ class MediaScanner @Inject constructor(
             val sizeCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val artistCol = it.getColumnIndex(MediaStore.Audio.Media.ARTIST)
             val albumCol = it.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+            val albumIdCol = it.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
             val trackCol = it.getColumnIndex(MediaStore.Audio.Media.TRACK)
             val dateAddedCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
             val dateModifiedCol = it.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
             val mimeCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
 
             while (it.moveToNext()) {
+                val albumId = if (albumIdCol >= 0) it.getLong(albumIdCol) else -1L
+                val artUri = if (albumId > 0) getAlbumArtUri(albumId) else null
                 audio.add(
                     MediaEntity(
                         id = it.getLong(idCol),
@@ -118,6 +122,7 @@ class MediaScanner @Inject constructor(
                         mimeType = if (mimeCol >= 0) it.getString(mimeCol) else null,
                         artist = if (artistCol >= 0) it.getString(artistCol) else null,
                         album = if (albumCol >= 0) it.getString(albumCol) else null,
+                        albumArtUri = artUri,
                         trackNumber = if (trackCol >= 0) it.getInt(trackCol) else 0,
                         dateAdded = it.getLong(dateAddedCol),
                         dateModified = if (dateModifiedCol >= 0) it.getLong(dateModifiedCol) else 0,

@@ -53,6 +53,8 @@ class MediaPlaybackService : MediaSessionService() {
             release()
             mediaSession = null
         }
+        // Release the ExoPlayer so rapid back-to-back starts don't leak instances.
+        playerHolder.release()
         super.onDestroy()
     }
 }

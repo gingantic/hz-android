@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.presentation.theme
 
 import android.app.Activity
+import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -137,8 +138,9 @@ fun HzPlayerTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
+            val window = view.context.findActivity().window
             window.statusBarColor = colorScheme.surface.toArgb()
+            window.navigationBarColor = Color.Transparent.toArgb()
             val insetsController = WindowCompat.getInsetsController(window, view)
             insetsController.isAppearanceLightStatusBars = !isDark
             insetsController.isAppearanceLightNavigationBars = !isDark
@@ -151,3 +153,10 @@ fun HzPlayerTheme(
         content = content,
     )
 }
+
+private fun Context.findActivity(): Activity =
+    when (this) {
+        is Activity -> this
+        else -> (this as? android.content.ContextWrapper)?.baseContext?.findActivity()
+            ?: throw IllegalStateException("No Activity in context chain")
+    }

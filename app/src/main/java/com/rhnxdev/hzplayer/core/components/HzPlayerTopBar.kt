@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.core.components
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +29,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -66,6 +68,7 @@ fun HzPlayerTopBar(
     onSearchToggle: (() -> Unit)? = null,
     onSearchClose: () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
+    marqueeTitle: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -163,7 +166,17 @@ fun HzPlayerTopBar(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                softWrap = false,
+                overflow = if (marqueeTitle) TextOverflow.Clip else TextOverflow.Ellipsis,
+                modifier = if (marqueeTitle) {
+                    Modifier
+                        .weight(1f)
+                        .basicMarquee(
+                            iterations = 3,
+                            initialDelayMillis = 2000,
+                        )
+                } else Modifier.weight(1f),
             )
         }
 

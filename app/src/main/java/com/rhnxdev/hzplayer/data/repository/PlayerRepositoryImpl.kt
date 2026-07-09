@@ -56,7 +56,6 @@ class PlayerRepositoryImpl @Inject constructor(
     override val playbackStateInfo: Flow<PlayerStateInfo> = exoPlayerEngine.playbackState
 
     val subtitleCues: StateFlow<List<androidx.media3.common.text.Cue>> get() = exoPlayerEngine.subtitleCues
-    val displayNeedsSurfaceView: StateFlow<Boolean> get() = exoPlayerEngine.displayNeedsSurfaceView
 
     private fun startTrafficPolling() {
         trafficPollJob?.cancel()
@@ -66,8 +65,15 @@ class PlayerRepositoryImpl @Inject constructor(
             _networkTraffic.value = NetworkTraffic.DEFAULT
             return
         }
+        // Some devices don't report per-UID traffic (returns -1). Surface that once
+        // instead of silently showing 0 and confusing the user.
+        val initialRx = TrafficStats.getUidRxBytes(appUid)
+        if (initialRx == -1L) {
+            _networkTraffic.value = NetworkTraffic(unsupported = true)
+            return
+        }
         trafficPollJob = scope.launch(Dispatchers.Default) {
-            var lastRx = TrafficStats.getUidRxBytes(appUid).coerceAtLeast(0)
+            var lastRx = initialRx
             var smoothedSpeed = 0f
             while (isActive) {
                 delay(750)
@@ -164,6 +170,16 @@ class PlayerRepositoryImpl @Inject constructor(
         savedPlaybackUri = null
         stopTrafficPolling()
         exoPlayerEngine.stop()
+    }
+
+    fun collectDebugStats() = exoPlayerEngine.collectDebugStats()
+
+    override fun clearError() {
+        exoPlayerEngine.clearError()
+    }
+
+    override fun retry() {
+        exoPlayerEngine.retry()
     }
 
     override fun release() {

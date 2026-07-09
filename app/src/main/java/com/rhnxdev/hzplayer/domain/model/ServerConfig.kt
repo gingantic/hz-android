@@ -8,6 +8,7 @@ data class ServerConfig(
     val port: Int,
     val username: String = "",
     val password: String = "",
+    val allowAnonymous: Boolean = false,
     val basePath: String = "/",
     val createdAt: Long = System.currentTimeMillis(),
 )

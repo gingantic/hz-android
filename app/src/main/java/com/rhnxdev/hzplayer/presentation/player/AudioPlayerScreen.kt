@@ -43,6 +43,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.platform.LocalConfiguration
+import android.content.res.Configuration
+import androidx.compose.ui.graphics.luminance
+import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.presentation.player.components.AudioPlayerSheet
@@ -59,8 +63,13 @@ fun AudioPlayerScreen(
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val dismissThreshold = with(density) { 150.dp.toPx() }
 
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val isLight = surfaceColor.luminance() > 0.5f
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     // Edge-to-edge: draw behind system bars
-    DisposableEffect(Unit) {
+    DisposableEffect(surfaceColor, isLight) {
         val window = (view.context as? android.app.Activity)?.window
         if (window == null) return@DisposableEffect onDispose {}
 
@@ -68,13 +77,15 @@ fun AudioPlayerScreen(
         val originalStatusColor = window.statusBarColor
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.navigationBarColor = Color.Black.toArgb()
-        window.statusBarColor = Color.Black.toArgb()
+        window.navigationBarColor = Color.Transparent.toArgb()
+        window.statusBarColor = Color.Transparent.toArgb()
 
         val controller = WindowInsetsControllerCompat(window, view)
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.show(WindowInsetsCompat.Type.systemBars())
+        controller.isAppearanceLightStatusBars = isLight
+        controller.isAppearanceLightNavigationBars = isLight
 
         onDispose {
             window.navigationBarColor = originalNavColor
@@ -88,49 +99,51 @@ fun AudioPlayerScreen(
             .fillMaxSize()
             .offset { IntOffset(0, dragOffset.roundToInt()) }
             .background(MaterialTheme.colorScheme.surface)
-            .draggable(
-                state = rememberDraggableState { delta ->
-                    dragOffset = (dragOffset + delta).coerceAtLeast(0f)
-                },
-                orientation = Orientation.Vertical,
-                onDragStopped = { velocity ->
-                    // Velocity is in pixels per second. Positive velocity means swiping down.
-                    val isFlick = velocity > 1000f
-                    val screenHeight = view.height.toFloat()
-                    if (dragOffset > dismissThreshold || isFlick) {
-                        // Animate down to the bottom of the screen with the release velocity
-                        animate(
-                            initialValue = dragOffset,
-                            targetValue = screenHeight,
-                            initialVelocity = velocity,
-                        ) { value, _ ->
-                            dragOffset = value
-                        }
-                        onBack()
-                    } else {
-                        animate(
-                            initialValue = dragOffset,
-                            targetValue = 0f
-                        ) { value, _ ->
-                            dragOffset = value
+            .run {
+                if (isLandscape) this else draggable(
+                    state = rememberDraggableState { delta ->
+                        dragOffset = (dragOffset + delta).coerceAtLeast(0f)
+                    },
+                    orientation = Orientation.Vertical,
+                    onDragStopped = { velocity ->
+                        val isFlick = velocity > 1000f
+                        val screenHeight = view.height.toFloat()
+                        if (dragOffset > dismissThreshold || isFlick) {
+                            animate(
+                                initialValue = dragOffset,
+                                targetValue = screenHeight,
+                                initialVelocity = velocity,
+                            ) { value, _ ->
+                                dragOffset = value
+                            }
+                            onBack()
+                        } else {
+                            animate(
+                                initialValue = dragOffset,
+                                targetValue = 0f
+                            ) { value, _ ->
+                                dragOffset = value
+                            }
                         }
                     }
-                }
-            ),
+                )
+            },
     ) {
-        // Drag handle at top (shifted down to prevent gesture conflict with notification drawer)
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = 24.dp)
-                .width(40.dp)
-                .height(4.dp)
-                .background(
-                    Color.White.copy(alpha = 0.3f),
-                    CircleShape,
-                ),
-        )
+        // Drag handle at top (shifted down to prevent gesture conflict with notification drawer) - hide in landscape
+        if (!isLandscape) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 24.dp)
+                    .width(40.dp)
+                    .height(4.dp)
+                    .background(
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                        CircleShape,
+                    ),
+            )
+        }
 
         AudioPlayerSheet(
             uiState = uiState,
@@ -146,7 +159,12 @@ fun AudioPlayerScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
                 .systemBarsPadding()
-                .padding(top = 40.dp),
+                .padding(
+                    top = if (isLandscape) Spacing.md else 40.dp,
+                    bottom = if (isLandscape) Spacing.md else Spacing.xl,
+                    start = if (isLandscape) 72.dp else Spacing.xl,
+                    end = if (isLandscape) Spacing.lg else Spacing.xl,
+                ),
         )
 
         // Close (back) button (shifted down to prevent gesture conflict)
@@ -161,7 +179,7 @@ fun AudioPlayerScreen(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onSurface,
             )
         }
     }

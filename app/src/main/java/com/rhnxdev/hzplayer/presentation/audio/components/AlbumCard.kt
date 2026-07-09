@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,10 +21,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import com.rhnxdev.hzplayer.core.components.MediaType
+import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import coil3.compose.SubcomposeAsyncImage
+import androidx.compose.ui.layout.ContentScale
 
 @Composable
 fun AlbumCard(
@@ -32,6 +35,7 @@ fun AlbumCard(
     trackCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    albumArtUri: String? = null,
 ) {
     Card(
         onClick = onClick,
@@ -47,13 +51,37 @@ fun AlbumCard(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Square album art
-            ThumbnailPlaceholder(
-                mediaType = MediaType.AUDIO,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(Spacing.sm)),
-            )
+            if (albumArtUri != null) {
+                SubcomposeAsyncImage(
+                    model = albumArtUri,
+                    contentDescription = title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(Spacing.sm)),
+                    contentScale = ContentScale.Crop,
+                    error = {
+                        ThumbnailPlaceholder(
+                            mediaType = MediaType.AUDIO,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    },
+                    loading = {
+                        ThumbnailPlaceholder(
+                            mediaType = MediaType.AUDIO,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                )
+            } else {
+                ThumbnailPlaceholder(
+                    mediaType = MediaType.AUDIO,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(Spacing.sm)),
+                )
+            }
 
             Spacer(modifier = Modifier.height(Spacing.sm))
 

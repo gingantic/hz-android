@@ -35,11 +35,14 @@ import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
-import com.rhnxdev.hzplayer.core.components.MediaType
+import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import coil3.compose.SubcomposeAsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 
 @Composable
 fun SearchScreen(
@@ -166,7 +169,18 @@ private fun SearchResults(
                     subtitle = video.resolution ?: "Video",
                     durationMs = video.durationMs,
                     thumbnailContent = {
-                        ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                        SubcomposeAsyncImage(
+                            model = VideoFrame(video.uri, video.dateModified),
+                            contentDescription = video.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            error = {
+                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                            },
+                            loading = {
+                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                            }
+                        )
                     },
                     onClick = { onVideoClicked(video) },
                     modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -196,8 +210,24 @@ private fun SearchResults(
                         song.album?.let { if (isNotEmpty()) append(" • "); append(it) }
                     },
                     durationMs = song.durationMs,
+                    isSquareThumbnail = true,
                     thumbnailContent = {
-                        ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                        if (song.albumArtUri != null) {
+                            SubcomposeAsyncImage(
+                                model = song.albumArtUri,
+                                contentDescription = song.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                                error = {
+                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                },
+                                loading = {
+                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                }
+                            )
+                        } else {
+                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                        }
                     },
                     onClick = { onAudioClicked(song) },
                     modifier = Modifier.padding(horizontal = Spacing.lg),

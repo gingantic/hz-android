@@ -89,6 +89,15 @@ interface IPlayerEngine {
     fun selectAudioTrack(index: Int)
 
     // ── Lifecycle ───────────────────────────────────────────────
+    
+    /** Clear current playback error. */
+    fun clearError() {}
+
+    /**
+     * Re-attempt the last playback after a recoverable error (network/timeout/auth/
+     * file-not-found). No-op if there is no current media item to retry.
+     */
+    fun retry() {}
 
     /** Release all native and framework resources. */
     fun release()

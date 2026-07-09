@@ -17,6 +17,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import androidx.compose.ui.unit.dp
 
 @Composable
 fun ViewToggleFab(
@@ -32,8 +33,12 @@ fun ViewToggleFab(
     FloatingActionButton(
         onClick = { onToggle(targetMode) },
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        containerColor = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
+            defaultElevation = 6.dp,
+            pressedElevation = 12.dp
+        ),
     ) {
         AnimatedContent(
             targetState = icon,
