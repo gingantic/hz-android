@@ -12,6 +12,7 @@ extern "C" {
 }
 
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 #include <cstring>
 #include <chrono>
@@ -19,7 +20,7 @@ extern "C" {
 #include <cinttypes>
 #include <string>
 
-#define LOG_TAG "ThumbIO"
+#define LOG_TAG "HzPlayer/Thumb"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
@@ -45,37 +46,63 @@ class JniFile : public RandomAccessFile {
     mutable int64_t cachedSize_ = -1;
     jmethodID readAtMid_;
     jmethodID getSizeMid_;
+    jbyteArray jbuf_ = nullptr;
+    jsize jbufCapacity_ = 0;
+    bool ok_ = true;
 
 public:
     JniFile(JNIEnv* e, jobject bridge)
         : env_(e), bridge_(e->NewGlobalRef(bridge)) {
         jclass cls = env_->GetObjectClass(bridge_);
+        if (env_->ExceptionCheck()) { env_->ExceptionClear(); ok_ = false; }
         readAtMid_ = env_->GetMethodID(cls, "readAt", "(J[BI)I");
+        if (env_->ExceptionCheck()) {
+            env_->ExceptionClear();
+            ok_ = false;
+        }
         getSizeMid_ = env_->GetMethodID(cls, "getSize", "()J");
+        if (env_->ExceptionCheck()) {
+            env_->ExceptionClear();
+            ok_ = false;
+        }
+        if (cls) env_->DeleteLocalRef(cls);
     }
 
     ~JniFile() override {
-        env_->DeleteGlobalRef(bridge_);
+        if (jbuf_) {
+            env_->DeleteGlobalRef(jbuf_);
+            jbuf_ = nullptr;
+        }
+        if (bridge_) env_->DeleteGlobalRef(bridge_);
     }
 
     int64_t read(uint8_t* buf, int64_t size) override {
-        jbyteArray jbuf = env_->NewByteArray(static_cast<jsize>(size));
-        if (!jbuf) return -1;
+        if (!ok_) return -1;
+        jsize requiredSize = static_cast<jsize>(size);
+        if (!jbuf_ || jbufCapacity_ < requiredSize) {
+            if (jbuf_) {
+                env_->DeleteGlobalRef(jbuf_);
+                jbuf_ = nullptr;
+            }
+            jbyteArray localBuf = env_->NewByteArray(requiredSize);
+            if (!localBuf) return -1;
+            jbuf_ = static_cast<jbyteArray>(env_->NewGlobalRef(localBuf));
+            env_->DeleteLocalRef(localBuf);
+            jbufCapacity_ = requiredSize;
+        }
 
-        jint n = env_->CallIntMethod(bridge_, readAtMid_, pos_, jbuf,
-                                     static_cast<jint>(size));
+        jint n = env_->CallIntMethod(bridge_, readAtMid_, pos_, jbuf_,
+                                     requiredSize);
         if (env_->ExceptionCheck()) {
             env_->ExceptionClear();
-            env_->DeleteLocalRef(jbuf);
             return -1;
         }
 
         if (n > 0) {
-            env_->GetByteArrayRegion(jbuf, 0, n,
+            env_->GetByteArrayRegion(jbuf_, 0, n,
                                      reinterpret_cast<jbyte*>(buf));
             pos_ += n;
         }
-        env_->DeleteLocalRef(jbuf);
 
         // -1 means EOF/error in Kotlin bridge — map to 0 for FFmpeg (0 = EOF)
         return n < 0 ? 0 : static_cast<int64_t>(n);
@@ -92,6 +119,7 @@ public:
     }
 
     int64_t size() override {
+        if (!ok_) return 0;
         if (cachedSize_ < 0) {
             cachedSize_ = env_->CallLongMethod(bridge_, getSizeMid_);
             if (env_->ExceptionCheck()) {
@@ -102,7 +130,7 @@ public:
         return cachedSize_;
     }
 
-    bool ok() const override { return bridge_ != nullptr; }
+    bool ok() const override { return ok_ && bridge_ != nullptr; }
 };
 
 // ─── I/O instrumentation ────────────────────────────────────────────
@@ -118,7 +146,7 @@ struct IOStats {
     std::vector<Chunk> chunks;
 };
 
-static int g_avioBufSize = 256 * 1024; // 256 KB
+static int g_avioBufSize = 1024 * 1024; // 1 MB
 
 struct IOBridge {
     RandomAccessFile* file;
@@ -154,25 +182,47 @@ static int64_t io_seek(void* opaque, int64_t offset, int whence) {
 
 // ─── RGBA ───────────────────────────────────────────────────────────
 
-static std::vector<uint8_t> frameToRgba(AVFrame* frame, int& outW, int& outH) {
+static std::vector<uint8_t> frameToRgba(AVFrame* frame, int dstW, int dstH, int& outW, int& outH) {
     int w = frame->width;
     int h = frame->height;
+    AVPixelFormat srcFmt = static_cast<AVPixelFormat>(frame->format);
 
-    int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBA, w, h, 1);
+    if (srcFmt == AV_PIX_FMT_NONE) {
+        LOGE("frameToRgba: AV_PIX_FMT_NONE, can't convert");
+        return {};
+    }
+
+    LOGD("frameToRgba: %dx%d -> %dx%d fmt=%d(%s)", w, h, dstW, dstH, srcFmt,
+         av_get_pix_fmt_name(srcFmt));
+
+    int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBA, dstW, dstH, 1);
     std::vector<uint8_t> rgba(numBytes);
 
     AVFrame* tmp = av_frame_alloc();
     av_image_fill_arrays(tmp->data, tmp->linesize, rgba.data(),
-                         AV_PIX_FMT_RGBA, w, h, 1);
-    tmp->width  = w;
-    tmp->height = h;
+                         AV_PIX_FMT_RGBA, dstW, dstH, 1);
+    tmp->width  = dstW;
+    tmp->height = dstH;
     tmp->format = AV_PIX_FMT_RGBA;
 
-    SwsContext* sws = sws_getContext(w, h,
-        static_cast<AVPixelFormat>(frame->format),
-        w, h, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+    SwsContext* sws = sws_getContext(w, h, srcFmt,
+        dstW, dstH, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
     if (!sws) {
-        LOGE("sws_getContext failed");
+        // Try AVFrame re-write trick: some formats swscale doesn't handle directly
+        LOGE("sws_getContext failed for fmt=%s, trying raw copy fallback",
+             av_get_pix_fmt_name(srcFmt));
+        // If frame data is already RGBA-like (e.g. some hw surfaces)
+        if (frame->linesize[0] > 0 && frame->data[0] && w == dstW && h == dstH) {
+            int rowBytes = std::min(frame->linesize[0], w * 4);
+            for (int y = 0; y < h && y < frame->height; y++) {
+                memcpy(rgba.data() + y * w * 4,
+                       frame->data[0] + y * frame->linesize[0], rowBytes);
+            }
+            av_frame_free(&tmp);
+            outW = w;
+            outH = h;
+            return rgba;
+        }
         av_frame_free(&tmp);
         return {};
     }
@@ -180,8 +230,8 @@ static std::vector<uint8_t> frameToRgba(AVFrame* frame, int& outW, int& outH) {
               tmp->data, tmp->linesize);
     sws_freeContext(sws);
     av_frame_free(&tmp);
-    outW = w;
-    outH = h;
+    outW = dstW;
+    outH = dstH;
     return rgba;
 }
 
@@ -207,10 +257,26 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
 
     AVFormatContext* fmtCtx = avformat_alloc_context();
     fmtCtx->pb = avio;
+    // Caps are a *max*, not a forced read: MP4/MKV expose streams immediately and
+    // stop early, so these don't slow the common case. MPEG-TS has no global
+    // header — streams are discovered by scanning PES packets — so the previous
+    // 32KB/100ms budget failed to detect the video stream. 2MB/2s gives TS enough
+    // room while staying bounded (~2 SMB blocks worst case).
+    fmtCtx->probesize = 2 * 1024 * 1024;        // 2 MB
+    fmtCtx->max_analyze_duration = 2000000;     // 2s analysis max
+    fmtCtx->fps_probe_size = 1; // Don't decode 20 frames just to estimate frame rate
 
     auto t0 = std::chrono::steady_clock::now();
 
-    if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
+    AVDictionary* opts = nullptr;
+    av_dict_set(&opts, "ignore_chapters", "1", 0);
+    av_dict_set(&opts, "ignore_editlist", "1", 0);
+    av_dict_set(&opts, "enable_drefs", "0", 0);
+
+    int openRet = avformat_open_input(&fmtCtx, "", nullptr, &opts);
+    av_dict_free(&opts);
+
+    if (openRet != 0) {
         LOGE("avformat_open_input via AVIO failed");
         // avformat_open_input error: fmtCtx and pb need manual cleanup
         av_freep(&avio->buffer);
@@ -265,25 +331,43 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
     AVPacket* pkt = av_packet_alloc();
     AVFrame*  frame = av_frame_alloc();
     AVFrame*  foundFrame = nullptr;
-    int found = 0;
+    int64_t   bestDelta = INT64_MAX;
 
-    while (av_read_frame(fmtCtx, pkt) >= 0 && !found) {
+    while (av_read_frame(fmtCtx, pkt) >= 0) {
         if (pkt->stream_index != si) { av_packet_unref(pkt); continue; }
-        if (avcodec_send_packet(dec, pkt) < 0) { av_packet_unref(pkt); continue; }
+        int sendRet = avcodec_send_packet(dec, pkt);
+        av_packet_unref(pkt);
+        // A non-EAGAIN send error is fatal (corrupt packet / decoder stuck) —
+        // stop instead of re-entering av_read_frame and busy-looping to EOF.
+        if (sendRet < 0) {
+            if (sendRet != AVERROR(EAGAIN)) break;
+            continue;
+        }
         while (true) {
             int ret = avcodec_receive_frame(dec, frame);
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
             if (ret < 0) break;
 
-            if (frame->pts >= targetTs ||
-                (frame->pts == AV_NOPTS_VALUE && !foundFrame)) {
-                // We got our frame — transfer ownership
+            if (frame->pts != AV_NOPTS_VALUE) {
+                // Pick the frame closest to the target timestamp (not just the
+                // first one at/after it), so a late keyframe still lands well.
+                int64_t delta = llabs(frame->pts - targetTs);
+                if (delta < bestDelta) {
+                    bestDelta = delta;
+                    av_frame_free(&foundFrame);
+                    foundFrame = av_frame_clone(frame);
+                }
+                // Frames are in presentation order; once we pass the target,
+                // every later frame is further away — stop decoding.
+                if (frame->pts > targetTs) break;
+            } else if (!foundFrame) {
+                // No PTS available: fall back to the first decoded frame
+                // (supersedes the previous NOPTS-only branch).
                 foundFrame = av_frame_clone(frame);
-                if (foundFrame) found = 1;
             }
             av_frame_unref(frame);
         }
-        av_packet_unref(pkt);
+        if (foundFrame && bestDelta == 0) break; // exact match, no need to continue
     }
 
     av_frame_free(&frame);
@@ -306,45 +390,84 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
         // Convert to RGBA (may also scale via sws)
         // If dimensions changed, sws_scale will handle the resize
         int outW, outH;
-        std::vector<uint8_t> rgba = frameToRgba(foundFrame, outW, outH);
+        std::vector<uint8_t> rgba = frameToRgba(foundFrame, dstW, dstH, outW, outH);
 
         if (!rgba.empty() && outW == dstW && outH == dstH) {
-            // Create Bitmap via JNI
+            // Create Bitmap via JNI — guard every lookup so a mangled symbol
+            // (R8) or OOM can't deref a null method/class and segfault.
             jclass bmpCls = env->FindClass("android/graphics/Bitmap");
-            jclass cfgCls = env->FindClass("android/graphics/Bitmap$Config");
-            if (bmpCls && cfgCls) {
-                jmethodID valueOf = env->GetStaticMethodID(cfgCls, "valueOf",
-                    "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;");
-                jstring cfgName = env->NewStringUTF("ARGB_8888");
-                jobject cfg = env->CallStaticObjectMethod(cfgCls, valueOf, cfgName);
-                env->DeleteLocalRef(cfgName);
-
-                jmethodID createBmp = env->GetStaticMethodID(bmpCls, "createBitmap",
-                    "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;");
-                jobject bitmap = env->CallStaticObjectMethod(bmpCls, createBmp,
-                                                             dstW, dstH, cfg);
-
-                if (bitmap) {
-                    // Copy RGBA pixels
-                    AndroidBitmapInfo info;
-                    if (AndroidBitmap_getInfo(env, bitmap, &info) == 0) {
-                        void* pixels = nullptr;
-                        if (AndroidBitmap_lockPixels(env, bitmap, &pixels) == 0) {
-                            uint8_t* src = rgba.data();
-                            uint8_t* dst = static_cast<uint8_t*>(pixels);
-                            size_t rowBytes = static_cast<size_t>(dstW) * 4;
-                            for (int y = 0; y < dstH; y++) {
-                                memcpy(dst, src, rowBytes);
-                                src += rowBytes;
-                                dst += info.stride;
+            if (!bmpCls) {
+                LOGE("FindClass Bitmap failed");
+                env->ExceptionClear();
+            } else {
+                jclass cfgCls = env->FindClass("android/graphics/Bitmap$Config");
+                if (!cfgCls) {
+                    LOGE("FindClass Bitmap$Config failed");
+                    env->ExceptionClear();
+                } else {
+                    jmethodID valueOf = env->GetStaticMethodID(cfgCls, "valueOf",
+                        "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;");
+                    if (!valueOf) {
+                        LOGE("GetStaticMethodID valueOf failed");
+                        env->ExceptionClear();
+                    } else {
+                        jstring cfgName = env->NewStringUTF("ARGB_8888");
+                        if (!cfgName) {
+                            LOGE("NewStringUTF failed");
+                            env->ExceptionClear();
+                        } else {
+                            jobject cfg = env->CallStaticObjectMethod(cfgCls, valueOf, cfgName);
+                            env->DeleteLocalRef(cfgName);
+                            if (env->ExceptionCheck()) {
+                                LOGE("valueOf threw");
+                                env->ExceptionClear();
+                                cfg = nullptr;
                             }
-                            AndroidBitmap_unlockPixels(env, bitmap);
+                            if (cfg) {
+                                jmethodID createBmp = env->GetStaticMethodID(bmpCls, "createBitmap",
+                                    "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;");
+                                if (!createBmp) {
+                                    LOGE("GetStaticMethodID createBitmap failed");
+                                    env->ExceptionClear();
+                                } else {
+                                    jobject bitmap = env->CallStaticObjectMethod(bmpCls, createBmp,
+                                                                                 outW, outH, cfg);
+                                    if (env->ExceptionCheck()) {
+                                        LOGE("createBitmap threw");
+                                        env->ExceptionClear();
+                                        bitmap = nullptr;
+                                    }
+                                    if (bitmap) {
+                                        // Copy RGBA pixels — use the *actual* decoded
+                                        // dimensions (outW/outH), not the requested dstW/dstH,
+                                        // so the raw-copy fallback (which reports source dims)
+                                        // can't read out of bounds.
+                                        AndroidBitmapInfo info;
+                                        if (AndroidBitmap_getInfo(env, bitmap, &info) == 0) {
+                                            void* pixels = nullptr;
+                                            if (AndroidBitmap_lockPixels(env, bitmap, &pixels) == 0) {
+                                                uint8_t* src = rgba.data();
+                                                uint8_t* dst = static_cast<uint8_t*>(pixels);
+                                                size_t rowBytes = static_cast<size_t>(outW) * 4;
+                                                for (int y = 0; y < outH; y++) {
+                                                    memcpy(dst, src, rowBytes);
+                                                    src += rowBytes;
+                                                    dst += info.stride;
+                                                }
+                                                AndroidBitmap_unlockPixels(env, bitmap);
+                                            }
+                                        }
+                                        // Create a global ref so the Bitmap survives return
+                                        resultBitmap = env->NewGlobalRef(bitmap);
+                                        env->DeleteLocalRef(bitmap);
+                                    }
+                                }
+                            }
                         }
                     }
-                    // Create a global ref so the Bitmap survives return
-                    resultBitmap = env->NewGlobalRef(bitmap);
-                    env->DeleteLocalRef(bitmap);
+                    env->DeleteLocalRef(cfgCls);
                 }
+                env->DeleteLocalRef(bmpCls);
             }
         }
         av_frame_free(&foundFrame);

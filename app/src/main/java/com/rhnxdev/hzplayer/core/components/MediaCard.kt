@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.core.components
 
+import com.rhnxdev.hzplayer.domain.model.MediaType
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.designsystem.CornerRadii
+import androidx.compose.ui.graphics.luminance
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 @Composable
@@ -38,17 +41,24 @@ fun MediaCard(
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val cardShape = remember { RoundedCornerShape(Spacing.sm) }
-    val clipShape = remember { RoundedCornerShape(topStart = Spacing.sm, topEnd = Spacing.sm) }
+    val cardShape = remember { RoundedCornerShape(CornerRadii.md) }
+    val clipShape = remember { RoundedCornerShape(topStart = CornerRadii.md, topEnd = CornerRadii.md) }
+    val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
 
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         shape = cardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(
+                alpha = if (isLight) 0.08f else 0.35f
+            )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column {
             // Thumbnail area
@@ -76,16 +86,19 @@ fun MediaCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+                    .padding(horizontal = Spacing.md, vertical = Spacing.md),
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                    ),
                     color = MaterialTheme.colorScheme.onSurface,
+                    minLines = 2,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,

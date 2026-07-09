@@ -5,12 +5,15 @@ import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 
+import androidx.compose.runtime.Immutable
+
 enum class SubtitleBrowserMode {
     ROOTS,
     BROWSING_LOCAL,
     BROWSING_REMOTE
 }
 
+@Immutable
 data class SubtitleBrowserUiState(
     val mode: SubtitleBrowserMode = SubtitleBrowserMode.ROOTS,
     val currentPath: String = "",

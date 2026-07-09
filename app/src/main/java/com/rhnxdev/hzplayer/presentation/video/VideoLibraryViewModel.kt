@@ -11,6 +11,7 @@ import com.rhnxdev.hzplayer.presentation.player.PlayerUiState
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
+import com.rhnxdev.hzplayer.BuildConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,8 +60,7 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     /** Fallback preview data used when MediaStore has no results. — reused companion cache */
-    private val previewVideos: List<VideoItem> = PREVIEW_VIDEOS
-    private val previewRecent: List<VideoItem> = PREVIEW_RECENT
+    
 
     init {
         loadVideos()
@@ -78,29 +78,38 @@ class VideoLibraryViewModel @Inject constructor(
                 // Try real data from MediaStore via repository
                 mediaRepository.getAllVideos(sortType)
                     .catch { e ->
-                        // If repository fails, fall back to preview data
-                        _uiState.update {
-                            it.copy(
-                                categories = listOf(
-                                    VideoCategory(title = "Recent", videos = previewRecent),
-                                    VideoCategory(title = "All Videos", videos = previewVideos),
-                                ),
-                                recentVideos = previewRecent,
-                                allVideos = previewVideos,
-                                filteredVideos = previewVideos,
-                                isLoading = false,
-                                error = if (previewVideos.isEmpty()) e.message else null,
-                            )
+                        // If repository fails, only fall back to fictional preview data
+                        // in debug builds; in release, show an empty library + real error.
+                        if (BuildConfig.DEBUG) {
+                            val categories = groupVideosIntoCategories(PREVIEW_VIDEOS, PREVIEW_RECENT)
+                            _uiState.update {
+                                it.copy(
+                                    categories = categories,
+                                    recentVideos = PREVIEW_RECENT,
+                                    allVideos = PREVIEW_VIDEOS,
+                                    filteredVideos = PREVIEW_VIDEOS,
+                                    isLoading = false,
+                                    error = if (PREVIEW_VIDEOS.isEmpty()) e.message else null,
+                                )
+                            }
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    categories = emptyList(),
+                                    recentVideos = emptyList(),
+                                    allVideos = emptyList(),
+                                    filteredVideos = emptyList(),
+                                    isLoading = false,
+                                    error = e.message,
+                                )
+                            }
                         }
                     }
                     .collect { videos ->
                         if (videos.isNotEmpty()) {
                             val cutoff = System.currentTimeMillis() - (7 * 86_400_000L) // 7 days
                             val recent = videos.filter { it.dateAdded >= cutoff }
-                            val categories = listOf(
-                                VideoCategory(title = "Recent", videos = recent.take(10)),
-                                VideoCategory(title = "All Videos", videos = videos),
-                            )
+                            val categories = groupVideosIntoCategories(videos, recent)
 
                             _uiState.update {
                                 it.copy(
@@ -113,33 +122,56 @@ class VideoLibraryViewModel @Inject constructor(
                                 )
                             }
                         } else {
-                            // Empty result — show preview fallback
-                            _uiState.update {
-                                it.copy(
-                                    categories = listOf(
-                                        VideoCategory(title = "All Videos", videos = previewVideos),
-                                    ),
-                                    allVideos = previewVideos,
-                                    filteredVideos = previewVideos,
-                                    isLoading = false,
-                                    isEmpty = previewVideos.isEmpty(),
-                                )
+                            // Empty result. Only show fictional preview data in debug
+                            // builds; in release, surface an empty library instead.
+                            if (BuildConfig.DEBUG) {
+                                val categories = groupVideosIntoCategories(PREVIEW_VIDEOS)
+                                _uiState.update {
+                                    it.copy(
+                                        categories = categories,
+                                        allVideos = PREVIEW_VIDEOS,
+                                        filteredVideos = PREVIEW_VIDEOS,
+                                        isLoading = false,
+                                        isEmpty = PREVIEW_VIDEOS.isEmpty(),
+                                    )
+                                }
+                            } else {
+                                _uiState.update {
+                                    it.copy(
+                                        categories = emptyList(),
+                                        allVideos = emptyList(),
+                                        filteredVideos = emptyList(),
+                                        isLoading = false,
+                                        isEmpty = true,
+                                    )
+                                }
                             }
                         }
                     }
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        categories = listOf(
-                            VideoCategory(title = "Recent", videos = previewRecent),
-                            VideoCategory(title = "All Videos", videos = previewVideos),
-                        ),
-                        recentVideos = previewRecent,
-                        allVideos = previewVideos,
-                        filteredVideos = previewVideos,
-                        isLoading = false,
-                        error = if (previewVideos.isEmpty()) e.message else null,
-                    )
+                if (BuildConfig.DEBUG) {
+                    val categories = groupVideosIntoCategories(PREVIEW_VIDEOS, PREVIEW_RECENT)
+                    _uiState.update {
+                        it.copy(
+                            categories = categories,
+                            recentVideos = PREVIEW_RECENT,
+                            allVideos = PREVIEW_VIDEOS,
+                            filteredVideos = PREVIEW_VIDEOS,
+                            isLoading = false,
+                            error = if (PREVIEW_VIDEOS.isEmpty()) e.message else null,
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            categories = emptyList(),
+                            recentVideos = emptyList(),
+                            allVideos = emptyList(),
+                            filteredVideos = emptyList(),
+                            isLoading = false,
+                            error = e.message,
+                        )
+                    }
                 }
             }
         }
@@ -207,9 +239,11 @@ class VideoLibraryViewModel @Inject constructor(
             SortType.FILE_SIZE -> _uiState.value.allVideos.sortedByDescending { it.fileSize }
             else -> _uiState.value.allVideos.sortedBy { it.title }
         }
+        val categories = groupVideosIntoCategories(sorted, _uiState.value.recentVideos)
         _uiState.update {
             it.copy(
                 allVideos = sorted,
+                categories = categories,
                 filteredVideos = if (search.isSearchActive.value) it.filteredVideos else sorted,
             )
         }
@@ -220,5 +254,47 @@ class VideoLibraryViewModel @Inject constructor(
             it.title.contains(query, ignoreCase = true)
         }
         _uiState.update { it.copy(filteredVideos = filtered) }
+    }
+
+    private fun getParentFolderName(uri: String): String {
+        try {
+            val cleanPath = uri.removePrefix("file://")
+            if (cleanPath.startsWith("/")) {
+                val file = java.io.File(cleanPath)
+                val parentName = file.parentFile?.name
+                if (!parentName.isNullOrEmpty() && parentName != "0") {
+                    return parentName
+                }
+            } else if (cleanPath.startsWith("http://") || cleanPath.startsWith("https://")) {
+                val urlPath = android.net.Uri.parse(cleanPath).path
+                if (!urlPath.isNullOrEmpty()) {
+                    val file = java.io.File(urlPath)
+                    val parentName = file.parentFile?.name
+                    if (!parentName.isNullOrEmpty() && parentName != "sample") {
+                        return parentName
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return "Internal Storage"
+    }
+
+    private fun groupVideosIntoCategories(videos: List<VideoItem>, recentVideos: List<VideoItem> = emptyList()): List<VideoCategory> {
+        if (videos.isEmpty()) return emptyList()
+        val categoriesList = mutableListOf<VideoCategory>()
+        
+        if (recentVideos.isNotEmpty()) {
+            categoriesList.add(VideoCategory(title = "Recent", videos = recentVideos.take(10)))
+        }
+        
+        val grouped = videos.groupBy { getParentFolderName(it.uri) }
+        val folderCategories = grouped.map { (folderName, folderVideos) ->
+            VideoCategory(title = folderName, videos = folderVideos)
+        }.sortedBy { it.title.lowercase() }
+        
+        categoriesList.addAll(folderCategories)
+        return categoriesList
     }
 }

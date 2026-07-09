@@ -202,15 +202,18 @@ class WebDavBrowserClient(
 
         private val PROPFIND_MEDIA_TYPE = "application/xml; charset=utf-8".toMediaType()
 
-        private val DATE_FORMATS = listOf(
-            SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US),
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US),
+        // Patterns only — SimpleDateFormat is NOT thread-safe, so a fresh instance is
+        // created per parse call (this runs from multiple ConnectionPool threads).
+        private val DATE_PATTERNS = listOf(
+            "EEE, dd MMM yyyy HH:mm:ss 'GMT'",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            "yyyy-MM-dd'T'HH:mm:ssXXX",
         )
 
         private fun parseWebDavDate(dateStr: String): Long {
-            for (format in DATE_FORMATS) {
+            for (pattern in DATE_PATTERNS) {
                 try {
+                    val format = SimpleDateFormat(pattern, Locale.US)
                     format.timeZone = java.util.TimeZone.getTimeZone("UTC")
                     return format.parse(dateStr)?.time ?: 0
                 } catch (_: Exception) {}

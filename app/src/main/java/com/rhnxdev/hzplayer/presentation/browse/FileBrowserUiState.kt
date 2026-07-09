@@ -5,11 +5,14 @@ import com.rhnxdev.hzplayer.core.components.BreadcrumbItem
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.SortType
 
+import androidx.compose.runtime.Immutable
+
 /**
  * One directory level in the browsing stack.
  * Each layer has its own fields so scroll state is naturally preserved —
  * the composable stays in the tree when a new layer is pushed on top.
  */
+@Immutable
 data class DirectoryLayer(
     val path: String = "",
     val breadcrumbs: List<BreadcrumbItem> = emptyList(),
@@ -19,6 +22,7 @@ data class DirectoryLayer(
     val isEmpty: Boolean = false,
 )
 
+@Immutable
 data class FavoriteShortcut(
     val name: String,
     val path: String,
@@ -26,6 +30,7 @@ data class FavoriteShortcut(
     val itemCount: Int = 0,
 )
 
+@Immutable
 data class FileBrowserUiState(
     val mode: FileBrowserMode = FileBrowserMode.ROOTS,
     val roots: List<FolderItem> = emptyList(),

@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Description
@@ -55,6 +58,8 @@ fun FileItemCard(
     marqueeTitle: Boolean = false,
     durationMs: Long = 0,
     playbackPositionMs: Long = 0,
+    resolution: String? = null,
+    isNew: Boolean = false,
 ) {
     val icon: ImageVector = when {
         isDirectory -> Icons.Filled.Folder
@@ -67,15 +72,20 @@ fun FileItemCard(
         isDirectory && childCount >= 0 -> "$childCount items"
         isDirectory -> "- items"
         durationMs > 0 -> {
-            val sizeStr = if (fileSize > 0) formatFileSize(fileSize) else "- bytes"
+            val sizeOrResolution = if (resolution != null) resolution else {
+                if (fileSize > 0) formatFileSize(fileSize) else "- bytes"
+            }
             if (playbackPositionMs > 0) {
-                "$sizeStr • ${formatDuration(playbackPositionMs)} / ${formatDuration(durationMs)}"
+                "$sizeOrResolution • ${formatDuration(playbackPositionMs)} / ${formatDuration(durationMs)}"
             } else {
-                "$sizeStr • ${formatDuration(durationMs)}"
+                "$sizeOrResolution • ${formatDuration(durationMs)}"
             }
         }
-        fileSize > 0 -> formatFileSize(fileSize)
-        else -> "- bytes"
+        else -> {
+            if (resolution != null) resolution
+            else if (fileSize > 0) formatFileSize(fileSize)
+            else "- bytes"
+        }
     }
 
     Card(
@@ -130,14 +140,32 @@ fun FileItemCard(
                     maxLines = 1,
                     softWrap = false,
                     overflow = if (marqueeTitle) TextOverflow.Clip else TextOverflow.Ellipsis,
-                    modifier = if (marqueeTitle) Modifier.basicMarquee() else Modifier,
+                    modifier = if (marqueeTitle) {
+                        Modifier.basicMarquee(
+                            iterations = 3,
+                            initialDelayMillis = 2000,
+                        )
+                    } else Modifier,
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isNew) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Color.Red)
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                    }
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }

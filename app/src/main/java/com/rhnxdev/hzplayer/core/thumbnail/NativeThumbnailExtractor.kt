@@ -10,13 +10,29 @@ import android.graphics.Bitmap
  * returns RGBA pixels as an [android.graphics.Bitmap].
  */
 object NativeThumbnailExtractor {
+    private var loaded = false
+
     init {
-        System.loadLibrary("thumbnail-extractor")
+        try {
+            System.loadLibrary("thumbnail-extractor")
+            loaded = true
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.w(TAG, "native extractor unavailable (${e.message})", e)
+        }
     }
 
-    external fun extractThumbnail(
-        bridge: RandomAccessBridge,
+    /** Returns null when the native lib failed to load (e.g. x86_64 emulator). */
+    fun extractThumbnail(
+        bridge: ThumbnailSource,
+        positionPercent: Float,
+        maxWidth: Int,
+    ): Bitmap? = if (loaded) nativeExtract(bridge, positionPercent, maxWidth) else null
+
+    private external fun nativeExtract(
+        bridge: ThumbnailSource,
         positionPercent: Float,
         maxWidth: Int,
     ): Bitmap?
+
+    private const val TAG = "NativeThumbnailExtractor"
 }

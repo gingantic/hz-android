@@ -26,7 +26,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 ) : UserPreferencesRepository {
 
     override val themeMode: Flow<ThemeMode> = dataStore.data.map { prefs ->
-        val themeName = prefs[THEME_MODE_KEY]
+        val themeName = prefs[PrefKey.ThemeMode.key]
         if (themeName != null) {
             try {
                 ThemeMode.valueOf(themeName)
@@ -35,21 +35,21 @@ class UserPreferencesRepositoryImpl @Inject constructor(
             }
         } else {
             // Check legacy boolean key
-            val isDark = prefs[DARK_THEME_KEY] ?: false
+            val isDark = prefs[PrefKey.DarkTheme.key] ?: false
             if (isDark) ThemeMode.DARK else ThemeMode.LIGHT
         }
     }.distinctUntilChanged()
 
     override val appColorArgb: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[APP_COLOR_ARGB_KEY] ?: 0xFFE85E00.toInt()
+        prefs[PrefKey.AppColorArgb.key] ?: 0xFFE85E00.toInt()
     }.distinctUntilChanged()
 
     override val useDynamicColors: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[DYNAMIC_COLORS_KEY] ?: false
+        prefs[PrefKey.DynamicColors.key] ?: false
     }.distinctUntilChanged()
 
     override val activeEngine: Flow<EngineType> = dataStore.data.map { prefs ->
-        val name = prefs[ENGINE_KEY]
+        val name = prefs[PrefKey.Engine.key]
         try {
             name?.let { EngineType.valueOf(it) } ?: EngineType.EXO_PLAYER
         } catch (_: IllegalArgumentException) {
@@ -58,36 +58,44 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     }.distinctUntilChanged()
 
     override val openSubtitlesApiKey: Flow<String> = dataStore.data.map { prefs ->
-        prefs[OPENSUBTITLES_API_KEY] ?: ""
+        prefs[PrefKey.OpenSubtitlesApiKey.key] ?: ""
     }.distinctUntilChanged()
 
     override val seekSensitivity: Flow<Float> = dataStore.data.map { prefs ->
-        prefs[SEEK_SENSITIVITY] ?: 1.0f
+        prefs[PrefKey.SeekSensitivity.key] ?: 1.0f
     }.distinctUntilChanged()
 
     override val showHiddenFiles: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[SHOW_HIDDEN_FILES] ?: false
+        prefs[PrefKey.ShowHiddenFiles.key] ?: false
     }.distinctUntilChanged()
 
     override val useSurfaceView: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[USE_SURFACE_VIEW] ?: true
+        prefs[PrefKey.UseSurfaceView.key] ?: true
+    }.distinctUntilChanged()
+
+    override val enableHdrPlayback: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PrefKey.EnableHdrPlayback.key] ?: true
     }.distinctUntilChanged()
 
     override val fileBrowserMediaMode: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[FILE_BROWSER_MEDIA_MODE] ?: false
+        prefs[PrefKey.FileBrowserMediaMode.key] ?: false
     }.distinctUntilChanged()
 
     override val minSongDurationSecs: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[MIN_SONG_DURATION_SECS] ?: 0
+        prefs[PrefKey.MinSongDurationSecs.key] ?: 0
+    }.distinctUntilChanged()
+
+    override val debugMode: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PrefKey.DebugMode.key] ?: false
     }.distinctUntilChanged()
 
     override val subtitleStyle: Flow<SubtitleStyle> = dataStore.data.map { prefs ->
         SubtitleStyle(
-            fontSizeSp = prefs[SUB_FONT_SIZE] ?: SubtitleStyle.DEFAULT.fontSizeSp,
-            textColorArgb = (prefs[SUB_TEXT_COLOR] ?: SubtitleStyle.DEFAULT.textColorArgb.toLong()).toInt(),
-            backgroundColorArgb = (prefs[SUB_BG_COLOR] ?: SubtitleStyle.DEFAULT.backgroundColorArgb.toLong()).toInt(),
-            edgeStyle = prefs[SUB_EDGE_STYLE] ?: SubtitleStyle.DEFAULT.edgeStyle,
-            enabled = prefs[SUB_ENABLED] ?: SubtitleStyle.DEFAULT.enabled,
+            fontSizeSp = prefs[PrefKey.SubFontSize.key] ?: SubtitleStyle.DEFAULT.fontSizeSp,
+            textColorArgb = (prefs[PrefKey.SubTextColor.key] ?: SubtitleStyle.DEFAULT.textColorArgb.toLong()).toInt(),
+            backgroundColorArgb = (prefs[PrefKey.SubBgColor.key] ?: SubtitleStyle.DEFAULT.backgroundColorArgb.toLong()).toInt(),
+            edgeStyle = prefs[PrefKey.SubEdgeStyle.key] ?: SubtitleStyle.DEFAULT.edgeStyle,
+            enabled = prefs[PrefKey.SubEnabled.key] ?: SubtitleStyle.DEFAULT.enabled,
         )
     }.distinctUntilChanged()
 
@@ -110,19 +118,19 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setThemeMode(mode: ThemeMode) {
-        dataStore.edit { prefs -> prefs[THEME_MODE_KEY] = mode.name }
+        dataStore.edit { prefs -> prefs[PrefKey.ThemeMode.key] = mode.name }
     }
 
     override suspend fun setAppColorArgb(argb: Int) {
-        dataStore.edit { prefs -> prefs[APP_COLOR_ARGB_KEY] = argb }
+        dataStore.edit { prefs -> prefs[PrefKey.AppColorArgb.key] = argb }
     }
 
     override suspend fun setDynamicColors(enabled: Boolean) {
-        dataStore.edit { prefs -> prefs[DYNAMIC_COLORS_KEY] = enabled }
+        dataStore.edit { prefs -> prefs[PrefKey.DynamicColors.key] = enabled }
     }
 
     override suspend fun setActiveEngine(engine: EngineType) {
-        dataStore.edit { prefs -> prefs[ENGINE_KEY] = engine.name }
+        dataStore.edit { prefs -> prefs[PrefKey.Engine.key] = engine.name }
     }
 
     override suspend fun setViewMode(key: String, mode: ViewMode) {
@@ -139,67 +147,77 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override suspend fun setSubtitleStyle(style: SubtitleStyle) {
         dataStore.edit { prefs ->
-            prefs[SUB_FONT_SIZE] = style.fontSizeSp
-            prefs[SUB_TEXT_COLOR] = style.textColorArgb.toLong()
-            prefs[SUB_BG_COLOR] = style.backgroundColorArgb.toLong()
-            prefs[SUB_EDGE_STYLE] = style.edgeStyle
-            prefs[SUB_ENABLED] = style.enabled
+            prefs[PrefKey.SubFontSize.key] = style.fontSizeSp
+            prefs[PrefKey.SubTextColor.key] = style.textColorArgb.toLong()
+            prefs[PrefKey.SubBgColor.key] = style.backgroundColorArgb.toLong()
+            prefs[PrefKey.SubEdgeStyle.key] = style.edgeStyle
+            prefs[PrefKey.SubEnabled.key] = style.enabled
         }
     }
 
     override suspend fun setOpenSubtitlesApiKey(key: String) {
         dataStore.edit { prefs ->
-            prefs[OPENSUBTITLES_API_KEY] = key
+            prefs[PrefKey.OpenSubtitlesApiKey.key] = key
         }
     }
 
     override suspend fun setSeekSensitivity(sensitivity: Float) {
         dataStore.edit { prefs ->
-            prefs[SEEK_SENSITIVITY] = sensitivity
+            prefs[PrefKey.SeekSensitivity.key] = sensitivity
         }
     }
 
     override val selectedTabIndex: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[SELECTED_TAB_INDEX] ?: 0
+        prefs[PrefKey.SelectedTabIndex.key] ?: 0
     }.distinctUntilChanged()
 
     override suspend fun setSelectedTabIndex(index: Int) {
-        dataStore.edit { prefs -> prefs[SELECTED_TAB_INDEX] = index }
+        dataStore.edit { prefs -> prefs[PrefKey.SelectedTabIndex.key] = index }
     }
 
     override suspend fun setShowHiddenFiles(enabled: Boolean) {
-        dataStore.edit { prefs -> prefs[SHOW_HIDDEN_FILES] = enabled }
+        dataStore.edit { prefs -> prefs[PrefKey.ShowHiddenFiles.key] = enabled }
     }
 
     override suspend fun setUseSurfaceView(enabled: Boolean) {
-        dataStore.edit { prefs -> prefs[USE_SURFACE_VIEW] = enabled }
+        dataStore.edit { prefs -> prefs[PrefKey.UseSurfaceView.key] = enabled }
+    }
+
+    override suspend fun setEnableHdrPlayback(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[PrefKey.EnableHdrPlayback.key] = enabled }
     }
 
     override suspend fun setFileBrowserMediaMode(enabled: Boolean) {
-        dataStore.edit { prefs -> prefs[FILE_BROWSER_MEDIA_MODE] = enabled }
+        dataStore.edit { prefs -> prefs[PrefKey.FileBrowserMediaMode.key] = enabled }
     }
 
     override suspend fun setMinSongDurationSecs(seconds: Int) {
-        dataStore.edit { prefs -> prefs[MIN_SONG_DURATION_SECS] = seconds }
+        dataStore.edit { prefs -> prefs[PrefKey.MinSongDurationSecs.key] = seconds }
     }
 
-    companion object {
-        private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
-        private val APP_COLOR_ARGB_KEY = intPreferencesKey("app_color_argb")
-        private val DARK_THEME_KEY = booleanPreferencesKey("dark_theme")
-        private val DYNAMIC_COLORS_KEY = booleanPreferencesKey("dynamic_colors")
-        private val ENGINE_KEY = stringPreferencesKey("active_engine")
-        private val SUB_FONT_SIZE = intPreferencesKey("subtitle_font_size")
-        private val SUB_TEXT_COLOR = longPreferencesKey("subtitle_text_color")
-        private val SUB_BG_COLOR = longPreferencesKey("subtitle_bg_color")
-        private val SUB_EDGE_STYLE = intPreferencesKey("subtitle_edge_style")
-        private val SUB_ENABLED = booleanPreferencesKey("subtitle_enabled")
-        private val OPENSUBTITLES_API_KEY = stringPreferencesKey("opensubtitles_api_key")
-        private val SEEK_SENSITIVITY = floatPreferencesKey("seek_sensitivity")
-        private val SHOW_HIDDEN_FILES = booleanPreferencesKey("show_hidden_files")
-        private val USE_SURFACE_VIEW = booleanPreferencesKey("use_surface_view")
-        private val FILE_BROWSER_MEDIA_MODE = booleanPreferencesKey("file_browser_media_mode")
-        private val SELECTED_TAB_INDEX = intPreferencesKey("selected_tab_index")
-        private val MIN_SONG_DURATION_SECS = intPreferencesKey("min_song_duration_secs")
+    override suspend fun setDebugMode(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[PrefKey.DebugMode.key] = enabled }
+    }
+
+    private sealed class PrefKey<T>(val key: Preferences.Key<T>) {
+        object ThemeMode : PrefKey<String>(stringPreferencesKey("theme_mode"))
+        object AppColorArgb : PrefKey<Int>(intPreferencesKey("app_color_argb"))
+        object DarkTheme : PrefKey<Boolean>(booleanPreferencesKey("dark_theme"))
+        object DynamicColors : PrefKey<Boolean>(booleanPreferencesKey("dynamic_colors"))
+        object Engine : PrefKey<String>(stringPreferencesKey("active_engine"))
+        object SubFontSize : PrefKey<Int>(intPreferencesKey("subtitle_font_size"))
+        object SubTextColor : PrefKey<Long>(longPreferencesKey("subtitle_text_color"))
+        object SubBgColor : PrefKey<Long>(longPreferencesKey("subtitle_bg_color"))
+        object SubEdgeStyle : PrefKey<Int>(intPreferencesKey("subtitle_edge_style"))
+        object SubEnabled : PrefKey<Boolean>(booleanPreferencesKey("subtitle_enabled"))
+        object OpenSubtitlesApiKey : PrefKey<String>(stringPreferencesKey("opensubtitles_api_key"))
+        object SeekSensitivity : PrefKey<Float>(floatPreferencesKey("seek_sensitivity"))
+        object ShowHiddenFiles : PrefKey<Boolean>(booleanPreferencesKey("show_hidden_files"))
+        object UseSurfaceView : PrefKey<Boolean>(booleanPreferencesKey("use_surface_view"))
+        object EnableHdrPlayback : PrefKey<Boolean>(booleanPreferencesKey("enable_hdr_playback"))
+        object FileBrowserMediaMode : PrefKey<Boolean>(booleanPreferencesKey("file_browser_media_mode"))
+        object SelectedTabIndex : PrefKey<Int>(intPreferencesKey("selected_tab_index"))
+        object MinSongDurationSecs : PrefKey<Int>(intPreferencesKey("min_song_duration_secs"))
+        object DebugMode : PrefKey<Boolean>(booleanPreferencesKey("debug_mode"))
     }
 }

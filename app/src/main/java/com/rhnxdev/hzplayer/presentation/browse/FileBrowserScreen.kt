@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -40,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -177,6 +180,11 @@ fun FileBrowserScreen(
                                 .align(Alignment.BottomEnd)
                                 .padding(16.dp),
                             containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            elevation = FloatingActionButtonDefaults.elevation(
+                                defaultElevation = 6.dp,
+                                pressedElevation = 12.dp
+                            )
                         ) {
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
@@ -411,13 +419,16 @@ private fun DirectoryStackContent(
         //
         // Only the top layer is visible + interactive; all others use alpha(0)
         // and noop callbacks so they're invisible and don't respond to touch.
-        val topIndex = layers.lastIndex
         val noopAction: () -> Unit = {}
         val noopFolder: (FolderItem) -> Unit = {}
         val noopBreadcrumb: (String) -> Unit = {}
 
-        layers.forEachIndexed { index, layer ->
-            val isTop = index == topIndex
+        // Cap at 32 layers to prevent unbounded memory growth on deep navigation.
+        // Older layers drop off the bottom — Coil auto-cancels their in-flight thumb requests.
+        val cappedLayers = layers.takeLast(32)
+        val cappedTopIndex = cappedLayers.lastIndex
+        cappedLayers.forEachIndexed { index, layer ->
+            val isTop = index == cappedTopIndex
             key(layer.path) {
                 DirectoryLayerView(
                     layer = layer,
@@ -449,7 +460,7 @@ private fun DirectoryLayerView(
     onFileClicked: (FolderItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
     // Filter items: media mode shows only videos; normal mode hides documents.
     val visibleItems = when {
@@ -485,7 +496,7 @@ private fun DirectoryLayerView(
 }
 
 private fun FolderItem.toFileItemData() = FileItemData(
-    id = id,
+    id = id.toString(),
     name = name,
     path = path,
     isDirectory = isDirectory,
@@ -495,6 +506,8 @@ private fun FolderItem.toFileItemData() = FileItemData(
     dateModified = dateModified,
     durationMs = durationMs,
     playbackPositionMs = playbackPositionMs,
+    resolution = resolution,
+    dateAdded = dateAdded,
 )
 
 private fun FolderItem.isVideo(): Boolean =

@@ -22,29 +22,23 @@ class SettingsViewModel @Inject constructor(
 
     fun clearAllCache() {
         viewModelScope.launch(Dispatchers.IO) {
-            // 1. Clear room database cached media scan entries
+            var success = false
             try {
                 mediaDao.deleteAll()
-            } catch (_: Exception) {}
-
-            // 2. Clear custom video thumbs folder
-            try {
                 val thumbsDir = java.io.File(context.cacheDir, "video_thumbs")
                 if (thumbsDir.exists() && thumbsDir.isDirectory) {
                     thumbsDir.deleteRecursively()
                 }
-            } catch (_: Exception) {}
-
-            // 3. Clear Coil memory and disk caches
-            try {
                 val imageLoader = coil3.SingletonImageLoader.get(context)
                 imageLoader.memoryCache?.clear()
                 imageLoader.diskCache?.clear()
+                success = true
             } catch (_: Exception) {}
 
-            // 4. Show success toast
-            withContext(Dispatchers.Main) {
-                android.widget.Toast.makeText(context, "Cache cleared successfully", android.widget.Toast.LENGTH_SHORT).show()
+            if (success) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Cache cleared successfully", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -72,6 +66,12 @@ class SettingsViewModel @Inject constructor(
 
     val minSongDurationSecs: StateFlow<Int> = prefs.minSongDurationSecs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val enableHdrPlayback: StateFlow<Boolean> = prefs.enableHdrPlayback
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val debugMode: StateFlow<Boolean> = prefs.debugMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun saveThemeMode(mode: ThemeMode) {
         viewModelScope.launch { prefs.setThemeMode(mode) }
@@ -104,4 +104,13 @@ class SettingsViewModel @Inject constructor(
     fun saveMinSongDurationSecs(seconds: Int) {
         viewModelScope.launch { prefs.setMinSongDurationSecs(seconds) }
     }
+
+    fun saveEnableHdrPlayback(enabled: Boolean) {
+        viewModelScope.launch { prefs.setEnableHdrPlayback(enabled) }
+    }
+
+    fun saveDebugMode(enabled: Boolean) {
+        viewModelScope.launch { prefs.setDebugMode(enabled) }
+    }
+
 }

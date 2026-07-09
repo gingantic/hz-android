@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -97,6 +99,14 @@ fun ServerConfigDialog(
     }
     var username by remember { mutableStateOf(initialServer?.username ?: "") }
     var password by remember { mutableStateOf(initialServer?.password ?: "") }
+    // Anonymous servers are persisted with username="anonymous"; infer the flag on edit
+    // (avoids a DB migration for a dedicated column).
+    var allowAnonymous by remember {
+        mutableStateOf(
+            initialServer?.let { it.protocol == NetworkProtocol.FTP && it.username == "anonymous" }
+                ?: false,
+        )
+    }
     var basePath by remember { mutableStateOf(initialServer?.basePath ?: "/") }
     var showPassword by remember { mutableStateOf(false) }
 
@@ -113,10 +123,16 @@ fun ServerConfigDialog(
         selectedOptionIdx = optionIndex
         currentProtocol = opt.protocol
         port = opt.port.toString()
+        if (opt.protocol != NetworkProtocol.FTP) {
+            allowAnonymous = false
+            username = initialServer?.username ?: ""
+            password = initialServer?.password ?: ""
+        }
     }
 
     var nameError by remember { mutableStateOf(false) }
     var hostError by remember { mutableStateOf(false) }
+    var usernameError by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -200,13 +216,41 @@ fun ServerConfigDialog(
 
                 // ── Username ──────────────────────────────────────
                 OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
+                    value = if (allowAnonymous) "anonymous" else username,
+                    onValueChange = { username = it; usernameError = false },
                     label = { Text("Username") },
                     placeholder = { Text("anonymous") },
+                    enabled = !allowAnonymous,
+                    isError = usernameError,
+                    supportingText = if (usernameError) {{ Text("Username required (or enable anonymous)") }} else null,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                // ── Anonymous opt-in (FTP only) ───────────────────
+                if (currentProtocol == NetworkProtocol.FTP) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    ) {
+                        Checkbox(
+                            checked = allowAnonymous,
+                            onCheckedChange = {
+                                allowAnonymous = it
+                                usernameError = false
+                                if (it) {
+                                    username = ""
+                                    password = ""
+                                }
+                            },
+                        )
+                        Text(
+                            text = "Allow anonymous login",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
 
                 // ── Password ──────────────────────────────────────
                 OutlinedTextField(
@@ -252,7 +296,9 @@ fun ServerConfigDialog(
                 onClick = {
                     nameError = name.isBlank()
                     hostError = host.isBlank()
-                    if (nameError || hostError) return@TextButton
+                    usernameError = currentProtocol == NetworkProtocol.FTP
+                        && !allowAnonymous && username.isBlank()
+                    if (nameError || hostError || usernameError) return@TextButton
 
                     onSave(
                         ServerConfig(
@@ -261,8 +307,9 @@ fun ServerConfigDialog(
                             protocol = currentProtocol,
                             host = host.trim(),
                             port = port.toIntOrNull() ?: defaultPort(currentProtocol),
-                            username = username.trim(),
-                            password = password,
+                            username = if (allowAnonymous) "anonymous" else username.trim(),
+                            password = if (allowAnonymous) "" else password,
+                            allowAnonymous = allowAnonymous && currentProtocol == NetworkProtocol.FTP,
                             basePath = basePath.trim().ifEmpty { "/" },
                             createdAt = initialServer?.createdAt ?: System.currentTimeMillis(),
                         ),

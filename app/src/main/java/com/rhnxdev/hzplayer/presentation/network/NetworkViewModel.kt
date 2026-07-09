@@ -4,13 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
+import com.rhnxdev.hzplayer.core.util.ServerDiscoverer
 import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
 import com.rhnxdev.hzplayer.domain.repository.RemoteBrowseRepository
+import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +27,8 @@ import javax.inject.Inject
 class NetworkViewModel @Inject constructor(
     private val networkRepository: NetworkRepository,
     private val remoteBrowseRepository: RemoteBrowseRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val serverDiscoverer: ServerDiscoverer,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NetworkUiState())
@@ -35,11 +40,17 @@ class NetworkViewModel @Inject constructor(
 
     val search = SearchDelegate()
 
-    init { 
-        observeServers(); observeHistory() 
+    init {
+        android.util.Log.d("NetworkViewModel", "NetworkViewModel initialized")
+        observeServers(); observeHistory(); observeDiscovery()
         viewModelScope.launch {
             val savedSort = networkRepository.getSortType(sortKey).first()
             _uiState.update { it.copy(sortType = savedSort) }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.getViewMode("network_home").collect { mode ->
+                _uiState.update { it.copy(isHomeListView = mode == ViewMode.LIST) }
+            }
         }
     }
 
@@ -57,6 +68,75 @@ class NetworkViewModel @Inject constructor(
                 _uiState.update { it.copy(streamHistory = history) }
             }
         }
+    }
+
+    private fun observeDiscovery() {
+        viewModelScope.launch {
+            serverDiscoverer.discoveredServers.collect { servers ->
+                _uiState.update { it.copy(discoveredServers = servers) }
+            }
+        }
+        viewModelScope.launch {
+            serverDiscoverer.isOnCompatibleNetwork.collect { compat ->
+                _uiState.update { it.copy(isOnCompatibleNetwork = compat) }
+            }
+        }
+        viewModelScope.launch {
+            serverDiscoverer.isScanning.collect { scanning ->
+                _uiState.update { it.copy(isDiscovering = scanning) }
+            }
+        }
+    }
+
+    // ── Discovery ──────────────────────────────────────────────────────
+
+    fun onScanNetwork() {
+        android.util.Log.d("NetworkViewModel", "onScanNetwork: triggering startScan()")
+        serverDiscoverer.startScan()
+    }
+
+    fun onStopScan() {
+        serverDiscoverer.stopScan()
+    }
+
+    fun onDiscoveredServerTapped(server: ServerConfig) {
+        if (server.username.isBlank()) {
+            _uiState.update {
+                it.copy(discoveredServerCredential = ServerCredentialRequest(
+                    server = server,
+                    onProvided = { user, pass, save ->
+                        val withCreds = server.copy(username = user, password = pass)
+                        if (save) {
+                            viewModelScope.launch {
+                                networkRepository.saveServer(withCreds)
+                                serverDiscoverer.dismissDiscoveredServer(server.host)
+                                _uiState.update { s -> s.copy(discoveredServerCredential = null) }
+                            }
+                        } else {
+                            _uiState.update { it.copy(discoveredServerCredential = null) }
+                            onBrowseServer(withCreds)
+                        }
+                    },
+                ))
+            }
+        } else {
+            onBrowseServer(server)
+        }
+    }
+
+    fun onSaveDiscoveredServer(server: ServerConfig) {
+        viewModelScope.launch {
+            networkRepository.saveServer(server)
+            serverDiscoverer.dismissDiscoveredServer(server.host)
+        }
+    }
+
+    fun onDismissDiscoveredServer(server: ServerConfig) {
+        serverDiscoverer.dismissDiscoveredServer(server.host)
+    }
+
+    fun onDismissCredentialDialog() {
+        _uiState.update { it.copy(discoveredServerCredential = null) }
     }
 
     fun onStreamUrlChanged(url: String) {
@@ -271,6 +351,14 @@ class NetworkViewModel @Inject constructor(
         _uiState.update { it.copy(isMediaMode = !it.isMediaMode) }
     }
 
+    fun onToggleHomeView() {
+        val new = !_uiState.value.isHomeListView
+        _uiState.update { it.copy(isHomeListView = new) }
+        viewModelScope.launch {
+            userPreferencesRepository.setViewMode("network_home", if (new) ViewMode.LIST else ViewMode.GRID)
+        }
+    }
+
     fun onSearchToggle() = search.toggle()
     fun onSearchQueryChanged(query: String) = search.queryChanged(query)
     fun onClearSearch() = search.clear()
@@ -278,4 +366,9 @@ class NetworkViewModel @Inject constructor(
     fun onToggleFavorite(id: Long) { viewModelScope.launch { networkRepository.toggleFavorite(id) } }
     fun onDeleteHistoryItem(id: Long) { viewModelScope.launch { networkRepository.deleteHistoryItem(id) } }
     fun onClearHistory() { viewModelScope.launch { networkRepository.clearHistory() } }
+
+    override fun onCleared() {
+        super.onCleared()
+        serverDiscoverer.cleanup()
+    }
 }

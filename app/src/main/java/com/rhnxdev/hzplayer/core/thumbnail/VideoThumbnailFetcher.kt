@@ -14,6 +14,7 @@ import coil3.fetch.SourceFetchResult
 import coil3.key.Keyer
 import coil3.request.Options
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
+import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
 import jcifs.smb.SmbFile
 import jcifs.smb.SmbRandomAccessFile
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +28,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
 
 /** Coil model: a video file whose frame we want as a thumbnail. */
 data class VideoFrame(val path: String, val dateModified: Long)
@@ -58,14 +60,21 @@ class VideoFrameFetcher(
 
     override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
         val cacheFile = cacheFileFor(data)
-        Log.d(TAG, "fetch: path=${data.path} cacheExists=${cacheFile.exists()}")
+        val failMarker = failMarkerFor(data)
+
+        // Skip re-running the (often expensive SMB/remote) pipeline when a
+        // recent attempt already failed — Coil would otherwise re-decode on
+        // every view. Marker TTL = 1 day.
+        if (failMarker.exists() && isFailMarkerFresh(failMarker)) {
+            return@withContext null
+        }
 
         if (!cacheFile.exists()) {
             val bitmap = THUMBNAIL_SEMAPHORE.withPermit {
                 extractFrame()
             }
             if (bitmap == null) {
-                Log.w(TAG, "fetch: extractFrame returned null for ${data.path}")
+                try { failMarker.createNewFile() } catch (_: Exception) {}
                 return@withContext null
             }
             try {
@@ -73,13 +82,11 @@ class VideoFrameFetcher(
                 cacheFile.outputStream().use { out ->
                     bitmap.compress(webpFormat(), 75, out)
                 }
-                Log.d(TAG, "fetch: cached thumbnail to ${cacheFile.absolutePath} (${cacheFile.length()} bytes)")
             } finally {
                 bitmap.recycle()
             }
         }
         if (!cacheFile.exists()) {
-            Log.w(TAG, "fetch: cache file still missing after write")
             return@withContext null
         }
 
@@ -96,35 +103,42 @@ class VideoFrameFetcher(
     private fun extractFrame(): Bitmap? {
         val uri = data.path
         val scheme = uri.substringBefore("://").lowercase()
-        Log.d(TAG, "extractFrame: uri=$uri scheme=$scheme")
 
         val result = when {
             scheme == "smb" -> extractSmbFrame(uri)
             scheme in setOf("ftp", "sftp", "webdav", "webdavs", "http", "https") -> extractRemoteFrame(uri)
             else -> extractLocalFrame(uri)
         }
-        Log.d(TAG, "extractFrame: result=${result != null} for $uri")
         return result
     }
 
     private fun extractSmbFrame(remoteUri: String): Bitmap? {
-        Log.d(TAG, "extractSmbFrame: start $remoteUri")
         val androidUri = Uri.parse(remoteUri)
         val username = Uri.decode(androidUri.userInfo?.substringBefore(':') ?: "")
         val password = Uri.decode(androidUri.userInfo?.substringAfter(':', "") ?: "")
         val host = androidUri.host ?: run {
-            Log.w(TAG, "extractSmbFrame: no host in $remoteUri"); return null
+            return null
         }
         val port = androidUri.port.takeIf { it > 0 } ?: 445
-        val path = androidUri.path ?: "/"
-        val cleanUrl = "smb://$host:$port$path"
+        
+        // Resolve the target by walking the directory tree via listFiles() rather
+        // than constructing an SmbFile from a URL containing the path. jcifs
+        // mis-handles %-encoded segments (spaces → "file not found", emoji /
+        // fullwidth CJK → "syntax incorrect"). See [SmbPathResolver], which also
+        // caches directory listings so a burst of thumbnails in one folder shares
+        // a single listFiles() round-trip.
+        val segments = SmbPathResolver.decodedSegmentsOf(androidUri.encodedPath)
+        if (segments.isEmpty()) {
+            Log.w(TAG, "extractSmbFrame: no path in $remoteUri"); return null
+        }
 
         return try {
             val ctx = ConnectionPool.borrowSmbThumbnailContext(host, port, username, password)
-            val file = SmbFile(cleanUrl, ctx)
+            val file = SmbPathResolver.resolve(ctx, host, port, segments) ?: run {
+                Log.w(TAG, "extractSmbFrame: file not found: $remoteUri"); return null
+            }
             val size = file.length()
-            val raf = SmbRandomAccessFile(file, "r")
-            val bridge = RandomAccessBridge(raf, size)
+            val bridge = RandomAccessBridge(file, size)
             try {
                 NativeThumbnailExtractor.extractThumbnail(bridge, 0.40f, THUMB_MAX_WIDTH)
             } finally {
@@ -137,19 +151,15 @@ class VideoFrameFetcher(
     }
 
     private fun extractRemoteFrame(remoteUri: String): Bitmap? {
-        Log.d(TAG, "extractRemoteFrame: start $remoteUri")
         val tempFile = try {
             val f = File(options.context.cacheDir, "thumb_temp_${data.path.hashCode()}.tmp")
             downloadHead(remoteUri, f, REMOTE_HEAD_BYTES)
             if (f.exists() && f.length() > 0) {
-                Log.d(TAG, "extractRemoteFrame: downloaded ${f.length()} bytes to $f")
                 f
             } else {
-                Log.w(TAG, "extractRemoteFrame: download produced empty file")
                 null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "extractRemoteFrame: download failed", e)
             null
         } ?: return null
 
@@ -160,7 +170,6 @@ class VideoFrameFetcher(
                     retriever.setDataSource(fis.fd, 0L, tempFile.length())
                 }
                 val frame = extractBestFrame(retriever)
-                Log.d(TAG, "extractRemoteFrame: frame=${frame != null} size=${frame?.width}x${frame?.height}")
                 frame
             } finally {
                 runCatching { retriever.release() }
@@ -171,16 +180,13 @@ class VideoFrameFetcher(
     }
 
     private fun extractLocalFrame(path: String): Bitmap? {
-        Log.d(TAG, "extractLocalFrame: start $path")
         val retriever = MediaMetadataRetriever()
-        return try {
+        val frame = try {
             // Try 1: Uri.fromFile → ContentResolver (works for FUSE mounts, SMB mounts)
             try {
                 val fileUri = Uri.fromFile(File(path))
-                Log.d(TAG, "extractLocalFrame: trying Uri.fromFile: $fileUri")
                 retriever.setDataSource(options.context, fileUri)
             } catch (e1: Exception) {
-                Log.d(TAG, "extractLocalFrame: Uri.fromFile failed, trying path directly: ${e1.message}")
                 // Try 2: FileInputStream with fd
                 try {
                     val file = File(path)
@@ -188,24 +194,41 @@ class VideoFrameFetcher(
                         retriever.setDataSource(fis.fd, 0L, file.length())
                     }
                 } catch (e2: Exception) {
-                    Log.d(TAG, "extractLocalFrame: fd failed, trying raw path: ${e2.message}")
                     // Try 3: raw path string
                     retriever.setDataSource(path)
                 }
             }
-            val frame = extractBestFrame(retriever)
-            Log.d(TAG, "extractLocalFrame: frame=${frame != null} size=${frame?.width}x${frame?.height}")
-            frame
+            val f = extractBestFrame(retriever)
+            f
         } catch (e: Exception) {
-            Log.e(TAG, "extractLocalFrame: all attempts failed", e)
+            Log.e(TAG, "extractLocalFrame: MediaMetadataRetriever failed", e)
             null
         } finally {
             runCatching { retriever.release() }
         }
+
+        // Last resort: MediaMetadataRetriever can't decode some containers/codecs
+        // (e.g. certain MPEG-TS streams) — it either throws or returns null. Fall
+        // through to the native FFmpeg extractor, which handles them.
+        return frame ?: extractLocalFrameNative(path)
+    }
+
+    /** Native FFmpeg fallback for local files MediaMetadataRetriever can't handle. */
+    private fun extractLocalFrameNative(path: String): Bitmap? {
+        return try {
+            val bridge = LocalRandomAccessBridge(path)
+            try {
+                NativeThumbnailExtractor.extractThumbnail(bridge, 0.40f, THUMB_MAX_WIDTH)
+            } finally {
+                bridge.close()
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     companion object {
-        private const val TAG = "VideoThumbnail"
+        private const val TAG = "HzPlayer/Thumb"
     }
 
     private fun extractBestFrame(retriever: MediaMetadataRetriever): Bitmap? {
@@ -259,7 +282,10 @@ class VideoFrameFetcher(
     }
 
     private fun downloadHttpHead(url: String, dest: File, maxBytes: Long) {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val httpUrl = url
+            .replaceFirst("webdav://", "http://", ignoreCase = true)
+            .replaceFirst("webdavs://", "https://", ignoreCase = true)
+        val conn = URL(httpUrl).openConnection() as HttpURLConnection
         conn.connectTimeout = 5000
         conn.readTimeout = 5000
         conn.setRequestProperty("Range", "bytes=0-${maxBytes - 1}")
@@ -285,6 +311,14 @@ class VideoFrameFetcher(
         val hash = (frame.path.hashCode().toLong() and 0xffffffffL).toString(16)
         val dir = File(options.context.cacheDir, "video_thumbs")
         return File(dir, "${hash}_${frame.dateModified}.webp")
+    }
+
+    private fun failMarkerFor(frame: VideoFrame): File =
+        File(cacheFileFor(frame).path + ".fail")
+
+    private fun isFailMarkerFresh(marker: File): Boolean {
+        val age = System.currentTimeMillis() - marker.lastModified()
+        return age < TimeUnit.DAYS.toMillis(1)
     }
 
     class Factory : Fetcher.Factory<VideoFrame> {

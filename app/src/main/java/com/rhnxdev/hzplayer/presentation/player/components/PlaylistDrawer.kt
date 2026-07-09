@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -83,10 +82,8 @@ fun PlaylistDrawer(
                         WindowInsets.navigationBarsIgnoringVisibility
                             .only(WindowInsetsSides.Left)
                     )
-                    .windowInsetsPadding(
-                        WindowInsets.statusBarsIgnoringVisibility
-                            .only(WindowInsetsSides.Top)
-                    )
+                    // No top status-bar inset: the drawer spans the full screen height
+                    // (the HUD + system bars are hidden while the drawer is open).
                     .background(Color.Black.copy(alpha = 0.92f))
                     .padding(top = 12.dp),
             ) {

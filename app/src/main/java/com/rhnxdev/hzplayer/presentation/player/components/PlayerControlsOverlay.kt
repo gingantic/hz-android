@@ -82,6 +82,7 @@ fun PlayerControlsOverlay(
     onAspectRatioClick: () -> Unit = {},
     onOrientationClick: () -> Unit = {},
     onPlaylistClick: () -> Unit = {},
+    onDebugClick: (() -> Unit)? = null,
     onSkipToNext: (() -> Unit)? = null,
     onSkipToPrevious: (() -> Unit)? = null,
     onInteract: () -> Unit = {},
@@ -134,6 +135,22 @@ fun PlayerControlsOverlay(
             }
 
             Spacer(modifier = Modifier.width(Spacing.xs))
+
+            // Debug (Stats for nerds) — only when debugMode enabled
+            if (onDebugClick != null) {
+                Text(
+                    text = "Stats",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onDebugClick)
+                        .background(Color(0x33FFFFFF))
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
 
             // Lock
             IconButton(onClick = onLockClick) {

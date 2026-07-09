@@ -5,6 +5,8 @@ import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
@@ -38,8 +40,15 @@ internal object ConnectionPool {
     private val smbBrowserPool = ConcurrentHashMap<String, CIFSContext>()
     private val webdavBrowserPool = ConcurrentHashMap<String, OkHttpClient>()
 
-    private fun key(scheme: String, host: String, port: Int, user: String): String =
-        "$scheme://$host:$port:$user"
+    private fun key(scheme: String, host: String, port: Int, user: String, pass: String): String {
+        val passHash = pass.let { p ->
+            try {
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                md.digest(p.toByteArray()).joinToString("") { "%02x".format(it) }.take(12)
+            } catch (_: Exception) { p.length.toString() }
+        }
+        return "$scheme://$host:$port:$user:$passHash"
+    }
 
     private fun browserKey(host: String, port: Int, scheme: String): String =
         "$scheme://$host:$port"
@@ -48,7 +57,7 @@ internal object ConnectionPool {
 
     /** Borrow a reusable [FTPClient] for the given server. */
     fun borrowFtp(host: String, port: Int, user: String, pass: String): FTPClient {
-        val k = key("ftp", host, port, user)
+        val k = key("ftp", host, port, user, pass)
         val existing = ftpPool[k]
         if (existing != null && existing.client.isConnected && !existing.client.isAvailable) {
             return existing.client
@@ -58,6 +67,7 @@ internal object ConnectionPool {
             try { it.client.disconnect() } catch (_: Exception) {}
         }
         val ftp = FTPClient().apply {
+            autodetectUTF8 = true // negotiate UTF-8 from server FEAT — emoji/CJK filenames
             connectTimeout = 15000
             defaultTimeout = 15000
             dataTimeout = java.time.Duration.ofMillis(15000)
@@ -77,7 +87,7 @@ internal object ConnectionPool {
 
     /** Borrow a reusable [SSHClient] for the given server. */
     fun borrowSsh(host: String, port: Int, user: String, pass: String): SSHClient {
-        val k = key("sftp", host, port, user)
+        val k = key("sftp", host, port, user, pass)
         val existing = sftpPool[k]
         if (existing != null && existing.client.isConnected && existing.client.isAuthenticated) {
             return existing.client
@@ -102,7 +112,7 @@ internal object ConnectionPool {
 
     /** Borrow (or create) a shared [CIFSContext] for the given server. */
     fun borrowSmbContext(host: String, port: Int, user: String, pass: String): CIFSContext {
-        val k = key("smb", host, port, user)
+        val k = key("smb", host, port, user, pass)
         return smbPool.getOrPut(k) {
             val props = Properties().apply {
                 setProperty("jcifs.smb.client.minVersion", "SMB202")
@@ -110,7 +120,9 @@ internal object ConnectionPool {
                 setProperty("jcifs.smb.client.responseTimeout", "15000")
                 setProperty("jcifs.smb.client.soTimeout", "15000")
                 setProperty("jcifs.smb.client.dfs.disabled", "true")
+                setProperty("jcifs.smb.client.signingEnforced", "true")
                 setProperty("jcifs.resolveOrder", "DNS")
+                setProperty("jcifs.encoding", "UTF-8")
             }
             val base = BaseContext(PropertyConfiguration(props))
             val ctx = if (user.isNotEmpty()) {
@@ -126,7 +138,7 @@ internal object ConnectionPool {
 
     /** Borrow (or create) a shared [CIFSContext] for remote SMB thumbnails with tight timeouts. */
     fun borrowSmbThumbnailContext(host: String, port: Int, user: String, pass: String): CIFSContext {
-        val k = key("smb_thumb", host, port, user)
+        val k = key("smb_thumb", host, port, user, pass)
         return smbPool.getOrPut(k) {
             val props = Properties().apply {
                 setProperty("jcifs.smb.client.minVersion", "SMB202")
@@ -134,7 +146,9 @@ internal object ConnectionPool {
                 setProperty("jcifs.smb.client.responseTimeout", "10000") // 10 seconds timeout for thumbnails
                 setProperty("jcifs.smb.client.soTimeout", "10000")       // 10 seconds socket timeout for thumbnails
                 setProperty("jcifs.smb.client.dfs.disabled", "true")
+                setProperty("jcifs.smb.client.signingEnforced", "true")
                 setProperty("jcifs.resolveOrder", "DNS")
+                setProperty("jcifs.encoding", "UTF-8")
             }
             val base = BaseContext(PropertyConfiguration(props))
             val ctx = if (user.isNotEmpty()) {
@@ -181,6 +195,7 @@ internal object ConnectionPool {
         val k = browserKey(host, port, "ftp")
         return ftpBrowserPool.getOrPut(k) {
             FTPClient().apply {
+                autodetectUTF8 = true // negotiate UTF-8 from server FEAT — emoji/CJK filenames
                 connectTimeout = 10000
                 defaultTimeout = 10000
                 connect(host, port)
@@ -225,7 +240,7 @@ internal object ConnectionPool {
     }
 
     fun borrowSmbBrowser(host: String, port: Int, user: String, pass: String): CIFSContext {
-        val k = key("smb-brw", host, port, user)
+        val k = key("smb-brw", host, port, user, pass)
         return smbBrowserPool.getOrPut(k) {
             val props = Properties().apply {
                 setProperty("jcifs.smb.client.minVersion", "SMB202")
@@ -233,7 +248,9 @@ internal object ConnectionPool {
                 setProperty("jcifs.smb.client.responseTimeout", "10000")
                 setProperty("jcifs.smb.client.soTimeout", "10000")
                 setProperty("jcifs.smb.client.dfs.disabled", "true")
+                setProperty("jcifs.smb.client.signingEnforced", "true")
                 setProperty("jcifs.resolveOrder", "DNS")
+                setProperty("jcifs.encoding", "UTF-8")
             }
             val base = BaseContext(PropertyConfiguration(props))
             if (user.isNotEmpty()) {
@@ -246,8 +263,10 @@ internal object ConnectionPool {
     }
 
     fun returnSmbBrowser(host: String, port: Int, user: String) {
-        val k = key("smb-brw", host, port, user)
-        smbBrowserPool.remove(k)
+        val k = key("smb-brw", host, port, user, "")
+        smbBrowserPool.remove(k)?.let { ctx ->
+            try { ctx.close() } catch (_: Exception) {}
+        }
     }
 
     // ── WebDAV (Browser) ────────────────────────────────────────
@@ -307,6 +326,7 @@ internal object ConnectionPool {
 
         smbPool.clear()
         smbBrowserPool.clear()
+        SmbPathResolver.clearCache()
 
         webdavPool.values.forEach {
             try { it.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}

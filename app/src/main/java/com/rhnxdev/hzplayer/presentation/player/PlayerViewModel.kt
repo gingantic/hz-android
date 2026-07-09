@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
 import com.rhnxdev.hzplayer.data.repository.PlayerRepositoryImpl
 import com.rhnxdev.hzplayer.domain.model.AudioItem
+import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
@@ -24,9 +25,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao
 import javax.inject.Inject
 
 @HiltViewModel
@@ -35,6 +39,7 @@ class PlayerViewModel @Inject constructor(
     private val playerRepositoryImpl: PlayerRepositoryImpl,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val resumeRepository: ResumeRepository,
+    private val mediaDao: MediaDao,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -56,6 +61,7 @@ class PlayerViewModel @Inject constructor(
     private var cachedAudioTracks: List<String> = emptyList()
     private var cachedSelectedAudio: Int = -1
     private var trackRefreshNeeded = false
+    private var debugPollJob: Job? = null
 
     companion object {
         private const val TAG = "PlayerViewModel"
@@ -72,8 +78,28 @@ class PlayerViewModel @Inject constructor(
         observeSubtitleCues()
         observeNetworkTraffic()
         observeSeekSensitivity()
+        observeHdrSettings()
+        observeDebugMode()
         startPositionUpdates()
         refreshTrackCache()
+    }
+
+    /**
+     * Subscribe to the user's "Enable HDR playback" preference.
+     *
+     * The pref is still persisted and exposed in settings — but the actual video
+     * pipeline now has no HDR/SDR mode swap, so this observer keeps the value
+     * flowing into [PlayerUiState.hdrEnabled] (for any future consumer) without
+     * touching the surface, window color mode, or effect chain.
+     */
+    private fun observeHdrSettings() {
+        viewModelScope.launch {
+            userPreferencesRepository.enableHdrPlayback
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    _uiState.update { it.copy(hdrEnabled = enabled) }
+                }
+        }
     }
 
     private fun refreshTrackCache() {
@@ -96,6 +122,13 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             playerRepository.playbackStateInfo.collect { info ->
                 val newIsLoading = info.state == PlayerState.BUFFERING
+                
+                val artworkUri = info.currentUri?.let { uri ->
+                    mediaDao.getByUri(uri)?.albumArtUri
+                }
+
+                val isIdle = info.state == PlayerState.IDLE
+
                 _uiState.update { state ->
                     state.copy(
                         isPlaying = info.isPlaying,
@@ -104,9 +137,16 @@ class PlayerViewModel @Inject constructor(
                         shuffleMode = info.shuffleModeEnabled,
                         repeatMode = info.repeatMode,
                         errorMessage = info.errorMessage,
-                        currentTitle = info.currentTitle ?: state.currentTitle,
-                        currentArtist = info.currentArtist ?: state.currentArtist,
-                        currentPlaybackUri = info.currentUri ?: state.currentPlaybackUri,
+                        errorKind = info.errorKind,
+                        currentTitle = if (isIdle) null else (info.currentTitle ?: state.currentTitle),
+                        currentArtist = if (isIdle) null else (info.currentArtist ?: state.currentArtist),
+                        currentPlaybackUri = if (isIdle) null else (info.currentUri ?: state.currentPlaybackUri),
+                        currentArtworkUri = if (isIdle) null else (artworkUri ?: if (info.currentUri != state.currentPlaybackUri) null else state.currentArtworkUri),
+                        // Track DRM status — exposed in `drmSessionActive` for any
+                        // future pipeline that needs it; not currently driving the
+                        // surface selection while HDR/SDR colour-correction is in
+                        // progress.
+                        drmSessionActive = info.drmSessionActive,
                     )
                 }
                 // Refresh track cache once ExoPlayer finishes preparing (state == READY).
@@ -282,6 +322,7 @@ class PlayerViewModel @Inject constructor(
             state.copy(
                 currentTitle = video.title,
                 currentArtist = null,
+                currentArtworkUri = video.thumbnailUri,
                 isVideo = true,
                 isPlaying = true,
                 isLoading = true,
@@ -302,6 +343,7 @@ class PlayerViewModel @Inject constructor(
             state.copy(
                 currentTitle = title,
                 currentArtist = null,
+                currentArtworkUri = null,
                 isVideo = isVideo,
                 isPlaying = playImmediately,
                 isLoading = true,
@@ -331,6 +373,7 @@ class PlayerViewModel @Inject constructor(
             it.copy(
                 currentTitle = audio.title,
                 currentArtist = audio.artist,
+                currentArtworkUri = audio.albumArtUri,
                 isVideo = false,
                 isPlaying = true,
                 isLoading = true,
@@ -350,6 +393,7 @@ class PlayerViewModel @Inject constructor(
             state.copy(
                 currentTitle = item.title,
                 currentArtist = item.artist,
+                currentArtworkUri = item.albumArtUri,
                 isVideo = false,
                 isPlaying = true,
                 isLoading = true,
@@ -421,7 +465,24 @@ class PlayerViewModel @Inject constructor(
         android.util.Log.d(TAG, "stop() called")
         saveProgressNow()
         playerRepository.stop()
-        _uiState.update { it.copy(currentTitle = null, currentArtist = null, isPlaying = false, currentPlaybackUri = null, videoPlaylist = emptyList()) }
+        _uiState.update { it.copy(
+            currentTitle = null, 
+            currentArtist = null, 
+            isPlaying = false, 
+            currentPlaybackUri = null, 
+            videoPlaylist = emptyList(),
+            errorMessage = null
+        ) }
+    }
+
+    fun clearError() {
+        playerRepository.clearError()
+        _uiState.update { it.copy(errorMessage = null, errorKind = null) }
+    }
+
+    /** Re-attempt the last playback after a recoverable error. */
+    fun retry() {
+        playerRepository.retry()
     }
 
     fun onToggleControls() {
@@ -504,12 +565,101 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onTogglePlaylistDrawer() {
-        _uiState.update { it.copy(showPlaylistDrawer = !it.showPlaylistDrawer) }
+        _uiState.update {
+            val opening = !it.showPlaylistDrawer
+            it.copy(
+                showPlaylistDrawer = opening,
+                // Opening the drawer hides the HUD; hiding the HUD also hides the
+                // system bars (nav bar) via the showControls → systemBars sync in the screen.
+                showControls = if (opening) false else it.showControls,
+            )
+        }
     }
 
     fun clearPlaylist() {
         _uiState.update { it.copy(videoPlaylist = emptyList(), showPlaylistDrawer = false) }
     }
+
+    private fun observeDebugMode() {
+        viewModelScope.launch {
+            userPreferencesRepository.debugMode.collect { enabled ->
+                _uiState.update { it.copy(debugMode = enabled) }
+                if (enabled && _uiState.value.debugOverlayVisible) startDebugPolling()
+                else stopDebugPolling()
+            }
+        }
+    }
+
+    fun onToggleDebugOverlay() {
+        val show = !_uiState.value.debugOverlayVisible
+        _uiState.update { it.copy(debugOverlayVisible = show) }
+        if (show && _uiState.value.debugMode) startDebugPolling()
+        else stopDebugPolling()
+    }
+
+    private fun startDebugPolling() {
+        debugPollJob?.cancel()
+        debugPollJob = viewModelScope.launch {
+            while (isActive) {
+                try {
+                    val stats = playerRepositoryImpl.collectDebugStats()
+                    val nt = _uiState.value.networkTraffic
+                    val speedDown = nt.speedDown
+                    val duration = _uiState.value.duration
+                    // compute avg bitrate from total bytes / duration when fmt.bitrate is 0
+                    val totalBytes = nt.bytesDown
+                    val videoBitrate = if (stats.videoBitrate.isEmpty() && duration > 0 && totalBytes > 0) {
+                        formatBitsPerSecond(((totalBytes * 8) / (duration / 1000)).toLong())
+                    } else if (stats.videoBitrate.isNotEmpty()) {
+                        bitsToHuman(stats.videoBitrate)
+                    } else ""
+                    val audioBitrate = if (stats.audioBitrate.isNotEmpty()) bitsToHuman(stats.audioBitrate) else ""
+                    _uiState.update { it.copy(
+                        debugStats = stats.copy(
+                            videoBitrateEstimated = videoBitrate,
+                            audioBitrateEstimated = audioBitrate,
+                            bufferedPct = it.bufferedPercentage,
+                            networkSpeed = if (speedDown > 0) formatDebugSpeed(speedDown) else "",
+                            bytesDownloaded = if (totalBytes > 0) formatDebugBytes(totalBytes) else "",
+                            isVisible = true,
+                        )
+                    ) }
+                } catch (_: Exception) { }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun stopDebugPolling() {
+        debugPollJob?.cancel()
+        debugPollJob = null
+        _uiState.update { it.copy(debugStats = DebugStats()) }
+    }
+
+    private fun bitsToHuman(bitrateStr: String): String {
+        val bps = bitrateStr.toLongOrNull() ?: return bitrateStr
+        return formatBitsPerSecond(bps)
+    }
+
+    private fun formatBitsPerSecond(bps: Long): String = when {
+        bps < 1_000 -> "$bps bps"
+        bps < 1_000_000 -> "${bps / 1000} kbps"
+        else -> "${"%.2f".format(bps.toDouble() / 1_000_000)} Mbps"
+    }
+
+    private fun formatDebugSpeed(bytesPerSec: Long): String = when {
+        bytesPerSec < 1024 -> "$bytesPerSec B/s"
+        bytesPerSec < 1024 * 1024 -> "%.1f KB/s".format(bytesPerSec / 1024.0)
+        else -> "%.1f MB/s".format(bytesPerSec / (1024.0 * 1024.0))
+    }
+
+    private fun formatDebugBytes(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+        bytes < 1024L * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+        else -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
+    }
+
 
     private fun observeSeekSensitivity() {
         viewModelScope.launch {

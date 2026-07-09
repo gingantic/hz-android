@@ -38,5 +38,7 @@ interface PlayerRepository {
     fun getSelectedAudioTrack(): Int
     fun selectAudioTrack(index: Int)
     fun stop()
+    fun clearError()
+    fun retry()
     fun release()
 }

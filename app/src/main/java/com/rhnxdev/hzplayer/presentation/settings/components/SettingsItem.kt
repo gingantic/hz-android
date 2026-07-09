@@ -28,10 +28,12 @@ fun SettingsItem(
     title: String,
     subtitle: String? = null,
     onClick: () -> Unit = {},
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Card(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = Spacing.lg),
@@ -41,6 +43,7 @@ fun SettingsItem(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
+        val alpha = if (enabled) 1f else 0.38f
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -49,14 +52,14 @@ fun SettingsItem(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
             )
             if (subtitle != null) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
                 )
             }
         }
@@ -69,6 +72,7 @@ fun SettingsToggleItem(
     subtitle: String? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -81,6 +85,7 @@ fun SettingsToggleItem(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
+        val alpha = if (enabled) 1f else 0.38f
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -91,20 +96,21 @@ fun SettingsToggleItem(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
                 )
                 if (subtitle != null) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
                     )
                 }
             }
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
+                enabled = enabled,
             )
         }
     }

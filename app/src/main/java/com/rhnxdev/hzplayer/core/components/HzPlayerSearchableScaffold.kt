@@ -52,6 +52,8 @@ fun HzPlayerSearchableScaffold(
     Column(modifier = Modifier.fillMaxSize()) {
         HzPlayerTopBar(
             title = title,
+            showBack = canNavigateUp,
+            onBack = { onNavigateUp?.invoke() },
             searchQuery = if (isSearchActive) searchQuery else null,
             searchPlaceholder = searchPlaceholder,
             onSearchQueryChanged = onSearchQueryChanged,

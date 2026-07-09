@@ -37,77 +37,121 @@ import com.rhnxdev.hzplayer.domain.model.ServerConfig
 fun ServerCard(
     server: ServerConfig,
     onClick: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
+    onEdit: () -> Unit = {},
+    onDelete: () -> Unit = {},
+    showMenu: Boolean = true,
+    dense: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    var showMenu by remember { mutableStateOf(false) }
+    var showMenuExpanded by remember { mutableStateOf(false) }
 
     Card(
         onClick = onClick,
-        modifier = modifier.width(180.dp),
+        modifier = modifier,
         shape = RoundedCornerShape(Spacing.md),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
-        Column(
-            modifier = Modifier.padding(Spacing.md),
-        ) {
+        if (dense) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.padding(Spacing.md).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = HzPlayerIcons.Server,
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.primary,
                 )
-
-                IconButton(
-                    onClick = { showMenu = true },
-                    modifier = Modifier.size(24.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.MoreVert,
-                        contentDescription = "Options",
-                        modifier = Modifier.size(18.dp),
+                Spacer(modifier = Modifier.width(Spacing.md))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = server.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Edit") },
-                            onClick = { showMenu = false; onEdit() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete") },
-                            onClick = { showMenu = false; onDelete() },
-                        )
+                    Text(
+                        text = "${server.protocol.name} • ${server.host}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (showMenu) {
+                    IconButton(onClick = { showMenuExpanded = true }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Options", modifier = Modifier.size(18.dp))
+                        DropdownMenu(expanded = showMenuExpanded, onDismissRequest = { showMenuExpanded = false }) {
+                            DropdownMenuItem(text = { Text("Edit") }, onClick = { showMenuExpanded = false; onEdit() })
+                            DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenuExpanded = false; onDelete() })
+                        }
                     }
                 }
             }
+        } else {
+            Column(
+                modifier = Modifier.padding(Spacing.md),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = HzPlayerIcons.Server,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
 
-            Spacer(modifier = Modifier.size(Spacing.sm))
+                    if (showMenu) {
+                        IconButton(
+                            onClick = { showMenuExpanded = true },
+                            modifier = Modifier.size(24.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.MoreVert,
+                                contentDescription = "Options",
+                                modifier = Modifier.size(18.dp),
+                            )
+                            DropdownMenu(
+                                expanded = showMenuExpanded,
+                                onDismissRequest = { showMenuExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Edit") },
+                                    onClick = { showMenuExpanded = false; onEdit() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Delete") },
+                                    onClick = { showMenuExpanded = false; onDelete() },
+                                )
+                            }
+                        }
+                    }
+                }
 
-            Text(
-                text = server.name,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                Spacer(modifier = Modifier.size(Spacing.sm))
 
-            Text(
-                text = "${server.protocol.name} • ${server.host}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                Text(
+                    text = server.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                Text(
+                    text = "${server.protocol.name} • ${server.host}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

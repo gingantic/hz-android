@@ -23,11 +23,14 @@ class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository 
         server: ServerConfig,
         path: String,
     ): Result<List<RemoteFileItem>> = withContext(Dispatchers.IO) {
+        val client = createClient(server)
         runCatching {
-            val client = createClient(server)
             client.connect()
             client.listDirectory(path)
-            // Keep connected — pooled connection reused for enrichDirectory
+        }.also {
+            // Always release the pooled connection so credentialed contexts don't
+            // linger for the process lifetime.
+            runCatching { client.disconnect() }
         }
     }
 
@@ -37,11 +40,15 @@ class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository 
     ): List<RemoteFileItem> = withContext(Dispatchers.IO) {
         val client = createClient(server)
         client.connect()
-        items.map { item ->
-            if (item.isDirectory) {
-                val count = client.countChildren(item.path)
-                item.copy(childCount = count)
-            } else item
+        try {
+            items.map { item ->
+                if (item.isDirectory) {
+                    val count = client.countChildren(item.path)
+                    item.copy(childCount = count)
+                } else item
+            }
+        } finally {
+            runCatching { client.disconnect() }
         }
     }
 
@@ -60,21 +67,7 @@ class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository 
     }
 
     private fun percentEncodePath(path: String): String {
-        val sb = StringBuilder(path.length + 32)
-        for (ch in path) {
-            when {
-                ch == '/' -> sb.append(ch)
-                ch in 'A'..'Z' || ch in 'a'..'z' || ch in '0'..'9' ||
-                    ch == '-' || ch == '_' || ch == '.' || ch == '~' -> sb.append(ch)
-                else -> {
-                    val bytes = ch.toString().toByteArray(Charsets.UTF_8)
-                    for (b in bytes) {
-                        sb.append('%').append(String.format("%02X", b.toInt() and 0xFF))
-                    }
-                }
-            }
-        }
-        return sb.toString()
+        return Uri.encode(path, "/")
     }
 
     private fun createClient(server: ServerConfig): RemoteBrowserClient = when (server.protocol) {

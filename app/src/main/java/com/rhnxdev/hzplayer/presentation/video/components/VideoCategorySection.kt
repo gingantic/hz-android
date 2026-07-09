@@ -18,7 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.rhnxdev.hzplayer.core.components.MediaCard
-import com.rhnxdev.hzplayer.core.components.MediaType
+import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia

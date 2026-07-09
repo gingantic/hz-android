@@ -48,7 +48,7 @@ import com.rhnxdev.hzplayer.core.components.MediaErrorState
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
-import com.rhnxdev.hzplayer.core.components.MediaType
+import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.SortChipOption
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.components.ViewToggleFab
@@ -57,6 +57,9 @@ import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import coil3.compose.SubcomposeAsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -210,7 +213,18 @@ private fun GridContent(
                             durationMs = video.durationMs,
                             progress = video.watchedProgress.takeIf { it > 0f },
                             thumbnailContent = {
-                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                                SubcomposeAsyncImage(
+                                    model = VideoFrame(video.uri, video.dateModified),
+                                    contentDescription = video.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                    error = {
+                                        ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                                    },
+                                    loading = {
+                                        ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                                    }
+                                )
                             },
                             onClick = { onVideoClicked(video) },
                             modifier = Modifier.width(200.dp),
@@ -238,7 +252,18 @@ private fun ListContent(
                 subtitle = buildSubtitle(video),
                 durationMs = video.durationMs,
                 thumbnailContent = {
-                    ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                    SubcomposeAsyncImage(
+                        model = VideoFrame(video.uri, video.dateModified),
+                        contentDescription = video.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        error = {
+                            ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                        },
+                        loading = {
+                            ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                        }
+                    )
                 },
                 onClick = { onVideoClicked(video) },
             )
@@ -272,7 +297,18 @@ private fun SearchResultsContent(
                     subtitle = buildSubtitle(video),
                     durationMs = video.durationMs,
                     thumbnailContent = {
-                        ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                        SubcomposeAsyncImage(
+                            model = VideoFrame(video.uri, video.dateModified),
+                            contentDescription = video.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            error = {
+                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                            },
+                            loading = {
+                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                            }
+                        )
                     },
                     onClick = { onVideoClicked(video) },
                 )
@@ -289,7 +325,18 @@ private fun SearchResultsContent(
                     subtitle = buildSubtitle(video),
                     durationMs = video.durationMs,
                     thumbnailContent = {
-                        ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                        SubcomposeAsyncImage(
+                            model = VideoFrame(video.uri, video.dateModified),
+                            contentDescription = video.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            error = {
+                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                            },
+                            loading = {
+                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                            }
+                        )
                     },
                     onClick = { onVideoClicked(video) },
                 )

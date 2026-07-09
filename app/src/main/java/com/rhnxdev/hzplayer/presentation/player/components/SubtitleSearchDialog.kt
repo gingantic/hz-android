@@ -127,9 +127,10 @@ fun SubtitleSearchDialog(
             }
 
             // Error
-            if (uiState.error != null) {
+            val error = uiState.error
+            if (error != null) {
                 Text(
-                    text = uiState.error!!,
+                    text = error,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp),

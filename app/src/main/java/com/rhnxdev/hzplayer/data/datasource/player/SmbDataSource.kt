@@ -29,40 +29,49 @@ class SmbDataSource : BaseDataSource(/* isNetwork = */ true) {
     private var uri: Uri? = null
     private var closed = false
 
+    /** URI with user-info stripped — safe for logs and thrown error messages. */
+    private fun safeUri(u: Uri): String {
+        val s = u.toString()
+        val at = s.indexOf('@')
+        if (at < 0) return s
+        val schemeEnd = s.indexOf("://")
+        val start = if (schemeEnd >= 0) schemeEnd + 3 else 0
+        return s.substring(0, start) + s.substring(at + 1)
+    }
+
     override fun open(dataSpec: DataSpec): Long {
         val openStart = SystemClock.elapsedRealtime()
         uri = dataSpec.uri
         closed = false
         transferInitializing(dataSpec)
-        android.util.Log.d(TAG, "open: uri=${dataSpec.uri} pos=${dataSpec.position} len=${dataSpec.length}")
+        android.util.Log.d(TAG, "open: uri=${safeUri(dataSpec.uri)} pos=${dataSpec.position} len=${dataSpec.length}")
 
         val uriStr = dataSpec.uri
         val userInfo = uriStr.userInfo ?: ""
         val username = Uri.decode(userInfo.substringBefore(':'))
         val password = Uri.decode(userInfo.substringAfter(':', ""))
-        val host = uriStr.host ?: throw IOException("No host in URI: ${dataSpec.uri}")
+        val host = uriStr.host ?: throw IOException("No host in URI: ${safeUri(dataSpec.uri)}")
         val port = uriStr.port.takeIf { it > 0 } ?: 445
 
         val cifsCtx = ConnectionPool.borrowSmbContext(host, port, username, password)
-        val cleanUrl = stripCredentials(uriStr)
-        android.util.Log.d(TAG, "cleanUrl=$cleanUrl")
 
-        val file = SmbFile(cleanUrl, cifsCtx)
+        // Resolve the target by walking the directory tree via listFiles() rather
+        // than constructing an SmbFile from a URL containing the path. jcifs
+        // mis-handles %-encoded segments (spaces → "file not found", emoji /
+        // fullwidth CJK → STATUS_OBJECT_NAME_INVALID). See [SmbPathResolver].
+        //
+        // Cache the resolved SmbFile per-URI: ExoPlayer seeks via close()+open()
+        // with the same URI, and re-walking on every seek is wasteful. SmbFile is
+        // bound to the pooled (long-lived) CIFSContext, so reuse across opens is safe.
+        val cacheKey = dataSpec.uri.toString()
+        val segments = SmbPathResolver.decodedSegmentsOf(uriStr.encodedPath)
+        if (segments.isEmpty()) throw IOException("No path in URI: ${safeUri(dataSpec.uri)}")
 
-        // Cache file length — avoid extra SMB round-trip on reopen after seek
-        val fileLength = file.length()
-        if (dataSpec.position > fileLength) {
-            throw IOException("Position ${dataSpec.position} exceeds file length $fileLength")
-        }
-
-        // Open SMB InputStream — skip forward if seeking
-        val rawStream: InputStream = try {
-            val s = file.inputStream
-            if (dataSpec.position > 0) skipFully(s, dataSpec.position)
-            s
-        } catch (e: Exception) {
-            throw IOException("Failed to open SMB file: ${e.message}", e)
-        }
+        // Open with brief retry/backoff for transient network drops (e.g. Wi-Fi
+        // handoff). Connection-stage only — mid-read errors are not retried.
+        val (_, fileLength, rawStream) = openWithRetry(
+            cifsCtx, host, port, segments, cacheKey, dataSpec
+        )
 
         // BufferedInputStream does large SMB reads (512 KB at a time),
         // serving small ExoPlayer reads from memory. This is the main
@@ -120,15 +129,70 @@ class SmbDataSource : BaseDataSource(/* isNetwork = */ true) {
         }
     }
 
-    /** Strip userinfo from URI — keeps decoded path as jcifs-ng expects. */
-    private fun stripCredentials(uri: Uri): String {
-        val host = uri.host ?: return uri.toString()
-        val port = if (uri.port > 0) ":${uri.port}" else ""
-        val path = uri.path ?: "/"
-        return "smb://$host$port$path"
+    /**
+     * Resolve + open the SMB file with transient-failure retry/backoff.
+     * Retries connection-stage [IOException]s (network blips) up to 3 times
+     * with 250/750/2000 ms backoff. Non-transient errors (file-not-found,
+     * position-exceeds-length) are thrown immediately without retry.
+     */
+    private fun openWithRetry(
+        cifsCtx: jcifs.CIFSContext,
+        host: String,
+        port: Int,
+        segments: List<String>,
+        cacheKey: String,
+        dataSpec: DataSpec,
+    ): Triple<SmbFile, Long, InputStream> {
+        val backoffMs = longArrayOf(250, 750, 2000)
+        var lastErr: IOException? = null
+        repeat(backoffMs.size + 1) { attempt ->
+            try {
+                val file = resolvedFileCache[cacheKey] ?: run {
+                    val match = SmbPathResolver.resolve(cifsCtx, host, port, segments)
+                        ?: throw IOException("File not found: ${safeUri(dataSpec.uri)}")
+                    resolvedFileCache[cacheKey] = match
+                    match
+                }
+                val len = file.length()
+                if (dataSpec.position > len) {
+                    throw IOException("Position ${dataSpec.position} exceeds file length $len")
+                }
+                val s = file.inputStream
+                if (dataSpec.position > 0) skipFully(s, dataSpec.position)
+                return Triple(file, len, s)
+            } catch (e: IOException) {
+                lastErr = e
+                if (e.message?.contains("File not found") == true) throw e
+                if (e.message?.contains("exceeds file length") == true) throw e
+                // Drop a possibly-stale cache entry so the next attempt re-resolves.
+                resolvedFileCache.remove(cacheKey)
+                if (attempt < backoffMs.size) {
+                    android.util.Log.w(TAG, "SMB open attempt $attempt failed, retrying", e)
+                    Thread.sleep(backoffMs[attempt])
+                }
+            }
+        }
+        throw lastErr ?: IOException("SMB open failed: ${safeUri(dataSpec.uri)}")
     }
+
+
 
     companion object {
         private const val TAG = "SmbDataSource"
+
+        /**
+         * URI → resolved [SmbFile], populated by directory-listing resolution.
+         * Lets seek-driven reopens skip re-listing the parent directory.
+         * Bounded by [MAX_CACHE] with simple FIFO eviction — entries are cheap
+         * (SmbFile holds no socket) and tied to a pooled CIFSContext.
+         */
+        private const val MAX_CACHE = 32
+        private val resolvedFileCache =
+            object : java.util.LinkedHashMap<String, SmbFile>(16, 0.75f, true) {
+                override fun removeEldestEntry(eldest: Map.Entry<String, SmbFile>) = size > MAX_CACHE
+            }.let { java.util.Collections.synchronizedMap(it) }
+
+        /** Drop resolved-file entries so none outlive [ConnectionPool.releaseAll]. */
+        fun clearResolvedFileCache() = resolvedFileCache.clear()
     }
 }

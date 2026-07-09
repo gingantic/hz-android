@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.core.components
 
+import com.rhnxdev.hzplayer.domain.model.MediaType
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.core.designsystem.CornerRadii
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
@@ -35,10 +37,11 @@ fun MediaListItem(
     thumbnailContent: @Composable () -> Unit = {},
     onClick: () -> Unit,
     trailingContent: @Composable (() -> Unit)? = null,
+    isSquareThumbnail: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val cardShape = remember { RoundedCornerShape(Spacing.sm) }
-    val clipShape = remember { RoundedCornerShape(Spacing.xs) }
+    val cardShape = remember { RoundedCornerShape(CornerRadii.sm) }
+    val clipShape = remember { RoundedCornerShape(CornerRadii.xs) }
 
     Card(
         onClick = onClick,
@@ -58,7 +61,13 @@ fun MediaListItem(
             // Thumbnail
             Box(
                 modifier = Modifier
-                    .size(width = 78.dp, height = 56.dp)
+                    .run {
+                        if (isSquareThumbnail) {
+                            size(56.dp)
+                        } else {
+                            size(width = 78.dp, height = 56.dp)
+                        }
+                    }
                     .clip(clipShape),
             ) {
                 thumbnailContent()

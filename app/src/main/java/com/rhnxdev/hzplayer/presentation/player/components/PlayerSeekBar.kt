@@ -60,10 +60,10 @@ fun PlayerSeekBar(
     var dragFraction by remember { mutableFloatStateOf(fraction) }
     val displayFraction = if (isDragging) dragFraction else fraction
 
-    val trackColor = Color.White.copy(alpha = 0.3f)
-    val bufferedColor = Color.White.copy(alpha = 0.5f)
-    val activeColor = Color.White
-    val thumbColor = Color.White
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+    val bufferedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+    val activeColor = MaterialTheme.colorScheme.primary
+    val thumbColor = MaterialTheme.colorScheme.primary
 
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = Spacing.sm),
@@ -72,7 +72,7 @@ fun PlayerSeekBar(
         Text(
             text = if (isDragging) formatDuration((dragFraction * duration).toLong()) else formatDuration(currentPosition),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Box(
@@ -162,7 +162,7 @@ fun PlayerSeekBar(
         Text(
             text = formatDuration(duration),
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         )
     }
 }

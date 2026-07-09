@@ -41,6 +41,7 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
 
         val ssh = ConnectionPool.borrowSsh(host, port, user, pass)
         sftpClient = ssh.newSFTPClient()
+            ?: throw IOException("Failed to create SFTP client for $host:$port")
 
         val sftpHandle = sftpClient!!.open(path)
         val fileLength = try { sftpHandle.length() } catch (_: Exception) { C.LENGTH_UNSET.toLong() }
