@@ -477,6 +477,23 @@ private fun DirectoryLayerView(
             onBreadcrumbClicked = onBreadcrumbClicked,
         )
 
+        if (!layer.isLoading) {
+            val folders = visibleItems.count { it.isDirectory }
+            val others = visibleItems.count { !it.isDirectory }
+            Text(
+                text = if (mediaMode) {
+                    stringResource(R.string.dir_summary_media, folders, others)
+                } else {
+                    stringResource(R.string.dir_summary, folders, others)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
+            )
+        }
+
         DirectoryBrowsePane(
             items = visibleItems.map { it.toFileItemData() },
             isLoading = layer.isLoading,
@@ -505,6 +522,9 @@ private fun FolderItem.toFileItemData() = FileItemData(
     isDirectory = isDirectory,
     fileSize = fileSize,
     childCount = childCount,
+    subfolderCount = subfolderCount,
+    fileCount = fileCount,
+    mediaCount = mediaCount,
     mimeType = mimeType,
     dateModified = dateModified,
     durationMs = durationMs,

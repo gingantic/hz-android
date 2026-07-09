@@ -35,11 +35,24 @@ class MediaRepositoryImpl @Inject constructor(
         }
     } else emptyList()
 
-    override fun getAllVideos(sortType: SortType): Flow<List<VideoItem>> = flow {
+    // In-memory cache so re-entering a tab (or config change) skips the MediaStore
+    // re-scan and shows instantly. Cleared/repopulated only on a forced refresh.
+    private var cachedVideos: List<VideoItem>? = null
+
+    override fun getAllVideos(sortType: SortType, forceRefresh: Boolean): Flow<List<VideoItem>> = flow {
+        // Instant path: serve the in-memory cache unless a forced refresh was requested.
+        val memCache = cachedVideos
+        if (memCache != null && !forceRefresh) {
+            emit(applySort(memCache, sortType))
+            return@flow
+        }
+
         // Phase 1: Try Room cache (instant — emitted immediately if populated)
         val cached = mediaDao.getAllVideos().first()
         if (cached.isNotEmpty()) {
-            emit(applySort(cached.map { it.toVideoItem() }, sortType))
+            val list = cached.map { it.toVideoItem() }
+            cachedVideos = list
+            emit(applySort(list, sortType))
         } else if (BuildConfig.DEBUG) {
             // Phase 2: No cache — emit preview data immediately so UI never shows a blank shimmer.
             // Debug only: release builds get empty list until scan completes.
@@ -51,7 +64,9 @@ class MediaRepositoryImpl @Inject constructor(
             if (scanned.isNotEmpty()) {
                 mediaDao.deleteVideos()
                 mediaDao.insertAll(scanned)
-                emit(applySort(scanned.map { it.toVideoItem() }, sortType))
+                val list = scanned.map { it.toVideoItem() }
+                cachedVideos = list
+                emit(applySort(list, sortType))
             }
             // If scan is also empty, preview already emitted — no-op.
         } catch (_: Exception) {

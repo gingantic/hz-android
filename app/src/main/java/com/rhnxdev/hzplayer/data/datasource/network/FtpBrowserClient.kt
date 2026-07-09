@@ -31,7 +31,7 @@ class FtpBrowserClient(
                         path = filePath,
                         isDirectory = file.isDirectory,
                         fileSize = file.size,
-                        childCount = 0,
+                        childCount = -1,
                         dateModified = file.timestamp?.timeInMillis ?: 0,
                         mimeType = if (!file.isDirectory) guessMimeType(file.name) else null,
                     )

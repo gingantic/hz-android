@@ -38,6 +38,8 @@ import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import com.rhnxdev.hzplayer.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * Unified file/directory item card used by both local and remote file browsers.
@@ -60,6 +62,10 @@ fun FileItemCard(
     playbackPositionMs: Long = 0,
     resolution: String? = null,
     isNew: Boolean = false,
+    subfolderCount: Int = -1,
+    fileCount: Int = -1,
+    mediaCount: Int = -1,
+    mediaMode: Boolean = false,
 ) {
     val icon: ImageVector = when {
         isDirectory -> Icons.Filled.Folder
@@ -69,7 +75,11 @@ fun FileItemCard(
     }
 
     val subtitle = when {
-        isDirectory && childCount >= 0 -> "$childCount items"
+        isDirectory && subfolderCount >= 0 && fileCount >= 0 -> if (mediaMode) {
+            stringResource(R.string.folder_badge_media, subfolderCount, mediaCount)
+        } else {
+            stringResource(R.string.folder_badge, subfolderCount, fileCount)
+        }
         isDirectory -> "- items"
         durationMs > 0 -> {
             val sizeOrResolution = if (resolution != null) resolution else {

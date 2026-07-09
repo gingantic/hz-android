@@ -146,7 +146,7 @@ class WebDavBrowserClient(
                                         path = filePath,
                                         isDirectory = current.isCollection,
                                         fileSize = current.fileSize,
-                                        childCount = 0,
+                                        childCount = -1,
                                         dateModified = current.dateModified,
                                         mimeType = if (!current.isCollection) {
                                             current.mimeType ?: guessMimeType(name)

@@ -76,6 +76,7 @@ import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
@@ -619,6 +620,23 @@ private fun RemoteDirectoryLayerView(
             onBreadcrumbClicked = onBreadcrumbClicked,
         )
 
+        if (!layer.isLoading) {
+            val folders = visibleItems.count { it.isDirectory }
+            val others = visibleItems.count { !it.isDirectory }
+            Text(
+                text = if (mediaMode) {
+                    stringResource(R.string.dir_summary_media, folders, others)
+                } else {
+                    stringResource(R.string.dir_summary, folders, others)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
+            )
+        }
+
         DirectoryBrowsePane(
             items = visibleItems.map { it.toFileItemData(buildPlaybackUri(it.path)) },
             isLoading = layer.isLoading,
@@ -647,6 +665,9 @@ private fun RemoteFileItem.toFileItemData(playbackUri: String? = null) = FileIte
     isDirectory = isDirectory,
     fileSize = fileSize,
     childCount = childCount,
+    subfolderCount = subfolderCount,
+    fileCount = fileCount,
+    mediaCount = mediaCount,
     dateModified = dateModified,
     mimeType = mimeType,
     playbackUri = playbackUri,
