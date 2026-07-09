@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,10 +69,22 @@ import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 fun VideoLibraryScreen(
     viewModel: VideoLibraryViewModel = hiltViewModel(),
     onVideoClicked: (Long) -> Unit = {},
+    isActive: Boolean = true,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
+
+    // Refresh from source when this tab regains focus (skip the initial composition,
+    // which already loaded via the ViewModel init).
+    var firstComposition by remember { mutableStateOf(true) }
+    LaunchedEffect(isActive) {
+        if (firstComposition) {
+            firstComposition = false
+            return@LaunchedEffect
+        }
+        if (isActive) viewModel.onTabFocused()
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         HzPlayerSearchableScaffold(

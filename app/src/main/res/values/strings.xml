@@ -327,6 +327,10 @@
 
     <!-- Subtitle browser -->
     <string name="items_count">%1$d items</string>
+    <string name="dir_summary">%1$d folders, %2$d files</string>
+    <string name="dir_summary_media">%1$d folders, %2$d media files</string>
+    <string name="folder_badge">%1$d folders, %2$d files</string>
+    <string name="folder_badge_media">%1$d folders, %2$d media files</string>
     <string name="internal_storage">Internal Storage</string>
     <string name="server_name_format">%1$s Server (%2$s)</string>
 

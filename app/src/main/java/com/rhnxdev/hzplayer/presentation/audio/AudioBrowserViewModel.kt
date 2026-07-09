@@ -37,12 +37,16 @@ class AudioBrowserViewModel @Inject constructor(
     /** Cached min song duration for non-coroutine reads. */
     private var cachedMinSecs: Int = 0
 
+    /** Active load job so a forced refresh cancels the previous collection. */
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     init {
         loadAll()
     }
 
-    private fun loadAll() {
-        viewModelScope.launch {
+    private fun loadAll(forceRefresh: Boolean = false) {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(isLoadingSongs = true, isLoadingAlbums = true, isLoadingArtists = true)
             }
@@ -52,7 +56,7 @@ class AudioBrowserViewModel @Inject constructor(
 
             // Launch parallel collection for songs, albums, and artists
             val songJob = launch {
-                audioRepository.getAllSongs()
+                audioRepository.getAllSongs(forceRefresh)
                     .catch { /* fallback handled below */ }
                     .collect { songs ->
                         if (songs.isNotEmpty()) {
@@ -76,7 +80,7 @@ class AudioBrowserViewModel @Inject constructor(
             }
 
             val albumJob = launch {
-                audioRepository.getAlbums()
+                audioRepository.getAlbums(forceRefresh)
                     .catch { /* fallback handled below */ }
                     .collect { albums ->
                         if (albums.isNotEmpty()) {
@@ -86,7 +90,7 @@ class AudioBrowserViewModel @Inject constructor(
             }
 
             val artistJob = launch {
-                audioRepository.getArtists()
+                audioRepository.getArtists(forceRefresh)
                     .catch { /* fallback handled below */ }
                     .collect { artists ->
                         if (artists.isNotEmpty()) {
@@ -107,6 +111,11 @@ class AudioBrowserViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** Called when this tab regains focus — refresh from source in the background. */
+    fun onTabFocused() {
+        loadAll(forceRefresh = true)
     }
 
     private fun applyPreviewFallback() {
@@ -180,6 +189,6 @@ class AudioBrowserViewModel @Inject constructor(
     }
 
     fun onRefresh() {
-        loadAll()
+        loadAll(forceRefresh = true)
     }
 }

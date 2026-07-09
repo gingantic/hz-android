@@ -52,7 +52,7 @@ class SmbBrowserClient(
                         path = filePath,
                         isDirectory = isDir,
                         fileSize = if (!isDir) file.length() else 0,
-                        childCount = 0,
+                        childCount = -1,
                         dateModified = file.lastModified(),
                         mimeType = if (!isDir) guessMimeType(name) else null,
                     )

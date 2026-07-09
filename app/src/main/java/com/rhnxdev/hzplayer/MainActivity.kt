@@ -335,7 +335,7 @@ fun HzPlayerApp(
                     CompositionLocalProvider(LocalViewConfiguration provides customViewConfig) {
                         HorizontalPager(
                             state = pagerState,
-                            beyondViewportPageCount = 0,
+                            beyondViewportPageCount = 1,
                             userScrollEnabled = false,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -344,12 +344,14 @@ fun HzPlayerApp(
                         ) { page ->
                             when (page) {
                                 0 -> VideoLibraryScreen(
+                                    isActive = pagerState.currentPage == page,
                                     onVideoClicked = { videoId ->
                                         playerViewModel.onVideoStarted()
                                         navController.navigate("video_player/$videoId")
                                     },
                                 )
                                 1 -> AudioBrowserScreen(
+                                    isActive = pagerState.currentPage == page,
                                     onSongClicked = { audio, playlist ->
                                         playerViewModel.playAudioPlaylist(playlist, playlist.indexOf(audio))
                                         navController.navigate(NavRoutes.AUDIO_PLAYER)

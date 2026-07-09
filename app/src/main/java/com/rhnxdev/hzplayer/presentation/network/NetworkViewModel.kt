@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 @HiltViewModel
@@ -35,6 +37,9 @@ class NetworkViewModel @Inject constructor(
     val uiState: StateFlow<NetworkUiState> = _uiState.asStateFlow()
 
     private val dirCache = DirectoryLruCache<RemoteFileItem>()
+
+    /** Serializes per-folder child-count updates so concurrent refreshes don't clobber each other. */
+    private val countMutex = kotlinx.coroutines.sync.Mutex()
 
     private val sortKey = "network_browser"
 
@@ -292,13 +297,32 @@ class NetworkViewModel @Inject constructor(
                     updateRemoteLayer(layerIndex) {
                         it.copy(items = sorted, isEmpty = items.isEmpty(), isLoading = false)
                     }
-                    // Enrich children in background if there are directories
+                    // Count children per folder on one shared connection. Each folder's
+                    // badge updates as soon as its count is ready — list already shown,
+                    // no waiting on siblings. Badge hidden (childCount = -1) until set.
                     if (items.any { it.isDirectory }) {
                         launch {
-                            val enriched = remoteBrowseRepository.enrichDirectory(server, items)
-                            dirCache.put(path, enriched)
-                            updateRemoteLayer(layerIndex) {
-                                it.copy(items = enriched)
+                            remoteBrowseRepository.enrichDirectory(server, items) { folderPath, counts ->
+                                countMutex.withLock {
+                                    dirCache.get(path)?.let { cached ->
+                                        dirCache.put(path, cached.map {
+                                            if (it.path == folderPath) it.copy(
+                                                subfolderCount = counts.folders,
+                                                fileCount = counts.files,
+                                                mediaCount = counts.media,
+                                            ) else it
+                                        })
+                                    }
+                                    updateRemoteLayer(layerIndex) { layer ->
+                                        layer.copy(items = layer.items.map {
+                                            if (it.path == folderPath) it.copy(
+                                                subfolderCount = counts.folders,
+                                                fileCount = counts.files,
+                                                mediaCount = counts.media,
+                                            ) else it
+                                        })
+                                    }
+                                }
                             }
                         }
                     }

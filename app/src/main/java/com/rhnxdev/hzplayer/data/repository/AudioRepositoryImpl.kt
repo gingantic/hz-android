@@ -26,10 +26,22 @@ class AudioRepositoryImpl @Inject constructor(
     private val mediaScanner: MediaScanner,
 ) : AudioRepository {
 
-    override fun getAllSongs(): Flow<List<AudioItem>> = flow {
+    // In-memory caches so re-entering a tab skips the MediaStore re-scan.
+    private var cachedSongs: List<AudioItem>? = null
+    private var cachedAlbums: List<Album>? = null
+    private var cachedArtists: List<Artist>? = null
+
+    override fun getAllSongs(forceRefresh: Boolean): Flow<List<AudioItem>> = flow {
+        val memCache = cachedSongs
+        if (memCache != null && !forceRefresh) {
+            emit(memCache)
+            return@flow
+        }
         val cached = mediaDao.getAllAudio().first()
         if (cached.isNotEmpty()) {
-            emit(cached.map { it.toAudioItem() })
+            val list = cached.map { it.toAudioItem() }
+            cachedSongs = list
+            emit(list)
         } else if (BuildConfig.DEBUG) {
             // Show preview instantly — debug only
             emit(PreviewMedia.songs)
@@ -40,33 +52,56 @@ class AudioRepositoryImpl @Inject constructor(
             if (scanned.isNotEmpty()) {
                 mediaDao.deleteAudio()
                 mediaDao.insertAll(scanned)
-                emit(scanned.map { it.toAudioItem() })
+                val list = scanned.map { it.toAudioItem() }
+                cachedSongs = list
+                emit(list)
             }
         } catch (_: Exception) { /* preview already emitted */ }
     }.flowOn(Dispatchers.IO)
 
-    override fun getAlbums(): Flow<List<Album>> = flow {
+    override fun getAlbums(forceRefresh: Boolean): Flow<List<Album>> = flow {
+        val memCache = cachedAlbums
+        if (memCache != null && !forceRefresh) {
+            emit(memCache)
+            return@flow
+        }
         val cached = mediaDao.getAlbums().first()
         if (cached.isNotEmpty()) {
             val albums = cached.map { projection ->
                 val count = mediaDao.getSongsByAlbum(projection.album).first().size
                 projection.toAlbum(count)
             }
+            cachedAlbums = albums
             emit(albums)
             return@flow
         }
         // Preview fallback — debug only; will be replaced when songs are scanned
-        if (BuildConfig.DEBUG) emit(PreviewMedia.albums)
+        if (BuildConfig.DEBUG) {
+            val albums = PreviewMedia.albums
+            cachedAlbums = albums
+            emit(albums)
+        }
     }.flowOn(Dispatchers.IO)
 
-    override fun getArtists(): Flow<List<Artist>> = flow {
+    override fun getArtists(forceRefresh: Boolean): Flow<List<Artist>> = flow {
+        val memCache = cachedArtists
+        if (memCache != null && !forceRefresh) {
+            emit(memCache)
+            return@flow
+        }
         val cached = mediaDao.getArtists().first()
         if (cached.isNotEmpty()) {
-            emit(cached.map { it.toArtist() })
+            val artists = cached.map { it.toArtist() }
+            cachedArtists = artists
+            emit(artists)
             return@flow
         }
         // Preview fallback — debug only
-        if (BuildConfig.DEBUG) emit(PreviewMedia.artists)
+        if (BuildConfig.DEBUG) {
+            val artists = PreviewMedia.artists
+            cachedArtists = artists
+            emit(artists)
+        }
     }.flowOn(Dispatchers.IO)
 
     override fun getSongsByAlbum(albumId: Long): Flow<List<AudioItem>> {

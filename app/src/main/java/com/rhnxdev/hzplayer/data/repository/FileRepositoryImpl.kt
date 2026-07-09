@@ -4,6 +4,8 @@ import android.content.ContentResolver
 import android.os.Environment
 import android.provider.MediaStore
 import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.isAudioExtension
+import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.repository.FileRepository
 import kotlinx.coroutines.Dispatchers
@@ -48,19 +50,28 @@ class FileRepositoryImpl @Inject constructor(
                         f.lastModified()
                     }
 
-                    FolderItem(
-                        id = f.hashCode().toLong(),
-                        name = f.name,
-                        path = f.absolutePath,
-                        isDirectory = f.isDirectory,
-                        fileSize = if (f.isFile) f.length() else 0,
-                        childCount = if (f.isDirectory) {
-                            try { f.listFiles()?.size ?: 0 } catch (e: Exception) { 0 }
-                        } else 0,
-                        dateModified = f.lastModified(),
-                        mimeType = if (f.isFile) guessMimeType(f.name) else null,
-                        dateAdded = creationTime / 1000L,
-                    )
+                        val children = if (f.isDirectory) {
+                            try { f.listFiles() } catch (e: Exception) { null }
+                        } else null
+                        val childFolders = children?.count { it.isDirectory } ?: 0
+                        val childFiles = (children?.size ?: 0) - childFolders
+                        val childMedia = children?.count {
+                            !it.isDirectory && (isVideoExtension(it.name) || isAudioExtension(it.name))
+                        } ?: 0
+                        FolderItem(
+                            id = f.hashCode().toLong(),
+                            name = f.name,
+                            path = f.absolutePath,
+                            isDirectory = f.isDirectory,
+                            fileSize = if (f.isFile) f.length() else 0,
+                            childCount = children?.size ?: 0,
+                            subfolderCount = childFolders,
+                            fileCount = childFiles,
+                            mediaCount = childMedia,
+                            dateModified = f.lastModified(),
+                            mimeType = if (f.isFile) guessMimeType(f.name) else null,
+                            dateAdded = creationTime / 1000L,
+                        )
                 }.sortedWith(
                     compareByDescending<FolderItem> { it.isDirectory }
                         .thenBy { it.name.lowercase() }
@@ -73,6 +84,12 @@ class FileRepositoryImpl @Inject constructor(
 
         val internalStorage = Environment.getExternalStorageDirectory()
         if (internalStorage.exists()) {
+            val children = try { internalStorage.listFiles() } catch (e: Exception) { null }
+            val folders = children?.count { it.isDirectory } ?: 0
+            val files = (children?.size ?: 0) - folders
+            val media = children?.count {
+                !it.isDirectory && (isVideoExtension(it.name) || isAudioExtension(it.name))
+            } ?: 0
             roots.add(
                 FolderItem(
                     id = 0,
@@ -81,9 +98,10 @@ class FileRepositoryImpl @Inject constructor(
                     isDirectory = true,
                     freeSpace = internalStorage.freeSpace,
                     totalSpace = internalStorage.totalSpace,
-                    childCount = try {
-                        internalStorage.listFiles()?.size ?: 0
-                    } catch (e: Exception) { 0 },
+                    childCount = children?.size ?: 0,
+                    subfolderCount = folders,
+                    fileCount = files,
+                    mediaCount = media,
                 )
             )
         }
@@ -106,6 +124,12 @@ class FileRepositoryImpl @Inject constructor(
                     file.totalSpace > 1_000_000_000L -> "SD Card"
                     else -> "Storage ${index + 1}"
                 }
+                val children = try { file.listFiles() } catch (e: Exception) { null }
+                val folders = children?.count { it.isDirectory } ?: 0
+                val files = (children?.size ?: 0) - folders
+                val media = children?.count {
+                    !it.isDirectory && (isVideoExtension(it.name) || isAudioExtension(it.name))
+                } ?: 0
                 roots.add(
                     FolderItem(
                         id = (100 + index).toLong(),
@@ -114,9 +138,10 @@ class FileRepositoryImpl @Inject constructor(
                         isDirectory = true,
                         freeSpace = file.freeSpace,
                         totalSpace = file.totalSpace,
-                        childCount = try {
-                            file.listFiles()?.size ?: 0
-                        } catch (e: Exception) { 0 },
+                        childCount = children?.size ?: 0,
+                        subfolderCount = folders,
+                        fileCount = files,
+                        mediaCount = media,
                     )
                 )
             }

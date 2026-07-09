@@ -67,7 +67,7 @@ class VideoLibraryViewModel @Inject constructor(
         observePreferences()
     }
 
-    private fun loadVideos() {
+    private fun loadVideos(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
 
@@ -76,7 +76,7 @@ class VideoLibraryViewModel @Inject constructor(
                 val sortType = userPreferencesRepository.getSortType("video_library").first()
 
                 // Try real data from MediaStore via repository
-                mediaRepository.getAllVideos(sortType)
+                mediaRepository.getAllVideos(sortType, forceRefresh)
                     .catch { e ->
                         // If repository fails, only fall back to fictional preview data
                         // in debug builds; in release, show an empty library + real error.
@@ -224,6 +224,11 @@ class VideoLibraryViewModel @Inject constructor(
 
     fun onRefresh() {
         loadVideos()
+    }
+
+    /** Called when this tab regains focus — refresh from source without blocking the cached view. */
+    fun onTabFocused() {
+        loadVideos(forceRefresh = true)
     }
 
     fun onVideoClicked(video: VideoItem) {

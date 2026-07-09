@@ -7,9 +7,12 @@ import com.rhnxdev.hzplayer.data.datasource.network.RemoteBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.SftpBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.SmbBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.WebDavBrowserClient
+import com.rhnxdev.hzplayer.domain.model.FolderCounts
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
+import com.rhnxdev.hzplayer.core.util.isAudioExtension
+import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.domain.repository.RemoteBrowseRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,18 +40,33 @@ class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository 
     override suspend fun enrichDirectory(
         server: ServerConfig,
         items: List<RemoteFileItem>,
-    ): List<RemoteFileItem> = withContext(Dispatchers.IO) {
-        val client = createClient(server)
-        client.connect()
-        try {
-            items.map { item ->
-                if (item.isDirectory) {
-                    val count = client.countChildren(item.path)
-                    item.copy(childCount = count)
-                } else item
+        onCount: suspend (path: String, counts: FolderCounts) -> Unit,
+    ) {
+        withContext(Dispatchers.IO) {
+            val client = createClient(server)
+            runCatching {
+                client.connect()
+                // One shared connection: list each folder's children once and classify
+                // them (subfolders / files / media) so the badge can show the breakdown.
+                // Report each folder's result as soon as it's ready.
+                items.forEach { item ->
+                    if (item.isDirectory) {
+                        val counts = runCatching {
+                            val children = client.listDirectory(item.path)
+                            val folders = children.count { it.isDirectory }
+                            val files = children.size - folders
+                            val media = children.count {
+                                !it.isDirectory &&
+                                    (isVideoExtension(it.name) || isAudioExtension(it.name))
+                            }
+                            FolderCounts(folders = folders, files = files, media = media)
+                        }.getOrDefault(FolderCounts())
+                        onCount(item.path, counts)
+                    }
+                }
+            }.also {
+                runCatching { client.disconnect() }
             }
-        } finally {
-            runCatching { client.disconnect() }
         }
     }
 
