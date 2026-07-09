@@ -21,7 +21,7 @@ data class RemoteDirectoryLayer(
 data class NetworkUiState(
     val mode: NetworkScreenMode = NetworkScreenMode.HOME,
     val streamUrl: String = "",
-    val streamUrlError: String? = null,
+    val isStreamUrlError: Boolean = false,
     val savedServers: List<ServerConfig> = emptyList(),
     val streamHistory: List<StreamHistoryItem> = emptyList(),
     val isLoading: Boolean = false,

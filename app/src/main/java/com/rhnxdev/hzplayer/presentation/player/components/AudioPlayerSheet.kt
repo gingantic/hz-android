@@ -33,11 +33,13 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
@@ -115,7 +117,7 @@ fun AudioPlayerSheet(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = title ?: "No track",
+                        text = title ?: stringResource(R.string.no_track),
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
                         ),
@@ -125,7 +127,7 @@ fun AudioPlayerSheet(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = artist ?: "Unknown artist",
+                        text = artist ?: stringResource(R.string.unknown_artist),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -156,7 +158,7 @@ fun AudioPlayerSheet(
                     IconButton(onClick = onToggleShuffle) {
                         Icon(
                             imageVector = Icons.Default.Shuffle,
-                            contentDescription = "Shuffle",
+                            contentDescription = stringResource(R.string.shuffle),
                             tint = if (uiState.shuffleMode) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp),
@@ -166,7 +168,7 @@ fun AudioPlayerSheet(
                     IconButton(onClick = onSkipPrevious) {
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
-                            contentDescription = "Previous",
+                            contentDescription = stringResource(R.string.previous),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(32.dp),
                         )
@@ -185,7 +187,7 @@ fun AudioPlayerSheet(
                     ) {
                         Icon(
                             imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                            contentDescription = stringResource(if (uiState.isPlaying) R.string.pause else R.string.play),
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(32.dp),
                         )
@@ -194,7 +196,7 @@ fun AudioPlayerSheet(
                     IconButton(onClick = onSkipNext) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
+                            contentDescription = stringResource(R.string.next),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(32.dp),
                         )
@@ -206,7 +208,7 @@ fun AudioPlayerSheet(
                                 RepeatMode.ONE -> Icons.Default.RepeatOne
                                 else -> Icons.Default.Repeat
                             },
-                            contentDescription = "Repeat",
+                            contentDescription = stringResource(R.string.repeat),
                             tint = if (uiState.repeatMode != RepeatMode.NONE) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp),
@@ -260,7 +262,7 @@ fun AudioPlayerSheet(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = title ?: "No track",
+                    text = title ?: stringResource(R.string.no_track),
                     style = MaterialTheme.typography.headlineSmall.copy(
                         fontWeight = FontWeight.Bold,
                         lineHeight = 28.sp,
@@ -271,7 +273,7 @@ fun AudioPlayerSheet(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = artist ?: "Unknown artist",
+                    text = artist ?: stringResource(R.string.unknown_artist),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -302,7 +304,7 @@ fun AudioPlayerSheet(
                 IconButton(onClick = onSkipPrevious) {
                     Icon(
                         imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = "Previous",
+                        contentDescription = stringResource(R.string.previous),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(32.dp),
                     )
@@ -321,7 +323,7 @@ fun AudioPlayerSheet(
                 ) {
                     Icon(
                         imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                        contentDescription = stringResource(if (uiState.isPlaying) R.string.pause else R.string.play),
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(36.dp),
                     )
@@ -330,7 +332,7 @@ fun AudioPlayerSheet(
                 IconButton(onClick = onSkipNext) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
-                        contentDescription = "Next",
+                        contentDescription = stringResource(R.string.next),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(32.dp),
                     )
@@ -347,7 +349,7 @@ fun AudioPlayerSheet(
                 IconButton(onClick = onToggleShuffle) {
                     Icon(
                         imageVector = Icons.Default.Shuffle,
-                        contentDescription = "Shuffle",
+                        contentDescription = stringResource(R.string.shuffle),
                         tint = if (uiState.shuffleMode) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp),
@@ -363,7 +365,7 @@ fun AudioPlayerSheet(
                             RepeatMode.ONE -> Icons.Default.RepeatOne
                             else -> Icons.Default.Repeat
                         },
-                        contentDescription = "Repeat",
+                        contentDescription = stringResource(R.string.repeat),
                         tint = if (uiState.repeatMode != RepeatMode.NONE) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp),

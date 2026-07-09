@@ -10,6 +10,7 @@ import com.rhnxdev.hzplayer.domain.repository.AudioRepository
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
+import com.rhnxdev.hzplayer.BuildConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -95,11 +96,14 @@ class AudioBrowserViewModel @Inject constructor(
             }
 
             // If after 2s any collection is still loading (edge-case fallback), force preview
-            launch {
-                kotlinx.coroutines.delay(2_000)
-                val state = _uiState.value
-                if (state.isLoadingSongs || state.isLoadingAlbums || state.isLoadingArtists) {
-                    applyPreviewFallback()
+            // Debug only: release builds show empty states instead of fake data.
+            if (BuildConfig.DEBUG) {
+                launch {
+                    kotlinx.coroutines.delay(2_000)
+                    val state = _uiState.value
+                    if (state.isLoadingSongs || state.isLoadingAlbums || state.isLoadingArtists) {
+                        applyPreviewFallback()
+                    }
                 }
             }
         }

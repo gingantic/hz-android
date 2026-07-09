@@ -26,6 +26,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
@@ -74,7 +76,7 @@ fun ServerCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${server.protocol.name} • ${server.host}",
+                        text = stringResource(R.string.server_summary, server.protocol.name, server.host),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -83,10 +85,10 @@ fun ServerCard(
                 }
                 if (showMenu) {
                     IconButton(onClick = { showMenuExpanded = true }, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Options", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.options_cd), modifier = Modifier.size(18.dp))
                         DropdownMenu(expanded = showMenuExpanded, onDismissRequest = { showMenuExpanded = false }) {
-                            DropdownMenuItem(text = { Text("Edit") }, onClick = { showMenuExpanded = false; onEdit() })
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = { showMenuExpanded = false; onDelete() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.edit)) }, onClick = { showMenuExpanded = false; onEdit() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, onClick = { showMenuExpanded = false; onDelete() })
                         }
                     }
                 }
@@ -112,24 +114,24 @@ fun ServerCard(
                             onClick = { showMenuExpanded = true },
                             modifier = Modifier.size(24.dp),
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.MoreVert,
-                                contentDescription = "Options",
-                                modifier = Modifier.size(18.dp),
-                            )
-                            DropdownMenu(
-                                expanded = showMenuExpanded,
-                                onDismissRequest = { showMenuExpanded = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Edit") },
-                                    onClick = { showMenuExpanded = false; onEdit() },
+                                Icon(
+                                    imageVector = Icons.Filled.MoreVert,
+                                    contentDescription = stringResource(R.string.options_cd),
+                                    modifier = Modifier.size(18.dp),
                                 )
-                                DropdownMenuItem(
-                                    text = { Text("Delete") },
-                                    onClick = { showMenuExpanded = false; onDelete() },
-                                )
-                            }
+                                DropdownMenu(
+                                    expanded = showMenuExpanded,
+                                    onDismissRequest = { showMenuExpanded = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.edit)) },
+                                        onClick = { showMenuExpanded = false; onEdit() },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.delete)) },
+                                        onClick = { showMenuExpanded = false; onDelete() },
+                                    )
+                                }
                         }
                     }
                 }
@@ -145,7 +147,7 @@ fun ServerCard(
                 )
 
                 Text(
-                    text = "${server.protocol.name} • ${server.host}",
+                    text = stringResource(R.string.server_summary, server.protocol.name, server.host),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

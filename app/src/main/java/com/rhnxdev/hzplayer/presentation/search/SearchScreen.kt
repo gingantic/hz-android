@@ -24,6 +24,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -66,14 +68,14 @@ fun SearchScreen(
                 .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
             placeholder = {
                 Text(
-                    text = "Search media...",
+                    text = stringResource(R.string.search_placeholder),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
+                    contentDescription = stringResource(R.string.search_cd),
                 )
             },
             trailingIcon = {
@@ -81,7 +83,7 @@ fun SearchScreen(
                     IconButton(onClick = viewModel::onClearQuery) {
                         Icon(
                             imageVector = Icons.Default.Clear,
-                            contentDescription = "Clear",
+                            contentDescription = stringResource(R.string.clear_cd),
                         )
                     }
                 }
@@ -107,8 +109,8 @@ fun SearchScreen(
             uiState.hasSearched && uiState.videoResults.isEmpty() && uiState.audioResults.isEmpty() -> {
                 MediaEmptyState(
                     icon = Icons.Default.Search,
-                    title = "No results",
-                    subtitle = "No media found for \"${uiState.query}\".",
+                    title = stringResource(R.string.no_results_title),
+                    subtitle = stringResource(R.string.search_empty, uiState.query),
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -128,8 +130,8 @@ fun SearchScreen(
             else -> {
                 MediaEmptyState(
                     icon = Icons.Default.Search,
-                    title = "Search your media",
-                    subtitle = "Find videos and music across your device.",
+                    title = stringResource(R.string.search_empty_title),
+                    subtitle = stringResource(R.string.search_empty_subtitle),
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -153,7 +155,7 @@ private fun SearchResults(
         if (uiState.videoResults.isNotEmpty()) {
             item {
                 Text(
-                    text = "Videos (${uiState.videoResults.size})",
+                    text = stringResource(R.string.search_videos_count, uiState.videoResults.size),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(
@@ -192,7 +194,7 @@ private fun SearchResults(
         if (uiState.audioResults.isNotEmpty()) {
             item {
                 Text(
-                    text = "Music (${uiState.audioResults.size})",
+                    text = stringResource(R.string.search_music_count, uiState.audioResults.size),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(

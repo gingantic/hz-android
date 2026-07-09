@@ -1,7 +1,7 @@
 # Hz Player — Code Cleanup, Bug & Error-Text Plan
 
 > Status: DONE. Items #1–#21 + #22 verified. #21 cross-file refactors: dialog extraction,
-> MediaType move, thumbnail color tokens DONE; i18n, MainActivity/HzPlayerApp, ConnectionPool
+> MediaType move, thumbnail color tokens DONE; i18n DONE (#27); MainActivity/HzPlayerApp, ConnectionPool
 > split still deferred (heavy cross-file). #6 anonymous-FTP opt-in DONE.
 > Scope: the 70+ modified files across the video player, SMB/WebDAV stack, native
 > thumbnail pipeline, and UI/repos. Findings come from four read-only audit passes
@@ -42,6 +42,7 @@
 | 24 | #21 (MediaType) | DONE | compile | Removed duplicate `MediaType` enum in `core/components/ThumbnailPlaceholder.kt`; all 9 call sites now use `domain/model/MediaType` (identical members). |
 | 25 | #21 (Thumbnail colors) | DONE | compile | `ThumbnailPlaceholder` `Color(0xFF…)` literals → `MaterialTheme.colorScheme.surface`/`surfaceVariant` (theme-aware). |
 | 26 | #21 (Settings dialogs) | DONE | compile | Extracted `ThemeSelectionDialog`, `ColorPickerDialog`, `OpenSubtitlesApiKeyDialog` to `presentation/settings/components/SettingsDialogs.kt`; `SettingsScreen.kt` 718→392 lines. |
+| 27 | #21 (i18n) | DONE | compile + test | Full i18n sweep: ~310 hardcoded strings → `stringResource()` + `strings.xml` across 35+ files. `AppDestination.label` → `labelRes`. `NetworkViewModel.streamUrlError` → boolean flag. `VideoCategory.isRecent` flag. Player controls, dialogs, browser screens, settings, debug overlay all localized. |
 
 ---
 
@@ -454,7 +455,7 @@ and request it at runtime before `ServerDiscoverer.startScan()`.
   for radii and theme tokens for `Color(0xFF…)` literals (never `Spacing.*` as radius).
   ✅ CornerRadii done earlier; `ThumbnailPlaceholder` color literals → theme tokens DONE (#25).
 - All hard-coded UI strings (see U-9/U-12): move to `stringResource()` + `strings.xml`.
-  ⏸ DEFERRED (broad; requires enumerating every literal + `strings.xml` entries).
+  ✅ DONE (#27) — ~310 strings across 35+ files; `AppDestination.labelRes`, `NetworkViewModel` error boolean, `VideoCategory.isRecent` flag. Player controls, dialogs, browser screens, settings, debug overlay all localized. Only ViewModel error strings (5) and format utility functions remain.
 - `FileRepositoryImpl.getStorageRoots()`: delete dead `externalDirs` local. ✅ DONE (#21 safe).
 - `VideoLibraryViewModel`: drop redundant `previewVideos`/`previewRecent` aliases. ✅ DONE (#21 safe).
 - `FolderItem.dateAdded`: document seconds-since-epoch with a `companion const`. ✅ DONE (#21 safe).
@@ -507,7 +508,7 @@ File: `presentation/player/components/SubtitleSearchDialog.kt`.
   their dialogs/overlays is cross-file and risky → left as debt.
 - No `domain/usecase` layer — ViewModels call repositories directly (works, diverges
   from stated pattern).
-- i18n (hard-coded strings) and `MediaType`→`domain` deferred per #21 safe-only scope.
+- i18n (hard-coded strings) DONE (#27). `MediaType`→`domain` DONE (#24).
 
 ---
 
@@ -533,12 +534,13 @@ File: `presentation/player/components/SubtitleSearchDialog.kt`.
 18. #18 Build-script portability
 19. #19 WebDAV/IPv6/clearttext edge cases
 20. #20 Remaining reliability (batch)
-21. #21 Readability & i18n (batch) — dialog extraction, MediaType, colors, log tags, dead code DONE; i18n + MainActivity/ConnectionPool split DEFERRED
+21. #21 Readability & i18n (batch) — dialog extraction, MediaType, colors, log tags, dead code, i18n DONE; MainActivity/ConnectionPool split DEFERRED
 22. #22 Post-scan findings (WebDAV thread-safety + 3 `!!` cleanups)
 23. #6 Anonymous-FTP opt-in
 24. #21 MediaType dedupe
 25. #21 ThumbnailPlaceholder color tokens
 26. #21 Settings dialog extraction
+27. #21 i18n sweep (all hardcoded UI strings → `stringResource()` + `strings.xml`)
 
 Each numbered step is implemented, then verified (build `./gradlew assembleDebug`
 green; unit tests for the mapper/cache/path items; manual smoke for player + SMB),

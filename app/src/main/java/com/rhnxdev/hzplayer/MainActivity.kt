@@ -19,6 +19,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +51,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -289,10 +292,10 @@ fun HzPlayerApp(
                         icon = {
                             Icon(
                                 dest.icon,
-                                contentDescription = dest.label,
+                                contentDescription = stringResource(dest.labelRes),
                             )
                         },
-                        label = { Text(dest.label) },
+                        label = { Text(stringResource(dest.labelRes)) },
                         selected = pagerState.currentPage == index,
                         onClick = {
                             // Instant tab switch — no animation for snappy feel on weak SOCs
@@ -312,14 +315,14 @@ fun HzPlayerApp(
                 navigationDrawerContainerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
                     .navigationBarsPadding()
             ) {
                 // Main content area
-                Box(modifier = Modifier.weight(1f)) {
+                Box(modifier = Modifier.fillMaxSize()) {
                     val originalViewConfig = LocalViewConfiguration.current
                     val density = LocalDensity.current
                     val customViewConfig = remember(originalViewConfig, density) {
@@ -404,11 +407,17 @@ fun HzPlayerApp(
                 }
 
                 // Mini player above bottom nav (scoped to its own composable — position updates don't recompose full tree)
-                MiniPlayerSection(
-                    playerViewModel = playerViewModel,
-                    isFullScreen = isFullScreen,
-                    onNavigateToPlayer = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                ) {
+                    MiniPlayerSection(
+                        playerViewModel = playerViewModel,
+                        isFullScreen = isFullScreen,
+                        onNavigateToPlayer = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
+                    )
+                }
             }
         }
 

@@ -58,11 +58,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.BreadcrumbBar
 import com.rhnxdev.hzplayer.core.components.BreadcrumbItem
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
@@ -133,7 +135,7 @@ fun SubtitleFileBrowserBottomSheet(
                         IconButton(onClick = { viewModel.onNavigateUp() }) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Navigate up",
+                                contentDescription = stringResource(R.string.navigate_up),
                                 tint = Color.White,
                                 modifier = Modifier.size(22.dp),
                             )
@@ -151,7 +153,7 @@ fun SubtitleFileBrowserBottomSheet(
                         text = if (isBrowsing) {
                             uiState.currentPath.substringAfterLast('/').ifEmpty { uiState.currentPath }
                         } else {
-                            "Browse Subtitles"
+                            stringResource(R.string.browse_subtitles)
                         },
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
@@ -173,14 +175,14 @@ fun SubtitleFileBrowserBottomSheet(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Storages",
+                                text = stringResource(R.string.storages),
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.labelLarge,
                             )
                         }
                     }
                     TextButton(onClick = onDismiss) {
-                        Text(text = "Close", color = Color.White.copy(alpha = 0.7f))
+                        Text(text = stringResource(R.string.close), color = Color.White.copy(alpha = 0.7f))
                     }
                 }
             }
@@ -229,7 +231,7 @@ fun SubtitleFileBrowserBottomSheet(
                             contentAlignment = Alignment.Center
                         ) {
                             MediaErrorState(
-                                title = "Could not load files",
+                                title = stringResource(R.string.could_not_load_files),
                                 subtitle = uiState.error ?: "",
                                 onRetry = {
                                     if (uiState.mode == SubtitleBrowserMode.BROWSING_LOCAL) {
@@ -304,7 +306,7 @@ private fun RootsContent(
     ) {
         item {
             Text(
-                text = "Select storage",
+                text = stringResource(R.string.select_storage),
                 style = MaterialTheme.typography.titleSmall,
                 color = Color.White.copy(alpha = 0.5f),
                 modifier = Modifier.padding(bottom = 4.dp),
@@ -314,7 +316,7 @@ private fun RootsContent(
             val isSdCard = root.name.contains("SD", ignoreCase = true) || root.name.contains("External", ignoreCase = true)
             StorageRootItem(
                 name = root.name,
-                path = "Local Storage",
+                    path = stringResource(R.string.local_storage),
                 icon = if (isSdCard) Icons.Default.SdStorage else Icons.Default.Storage,
                 onClick = { onLocalRootClicked(root) }
             )
@@ -324,7 +326,7 @@ private fun RootsContent(
             item {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Network path",
+                    text = stringResource(R.string.network_path),
                     style = MaterialTheme.typography.titleSmall,
                     color = Color.White.copy(alpha = 0.5f),
                     modifier = Modifier.padding(bottom = 4.dp),
@@ -406,8 +408,8 @@ private fun LocalBrowseContent(
         ) {
             MediaEmptyState(
                 icon = Icons.Filled.Folder,
-                title = "No subtitle files found",
-                subtitle = "Folders and subtitles will show up here.",
+                title = stringResource(R.string.no_subtitle_files),
+                subtitle = stringResource(R.string.subtitles_empty_hint),
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -423,7 +425,7 @@ private fun LocalBrowseContent(
             items(items, key = { it.id }) { item ->
                 FileBrowserItem(
                     name = item.name,
-                    subtitle = if (item.isDirectory) "${item.childCount} items" else formatFileSize(item.fileSize),
+                    subtitle = if (item.isDirectory) stringResource(R.string.items_count, item.childCount) else formatFileSize(item.fileSize),
                     isDirectory = item.isDirectory,
                     onClick = {
                         if (item.isDirectory) onFolderClicked(item)
@@ -450,8 +452,8 @@ private fun RemoteBrowseContent(
         ) {
             MediaEmptyState(
                 icon = Icons.Filled.Folder,
-                title = "No subtitle files found",
-                subtitle = "Folders and subtitles will show up here.",
+                title = stringResource(R.string.no_subtitle_files),
+                subtitle = stringResource(R.string.subtitles_empty_hint),
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -467,7 +469,7 @@ private fun RemoteBrowseContent(
             items(items, key = { it.path }) { item ->
                 FileBrowserItem(
                     name = item.name,
-                    subtitle = if (item.isDirectory) "Folder" else formatFileSize(item.fileSize),
+                    subtitle = if (item.isDirectory) stringResource(R.string.folder_label) else formatFileSize(item.fileSize),
                     isDirectory = item.isDirectory,
                     onClick = {
                         if (item.isDirectory) onFolderClicked(item)

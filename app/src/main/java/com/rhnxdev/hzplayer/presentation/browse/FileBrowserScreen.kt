@@ -43,6 +43,8 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.res.stringResource
+import com.rhnxdev.hzplayer.R
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -111,18 +113,19 @@ fun FileBrowserScreen(
                 androidx.compose.material3.IconButton(onClick = { showSortMenu = true }) {
                     androidx.compose.material3.Icon(
                         imageVector = Icons.AutoMirrored.Filled.Sort,
-                        contentDescription = "Sort",
+                        contentDescription = stringResource(R.string.browse_sort_cd),
                     )
                 }
                 androidx.compose.material3.DropdownMenu(
                     expanded = showSortMenu,
                     onDismissRequest = { showSortMenu = false },
                 ) {
-                    listOf(
-                        SortType.TITLE to "Sort by Name",
-                        SortType.DATE_MODIFIED to "Sort by Date",
-                        SortType.FILE_SIZE to "Sort by Size",
-                    ).forEach { (type, label) ->
+                    val sortOptions = listOf(
+                        SortType.TITLE to stringResource(R.string.sort_by_name),
+                        SortType.DATE_MODIFIED to stringResource(R.string.sort_by_date),
+                        SortType.FILE_SIZE to stringResource(R.string.sort_by_size),
+                    )
+                    sortOptions.forEach { (type, label) ->
                         androidx.compose.material3.DropdownMenuItem(
                             text = { androidx.compose.material3.Text(label) },
                             onClick = {
@@ -188,7 +191,7 @@ fun FileBrowserScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Play All",
+                                contentDescription = stringResource(R.string.play_all_cd),
                             )
                         }
                     }
@@ -225,12 +228,12 @@ private fun StorageRootsContent(
                     modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                     contentAlignment = Alignment.Center
                 ) {
-                    MediaEmptyState(
-                        icon = Icons.Filled.Storage,
-                        title = "No storage found",
-                        subtitle = "Could not detect any storage volumes.",
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                        MediaEmptyState(
+                            icon = Icons.Filled.Storage,
+                            title = stringResource(R.string.storage_empty_title),
+                            subtitle = stringResource(R.string.storage_empty_subtitle),
+                            modifier = Modifier.fillMaxSize(),
+                        )
                 }
             }
             else -> {
@@ -241,7 +244,7 @@ private fun StorageRootsContent(
                     // Storage section
                     item {
                         Text(
-                            text = "Select storage",
+                            text = stringResource(R.string.select_storage),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = Spacing.sm),
@@ -252,7 +255,7 @@ private fun StorageRootsContent(
                         val totalStr = com.rhnxdev.hzplayer.core.util.formatFileSize(root.totalSpace)
                         StorageRootCard(
                             name = root.name,
-                            storageInfo = "${freeStr} free of ${totalStr}",
+                            storageInfo = stringResource(R.string.storage_info, freeStr, totalStr),
                             itemCount = root.childCount,
                             onClick = { onRootClicked(root) },
                         )
@@ -265,7 +268,7 @@ private fun StorageRootsContent(
                         }
                         item {
                             Text(
-                                text = "Favorites",
+                                text = stringResource(R.string.favorites),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(bottom = Spacing.sm),
@@ -322,7 +325,7 @@ private fun FavoriteShortcutCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "$itemCount items",
+                    text = stringResource(R.string.item_count, itemCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
@@ -380,7 +383,7 @@ private fun StorageRootCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "$itemCount items",
+                    text = stringResource(R.string.item_count, itemCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )

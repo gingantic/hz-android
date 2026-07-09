@@ -41,7 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 
 private val colorOptions = listOf(
@@ -88,7 +90,7 @@ fun SubtitleStylingDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Subtitle Style",
+                    text = stringResource(R.string.subtitle_style),
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -100,7 +102,7 @@ fun SubtitleStylingDialog(
 
             // Font size
             Text(
-                text = "Size  ${fontSize.toInt()}sp",
+                text = stringResource(R.string.size_label, fontSize.toInt()),
                 style = MaterialTheme.typography.bodyMedium.copy(color = Color.White.copy(alpha = 0.8f)),
             )
             Slider(
@@ -117,7 +119,7 @@ fun SubtitleStylingDialog(
 
             // Color
             Text(
-                text = "Color",
+                text = stringResource(R.string.color_label),
                 style = MaterialTheme.typography.bodyMedium.copy(
                     color = Color.White.copy(alpha = 0.8f),
                     fontWeight = FontWeight.Medium,
@@ -160,14 +162,14 @@ fun SubtitleStylingDialog(
 
             // Background
             Text(
-                text = "Background",
+                text = stringResource(R.string.background_label),
                 style = MaterialTheme.typography.bodyMedium.copy(
                     color = Color.White.copy(alpha = 0.8f),
                     fontWeight = FontWeight.Medium,
                 ),
             )
             Spacer(modifier = Modifier.height(4.dp))
-            listOf("None" to 0, "Semi" to 1, "Full" to 2).forEach { (label, value) ->
+            listOf(stringResource(R.string.background_none) to 0, stringResource(R.string.background_semi) to 1, stringResource(R.string.background_full) to 2).forEach { (label, value) ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -205,7 +207,7 @@ fun SubtitleStylingDialog(
                     onStyleChange(SubtitleStyle.DEFAULT)
                     onDismiss()
                 }) {
-                    Text(text = "Reset", color = Color.Gray)
+                    Text(text = stringResource(R.string.reset), color = Color.Gray)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 TextButton(onClick = {
@@ -218,7 +220,7 @@ fun SubtitleStylingDialog(
                     )
                     onDismiss()
                 }) {
-                    Text(text = "Apply", color = MaterialTheme.colorScheme.primary)
+                    Text(text = stringResource(R.string.apply), color = MaterialTheme.colorScheme.primary)
                 }
             }
         }

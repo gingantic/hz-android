@@ -23,4 +23,5 @@ data class VideoLibraryUiState(
 data class VideoCategory(
     val title: String,
     val videos: List<VideoItem>,
+    val isRecent: Boolean = false,
 )

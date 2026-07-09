@@ -31,7 +31,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.stableNavBarPaddingValues
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -74,7 +76,7 @@ fun SpeedSelectionDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Playback Speed",
+                    text = stringResource(R.string.playback_speed),
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -88,7 +90,7 @@ fun SpeedSelectionDialog(
 
             val displaySpeed = SPEED_PRESETS[sliderIndex.roundToInt()]
             Text(
-                text = "${displaySpeed}x",
+                text = stringResource(R.string.speed_value, displaySpeed),
                 style = MaterialTheme.typography.headlineLarge.copy(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -126,7 +128,7 @@ fun SpeedSelectionDialog(
             ) {
                 SPEED_PRESETS.forEach { speed ->
                     Text(
-                        text = "${speed}x",
+                        text = stringResource(R.string.speed_value, speed),
                         fontSize = 10.sp,
                         color = Color.Gray,
                     )

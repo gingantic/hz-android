@@ -23,6 +23,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,7 @@ import com.rhnxdev.hzplayer.presentation.audio.components.AlbumCard
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 import coil3.compose.SubcomposeAsyncImage
 import androidx.compose.ui.layout.ContentScale
+import com.rhnxdev.hzplayer.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,13 +58,13 @@ fun AudioBrowserScreen(
     val tabs = AudioTab.entries
 
     HzPlayerSearchableScaffold(
-        title = "Music",
+        title = stringResource(R.string.audio_music),
         isSearchActive = isSearchActive,
         searchQuery = searchQuery,
         onSearchToggle = viewModel::onSearchToggle,
         onSearchQueryChanged = viewModel::onSearchQueryChanged,
         onClearSearch = viewModel::onClearSearch,
-        searchPlaceholder = "Search songs...",
+        searchPlaceholder = stringResource(R.string.search_songs),
     ) {
         // Tab row synced directly to ViewModel tab state
         TabRow(
@@ -145,8 +147,8 @@ private fun SongsTab(
         songs.isEmpty() -> {
             MediaEmptyState(
                 icon = Icons.Filled.MusicNote,
-                title = if (searchQuery != null) "No results for \"$searchQuery\"" else "No songs found",
-                subtitle = if (searchQuery != null) "Try a different search term." else "Tap browse to find music on your device.",
+                title = if (searchQuery != null) stringResource(R.string.no_results_for, searchQuery) else stringResource(R.string.no_songs),
+                subtitle = if (searchQuery != null) stringResource(R.string.try_different_search) else stringResource(R.string.tap_browse),
                 modifier = modifier,
             )
         }
@@ -202,8 +204,8 @@ private fun AlbumsTab(
         albums.isEmpty() -> {
             MediaEmptyState(
                 icon = Icons.Filled.MusicNote,
-                title = "No albums found",
-                subtitle = "Albums will appear here once music is scanned.",
+                title = stringResource(R.string.no_albums),
+                subtitle = stringResource(R.string.no_albums_hint),
                 modifier = modifier,
             )
         }
@@ -243,8 +245,8 @@ private fun ArtistsTab(
         artists.isEmpty() -> {
             MediaEmptyState(
                 icon = Icons.Filled.MusicNote,
-                title = "No artists found",
-                subtitle = "Artists will appear here once music is scanned.",
+                title = stringResource(R.string.no_artists),
+                subtitle = stringResource(R.string.no_artists_hint),
                 modifier = modifier,
             )
         }
@@ -257,7 +259,7 @@ private fun ArtistsTab(
                 items(artists, key = { it.id }) { artist ->
                     MediaListItem(
                         title = artist.name,
-                        subtitle = "${artist.albumCount} albums • ${artist.trackCount} tracks",
+                        subtitle = stringResource(R.string.artist_subtitle, artist.albumCount, artist.trackCount),
                         isSquareThumbnail = true,
                         thumbnailContent = {
                             if (artist.albumArtUri != null) {

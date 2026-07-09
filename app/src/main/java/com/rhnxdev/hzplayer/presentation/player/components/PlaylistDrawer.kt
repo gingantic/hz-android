@@ -39,8 +39,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.domain.model.VideoItem
@@ -96,7 +98,7 @@ fun PlaylistDrawer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Playlist (${playlist.size})",
+                        text = stringResource(R.string.playlist_count, playlist.size),
                         style = MaterialTheme.typography.titleSmall,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
@@ -104,7 +106,7 @@ fun PlaylistDrawer(
                     IconButton(onClick = onDismiss) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
+                            contentDescription = stringResource(R.string.close),
                             tint = Color.White.copy(alpha = 0.7f),
                         )
                     }

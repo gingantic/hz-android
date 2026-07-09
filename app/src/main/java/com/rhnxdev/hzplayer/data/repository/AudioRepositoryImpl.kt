@@ -10,6 +10,7 @@ import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.repository.AudioRepository
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
+import com.rhnxdev.hzplayer.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -29,8 +30,8 @@ class AudioRepositoryImpl @Inject constructor(
         val cached = mediaDao.getAllAudio().first()
         if (cached.isNotEmpty()) {
             emit(cached.map { it.toAudioItem() })
-        } else {
-            // Show preview instantly
+        } else if (BuildConfig.DEBUG) {
+            // Show preview instantly — debug only
             emit(PreviewMedia.songs)
         }
 
@@ -54,8 +55,8 @@ class AudioRepositoryImpl @Inject constructor(
             emit(albums)
             return@flow
         }
-        // Preview fallback — will be replaced when songs are scanned
-        emit(PreviewMedia.albums)
+        // Preview fallback — debug only; will be replaced when songs are scanned
+        if (BuildConfig.DEBUG) emit(PreviewMedia.albums)
     }.flowOn(Dispatchers.IO)
 
     override fun getArtists(): Flow<List<Artist>> = flow {
@@ -64,19 +65,19 @@ class AudioRepositoryImpl @Inject constructor(
             emit(cached.map { it.toArtist() })
             return@flow
         }
-        // Preview fallback
-        emit(PreviewMedia.artists)
+        // Preview fallback — debug only
+        if (BuildConfig.DEBUG) emit(PreviewMedia.artists)
     }.flowOn(Dispatchers.IO)
 
     override fun getSongsByAlbum(albumId: Long): Flow<List<AudioItem>> {
-        val album = PreviewMedia.albums.find { it.id == albumId }
+        val album = if (BuildConfig.DEBUG) PreviewMedia.albums.find { it.id == albumId } else null
         return mediaDao.getSongsByAlbum(album?.title ?: "").map { entities ->
             entities.map { it.toAudioItem() }
         }
     }
 
     override fun getSongsByArtist(artistId: Long): Flow<List<AudioItem>> {
-        val artist = PreviewMedia.artists.find { it.id == artistId }
+        val artist = if (BuildConfig.DEBUG) PreviewMedia.artists.find { it.id == artistId } else null
         return mediaDao.getSongsByArtist(artist?.name ?: "").map { entities ->
             entities.map { it.toAudioItem() }
         }

@@ -286,7 +286,7 @@ class VideoLibraryViewModel @Inject constructor(
         val categoriesList = mutableListOf<VideoCategory>()
         
         if (recentVideos.isNotEmpty()) {
-            categoriesList.add(VideoCategory(title = "Recent", videos = recentVideos.take(10)))
+            categoriesList.add(VideoCategory(title = "Recent", videos = recentVideos.take(10), isRecent = true))
         }
         
         val grouped = videos.groupBy { getParentFolderName(it.uri) }

@@ -16,12 +16,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.MainActivity
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
@@ -94,7 +96,7 @@ fun SettingsScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         // Toolbar
-        HzPlayerTopBar(title = "Settings")
+        HzPlayerTopBar(title = stringResource(R.string.settings_title))
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -104,26 +106,26 @@ fun SettingsScreen(
             // Display
             item {
                 SettingsSection(
-                    title = "Display",
+                    title = stringResource(R.string.settings_display),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = "Theme",
+                                title = stringResource(R.string.settings_theme),
                                 subtitle = when (themeMode) {
-                                    ThemeMode.LIGHT -> "Light"
-                                    ThemeMode.DARK -> "Dark"
-                                    ThemeMode.VOID -> "Void"
+                                    ThemeMode.LIGHT -> stringResource(R.string.theme_light)
+                                    ThemeMode.DARK -> stringResource(R.string.theme_dark)
+                                    ThemeMode.VOID -> stringResource(R.string.theme_void)
                                 },
                                 onClick = { showThemeDialog = true },
                             )
                             SettingsItem(
-                                title = "Theme color",
+                                title = stringResource(R.string.settings_theme_color),
                                 subtitle = String.format("#%06X", 0xFFFFFF and appColorArgb),
                                 onClick = { showColorDialog = true },
                             )
                             SettingsToggleItem(
-                                title = "Dynamic colors",
-                                subtitle = "Use system accent color",
+                                title = stringResource(R.string.settings_dynamic_colors),
+                                subtitle = stringResource(R.string.settings_dynamic_colors_sub),
                                 checked = dynamicColors,
                                 onCheckedChange = { settingsViewModel.saveDynamicColors(it) },
                             )
@@ -135,12 +137,12 @@ fun SettingsScreen(
             // Playback Engine
             item {
                 SettingsSection(
-                    title = "Playback Engine",
+                    title = stringResource(R.string.settings_playback_engine),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = "Media engine",
-                                subtitle = "ExoPlayer (Not implemented)",
+                                title = stringResource(R.string.settings_media_engine),
+                                subtitle = "ExoPlayer ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
@@ -152,43 +154,43 @@ fun SettingsScreen(
             // Video
             item {
                 SettingsSection(
-                    title = "Video",
+                    title = stringResource(R.string.settings_video),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = "Default subtitle track",
-                                subtitle = "None (Not implemented)",
+                                title = stringResource(R.string.settings_default_subtitle),
+                                subtitle = "None ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
                             SettingsItem(
-                                title = "Jump delay",
-                                subtitle = "10 seconds (Not implemented)",
+                                title = stringResource(R.string.settings_jump_delay),
+                                subtitle = "10 seconds ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
                             SettingsItem(
-                                title = "Long jump delay",
-                                subtitle = "20 seconds (Not implemented)",
+                                title = stringResource(R.string.settings_long_jump_delay),
+                                subtitle = "20 seconds ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
                             SettingsToggleItem(
-                                title = "Resume playback",
-                                subtitle = "Continue from where you left off (Not implemented)",
+                                title = stringResource(R.string.settings_resume_playback),
+                                subtitle = "${stringResource(R.string.settings_resume_playback_sub)} ${stringResource(R.string.not_implemented)}",
                                 checked = resumePlayback,
                                 onCheckedChange = { resumePlayback = it },
                                 enabled = false,
                             )
                             SettingsToggleItem(
-                                title = "Background play",
-                                subtitle = "Continue audio when video is minimized (Not implemented)",
+                                title = stringResource(R.string.settings_background_play),
+                                subtitle = "${stringResource(R.string.settings_background_play_sub)} ${stringResource(R.string.not_implemented)}",
                                 checked = true,
                                 onCheckedChange = {},
                                 enabled = false,
                             )
                             SettingsSliderItem(
-                                title = "Gesture seek sensitivity",
+                                title = stringResource(R.string.settings_gesture_sensitivity),
                                 subtitle = String.format(java.util.Locale.US, "Multiplier: %.2fx", seekSensitivity),
                                 value = seekSensitivity,
                                 onValueChange = { settingsViewModel.saveSeekSensitivity(it) },
@@ -196,8 +198,8 @@ fun SettingsScreen(
                             )
 
                             SettingsToggleItem(
-                                title = "Enable HDR playback",
-                                subtitle = "In progress — preference is saved but HDR/SDR mode currently ignores this toggle.",
+                                title = stringResource(R.string.settings_video_hdr),
+                                subtitle = stringResource(R.string.settings_video_hdr_sub),
                                 checked = enableHdrPlayback,
                                 onCheckedChange = { settingsViewModel.saveEnableHdrPlayback(it) },
                                 enabled = false,
@@ -210,12 +212,12 @@ fun SettingsScreen(
             // Subtitles
             item {
                 SettingsSection(
-                    title = "Subtitles",
+                    title = stringResource(R.string.settings_subtitles),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = "OpenSubtitles API Key",
-                                subtitle = if (currentApiKey.isBlank()) "Not configured — get one at opensubtitles.com"
+                                title = stringResource(R.string.settings_opensubtitles_key),
+                                subtitle = if (currentApiKey.isBlank()) stringResource(R.string.settings_opensubtitles_not_configured)
                                 else "••••••••",
                                 onClick = { showApiKeyDialog = true },
                             )
@@ -227,32 +229,32 @@ fun SettingsScreen(
             // Audio
             item {
                 SettingsSection(
-                    title = "Audio",
+                    title = stringResource(R.string.settings_audio),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = "Audio jump delay",
-                                subtitle = "10 seconds (Not implemented)",
+                                title = stringResource(R.string.settings_audio_jump_delay),
+                                subtitle = "10 seconds ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
                             SettingsItem(
-                                title = "Equalizer",
-                                subtitle = "Adjust frequency bands (Not implemented)",
+                                title = stringResource(R.string.settings_equalizer),
+                                subtitle = "${stringResource(R.string.settings_equalizer_sub)} ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
                             SettingsToggleItem(
-                                title = "Audio track info",
-                                subtitle = "Show technical details (Not implemented)",
+                                title = stringResource(R.string.settings_audio_track_info),
+                                subtitle = "${stringResource(R.string.settings_audio_track_info_sub)} ${stringResource(R.string.not_implemented)}",
                                 checked = false,
                                 onCheckedChange = {},
                                 enabled = false,
                             )
                             SettingsSliderItem(
-                                title = "Min song duration",
-                                subtitle = if (minSongDurationSecs == 0) "Disabled (show all songs)"
-                                else "Hide songs under ${minSongDurationSecs}s",
+                                title = stringResource(R.string.settings_min_song_duration),
+                                subtitle = if (minSongDurationSecs == 0) stringResource(R.string.settings_min_song_duration_disabled)
+                                else stringResource(R.string.settings_min_song_duration_hidden, minSongDurationSecs),
                                 value = minSongDurationSecs.toFloat(),
                                 onValueChange = { settingsViewModel.saveMinSongDurationSecs(it.toInt()) },
                                 valueRange = 0f..60f,
@@ -266,12 +268,12 @@ fun SettingsScreen(
             // Playback
             item {
                 SettingsSection(
-                    title = "Playback",
+                    title = stringResource(R.string.settings_playback),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = "Default playback speed",
-                                subtitle = "1.0x (Not implemented)",
+                                title = stringResource(R.string.settings_default_speed),
+                                subtitle = "1.0x ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
@@ -284,31 +286,31 @@ fun SettingsScreen(
             item {
                 val context = LocalContext.current
                 SettingsSection(
-                    title = "Storage & Permissions",
+                    title = stringResource(R.string.settings_storage_permissions),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = "Request media permissions",
-                                subtitle = "Grant access to photos, video, and audio",
+                                title = stringResource(R.string.settings_request_media_perms),
+                                subtitle = stringResource(R.string.settings_request_media_perms_sub),
                                 onClick = onRequestPermissions,
                             )
                             SettingsItem(
-                                title = "Full storage access",
+                                title = stringResource(R.string.settings_full_storage),
                                 subtitle = if (MainActivity.isFullStorageGranted())
-                                    "Already granted"
+                                    stringResource(R.string.settings_full_storage_granted)
                                 else
-                                    "Allow access to all files on device",
+                                    stringResource(R.string.settings_full_storage_sub),
                                 onClick = { MainActivity.openFullStorageSettings(context) },
                             )
                             SettingsItem(
-                                title = "Media directories",
-                                subtitle = "Select folders to scan (Not implemented)",
+                                title = stringResource(R.string.settings_media_dirs),
+                                subtitle = "${stringResource(R.string.settings_media_dirs_sub)} ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
                             SettingsToggleItem(
-                                title = "Show hidden files",
-                                subtitle = "Display hidden files in browser",
+                                title = stringResource(R.string.settings_show_hidden),
+                                subtitle = stringResource(R.string.settings_show_hidden_sub),
                                 checked = showHiddenFiles,
                                 onCheckedChange = { settingsViewModel.setShowHiddenFiles(it) },
                             )
@@ -320,28 +322,28 @@ fun SettingsScreen(
             // Advanced
             item {
                 SettingsSection(
-                    title = "Advanced",
+                    title = stringResource(R.string.settings_advanced),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = "Clear media cache",
-                                subtitle = "Free up storage space",
+                                title = stringResource(R.string.settings_clear_cache),
+                                subtitle = stringResource(R.string.settings_clear_cache_sub),
                                 onClick = { settingsViewModel.clearAllCache() },
                             )
                             SettingsToggleItem(
-                                title = "Stats for nerds",
-                                subtitle = "Show video/audio codec info in player overlay",
+                                title = stringResource(R.string.settings_stats_nerds),
+                                subtitle = stringResource(R.string.settings_stats_nerds_sub),
                                 checked = debugMode,
                                 onCheckedChange = { settingsViewModel.saveDebugMode(it) },
                             )
                             SettingsItem(
-                                title = "About Hz Player",
-                                subtitle = "Version 1.0",
+                                title = stringResource(R.string.settings_about),
+                                subtitle = stringResource(R.string.settings_version),
                                 onClick = {},
                             )
                             SettingsItem(
-                                title = "Open source licenses",
-                                subtitle = "View third-party licenses (Not implemented)",
+                                title = stringResource(R.string.settings_licenses),
+                                subtitle = "${stringResource(R.string.settings_licenses_sub)} ${stringResource(R.string.not_implemented)}",
                                 enabled = false,
                                 onClick = {},
                             )
