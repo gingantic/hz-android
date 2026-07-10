@@ -3,8 +3,6 @@ package com.rhnxdev.hzplayer.presentation.player
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.Player
-import com.rhnxdev.hzplayer.data.repository.PlayerRepositoryImpl
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.PlayerState
@@ -25,7 +23,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -36,7 +33,6 @@ import javax.inject.Inject
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
-    private val playerRepositoryImpl: PlayerRepositoryImpl,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val resumeRepository: ResumeRepository,
     private val mediaDao: MediaDao,
@@ -70,15 +66,13 @@ class PlayerViewModel @Inject constructor(
 
     fun getActiveEngine(): IPlayerEngine = playerRepository.activeEngine
 
-    fun getExoPlayer(): Player? = playerRepositoryImpl.exoPlayer
-
     init {
         observePlaybackState()
         observeSubtitleStyle()
-        observeSubtitleCues()
         observeNetworkTraffic()
         observeSeekSensitivity()
         observeHdrSettings()
+        observeActiveEngine()
         observeDebugMode()
         startPositionUpdates()
         refreshTrackCache()
@@ -162,11 +156,11 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private fun observeSubtitleCues() {
+    private fun observeActiveEngine() {
         viewModelScope.launch {
-            playerRepositoryImpl.subtitleCues.collect { cues ->
-                _uiState.update { it.copy(subtitleCueTexts = cues.mapNotNull { cue -> cue.text?.toString() }) }
-            }
+            userPreferencesRepository.activeEngine
+                .distinctUntilChanged()
+                .collect { type -> _uiState.update { it.copy(activeEngineType = type) } }
         }
     }
 
@@ -424,21 +418,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onSkipNext() {
-        val player = playerRepositoryImpl.exoPlayer
-        if (player.mediaItemCount > 1) {
-            player.seekToNextMediaItem()
-        } else {
-            onSkipForward()
-        }
+        playerRepository.skipToNext()
     }
 
     fun onSkipPrevious() {
-        val player = playerRepositoryImpl.exoPlayer
-        if (player.mediaItemCount > 1) {
-            player.seekToPreviousMediaItem()
-        } else {
-            onSkipBackward()
-        }
+        playerRepository.skipToPrevious()
     }
 
     fun onSetSpeed(speed: Float) {
@@ -602,7 +586,7 @@ class PlayerViewModel @Inject constructor(
         debugPollJob = viewModelScope.launch {
             while (isActive) {
                 try {
-                    val stats = playerRepositoryImpl.collectDebugStats()
+                    val stats = playerRepository.getDebugStats() ?: DebugStats()
                     val nt = _uiState.value.networkTraffic
                     val speedDown = nt.speedDown
                     val duration = _uiState.value.duration

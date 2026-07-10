@@ -8,6 +8,7 @@ import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.VideoItem
+import com.rhnxdev.hzplayer.domain.player.EngineType
 
 import androidx.compose.runtime.Immutable
 
@@ -27,7 +28,6 @@ data class PlayerUiState(
     val shuffleMode: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.NONE,
     val subtitleTracks: List<String> = emptyList(),
-    val subtitleCueTexts: List<String> = emptyList(),
     val audioTracks: List<String> = emptyList(),
     val selectedSubtitleTrack: Int = -1,
     val selectedAudioTrack: Int = -1,
@@ -62,4 +62,6 @@ data class PlayerUiState(
     val debugMode: Boolean = false,
     val debugStats: DebugStats = DebugStats(),
     val debugOverlayVisible: Boolean = false,
+    /** Active playback engine — drives the surface selection in [VideoPlayerScreen]. */
+    val activeEngineType: EngineType = EngineType.EXO_PLAYER,
 )

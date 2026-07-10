@@ -108,6 +108,8 @@
     <string name="settings_dynamic_colors_sub">Use system accent color</string>
     <string name="settings_playback_engine">Playback Engine</string>
     <string name="settings_media_engine">Media engine</string>
+    <string name="settings_engine_active">Active — switches on next playback</string>
+    <string name="settings_engine_inactive">Tap to use</string>
     <string name="settings_video">Video</string>
     <string name="settings_default_subtitle">Default subtitle track</string>
     <string name="settings_video_hdr">Enable HDR playback</string>

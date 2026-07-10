@@ -3,6 +3,8 @@ package com.rhnxdev.hzplayer.presentation.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
+import com.rhnxdev.hzplayer.domain.player.EngineType
+import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,6 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val prefs: UserPreferencesRepository,
+    private val playerRepository: PlayerRepository,
     private val mediaDao: com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
@@ -72,6 +75,18 @@ class SettingsViewModel @Inject constructor(
 
     val debugMode: StateFlow<Boolean> = prefs.debugMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** Engines registered via Hilt multibinding. */
+    val availableEngines: List<EngineType> get() = playerRepository.availableEngines
+
+    /** Currently selected playback engine (persisted preference). */
+    val activeEngine: StateFlow<EngineType> = prefs.activeEngine
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), EngineType.EXO_PLAYER)
+
+    /** Switch the active engine. Stops current playback; takes effect on next play. */
+    fun selectEngine(type: EngineType) {
+        viewModelScope.launch { playerRepository.setActiveEngine(type) }
+    }
 
     fun saveThemeMode(mode: ThemeMode) {
         viewModelScope.launch { prefs.setThemeMode(mode) }

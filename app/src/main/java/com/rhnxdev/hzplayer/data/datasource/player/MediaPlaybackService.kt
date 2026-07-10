@@ -2,12 +2,12 @@ package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.app.PendingIntent
 import android.content.Intent
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.rhnxdev.hzplayer.MainActivity
+import com.rhnxdev.hzplayer.domain.player.MediaSessionProvider
+import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -15,14 +15,16 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MediaPlaybackService : MediaSessionService() {
 
-    @Inject lateinit var playerHolder: MediaPlayerHolder
+    @Inject lateinit var playerRepository: PlayerRepository
 
     private var mediaSession: MediaSession? = null
 
     override fun onCreate() {
         super.onCreate()
 
-        val player = playerHolder.player
+        // Only Media3-backed engines can supply a Player for the system MediaSession
+        // (notification / media controls). Non-Media3 engines run without it for now.
+        val player = (playerRepository.activeEngine as? MediaSessionProvider)?.getMedia3Player()
 
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -32,9 +34,11 @@ class MediaPlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
-        mediaSession = MediaSession.Builder(this, player)
-            .setSessionActivity(pendingIntent)
-            .build()
+        mediaSession = player?.let {
+            MediaSession.Builder(this, it)
+                .setSessionActivity(pendingIntent)
+                .build()
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -42,8 +46,8 @@ class MediaPlaybackService : MediaSessionService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = playerHolder.player
-        if (!player.playWhenReady || player.mediaItemCount == 0) {
+        val player = (playerRepository.activeEngine as? MediaSessionProvider)?.getMedia3Player()
+        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }
     }
@@ -53,8 +57,9 @@ class MediaPlaybackService : MediaSessionService() {
             release()
             mediaSession = null
         }
-        // Release the ExoPlayer so rapid back-to-back starts don't leak instances.
-        playerHolder.release()
+        // Release the active engine's resources (parity with the old direct
+        // playerHolder.release()). All registered engines are released.
+        playerRepository.release()
         super.onDestroy()
     }
 }
