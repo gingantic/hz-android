@@ -23,7 +23,7 @@ interface IPlayerEngine {
     // ── Playback control ────────────────────────────────────────
 
     /** Load a URI for playback. Call [resume] to start. */
-    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false)
+    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null)
 
     /** Load a playlist (video) and start at [startIndex] / [startPositionMs]. */
     fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int = 0, startPositionMs: Long = 0)

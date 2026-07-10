@@ -332,6 +332,8 @@ class PlayerViewModel @Inject constructor(
         title: String,
         isVideo: Boolean = false,
         playImmediately: Boolean = true,
+        mimeType: String? = null,
+
     ) {
         _uiState.update { state ->
             state.copy(
@@ -345,7 +347,7 @@ class PlayerViewModel @Inject constructor(
                 videoPlaylist = emptyList(),
             )
         }
-        playerRepository.playUri(uri, title, isVideo = isVideo)
+        playerRepository.playUri(uri, title, isVideo = isVideo, mimeType = mimeType)
         restoreProgress(uri)
         trackRefreshNeeded = true
     }
@@ -488,9 +490,9 @@ class PlayerViewModel @Inject constructor(
         else playerRepository.skipBackward(-deltaMs)
     }
 
-    fun playNetworkUri(uri: String, title: String, isVideo: Boolean) {
+    fun playNetworkUri(uri: String, title: String, isVideo: Boolean, mimeType: String? = null) {
         android.util.Log.d(TAG, "playNetworkUri: scheme=${uri.substringBefore("://")} uri=$uri")
-        playUri(uri, title, isVideo)
+        playUri(uri, title, isVideo, mimeType = mimeType)
     }
 
     fun playVideoPlaylist(items: List<VideoItem>, startIndex: Int = 0) {

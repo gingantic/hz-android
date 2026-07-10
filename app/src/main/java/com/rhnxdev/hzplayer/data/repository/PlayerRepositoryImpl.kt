@@ -122,10 +122,10 @@ class PlayerRepositoryImpl @Inject constructor(
         engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false)
     }
 
-    override fun playUri(uri: String, title: String, isVideo: Boolean) {
+    override fun playUri(uri: String, title: String, isVideo: Boolean, mimeType: String?) {
         savedPlaybackUri = uri
         startTrafficPolling()
-        engine().play(uri, title, isVideo = isVideo)
+        engine().play(uri, title, isVideo = isVideo, mimeType = mimeType)
     }
 
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {

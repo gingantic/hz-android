@@ -59,7 +59,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +78,7 @@ import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isVideoOrStreamDefault
 import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
@@ -90,14 +93,15 @@ import com.rhnxdev.hzplayer.presentation.network.components.StreamHistoryListIte
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NetworkScreen(
-    onPlayStream: (url: String, title: String, isVideo: Boolean) -> Unit = { _, _, _ -> },
-    onPlayRemoteFile: (uri: String, title: String, isVideo: Boolean) -> Unit = { _, _, _ -> },
+    onPlayStream: (url: String, title: String, isVideo: Boolean, mimeType: String?) -> Unit = { _, _, _, _ -> },
+    onPlayRemoteFile: (uri: String, title: String, isVideo: Boolean, mimeType: String?) -> Unit = { _, _, _, _ -> },
     fullScreenOverlay: Boolean = false,
     isActive: Boolean = true,
     modifier: Modifier = Modifier,
     viewModel: NetworkViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
 
@@ -206,7 +210,10 @@ fun NetworkScreen(
                 onPlayStream = {
                     val url = viewModel.onPlayStream() ?: return@NetworkHomeContent
                     val title = url.substringAfterLast("/").ifEmpty { url }
-                    onPlayStream(url, title, isVideoUrl(url))
+                    scope.launch {
+                        val res = viewModel.resolveStreamMedia(url)
+                        onPlayStream(url, title, res.isVideo, res.mimeType)
+                    }
                 },
                 onScanNetwork = viewModel::onScanNetwork,
                 onStopScan = viewModel::onStopScan,
@@ -219,7 +226,7 @@ fun NetworkScreen(
                 onDismissDiscoveredServer = viewModel::onDismissDiscoveredServer,
                 onPlayHistoryItem = { item ->
                     val url = viewModel.onPlayHistoryItem(item)
-                    onPlayStream(url, item.title, isVideoUrl(url))
+                    onPlayStream(url, item.title, isVideoOrStreamDefault(url), null)
                 },
                 onToggleFavorite = viewModel::onToggleFavorite,
                 onDeleteHistoryItem = viewModel::onDeleteHistoryItem,
@@ -236,7 +243,7 @@ fun NetworkScreen(
                 onFolderClicked = { item -> viewModel.onRemoteFolderClicked(item) },
                 onFileClicked = { item ->
                     val uri = viewModel.buildPlaybackUri(item.path) ?: return@ServerBrowseStackContent
-                    onPlayRemoteFile(uri, item.name, isVideoUrl(item.name))
+                    onPlayRemoteFile(uri, item.name, isVideoOrStreamDefault(item.name), item.mimeType)
                 },
                 onBreadcrumbClicked = viewModel::onRemoteBreadcrumbClicked,
                 onRetry = viewModel::onRetryBrowse,
@@ -754,5 +761,3 @@ private fun CredentialDialog(
 }
 
 // ── Utility ────────────────────────────────────────────────────────
-
-private fun isVideoUrl(urlOrName: String): Boolean = isVideoExtension(urlOrName)

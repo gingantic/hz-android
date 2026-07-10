@@ -84,14 +84,14 @@ class ExoPlayerEngine @Inject constructor(
         private val SUBTITLE_SCHEMES_WITH_DIR = setOf("file", "smb", "ftp", "sftp", "webdav", "webdavs")
     }
 
-    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean) {
+    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?) {
         currentMediaUri = uri
         currentMediaTitle = title
         currentPlaylist = null
         subtitleConfigs.clear()
         discoverNeighborSubtitles(uri)
         playerHolder.clearError()
-        player.setMediaItem(buildMediaItemWithSubtitles(uri, title, artist))
+        player.setMediaItem(buildMediaItemWithSubtitles(uri, title, artist, mimeType))
         player.prepare()
         player.play()
     }
@@ -223,10 +223,16 @@ class ExoPlayerEngine @Inject constructor(
 
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
 
-    private fun buildMediaItemWithSubtitles(uri: String, title: String, artist: String? = null): MediaItem {
+    private fun buildMediaItemWithSubtitles(uri: String, title: String, artist: String? = null, mimeType: String? = null): MediaItem {
         val builder = MediaItem.Builder()
-            .setUri(uri)
-            .setMediaMetadata(
+        builder.setUri(uri)
+        // When we know the type (e.g. a server Content-Type probe), set it explicitly
+        // so ExoPlayer doesn't have to rely solely on container sniffing.
+        if (!mimeType.isNullOrBlank()) {
+            builder.setMimeType(mimeType)
+        }
+
+        builder.setMediaMetadata(
                 androidx.media3.common.MediaMetadata.Builder()
                     .setTitle(title)
                     .setArtist(artist)

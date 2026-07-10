@@ -6,6 +6,11 @@ import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
 import com.rhnxdev.hzplayer.core.util.ServerDiscoverer
 import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
+import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.isAudioExtension
+import com.rhnxdev.hzplayer.core.util.isVideoContentType
+import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.probeContentType
 import com.rhnxdev.hzplayer.domain.model.RemoteAuthException
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
@@ -25,6 +30,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
+
+/** Result of resolving a pasted stream URL: video/audio decision + detected MIME type. */
+data class StreamResolution(val isVideo: Boolean, val mimeType: String?)
 
 @HiltViewModel
 class NetworkViewModel @Inject constructor(
@@ -180,6 +188,22 @@ class NetworkViewModel @Inject constructor(
         return lower.startsWith("http://") || lower.startsWith("https://") ||
             lower.startsWith("rtsp://") || lower.startsWith("rtp://") ||
             lower.startsWith("mms://") || lower.startsWith("mmsh://")
+    }
+
+    /**
+     * Resolve whether a pasted stream URL is video and its MIME type, probing the
+     * server `Content-Type` for extensionless URLs (bucket URLs). Falls back to
+     * video for unknown types (buckets are usually video); ExoPlayer sniffs the
+     * container regardless, so playback still works.
+     */
+    suspend fun resolveStreamMedia(url: String): StreamResolution {
+        if (isVideoExtension(url)) return StreamResolution(true, guessMimeType(url) ?: "video/mp4")
+        if (isAudioExtension(url)) return StreamResolution(false, guessMimeType(url) ?: "audio/mpeg")
+        if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) {
+            return StreamResolution(true, guessMimeType(url))
+        }
+        val ct = probeContentType(url)
+        return StreamResolution(isVideoContentType(ct), ct ?: guessMimeType(url))
     }
 
     fun onAddServerClicked() { _uiState.update { it.copy(showServerDialog = true, editingServer = null) } }
