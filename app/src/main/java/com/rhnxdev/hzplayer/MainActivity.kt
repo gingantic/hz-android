@@ -418,16 +418,16 @@ fun HzPlayerApp(
                                 3 -> NetworkScreen(
                                     fullScreenOverlay = isFullScreen,
                                     isActive = pagerState.currentPage == page,
-                                    onPlayStream = { url, title, isVideo ->
-                                        playerViewModel.playNetworkUri(url, title, isVideo)
+                                    onPlayStream = { url, title, isVideo, mimeType ->
+                                        playerViewModel.playNetworkUri(url, title, isVideo, mimeType)
                                         if (isVideo) {
                                             navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                         } else {
                                             navController.navigate(NavRoutes.AUDIO_PLAYER)
                                         }
                                     },
-                                    onPlayRemoteFile = { uri, title, isVideo ->
-                                        playerViewModel.playNetworkUri(uri, title, isVideo)
+                                    onPlayRemoteFile = { uri, title, isVideo, mimeType ->
+                                        playerViewModel.playNetworkUri(uri, title, isVideo, mimeType)
                                         if (isVideo) {
                                             navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                         } else {
