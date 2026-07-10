@@ -64,6 +64,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.View
 import android.widget.Toast
 import android.media.AudioManager
 import android.provider.Settings
@@ -71,9 +72,10 @@ import android.view.Window
 import android.view.WindowManager
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
+import com.rhnxdev.hzplayer.data.datasource.player.ExoPlayerEngine
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
+import com.rhnxdev.hzplayer.domain.player.EngineType
+import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.presentation.player.components.DebugOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerControlsOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.SeekIndicator
@@ -129,7 +131,7 @@ fun VideoPlayerScreen(
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showUnlockOverlay by remember { mutableStateOf(false) }
     var hudInteractionTick by remember { mutableLongStateOf(0L) }
-    val playerViewRef = remember { mutableStateOf<PlayerView?>(null) }
+    val renderViewRef = remember { mutableStateOf<View?>(null) }
 
     // Bug 5: whether seeking (drag-to-seek) is allowed — disabled for live/unknown streams
     val canSeek = uiState.duration > 0
@@ -164,15 +166,14 @@ fun VideoPlayerScreen(
             when (event) {
                 androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
                     // App is truly fully backgrounded — pause playback now.
-                    playerViewRef.value?.onPause()
+                    pauseRenderView(viewModel.getActiveEngine(), renderViewRef.value)
                     viewModel.pause()
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_START -> {
-                    // App is returning from background — PlayerView.onResume() below handles reconnect.
+                    // App is returning from background — onResume below handles reconnect.
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
-                    // Reconnect ExoPlayer's PlayerView; VLC handled via TextureView callbacks.
-                    playerViewRef.value?.onResume()
+                    resumeRenderView(viewModel.getActiveEngine(), renderViewRef.value)
                 }
                 else -> {}
             }
@@ -265,75 +266,15 @@ fun VideoPlayerScreen(
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        // Video surface — selection driven by View-preference (SurfaceView for low-latency
-        // direct rendering, TextureView for compositor-friendly rendering that survives brief
-        // app switches via retained GPU state).
-        //
-        // HDR/SDR handling lives entirely in the player stack now: the toggle in
-        // settings stores `enableHdrPlayback` but is currently a no-op while the
-        // colour-correction work is in progress. The window keeps its default color mode.
-        val surfaceIsSurfaceView = uiState.useSurfaceView
-        key(surfaceIsSurfaceView) {
-            AndroidView(
-                factory = { ctx ->
-                    // Inflate from XML so the correct `app:surface_type` takes effect.
-                    // PlayerView surface type is fixed at construction time — there is no
-                    // programmatic setter.  TextureView keeps its last decoded frame in
-                    // GPU memory through onStop(), eliminating the black flash when the
-                    // user briefly switches apps and returns.
-                    // SurfaceView bypasses UI composition and provides direct 10-bit HDR rendering.
-                    val layoutRes = if (surfaceIsSurfaceView) {
-                        com.rhnxdev.hzplayer.R.layout.view_exo_player_surface
-                    } else {
-                        com.rhnxdev.hzplayer.R.layout.view_exo_player
-                    }
-                    val playerView = android.view.LayoutInflater.from(ctx)
-                        .inflate(layoutRes, null, false)
-                        as PlayerView
-                    playerView.player = viewModel.getExoPlayer()
-                    playerView.useController = false
-                    // Use built-in subtitle rendering with transparent background
-                    val subtitleView = playerView.subtitleView
-                    if (subtitleView != null) {
-                        // For HDR content, SurfaceView renders at 10-bit luminance.
-                        // SDR white text appears dim against HDR video. Use a
-                        // semi-transparent black background + thick outline to
-                        // ensure legibility regardless of HDR peak brightness.
-                        subtitleView.setStyle(
-                            androidx.media3.ui.CaptionStyleCompat(
-                                0xFFFFFFFF.toInt(), // foregroundColor — pure white
-                                0,                  // backgroundColor — transparent
-                                0x00000000,         // windowColor — transparent
-                                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                                0xFF000000.toInt(), // edgeColor — black
-                                null // typeface
-                            )
-                        )
-                    }
-
-                    // (setSecure / DRM-gating removed: surface is left as-is. The
-                    // HDR/SDR toggle is currently a no-op while the colour-correction
-                    // work is in progress; secured composition will be reintroduced
-                    // together with that work.)
-
-                    playerViewRef.value = playerView
-                    playerView
-                },
-                update = { playerView ->
-                    playerView.player = viewModel.getExoPlayer()
-                    // Map our AspectRatioMode to Media3 PlayerView resize modes.
-                    // AUTO → fit the video within the container, preserving its original ratio.
-                    // 16:9 → zoom to fill the container, cropping to 16:9 rectangle.
-                    // 4:3  → stretch to fill the container (distorts if source is 16:9).
-                    when (uiState.aspectRatioMode) {
-                        AspectRatioMode.AUTO -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        AspectRatioMode.RATIO_16_9 -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                        AspectRatioMode.RATIO_4_3 -> playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        // Video surface — engine-agnostic. PlayerSurface picks the right native
+        // view for the active engine (ExoPlayer → PlayerView; future engines →
+        // their own SurfaceView/TextureView). No Media3 type leaks into this screen.
+        PlayerSurface(
+            engine = viewModel.getActiveEngine(),
+            uiState = uiState,
+            modifier = Modifier.fillMaxSize(),
+            onRenderView = { renderViewRef.value = it },
+        )
 
         // (built-in subtitle rendering used — see factory block above)
         // SubtitleOverlay removed: refine custom subtitle overlay later
@@ -887,5 +828,21 @@ private fun UnlockPill(
                 )
             }
         }
+    }
+}
+
+/** Engine-specific surface pause — calls into the concrete engine via the seam. */
+private fun pauseRenderView(engine: IPlayerEngine, view: View?) {
+    view ?: return
+    when (engine.engineType) {
+        EngineType.EXO_PLAYER -> (engine as ExoPlayerEngine).onRenderViewPaused(view)
+    }
+}
+
+/** Engine-specific surface resume — calls into the concrete engine via the seam. */
+private fun resumeRenderView(engine: IPlayerEngine, view: View?) {
+    view ?: return
+    when (engine.engineType) {
+        EngineType.EXO_PLAYER -> (engine as ExoPlayerEngine).onRenderViewResumed(view)
     }
 }

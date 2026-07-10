@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -29,6 +30,7 @@ fun SettingsItem(
     subtitle: String? = null,
     onClick: () -> Unit = {},
     enabled: Boolean = true,
+    trailing: @Composable (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -44,23 +46,30 @@ fun SettingsItem(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         val alpha = if (enabled) 1f else 0.38f
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = Spacing.md, horizontal = Spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
-            )
-            if (subtitle != null) {
-                Spacer(modifier = Modifier.height(2.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
                 )
+                if (subtitle != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                    )
+                }
+            }
+            if (trailing != null) {
+                Spacer(modifier = Modifier.width(Spacing.md))
+                trailing()
             }
         }
     }

@@ -2,6 +2,9 @@ package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.content.Context
 import android.net.Uri
+import android.annotation.SuppressLint
+import android.view.LayoutInflater
+import android.view.View
 import androidx.media3.common.C
 import androidx.media3.common.ColorInfo
 import androidx.media3.common.MediaItem
@@ -9,9 +12,15 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.PlayerView
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
+import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
+import com.rhnxdev.hzplayer.domain.player.MediaSessionProvider
+import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,19 +33,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
+// Media3's playback/UI APIs are marked @UnstableApi. The Kotlin compiler requires
+// @androidx.annotation.OptIn to use them; lint's UnsafeOptInUsageError only honors a
+// different (compiler-rejected) annotation, so the lint warning is suppressed here.
+// This is a known AndroidX/Kotlin opt-in friction, not a real issue.
+@SuppressLint("UnsafeOptInUsageError")
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class ExoPlayerEngine @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val playerHolder: MediaPlayerHolder,
-) : IPlayerEngine {
+) : IPlayerEngine, MediaSessionProvider {
+
+    override val engineType: EngineType = EngineType.EXO_PLAYER
 
     val player: Player get() = playerHolder.player
-
-    val subtitleCues: StateFlow<List<androidx.media3.common.text.Cue>>
-        get() = playerHolder.subtitleCues
-    val videoDecoderName: StateFlow<String>
-        get() = playerHolder.videoDecoderName
-    val audioDecoderName: StateFlow<String>
-        get() = playerHolder.audioDecoderName
 
     private var lastRenderedFrames: Long = 0
     private var lastFrameTimestamp: Long = 0L
@@ -86,7 +96,7 @@ class ExoPlayerEngine @Inject constructor(
         player.play()
     }
 
-    fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
+    override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
         if (items.isEmpty()) return
         currentPlaylist = null
         subtitleConfigs.clear()
@@ -105,7 +115,7 @@ class ExoPlayerEngine @Inject constructor(
         player.play()
     }
 
-    fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
+    override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
         if (items.isEmpty()) return
         currentPlaylist = null
         subtitleConfigs.clear()
@@ -151,6 +161,41 @@ class ExoPlayerEngine @Inject constructor(
         val newPos = (player.currentPosition - ms).coerceAtLeast(0)
         player.seekTo(newPos)
     }
+
+    override fun skipToNext() {
+        if (player.mediaItemCount > 1) player.seekToNextMediaItem()
+        else player.seekTo((player.currentPosition + 10_000).coerceAtMost(player.duration.coerceAtLeast(0)))
+    }
+
+    override fun skipToPrevious() {
+        if (player.mediaItemCount > 1) player.seekToPreviousMediaItem()
+        else player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+    }
+
+    override fun getCurrentMediaItemIndex(): Int = player.currentMediaItemIndex
+
+    override fun getMediaItemCount(): Int = player.mediaItemCount
+
+    override fun setShuffleEnabled(enabled: Boolean) {
+        player.shuffleModeEnabled = enabled
+    }
+
+    override fun setRepeatMode(mode: com.rhnxdev.hzplayer.domain.model.RepeatMode) {
+        player.repeatMode = when (mode) {
+            com.rhnxdev.hzplayer.domain.model.RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            com.rhnxdev.hzplayer.domain.model.RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    override fun isShuffleEnabled(): Boolean = player.shuffleModeEnabled
+
+    override fun getRepeatMode(): com.rhnxdev.hzplayer.domain.model.RepeatMode =
+        when (player.repeatMode) {
+            Player.REPEAT_MODE_ONE -> com.rhnxdev.hzplayer.domain.model.RepeatMode.ONE
+            Player.REPEAT_MODE_ALL -> com.rhnxdev.hzplayer.domain.model.RepeatMode.ALL
+            else -> com.rhnxdev.hzplayer.domain.model.RepeatMode.NONE
+        }
 
     override fun isPlaying(): Boolean = player.isPlaying
 
@@ -369,6 +414,59 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.release()
     }
 
+    // ── Rendering seam (engine-private; surfaced via PlayerSurface) ──
+
+    /**
+     * Build the Media3 [PlayerView] that renders this engine's video. The surface
+     * type (SurfaceView for HDR passthrough vs TextureView for composited survival
+     * across brief app switches) is chosen from [useSurfaceView] and fixed at
+     * construction via the XML layout — there is no programmatic setter.
+     */
+    fun createRenderView(context: Context, useSurfaceView: Boolean): View {
+        val layoutRes = if (useSurfaceView) {
+            com.rhnxdev.hzplayer.R.layout.view_exo_player_surface
+        } else {
+            com.rhnxdev.hzplayer.R.layout.view_exo_player
+        }
+        val playerView = LayoutInflater.from(context)
+            .inflate(layoutRes, null, false) as PlayerView
+        playerView.player = player
+        playerView.useController = false
+        val subtitleView = playerView.subtitleView
+        if (subtitleView != null) {
+            // For HDR content, SurfaceView renders at 10-bit luminance. SDR white text
+            // appears dim against HDR video — use a semi-transparent black background +
+            // thick outline to ensure legibility regardless of HDR peak brightness.
+            subtitleView.setStyle(
+                CaptionStyleCompat(
+                    0xFFFFFFFF.toInt(),
+                    0,
+                    0x00000000,
+                    CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                    0xFF000000.toInt(),
+                    null,
+                )
+            )
+        }
+        return playerView
+    }
+
+    /** Apply aspect-ratio + subtitle style to an existing [PlayerView]. */
+    fun updateRenderView(view: View, config: RenderViewConfig) {
+        val playerView = view as PlayerView
+        playerView.resizeMode = when (config.aspectRatioMode) {
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_16_9 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+        }
+    }
+
+    /** Surface lifecycle — mirrors PlayerView.onPause/onResume. */
+    fun onRenderViewPaused(view: View) = (view as PlayerView).onPause()
+    fun onRenderViewResumed(view: View) = (view as PlayerView).onResume()
+
+    override fun getMedia3Player(): Player = player
+
     // ── Subtitle discovery ───────────────────────────────────────
 
     private fun discoverNeighborSubtitles(uri: String) {
@@ -393,8 +491,7 @@ class ExoPlayerEngine @Inject constructor(
 
     // ── Debug stats ─────────────────────────────────────────────
 
-    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    fun collectDebugStats(): com.rhnxdev.hzplayer.domain.model.DebugStats {
+    override fun getDebugStats(): com.rhnxdev.hzplayer.domain.model.DebugStats? {
         val currentTracks = player.currentTracks
         var videoCodec = ""
         var videoCodecMime = ""
@@ -502,8 +599,11 @@ class ExoPlayerEngine @Inject constructor(
             audioLanguage = audioLanguage,
             deviceModel = android.os.Build.MODEL,
             androidVersion = "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
-            soCInfo = "${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}"
-                .ifBlank { "${android.os.Build.HARDWARE}" },
+            soCInfo = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                "${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}"
+            } else {
+                "${android.os.Build.HARDWARE}"
+            }.ifBlank { "${android.os.Build.HARDWARE}" },
         )
     }
 

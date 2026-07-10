@@ -3,32 +3,39 @@ package com.rhnxdev.hzplayer.data.repository
 import android.net.TrafficStats
 import android.net.Uri
 import android.os.Process
-import androidx.media3.common.Player
-import com.rhnxdev.hzplayer.data.datasource.player.ExoPlayerEngine
 import com.rhnxdev.hzplayer.domain.model.AudioItem
+import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
+import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
+import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlin.jvm.JvmSuppressWildcards
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.OptIn
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlayerRepositoryImpl @Inject constructor(
-    private val exoPlayerEngine: ExoPlayerEngine,
+    private val engines: Map<EngineType, @JvmSuppressWildcards IPlayerEngine>,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) : PlayerRepository {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -37,25 +44,31 @@ class PlayerRepositoryImpl @Inject constructor(
     private var trafficPollJob: Job? = null
     private val appUid = Process.myUid()
 
+    private val _activeEngineType = MutableStateFlow(EngineType.EXO_PLAYER)
+
     init {
         scope.launch {
+            userPreferencesRepository.activeEngine.collect { type ->
+                if (engines.containsKey(type)) _activeEngineType.value = type
+            }
+        }
+        scope.launch {
             playbackStateInfo.collect { info ->
-                info.currentUri?.let { uri ->
-                    savedPlaybackUri = uri
-                }
+                info.currentUri?.let { uri -> savedPlaybackUri = uri }
             }
         }
     }
 
-    val exoPlayer: Player get() = exoPlayerEngine.player
+    private fun engine(): IPlayerEngine =
+        engines[_activeEngineType.value] ?: engines.getValue(EngineType.EXO_PLAYER)
 
     override val networkTraffic: Flow<NetworkTraffic> = _networkTraffic.asStateFlow()
     override val currentPlaybackUri: String? get() = savedPlaybackUri
-    override val activeEngine: IPlayerEngine get() = exoPlayerEngine
+    override val activeEngine: IPlayerEngine get() = engine()
+    override val availableEngines: List<EngineType> get() = engines.keys.toList()
 
-    override val playbackStateInfo: Flow<PlayerStateInfo> = exoPlayerEngine.playbackState
-
-    val subtitleCues: StateFlow<List<androidx.media3.common.text.Cue>> get() = exoPlayerEngine.subtitleCues
+    override val playbackStateInfo: Flow<PlayerStateInfo> =
+        _activeEngineType.flatMapLatest { engine().playbackState }
 
     private fun startTrafficPolling() {
         trafficPollJob?.cancel()
@@ -100,89 +113,98 @@ class PlayerRepositoryImpl @Inject constructor(
     override fun playVideo(video: VideoItem) {
         savedPlaybackUri = video.uri
         startTrafficPolling()
-        exoPlayerEngine.play(video.uri, video.title, isVideo = true)
+        engine().play(video.uri, video.title, isVideo = true)
     }
 
     override fun playAudio(audio: AudioItem) {
         savedPlaybackUri = audio.uri
         startTrafficPolling()
-        exoPlayerEngine.play(audio.uri, audio.title, artist = audio.artist, isVideo = false)
+        engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false)
     }
 
     override fun playUri(uri: String, title: String, isVideo: Boolean) {
         savedPlaybackUri = uri
         startTrafficPolling()
-        exoPlayerEngine.play(uri, title, isVideo = isVideo)
+        engine().play(uri, title, isVideo = isVideo)
     }
 
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
         savedPlaybackUri = items.getOrNull(startIndex)?.first
         startTrafficPolling()
-        exoPlayerEngine.playPlaylist(items, startIndex, startPositionMs)
+        engine().playPlaylist(items, startIndex, startPositionMs)
     }
 
     override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
         savedPlaybackUri = items.getOrNull(startIndex)?.uri
         startTrafficPolling()
-        exoPlayerEngine.playAudioPlaylist(items, startIndex)
+        engine().playAudioPlaylist(items, startIndex)
     }
 
-    override fun getCurrentMediaItemIndex(): Int =
-        exoPlayerEngine.player.currentMediaItemIndex
+    override fun getCurrentMediaItemIndex(): Int = engine().getCurrentMediaItemIndex()
 
-    override fun getMediaItemCount(): Int =
-        exoPlayerEngine.player.mediaItemCount
+    override fun getMediaItemCount(): Int = engine().getMediaItemCount()
 
     override fun togglePlayPause() {
-        if (exoPlayerEngine.isPlaying()) exoPlayerEngine.pause()
-        else exoPlayerEngine.resume()
+        if (engine().isPlaying()) engine().pause()
+        else engine().resume()
     }
 
-    override fun seekTo(positionMs: Long) = exoPlayerEngine.seekTo(positionMs)
-    override fun skipForward(ms: Long) = exoPlayerEngine.skipForward(ms)
-    override fun skipBackward(ms: Long) = exoPlayerEngine.skipBackward(ms)
-    override fun setSpeed(speed: Float) = exoPlayerEngine.setPlaybackSpeed(speed)
+    override fun seekTo(positionMs: Long) = engine().seekTo(positionMs)
+    override fun skipForward(ms: Long) = engine().skipForward(ms)
+    override fun skipBackward(ms: Long) = engine().skipBackward(ms)
+    override fun skipToNext() = engine().skipToNext()
+    override fun skipToPrevious() = engine().skipToPrevious()
+    override fun setSpeed(speed: Float) = engine().setPlaybackSpeed(speed)
 
     override fun toggleShuffle() {
-        exoPlayerEngine.player.shuffleModeEnabled = !exoPlayerEngine.player.shuffleModeEnabled
+        engine().setShuffleEnabled(!engine().isShuffleEnabled())
     }
 
     override fun cycleRepeatMode() {
-        exoPlayerEngine.player.repeatMode = when (exoPlayerEngine.player.repeatMode) {
-            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_OFF
-            else -> Player.REPEAT_MODE_OFF
+        val next = when (engine().getRepeatMode()) {
+            RepeatMode.NONE -> RepeatMode.ALL
+            RepeatMode.ALL -> RepeatMode.ONE
+            RepeatMode.ONE -> RepeatMode.NONE
         }
+        engine().setRepeatMode(next)
     }
 
-    override fun getSubtitleTracks(): List<String> = exoPlayerEngine.getSubtitleTracks()
-    override fun getSelectedSubtitleTrack(): Int = exoPlayerEngine.getSelectedSubtitleTrack()
-    override fun selectSubtitleTrack(index: Int) = exoPlayerEngine.selectSubtitleTrack(index)
-    override fun addExternalSubtitle(uri: Uri): Boolean = exoPlayerEngine.addExternalSubtitle(uri)
-    override fun setSubtitleDelay(delayMs: Long) = exoPlayerEngine.setSubtitleDelay(delayMs)
-    override fun getSubtitleDelay(): Long = exoPlayerEngine.getSubtitleDelay()
-    override fun getAudioTracks(): List<String> = exoPlayerEngine.getAudioTracks()
-    override fun getSelectedAudioTrack(): Int = exoPlayerEngine.getSelectedAudioTrack()
-    override fun selectAudioTrack(index: Int) = exoPlayerEngine.selectAudioTrack(index)
+    override fun setActiveEngine(type: EngineType) {
+        if (!engines.containsKey(type)) return
+        if (type == _activeEngineType.value) return
+        // Stop the outgoing engine but keep its instance alive for switch-back.
+        engine().stop()
+        _activeEngineType.value = type
+        scope.launch { userPreferencesRepository.setActiveEngine(type) }
+    }
+
+    override fun getSubtitleTracks(): List<String> = engine().getSubtitleTracks()
+    override fun getSelectedSubtitleTrack(): Int = engine().getSelectedSubtitleTrack()
+    override fun selectSubtitleTrack(index: Int) = engine().selectSubtitleTrack(index)
+    override fun addExternalSubtitle(uri: Uri): Boolean = engine().addExternalSubtitle(uri)
+    override fun setSubtitleDelay(delayMs: Long) = engine().setSubtitleDelay(delayMs)
+    override fun getSubtitleDelay(): Long = engine().getSubtitleDelay()
+    override fun getAudioTracks(): List<String> = engine().getAudioTracks()
+    override fun getSelectedAudioTrack(): Int = engine().getSelectedAudioTrack()
+    override fun selectAudioTrack(index: Int) = engine().selectAudioTrack(index)
+
+    override fun getDebugStats(): DebugStats? = engine().getDebugStats()
 
     override fun stop() {
         savedPlaybackUri = null
         stopTrafficPolling()
-        exoPlayerEngine.stop()
+        engine().stop()
     }
 
-    fun collectDebugStats() = exoPlayerEngine.collectDebugStats()
-
     override fun clearError() {
-        exoPlayerEngine.clearError()
+        engine().clearError()
     }
 
     override fun retry() {
-        exoPlayerEngine.retry()
+        engine().retry()
     }
 
     override fun release() {
-        exoPlayerEngine.release()
+        engines.values.forEach { it.release() }
     }
 }
