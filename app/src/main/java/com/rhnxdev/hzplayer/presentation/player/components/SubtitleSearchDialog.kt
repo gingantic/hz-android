@@ -57,36 +57,15 @@ fun SubtitleSearchDialog(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color(0xFF1E1E24),
-        tonalElevation = 0.dp,
+    SheetScaffold(
+        title = stringResource(R.string.search_subtitles_online),
+        icon = Icons.Default.Search,
+        onDismiss = onDismiss,
+        columnModifier = Modifier
+            .fillMaxWidth()
+            .padding(stableNavBarPaddingValues())
+            .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(stableNavBarPaddingValues())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        ) {
-            // Header
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.search_subtitles_online),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    ),
-                )
-            }
-
             Spacer(modifier = Modifier.height(12.dp))
 
             // Search field + button
@@ -180,7 +159,6 @@ fun SubtitleSearchDialog(
                     Text(text = stringResource(R.string.close), color = Color.White.copy(alpha = 0.7f))
                 }
             }
-        }
     }
 }
 

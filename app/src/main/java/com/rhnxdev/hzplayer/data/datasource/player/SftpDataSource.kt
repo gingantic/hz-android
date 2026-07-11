@@ -18,11 +18,14 @@ import java.io.InputStream
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
 
-    private var sshKey: String? = null
     private var sftpClient: SFTPClient? = null
     private var inputStream: InputStream? = null
     private var bytesRemaining: Long = C.LENGTH_UNSET.toLong()
     private var uri: Uri? = null
+    private var sshHost: String? = null
+    private var sshPort: Int = 22
+    private var sshUser: String? = null
+    private var sshPass: String? = null
 
     override fun open(dataSpec: DataSpec): Long {
         uri = dataSpec.uri
@@ -37,7 +40,10 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
         val port = dataSpec.uri.port.takeIf { it > 0 } ?: 22
         val path = dataSpec.uri.path ?: "/"
 
-        sshKey = "$host:$port:$user"
+        sshHost = host
+        sshPort = port
+        sshUser = user
+        sshPass = pass
 
         val ssh = ConnectionPool.borrowSsh(host, port, user, pass)
         sftpClient = ssh.newSFTPClient()
@@ -96,8 +102,14 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
     override fun close() {
         uri = null
         try { inputStream?.close() } catch (_: Exception) {}
+        // Close only the SFTP channel; the underlying SSHClient is pooled and
+        // returned so the sweeper can reuse/evict it. Without returnSsh() the
+        // entry stays acquire()'d (inUse=1) forever and leaks per stream.
         try { sftpClient?.close() } catch (_: Exception) {}
         sftpClient = null
+        sshHost?.let { host ->
+            ConnectionPool.returnSsh(host, sshPort, sshUser ?: "", sshPass ?: "")
+        }
         transferEnded()
     }
 

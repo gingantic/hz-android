@@ -53,6 +53,12 @@ android {
         }
     }
 }
+
+// Room schema export destination (referenced by @Database(exportSchema = true)).
+// Generated RoomSchema files are committed so versioned Migrations can be authored.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
 dependencies {
     // Core
     implementation(libs.androidx.core.ktx)

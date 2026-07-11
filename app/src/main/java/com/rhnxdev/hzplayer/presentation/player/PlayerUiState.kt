@@ -50,16 +50,12 @@ data class PlayerUiState(
     val videoPlaylist: List<VideoItem> = emptyList(),
     val currentPlaylistIndex: Int = 0,
     val showPlaylistDrawer: Boolean = false,
-    /** Mirrors `UserPreferencesRepository.enableHdrPlayback`. Default = true (HDR allowed). */
-    val hdrEnabled: Boolean = true,
     /**
      * Derived surface-selection hint: `true` if the player should render through a
-     * `TextureView` (composited, no HW HDR passthrough), `false` for `SurfaceView`.
+     * `TextureView` (composited), `false` for `SurfaceView`.
      *
-     * Rules:
-     *  - HDR disabled by user → TextureView (toggled SDR).
-     *  - DRM-active media → TextureView (`setSecure(true)` is incompatible with compositing).
-     *  - HDR enabled + no DRM → SurfaceView (10-bit HDR passthrough).
+     * Currently driven only by DRM status (`setSecure(true)` is incompatible with
+     * compositing). HDR passthrough selection was removed.
      */
     val useTextureView: Boolean = false,
     /** True if the active MediaItem declares `drmConfiguration` (Widevine L1 etc.). */
@@ -69,4 +65,20 @@ data class PlayerUiState(
     val debugOverlayVisible: Boolean = false,
     /** Active playback engine — drives the surface selection in [VideoPlayerScreen]. */
     val activeEngineType: EngineType = EngineType.EXO_PLAYER,
+    /**
+     * When resume mode is ASK and the opened media has a saved position, this holds
+     * the pending resume info until the user confirms (or dismisses). Null otherwise.
+     */
+    val pendingResume: PendingResume? = null,
+)
+
+/** A saved playback position awaiting the user's confirmation to resume. */
+data class PendingResume(
+    val uri: String,
+    val resumePositionMs: Long,
+    val title: String,
+    val isVideo: Boolean = true,
+    val mimeType: String? = null,
+    val artist: String? = null,
+    val id: Long = 0,
 )

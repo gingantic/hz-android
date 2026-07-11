@@ -67,37 +67,16 @@ fun SubtitleStylingDialog(
     ) }
     var edgeStyle by remember { mutableIntStateOf(currentStyle.edgeStyle) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color(0xFF1E1E24),
-        tonalElevation = 0.dp,
+    SheetScaffold(
+        title = stringResource(R.string.subtitle_style),
+        icon = Icons.Default.Style,
+        onDismiss = onDismiss,
+        columnModifier = Modifier
+            .fillMaxWidth()
+            .padding(stableNavBarPaddingValues())
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .verticalScroll(rememberScrollState()),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(stableNavBarPaddingValues())
-                .padding(horizontal = 24.dp, vertical = 16.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            // Header
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Style,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.subtitle_style),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    ),
-                )
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
 
             // Font size
@@ -223,6 +202,5 @@ fun SubtitleStylingDialog(
                     Text(text = stringResource(R.string.apply), color = MaterialTheme.colorScheme.primary)
                 }
             }
-        }
     }
 }

@@ -67,20 +67,28 @@ class AudioBrowserViewModel @Inject constructor(
                     }
             }
 
-            // Reactively re-filter when min duration preference changes
+            // Reactively re-filter when min duration preference changes. Albums and
+            // artists are derived from (filtered) songs, so re-group on each change.
+            // Each source gets its own collector — chaining getAlbums().collect {}
+            // before getArtists().collect {} starves artists, because Room flows never
+            // complete and the second collection is never reached.
             val minDurationJob = launch {
                 userPrefs.minSongDurationSecs.collect { minSecs ->
                     cachedMinSecs = minSecs
                     val currentSongs = _uiState.value.songs
                     val filtered = Companion.filterSongs(currentSongs, "", minSecs)
                     _uiState.update { it.copy(filteredSongs = filtered) }
-                    // Albums/artists are derived from songs, so re-group with the new limit.
-                    audioRepository.getAlbums(forceRefresh = true, minDurationSecs = minSecs)
-                        .catch { /* ignore */ }
-                        .collect { albums -> _uiState.update { it.copy(albums = albums) } }
-                    audioRepository.getArtists(forceRefresh = true, minDurationSecs = minSecs)
-                        .catch { /* ignore */ }
-                        .collect { artists -> _uiState.update { it.copy(artists = artists) } }
+
+                    launch {
+                        audioRepository.getAlbums(forceRefresh = true, minDurationSecs = minSecs)
+                            .catch { /* ignore */ }
+                            .collect { albums -> _uiState.update { it.copy(albums = albums) } }
+                    }
+                    launch {
+                        audioRepository.getArtists(forceRefresh = true, minDurationSecs = minSecs)
+                            .catch { /* ignore */ }
+                            .collect { artists -> _uiState.update { it.copy(artists = artists) } }
+                    }
                 }
             }
 

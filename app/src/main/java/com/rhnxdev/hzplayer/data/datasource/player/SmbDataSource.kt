@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.media3.common.C
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
+import jcifs.smb.SmbException
 import jcifs.smb.SmbFile
 import java.io.BufferedInputStream
 import java.io.EOFException
@@ -70,7 +71,7 @@ class SmbDataSource : BaseDataSource(/* isNetwork = */ true) {
         // Open with brief retry/backoff for transient network drops (e.g. Wi-Fi
         // handoff). Connection-stage only — mid-read errors are not retried.
         val (_, fileLength, rawStream) = openWithRetry(
-            cifsCtx, host, port, segments, cacheKey, dataSpec
+            cifsCtx, host, port, username, password, segments, cacheKey, dataSpec
         )
 
         // BufferedInputStream does large SMB reads (512 KB at a time),
@@ -139,6 +140,8 @@ class SmbDataSource : BaseDataSource(/* isNetwork = */ true) {
         cifsCtx: jcifs.CIFSContext,
         host: String,
         port: Int,
+        username: String,
+        password: String,
         segments: List<String>,
         cacheKey: String,
         dataSpec: DataSpec,
@@ -166,6 +169,13 @@ class SmbDataSource : BaseDataSource(/* isNetwork = */ true) {
                 if (e.message?.contains("exceeds file length") == true) throw e
                 // Drop a possibly-stale cache entry so the next attempt re-resolves.
                 resolvedFileCache.remove(cacheKey)
+                // A pooled CIFSContext that throws an SMB session/auth error is
+                // dead (network drop / server timeout) — jcifs has no isConnected
+                // probe, so we only learn it here. Drop it so the next attempt
+                // borrows a fresh context instead of reusing the stale one.
+                if (e is jcifs.smb.SmbException) {
+                    ConnectionPool.dropSmbContext(host, port, username, password)
+                }
                 if (attempt < backoffMs.size) {
                     android.util.Log.w(TAG, "SMB open attempt $attempt failed, retrying", e)
                     Thread.sleep(backoffMs[attempt])

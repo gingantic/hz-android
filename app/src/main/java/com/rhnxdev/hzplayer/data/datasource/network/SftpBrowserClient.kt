@@ -22,10 +22,10 @@ class SftpBrowserClient(
     override suspend fun listDirectory(path: String): List<RemoteFileItem> =
         withContext(Dispatchers.IO) {
             val ssh = ConnectionPool.borrowSftpBrowser(host, port, username, password)
-            val sftp = ssh.newSFTPClient()
-            sftp.ls(path)
-                .filter { it.name != "." && it.name != ".." }
-                .map { entry ->
+            ssh.newSFTPClient().use { sftp ->
+                sftp.ls(path)
+                    .filter { it.name != "." && it.name != ".." }
+                    .map { entry ->
                     val filePath = if (path.endsWith("/")) "$path${entry.name}" else "$path/${entry.name}"
                     RemoteFileItem(
                         name = entry.name,
@@ -38,12 +38,13 @@ class SftpBrowserClient(
                     )
                 }
                 .sortedWith(compareByDescending<RemoteFileItem> { it.isDirectory }.thenBy { it.name.lowercase() })
+            }
         }
 
     override suspend fun countChildren(path: String): Int = withContext(Dispatchers.IO) {
         val ssh = ConnectionPool.borrowSftpBrowser(host, port, username, password)
         try {
-            ssh.newSFTPClient().ls(path).count { it.isDirectory }
+            ssh.newSFTPClient().use { it.ls(path).count { e -> e.isDirectory } }
         } catch (_: Exception) { 0 }
     }
 

@@ -2,7 +2,9 @@ package com.rhnxdev.hzplayer.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
+import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
@@ -71,14 +73,20 @@ class SettingsViewModel @Inject constructor(
     val minSongDurationSecs: StateFlow<Int> = prefs.minSongDurationSecs
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val enableHdrPlayback: StateFlow<Boolean> = prefs.enableHdrPlayback
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-
     val debugMode: StateFlow<Boolean> = prefs.debugMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val backgroundPlay: StateFlow<Boolean> = prefs.backgroundPlay
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val orientationMode: StateFlow<OrientationMode> = prefs.orientationMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrientationMode.AUTO)
+
+    val decoderMode: StateFlow<DecoderMode> = prefs.decoderMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DecoderMode.AUTO)
+
+    val resumeMode: StateFlow<ResumeMode> = prefs.resumeMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ResumeMode.ALWAYS)
 
     /** Engines registered via Hilt multibinding. */
     val availableEngines: List<EngineType> get() = playerRepository.availableEngines
@@ -124,16 +132,24 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setMinSongDurationSecs(seconds) }
     }
 
-    fun saveEnableHdrPlayback(enabled: Boolean) {
-        viewModelScope.launch { prefs.setEnableHdrPlayback(enabled) }
-    }
-
     fun saveDebugMode(enabled: Boolean) {
         viewModelScope.launch { prefs.setDebugMode(enabled) }
     }
 
+    fun saveBackgroundPlay(enabled: Boolean) {
+        viewModelScope.launch { prefs.setBackgroundPlay(enabled) }
+    }
+
     fun saveOrientationMode(mode: OrientationMode) {
         viewModelScope.launch { prefs.setOrientationMode(mode) }
+    }
+
+    fun saveDecoderMode(mode: DecoderMode) {
+        viewModelScope.launch { prefs.setDecoderMode(mode) }
+    }
+
+    fun saveResumeMode(mode: ResumeMode) {
+        viewModelScope.launch { prefs.setResumeMode(mode) }
     }
 
 }

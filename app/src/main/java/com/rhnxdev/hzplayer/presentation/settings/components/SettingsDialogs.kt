@@ -49,7 +49,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.BuildConfig
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
+import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 
 @Composable
@@ -125,6 +127,94 @@ fun OrientationDialog(
                                 OrientationMode.AUTO -> stringResource(R.string.orientation_auto)
                                 OrientationMode.PORTRAIT -> stringResource(R.string.orientation_portrait)
                                 OrientationMode.LANDSCAPE -> stringResource(R.string.orientation_landscape)
+                            },
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dialog_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun DecoderModeDialog(
+    currentMode: DecoderMode,
+    onDismiss: () -> Unit,
+    onSelect: (DecoderMode) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.decoder_mode_selection_title)) },
+        text = {
+            Column {
+                DecoderMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(mode) }
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentMode == mode,
+                            onClick = { onSelect(mode) }
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = when (mode) {
+                                DecoderMode.AUTO -> stringResource(R.string.decoder_mode_auto)
+                                DecoderMode.HARDWARE -> stringResource(R.string.decoder_mode_hardware)
+                                DecoderMode.SOFTWARE -> stringResource(R.string.decoder_mode_software)
+                            },
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dialog_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun ResumeModeDialog(
+    currentMode: ResumeMode,
+    onDismiss: () -> Unit,
+    onSelect: (ResumeMode) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.resume_mode_selection_title)) },
+        text = {
+            Column {
+                ResumeMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(mode) }
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentMode == mode,
+                            onClick = { onSelect(mode) }
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = when (mode) {
+                                ResumeMode.NONE -> stringResource(R.string.resume_mode_none)
+                                ResumeMode.ASK -> stringResource(R.string.resume_mode_ask)
+                                ResumeMode.ALWAYS -> stringResource(R.string.resume_mode_always)
                             },
                             style = MaterialTheme.typography.bodyLarge
                         )

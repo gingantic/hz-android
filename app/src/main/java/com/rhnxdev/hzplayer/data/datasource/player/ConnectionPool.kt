@@ -101,7 +101,9 @@ internal object ConnectionPool {
     private val smbBrowserPool = ConcurrentHashMap<String, CIFSContext>()
     private val webdavBrowserPool = ConcurrentHashMap<String, OkHttpClient>()
 
-    private fun key(scheme: String, host: String, port: Int, user: String, pass: String): String {
+    // ponytail: internal so the borrow/return key contract is unit-testable
+    // without a live SMB server (guards the sdk-brw pass-mismatch leak fix).
+    internal fun key(scheme: String, host: String, port: Int, user: String, pass: String): String {
         val passHash = pass.let { p ->
             try {
                 val md = java.security.MessageDigest.getInstance("SHA-256")
@@ -120,7 +122,10 @@ internal object ConnectionPool {
     fun borrowFtp(host: String, port: Int, user: String, pass: String): FTPClient {
         val k = key("ftp", host, port, user, pass)
         val existing = ftpPool[k]
-        if (existing != null && existing.value.isConnected && !existing.value.isAvailable) {
+        // Reuse a pooled connection only when it is connected AND idle (available).
+        // The old predicate reused a busy (in-transfer) connection and let a fresh
+        // idle one fall through to disconnect()+new, defeating FTP pooling.
+        if (existing != null && existing.value.isConnected && existing.value.isAvailable) {
             existing.acquire()
             return existing.value
         }
@@ -177,6 +182,20 @@ internal object ConnectionPool {
 
     // ── SMB (DataSource) ──────────────────────────────────────────
 
+    /**
+     * Force-close + drop a pooled [CIFSContext] for [host]. Called when a borrow
+     * turns out to be a stale session (network drop / SMB timeout): the next
+     * borrow rebuilds a fresh context instead of reusing the dead one. jcifs-ng
+     * has no `isConnected`, so staleness only surfaces on the next I/O — we
+     * can't probe cheaply, so we drop on the first failure that signals it.
+     */
+    fun dropSmbContext(host: String, port: Int, user: String, pass: String) {
+        val k = key("smb", host, port, user, pass)
+        smbPool.remove(k)?.let { timed ->
+            try { timed.value.close() } catch (_: Exception) {}
+        }
+    }
+
     /** Borrow (or create) a shared [CIFSContext] for the given server. */
     fun borrowSmbContext(host: String, port: Int, user: String, pass: String): CIFSContext {
         val k = key("smb", host, port, user, pass)
@@ -228,8 +247,6 @@ internal object ConnectionPool {
             Timed(ctx)
         }.also { it.acquire() }.value
     }
-
-    fun returnSmbContext(host: String, port: Int, user: String) {} // keep alive
 
     // ── WebDAV (DataSource) ──────────────────────────────────────
 
@@ -345,8 +362,10 @@ internal object ConnectionPool {
         }
     }
 
-    fun returnSmbBrowser(host: String, port: Int, user: String) {
-        val k = key("smb-brw", host, port, user, "")
+    // ponytail: borrow keys with the real password (line 329), so return must match
+    // it exactly or the CIFSContext is never closed and leaks for the process lifetime.
+    fun returnSmbBrowser(host: String, port: Int, user: String, pass: String) {
+        val k = key("smb-brw", host, port, user, pass)
         smbBrowserPool.remove(k)?.let { ctx ->
             try { ctx.close() } catch (_: Exception) {}
         }

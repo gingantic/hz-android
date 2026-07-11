@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -93,6 +94,7 @@ fun PlayerControlsOverlay(
     onDebugClick: (() -> Unit)? = null,
     onSkipToNext: (() -> Unit)? = null,
     onSkipToPrevious: (() -> Unit)? = null,
+    onMinimize: (() -> Unit)? = null,
     onInteract: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -184,6 +186,19 @@ fun PlayerControlsOverlay(
                     .background(Color.White.copy(alpha = 0.12f))
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             )
+
+            // Minimize to in-app floating window (only when the feature is on).
+            if (onMinimize != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(onClick = onMinimize) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = stringResource(R.string.minimize),
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
 
             // Playlist toggle
             if (uiState.videoPlaylist.size > 1) {

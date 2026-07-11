@@ -16,7 +16,6 @@ import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +32,6 @@ class FileBrowserViewModel @Inject constructor(
     private val userPrefs: UserPreferencesRepository,
     private val resumeRepository: ResumeRepository,
     private val mediaRepository: MediaRepository,
-    @ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FileBrowserUiState())

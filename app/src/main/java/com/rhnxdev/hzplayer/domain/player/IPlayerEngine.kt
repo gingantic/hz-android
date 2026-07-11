@@ -1,8 +1,12 @@
 package com.rhnxdev.hzplayer.domain.player
 
+import android.content.Context
 import android.net.Uri
+import android.view.View
+import androidx.media3.common.Player
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
+import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import kotlinx.coroutines.flow.StateFlow
@@ -22,8 +26,11 @@ interface IPlayerEngine {
 
     // ── Playback control ────────────────────────────────────────
 
-    /** Load a URI for playback. Call [resume] to start. */
-    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null)
+    /** Load a URI for playback. Call [resume] to start.
+     *  @param resumePositionMs if > 0, seek to this position right after prepare
+     *         (used to resume where the user left off). The engine applies the
+     *         seek itself once the media item is set, avoiding a race with load. */
+    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0)
 
     /** Load a playlist (video) and start at [startIndex] / [startPositionMs]. */
     fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int = 0, startPositionMs: Long = 0)
@@ -94,6 +101,10 @@ interface IPlayerEngine {
     /** Current repeat mode (default [RepeatMode.NONE]). */
     fun getRepeatMode(): RepeatMode = RepeatMode.NONE
 
+    /** Select the decoder implementation (e.g. Media3 software vs hardware).
+     *  Default no-op — only engines with selectable decoders override it. */
+    fun setDecoderMode(mode: com.rhnxdev.hzplayer.domain.model.DecoderMode) {}
+
     // ── Subtitle / CC track selection ───────────────────────────
 
     /** Get the list of subtitle track names/languages. */
@@ -137,6 +148,31 @@ interface IPlayerEngine {
      * engine cannot produce them. Defaults to `null` so engines need not implement.
      */
     fun getDebugStats(): DebugStats? = null
+
+    // ── Render seam ─────────────────────────────────────────────
+    // These bridge the engine's native view to the Compose surface. They are part
+    // of the contract (not per-engine casts) so a second backend implements them
+    // and the rendering code stays engine-agnostic. Non-Media3 engines MUST
+    // override all four; there is no safe default for a native view.
+
+    /** Create the engine's native render [View] (SurfaceView or TextureView). */
+    fun createRenderView(context: Context, useSurfaceView: Boolean): View
+
+    /** Push config (aspect ratio, subtitle style) into the render [view]. */
+    fun updateRenderView(view: View, config: RenderViewConfig)
+
+    /** Surface paused — release/hold the underlying view (e.g. PlayerView.onPause). */
+    fun onRenderViewPaused(view: View)
+
+    /** Surface resumed — reattach the underlying view (e.g. PlayerView.onResume). */
+    fun onRenderViewResumed(view: View)
+
+    /**
+     * The Media3 [Player] to wrap in a system MediaSession for lock-screen / media
+     * controls, or `null` if this engine cannot back one. Defaults to `null` so a
+     * non-Media3 backend simply opts out and the service skips the MediaSession.
+     */
+    fun getMedia3Player(): Player? = null
 
     // ── Lifecycle ───────────────────────────────────────────────
 

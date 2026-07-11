@@ -53,6 +53,11 @@ class PlayerRepositoryImpl @Inject constructor(
             }
         }
         scope.launch {
+            userPreferencesRepository.decoderMode.collect { mode ->
+                engine().setDecoderMode(mode)
+            }
+        }
+        scope.launch {
             playbackStateInfo.collect { info ->
                 info.currentUri?.let { uri -> savedPlaybackUri = uri }
             }
@@ -110,22 +115,22 @@ class PlayerRepositoryImpl @Inject constructor(
         _networkTraffic.value = NetworkTraffic.DEFAULT
     }
 
-    override fun playVideo(video: VideoItem) {
+    override fun playVideo(video: VideoItem, resumePositionMs: Long) {
         savedPlaybackUri = video.uri
         startTrafficPolling()
-        engine().play(video.uri, video.title, isVideo = true)
+        engine().play(video.uri, video.title, isVideo = true, resumePositionMs = resumePositionMs)
     }
 
-    override fun playAudio(audio: AudioItem) {
+    override fun playAudio(audio: AudioItem, resumePositionMs: Long) {
         savedPlaybackUri = audio.uri
         startTrafficPolling()
-        engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false)
+        engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false, resumePositionMs = resumePositionMs)
     }
 
-    override fun playUri(uri: String, title: String, isVideo: Boolean, mimeType: String?) {
+    override fun playUri(uri: String, title: String, isVideo: Boolean, mimeType: String?, resumePositionMs: Long) {
         savedPlaybackUri = uri
         startTrafficPolling()
-        engine().play(uri, title, isVideo = isVideo, mimeType = mimeType)
+        engine().play(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = resumePositionMs)
     }
 
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {

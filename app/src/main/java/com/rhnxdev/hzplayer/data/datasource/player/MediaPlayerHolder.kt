@@ -17,6 +17,8 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.common.Tracks
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.player.PlaybackErrorMapper
 import com.rhnxdev.hzplayer.domain.model.PlayerState
@@ -36,6 +38,20 @@ class MediaPlayerHolder @Inject constructor(
 ) {
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private var trackSelector: DefaultTrackSelector = buildTrackSelector()
+
+    /** Current decoder preference. Drives the [MediaCodecSelector] used when
+     *  the player is (re)built. Changing it mid-playback defers the rebuild
+     *  until playback returns to idle, so it takes effect on the next play
+     *  without disturbing the current media. */
+    @Volatile var decoderMode: DecoderMode = DecoderMode.AUTO
+        set(value) {
+            if (field == value) return
+            field = value
+            requestDecoderRebuild()
+        }
+
+    /** Set when a [decoderMode] change arrived during active playback. */
+    private var pendingRebuild = false
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildTrackSelector(): DefaultTrackSelector =
@@ -61,6 +77,18 @@ class MediaPlayerHolder @Inject constructor(
         private set
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun buildCodecSelector(): MediaCodecSelector = when (decoderMode) {
+        DecoderMode.AUTO -> MediaCodecSelector.DEFAULT
+        DecoderMode.SOFTWARE -> MediaCodecSelector.PREFER_SOFTWARE
+        DecoderMode.HARDWARE -> MediaCodecSelector { mimeType, secure, tunneling ->
+            // Keep only decoders that are NOT software-only, preserving the
+            // default priority order. Filters MediaCodecUtil output.
+            MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling)
+                .filter { !it.softwareOnly && it.name != "OMX.google.raw.decoder" }
+        }
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildPlayer(): ExoPlayer {
         return ExoPlayer.Builder(context)
             .setTrackSelector(trackSelector)
@@ -69,6 +97,7 @@ class MediaPlayerHolder @Inject constructor(
                 DefaultRenderersFactory(context)
                     .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
                     .setEnableDecoderFallback(true)
+                    .setMediaCodecSelector(buildCodecSelector())
             )
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
@@ -101,6 +130,10 @@ class MediaPlayerHolder @Inject constructor(
                         decoderName: String,
                         initializationDurationMs: Long,
                     ) { _audioDecoderName.value = decoderName }
+                    override fun onAudioSessionIdChanged(
+                        eventTime: AnalyticsListener.EventTime,
+                        audioSessionId: Int,
+                    ) { _audioSessionId.value = audioSessionId }
                     override fun onVideoEnabled(
                         eventTime: AnalyticsListener.EventTime,
                         decoderCounters: DecoderCounters,
@@ -123,6 +156,39 @@ class MediaPlayerHolder @Inject constructor(
             }
     }
 
+    /**
+     * Apply a [decoderMode] change: if playback is active, defer the rebuild
+     * until the player returns to idle (so current media isn't interrupted);
+     * otherwise rebuild now. The engine reads [player] live, so the next play
+     * uses the new selector.
+     */
+    private fun requestDecoderRebuild() {
+        val active = player.playbackState == Player.STATE_BUFFERING
+            || player.playbackState == Player.STATE_READY && player.isPlaying
+        if (active) {
+            pendingRebuild = true
+            android.util.Log.d(TAG, "Decoder rebuild defered — playback active")
+        } else {
+            rebuildPlayer()
+        }
+    }
+
+    /**
+     * Rebuild the [ExoPlayer] with the current [decoderMode] so a codec-mode
+     * change takes effect without losing the singleton. The engine reads [player]
+     * live, so the next play uses the new selector.
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun rebuildPlayer() {
+        val newPlayer = buildPlayer()
+        val old = player
+        player = newPlayer
+        attachListeners(newPlayer)
+        old.release()
+        pendingRebuild = false
+        android.util.Log.d(TAG, "ExoPlayer rebuilt for decoderMode=$decoderMode")
+    }
+
     private val _playbackStateInfo = MutableStateFlow(PlayerStateInfo())
     val playbackStateInfo: StateFlow<PlayerStateInfo> = _playbackStateInfo.asStateFlow()
 
@@ -134,6 +200,9 @@ class MediaPlayerHolder @Inject constructor(
 
     private val _audioDecoderName = MutableStateFlow("")
     val audioDecoderName: StateFlow<String> = _audioDecoderName.asStateFlow()
+
+    private val _audioSessionId = MutableStateFlow(0)
+    val audioSessionId: StateFlow<Int> = _audioSessionId.asStateFlow()
 
     /** Video decoder counters — set by AnalyticsListener.onVideoEnabled.
      *  @Volatile: written on the player/analytics thread, read on the FPS poll thread. */
@@ -164,12 +233,6 @@ class MediaPlayerHolder @Inject constructor(
                     )
                 }
 
-                @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-                override fun onTracksChanged(tracks: Tracks) {
-                    // No consumer for track-changed notifications in the current
-                    // engine wiring — kept as no-op for future extensions.
-                }
-
                 override fun onPlaybackStateChanged(state: Int) {
                     val isNewPlayback = state == Player.STATE_BUFFERING || state == Player.STATE_READY
                     _playbackStateInfo.value = _playbackStateInfo.value.copy(
@@ -183,6 +246,10 @@ class MediaPlayerHolder @Inject constructor(
                         bufferedPosition = target.bufferedPosition.coerceAtLeast(0),
                         errorMessage = if (isNewPlayback) null else _playbackStateInfo.value.errorMessage
                     )
+                    // Flush a defered decoder-mode rebuild now that playback is idle.
+                    if (state == Player.STATE_IDLE && pendingRebuild) {
+                        rebuildPlayer()
+                    }
                 }
 
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -273,6 +340,7 @@ class MediaPlayerHolder @Inject constructor(
     }
 
     fun release() {
+        _audioSessionId.value = 0
         player.release()
     }
 
