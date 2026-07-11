@@ -82,6 +82,7 @@ import com.rhnxdev.hzplayer.presentation.network.NetworkScreen
 import com.rhnxdev.hzplayer.presentation.player.AudioPlayerScreen
 import com.rhnxdev.hzplayer.presentation.player.PlayerViewModel
 import com.rhnxdev.hzplayer.presentation.player.components.MiniPlayerBar
+import com.rhnxdev.hzplayer.presentation.player.components.FloatingVideoPlayer
 import com.rhnxdev.hzplayer.presentation.player.VideoPlayerScreen
 import com.rhnxdev.hzplayer.presentation.search.SearchScreen
 import com.rhnxdev.hzplayer.presentation.settings.SettingsScreen
@@ -95,6 +96,14 @@ class MainActivity : ComponentActivity() {
 
     /** Tracks whether any permission was denied on the last attempt. */
     private var permissionDenied by mutableStateOf(false)
+
+    /**
+     * Whether the in-app floating window (and thus system PiP) is currently
+     * eligible: toggle on + a video is playing with a known title. Updated from
+     * [HzPlayerApp] each recomposition so the Activity-level [onUserLeaveHint]
+     * can read it without its own collector.
+     */
+    private var pipEligible = false
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -125,6 +134,7 @@ class MainActivity : ComponentActivity() {
                         initialTabIndex = mainUiState.selectedTabIndex,
                         permissionDenied = permissionDenied,
                         onRequestPermissions = { requestMediaPermissions() },
+                        onPipEligibilityChange = { pipEligible = it },
                     )
                 } else {
                     Box(
@@ -135,6 +145,33 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Fires when the user backgrounds the app (Home / recents / app-switch) —
+     * NOT on Back. If a floating-eligible video is playing, enter system PiP.
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (pipEligible && !isInPictureInPictureMode && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val params = android.app.PictureInPictureParams.Builder()
+                .setAspectRatio(android.util.Rational(16, 9))
+                .build()
+            enterPictureInPictureMode(params)
+        }
+    }
+
+    /**
+     * PiP mode change. Returning to the app keeps playing (the in-app floating
+     * window resumes from the same engine state); the MediaSession notification
+     * remains the stop control. No distinct "X closed" callback exists on stock
+     * Android, so we don't force-stop here.
+     */
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
     }
 
     private fun requestMediaPermissions() {
@@ -188,6 +225,15 @@ class MainActivity : ComponentActivity() {
             Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
                 android.os.Environment.isExternalStorageManager()
 
+        /** True when the app holds the granular media-read permissions it requests. */
+        fun isMediaPermissionGranted(context: android.content.Context): Boolean {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
+            }
+            return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
         /**
          * Open the system page where the user can toggle "Allow access to
          * manage all files" (MANAGE_EXTERNAL_STORAGE).
@@ -222,6 +268,7 @@ fun HzPlayerApp(
     initialTabIndex: Int,
     permissionDenied: Boolean = false,
     onRequestPermissions: () -> Unit = {},
+    onPipEligibilityChange: (Boolean) -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -236,6 +283,8 @@ fun HzPlayerApp(
 
     // Shared player ViewModel (activity-scoped — same instance everywhere)
     val playerViewModel: PlayerViewModel = hiltViewModel()
+    val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
+    val floatingEnabled by playerViewModel.backgroundPlay.collectAsStateWithLifecycle()
 
     // ViewModel for tab persistence
     val mainViewModel: MainViewModel = hiltViewModel()
@@ -263,6 +312,13 @@ fun HzPlayerApp(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Keep the Activity-level PiP eligibility flag in sync with the player state.
+    val pipEligibleNow = floatingEnabled && playerState.isVideo &&
+        playerState.currentTitle != null
+    LaunchedEffect(pipEligibleNow) {
+        onPipEligibilityChange(pipEligibleNow)
     }
 
     Box(
@@ -505,6 +561,12 @@ fun HzPlayerApp(
                         playerViewModel.stop()
                         navController.popBackStack("__main_tabs", inclusive = false)
                     },
+                    onMinimize = {
+                        // Signal the full-screen surface's ON_STOP to keep playing
+                        // (engine is a singleton; the mini player takes over).
+                        playerViewModel.isMinimizing = true
+                        navController.popBackStack("__main_tabs", inclusive = false)
+                    },
                 )
             }
 
@@ -554,6 +616,26 @@ fun HzPlayerApp(
                 )
             }
         }
+
+        // Layer 3: In-app floating video player (YouTube-style mini window).
+        // Floats above the tabs; gated so it never shows over the full-screen
+        // player or the audio mini-bar.
+        FloatingVideoPlayer(
+            viewModel = playerViewModel,
+            uiState = playerState,
+            visible = floatingEnabled && playerState.isVideo &&
+                playerState.currentTitle != null && !isFullScreen,
+            onExpand = {
+                // Floating window only shows when !isFullScreen (route already
+                // popped), so just open the full player again.
+                playerViewModel.onVideoStarted()
+                navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+            },
+            onClose = { playerViewModel.stop() },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 12.dp, bottom = 84.dp),
+        )
     }
 }
 

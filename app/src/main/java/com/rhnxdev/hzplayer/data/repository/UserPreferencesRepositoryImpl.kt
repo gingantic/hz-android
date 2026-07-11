@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
+import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
+import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
@@ -74,8 +76,13 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         prefs[PrefKey.UseSurfaceView.key] ?: true
     }.distinctUntilChanged()
 
-    override val enableHdrPlayback: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.EnableHdrPlayback.key] ?: true
+    override val decoderMode: Flow<DecoderMode> = dataStore.data.map { prefs ->
+        val name = prefs[PrefKey.DecoderMode.key]
+        try {
+            name?.let { DecoderMode.valueOf(it) } ?: DecoderMode.AUTO
+        } catch (_: IllegalArgumentException) {
+            DecoderMode.AUTO
+        }
     }.distinctUntilChanged()
 
     override val fileBrowserMediaMode: Flow<Boolean> = dataStore.data.map { prefs ->
@@ -91,6 +98,14 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }.distinctUntilChanged()
 
+    override val resumeMode: Flow<ResumeMode> = dataStore.data.map { prefs ->
+        val name = prefs[PrefKey.ResumeMode.key]
+        try {
+            name?.let { ResumeMode.valueOf(it) } ?: ResumeMode.ALWAYS
+        } catch (_: IllegalArgumentException) {
+            ResumeMode.ALWAYS
+        }
+    }.distinctUntilChanged()
 
     override val minSongDurationSecs: Flow<Int> = dataStore.data.map { prefs ->
         prefs[PrefKey.MinSongDurationSecs.key] ?: 0
@@ -98,6 +113,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override val debugMode: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[PrefKey.DebugMode.key] ?: false
+    }.distinctUntilChanged()
+
+    override val backgroundPlay: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PrefKey.BackgroundPlay.key] ?: false
     }.distinctUntilChanged()
 
     override val subtitleStyle: Flow<SubtitleStyle> = dataStore.data.map { prefs ->
@@ -194,8 +213,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[PrefKey.UseSurfaceView.key] = enabled }
     }
 
-    override suspend fun setEnableHdrPlayback(enabled: Boolean) {
-        dataStore.edit { prefs -> prefs[PrefKey.EnableHdrPlayback.key] = enabled }
+    override suspend fun setDecoderMode(mode: DecoderMode) {
+        dataStore.edit { prefs -> prefs[PrefKey.DecoderMode.key] = mode.name }
     }
 
     override suspend fun setFileBrowserMediaMode(enabled: Boolean) {
@@ -206,12 +225,20 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[PrefKey.OrientationMode.key] = mode.name }
     }
 
+    override suspend fun setResumeMode(mode: ResumeMode) {
+        dataStore.edit { prefs -> prefs[PrefKey.ResumeMode.key] = mode.name }
+    }
+
     override suspend fun setMinSongDurationSecs(seconds: Int) {
         dataStore.edit { prefs -> prefs[PrefKey.MinSongDurationSecs.key] = seconds }
     }
 
     override suspend fun setDebugMode(enabled: Boolean) {
         dataStore.edit { prefs -> prefs[PrefKey.DebugMode.key] = enabled }
+    }
+
+    override suspend fun setBackgroundPlay(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[PrefKey.BackgroundPlay.key] = enabled }
     }
 
     private sealed class PrefKey<T>(val key: Preferences.Key<T>) {
@@ -229,11 +256,13 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object SeekSensitivity : PrefKey<Float>(floatPreferencesKey("seek_sensitivity"))
         object ShowHiddenFiles : PrefKey<Boolean>(booleanPreferencesKey("show_hidden_files"))
         object UseSurfaceView : PrefKey<Boolean>(booleanPreferencesKey("use_surface_view"))
-        object EnableHdrPlayback : PrefKey<Boolean>(booleanPreferencesKey("enable_hdr_playback"))
+        object DecoderMode : PrefKey<String>(stringPreferencesKey("decoder_mode"))
         object FileBrowserMediaMode : PrefKey<Boolean>(booleanPreferencesKey("file_browser_media_mode"))
         object OrientationMode : PrefKey<String>(stringPreferencesKey("orientation_mode"))
+        object ResumeMode : PrefKey<String>(stringPreferencesKey("resume_mode"))
         object SelectedTabIndex : PrefKey<Int>(intPreferencesKey("selected_tab_index"))
         object MinSongDurationSecs : PrefKey<Int>(intPreferencesKey("min_song_duration_secs"))
         object DebugMode : PrefKey<Boolean>(booleanPreferencesKey("debug_mode"))
+        object BackgroundPlay : PrefKey<Boolean>(booleanPreferencesKey("background_play"))
     }
 }

@@ -27,7 +27,7 @@ val DOCUMENT_EXTENSIONS = setOf(
 val BINARY_EXTENSIONS = setOf(
     "exe", "msi", "apk", "aab", "deb", "rpm", "bin", "elf",
     "dll", "so", "dylib", "jar", "class", "wasm",
-    "appimage", "AppImage", "dmg", "pkg",
+    "appimage", "dmg", "pkg",
     "bat", "cmd", "com", "scr",
     "sh", "bash", "zsh",
 )
@@ -50,11 +50,6 @@ fun isBinaryExtension(name: String): Boolean {
 fun isDocumentExtension(name: String): Boolean {
     val ext = name.substringAfterLast('.', "").lowercase()
     return ext in DOCUMENT_EXTENSIONS
-}
-
-fun isSubtitleExtension(name: String): Boolean {
-    val ext = name.substringAfterLast('.', "").lowercase()
-    return ext in SUBTITLE_EXTENSIONS
 }
 
 fun defaultPort(protocol: NetworkProtocol): Int = when (protocol) {

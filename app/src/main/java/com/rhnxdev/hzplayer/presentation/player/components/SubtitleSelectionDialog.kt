@@ -36,7 +36,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,39 +64,16 @@ fun SubtitleSelectionDialog(
     var tracksExpanded by remember { mutableStateOf(true) }
     var delayExpanded by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color(0xFF1E1E24),
-        tonalElevation = 0.dp,
+    SheetScaffold(
+        title = stringResource(R.string.subtitles_cc),
+        icon = Icons.Default.Subtitles,
+        onDismiss = onDismiss,
+        columnModifier = Modifier
+            .fillMaxWidth()
+            // ModalBottomSheet already insets for the nav bar; don't add it again
+            // or the bottom gap is doubled.
+            .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // ModalBottomSheet already insets for the nav bar; don't add it again
-                // or the bottom gap is doubled.
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        ) {
-            // ── Header ──
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Subtitles,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.subtitles_cc),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    ),
-                )
-            }
-
             Spacer(modifier = Modifier.height(8.dp))
 
             // ── Scrollable content ──
@@ -211,7 +187,6 @@ fun SubtitleSelectionDialog(
                     }
                 }
             }
-        }
     }
 }
 

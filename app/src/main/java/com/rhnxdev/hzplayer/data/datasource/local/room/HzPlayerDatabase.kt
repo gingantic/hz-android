@@ -19,7 +19,10 @@ import com.rhnxdev.hzplayer.data.datasource.local.room.entities.StreamHistoryEnt
         PlaybackPositionEntity::class,
     ],
     version = 3,
-    exportSchema = false,
+    // Schema exported to app/schemas so versioned Migrations can be authored and
+    // reviewed in source control. exportSchema=false + fallbackToDestructiveMigration()
+    // silently wiped all saved servers / resume positions / history on every bump.
+    exportSchema = true,
 )
 abstract class HzPlayerDatabase : RoomDatabase() {
     abstract fun mediaDao(): MediaDao

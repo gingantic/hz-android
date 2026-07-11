@@ -43,37 +43,16 @@ fun AudioSelectionDialog(
     onTrackSelected: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color(0xFF1E1E24),
-        tonalElevation = 0.dp,
+    SheetScaffold(
+        title = stringResource(R.string.audio_track),
+        icon = Icons.Default.MusicNote,
+        onDismiss = onDismiss,
+        columnModifier = Modifier
+            .fillMaxWidth()
+            // ModalBottomSheet already insets for the nav bar; don't add it again
+            // or the bottom gap is doubled.
+            .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // ModalBottomSheet already insets for the nav bar; don't add it again
-                // or the bottom gap is doubled.
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        ) {
-            // ── Header ──
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.audio_track),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    ),
-                )
-            }
-
             Spacer(modifier = Modifier.height(12.dp))
 
             // ── Track list ──
@@ -110,7 +89,6 @@ fun AudioSelectionDialog(
                     Text(text = stringResource(R.string.close), color = Color.White.copy(alpha = 0.7f))
                 }
             }
-        }
     }
 }
 

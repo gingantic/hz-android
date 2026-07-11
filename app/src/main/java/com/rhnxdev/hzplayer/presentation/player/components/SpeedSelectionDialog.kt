@@ -55,35 +55,15 @@ fun SpeedSelectionDialog(
     val initialIndex = (SPEED_PRESETS.indexOf(currentSpeed).takeIf { it >= 0 } ?: 3).toFloat()
     var sliderIndex by remember { mutableFloatStateOf(initialIndex) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color(0xFF1E1E24),
-        tonalElevation = 0.dp,
+    SheetScaffold(
+        title = stringResource(R.string.playback_speed),
+        icon = Icons.Default.Speed,
+        onDismiss = onDismiss,
+        columnModifier = Modifier
+            .fillMaxWidth()
+            .padding(stableNavBarPaddingValues())
+            .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(stableNavBarPaddingValues())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Speed,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.playback_speed),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    ),
-                )
-            }
-
             Spacer(modifier = Modifier.height(12.dp))
             HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
             Spacer(modifier = Modifier.height(16.dp))
@@ -136,6 +116,5 @@ fun SpeedSelectionDialog(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-        }
     }
 }

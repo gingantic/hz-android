@@ -17,17 +17,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.MainActivity
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
@@ -40,6 +43,8 @@ import com.rhnxdev.hzplayer.presentation.settings.components.SettingsToggleItem
 import com.rhnxdev.hzplayer.presentation.settings.components.AboutDialog
 import com.rhnxdev.hzplayer.presentation.settings.components.ThemeSelectionDialog
 import com.rhnxdev.hzplayer.presentation.settings.components.OrientationDialog
+import com.rhnxdev.hzplayer.presentation.settings.components.ResumeModeDialog
+import com.rhnxdev.hzplayer.presentation.settings.components.DecoderModeDialog
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 @Composable
@@ -50,10 +55,11 @@ fun SettingsScreen(
 ) {
     var showThemeDialog by remember { mutableStateOf(false) }
     var showColorDialog by remember { mutableStateOf(false) }
-    var resumePlayback by remember { mutableStateOf(true) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showOrientationDialog by remember { mutableStateOf(false) }
+    var showResumeDialog by remember { mutableStateOf(false) }
+    var showDecoderDialog by remember { mutableStateOf(false) }
 
 
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
@@ -65,9 +71,11 @@ fun SettingsScreen(
     val showHiddenFiles by settingsViewModel.showHiddenFiles.collectAsStateWithLifecycle()
     val useSurfaceView by settingsViewModel.useSurfaceView.collectAsStateWithLifecycle()
     val minSongDurationSecs by settingsViewModel.minSongDurationSecs.collectAsStateWithLifecycle()
-    val enableHdrPlayback by settingsViewModel.enableHdrPlayback.collectAsStateWithLifecycle()
     val debugMode by settingsViewModel.debugMode.collectAsStateWithLifecycle()
+    val backgroundPlay by settingsViewModel.backgroundPlay.collectAsStateWithLifecycle()
     val orientationMode by settingsViewModel.orientationMode.collectAsStateWithLifecycle()
+    val resumeMode by settingsViewModel.resumeMode.collectAsStateWithLifecycle()
+    val decoderMode by settingsViewModel.decoderMode.collectAsStateWithLifecycle()
     val activeEngine by settingsViewModel.activeEngine.collectAsStateWithLifecycle()
     val availableEngines = settingsViewModel.availableEngines
 
@@ -119,6 +127,27 @@ fun SettingsScreen(
         )
     }
 
+    if (showResumeDialog) {
+        ResumeModeDialog(
+            currentMode = resumeMode,
+            onDismiss = { showResumeDialog = false },
+            onSelect = { mode ->
+                settingsViewModel.saveResumeMode(mode)
+                showResumeDialog = false
+            },
+        )
+    }
+
+    if (showDecoderDialog) {
+        DecoderModeDialog(
+            currentMode = decoderMode,
+            onDismiss = { showDecoderDialog = false },
+            onSelect = { mode ->
+                settingsViewModel.saveDecoderMode(mode)
+                showDecoderDialog = false
+            },
+        )
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         // Toolbar
@@ -184,7 +213,7 @@ fun SettingsScreen(
                                     subtitle = if (isActive) stringResource(R.string.settings_engine_active)
                                     else stringResource(R.string.settings_engine_inactive),
                                     trailing = if (isActive) {
-                                        { Icons.Default.Check }
+                                        { Icon(Icons.Default.Check, contentDescription = null) }
                                     } else null,
                                     onClick = { settingsViewModel.selectEngine(engineType) },
                                 )
@@ -201,36 +230,28 @@ fun SettingsScreen(
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = stringResource(R.string.settings_default_subtitle),
-                                subtitle = "None ${stringResource(R.string.not_implemented)}",
-                                enabled = false,
-                                onClick = {},
-                            )
-                            SettingsItem(
-                                title = stringResource(R.string.settings_jump_delay),
-                                subtitle = "10 seconds ${stringResource(R.string.not_implemented)}",
-                                enabled = false,
-                                onClick = {},
-                            )
-                            SettingsItem(
-                                title = stringResource(R.string.settings_long_jump_delay),
-                                subtitle = "20 seconds ${stringResource(R.string.not_implemented)}",
-                                enabled = false,
-                                onClick = {},
-                            )
-                            SettingsToggleItem(
                                 title = stringResource(R.string.settings_resume_playback),
-                                subtitle = "${stringResource(R.string.settings_resume_playback_sub)} ${stringResource(R.string.not_implemented)}",
-                                checked = resumePlayback,
-                                onCheckedChange = { resumePlayback = it },
-                                enabled = false,
+                                subtitle = when (resumeMode) {
+                                    com.rhnxdev.hzplayer.domain.model.ResumeMode.NONE -> stringResource(R.string.resume_mode_none)
+                                    com.rhnxdev.hzplayer.domain.model.ResumeMode.ASK -> stringResource(R.string.resume_mode_ask)
+                                    com.rhnxdev.hzplayer.domain.model.ResumeMode.ALWAYS -> stringResource(R.string.resume_mode_always)
+                                },
+                                onClick = { showResumeDialog = true },
+                            )
+                            SettingsItem(
+                                title = stringResource(R.string.settings_decoder_mode),
+                                subtitle = when (decoderMode) {
+                                    DecoderMode.AUTO -> stringResource(R.string.decoder_mode_auto)
+                                    DecoderMode.HARDWARE -> stringResource(R.string.decoder_mode_hardware)
+                                    DecoderMode.SOFTWARE -> stringResource(R.string.decoder_mode_software)
+                                },
+                                onClick = { showDecoderDialog = true },
                             )
                             SettingsToggleItem(
                                 title = stringResource(R.string.settings_background_play),
-                                subtitle = "${stringResource(R.string.settings_background_play_sub)} ${stringResource(R.string.not_implemented)}",
-                                checked = true,
-                                onCheckedChange = {},
-                                enabled = false,
+                                subtitle = stringResource(R.string.settings_background_play_sub),
+                                checked = backgroundPlay,
+                                onCheckedChange = { settingsViewModel.saveBackgroundPlay(it) },
                             )
                             SettingsSliderItem(
                                 title = stringResource(R.string.settings_gesture_sensitivity),
@@ -238,14 +259,6 @@ fun SettingsScreen(
                                 value = seekSensitivity,
                                 onValueChange = { settingsViewModel.saveSeekSensitivity(it) },
                                 valueRange = 0.2f..3.0f,
-                            )
-
-                            SettingsToggleItem(
-                                title = stringResource(R.string.settings_video_hdr),
-                                subtitle = stringResource(R.string.settings_video_hdr_sub),
-                                checked = enableHdrPlayback,
-                                onCheckedChange = { settingsViewModel.saveEnableHdrPlayback(it) },
-                                enabled = false,
                             )
                         }
                     },
@@ -275,18 +288,6 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_audio),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            SettingsItem(
-                                title = stringResource(R.string.settings_audio_jump_delay),
-                                subtitle = "10 seconds ${stringResource(R.string.not_implemented)}",
-                                enabled = false,
-                                onClick = {},
-                            )
-                            SettingsItem(
-                                title = stringResource(R.string.settings_equalizer),
-                                subtitle = "${stringResource(R.string.settings_equalizer_sub)} ${stringResource(R.string.not_implemented)}",
-                                enabled = false,
-                                onClick = {},
-                            )
                             SettingsToggleItem(
                                 title = stringResource(R.string.settings_audio_track_info),
                                 subtitle = "${stringResource(R.string.settings_audio_track_info_sub)} ${stringResource(R.string.not_implemented)}",
@@ -328,6 +329,7 @@ fun SettingsScreen(
             // Storage & Permissions
             item {
                 val context = LocalContext.current
+                val mediaGranted = MainActivity.isMediaPermissionGranted(context)
                 SettingsSection(
                     title = stringResource(R.string.settings_storage_permissions),
                     content = {
@@ -336,6 +338,9 @@ fun SettingsScreen(
                                 title = stringResource(R.string.settings_request_media_perms),
                                 subtitle = stringResource(R.string.settings_request_media_perms_sub),
                                 onClick = onRequestPermissions,
+                                trailing = if (mediaGranted) {
+                                    { Icon(Icons.Default.Check, null, tint = Color(0xFF4CAF50)) }
+                                } else null,
                             )
                             SettingsItem(
                                 title = stringResource(R.string.settings_full_storage),
@@ -344,12 +349,9 @@ fun SettingsScreen(
                                 else
                                     stringResource(R.string.settings_full_storage_sub),
                                 onClick = { MainActivity.openFullStorageSettings(context) },
-                            )
-                            SettingsItem(
-                                title = stringResource(R.string.settings_media_dirs),
-                                subtitle = "${stringResource(R.string.settings_media_dirs_sub)} ${stringResource(R.string.not_implemented)}",
-                                enabled = false,
-                                onClick = {},
+                                trailing = if (MainActivity.isFullStorageGranted()) {
+                                    { Icon(Icons.Default.Check, null, tint = Color(0xFF4CAF50)) }
+                                } else null,
                             )
                             SettingsToggleItem(
                                 title = stringResource(R.string.settings_show_hidden),

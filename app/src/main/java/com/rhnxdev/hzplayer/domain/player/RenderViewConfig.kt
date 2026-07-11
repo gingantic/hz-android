@@ -11,5 +11,4 @@ import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 data class RenderViewConfig(
     val aspectRatioMode: AspectRatioMode,
     val subtitleStyle: SubtitleStyle,
-    val hdrEnabled: Boolean,
 )

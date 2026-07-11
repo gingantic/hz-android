@@ -77,102 +77,82 @@ class VideoLibraryViewModel @Inject constructor(
 
                 // Try real data from MediaStore via repository
                 mediaRepository.getAllVideos(sortType, forceRefresh)
-                    .catch { e ->
-                        // If repository fails, only fall back to fictional preview data
-                        // in debug builds; in release, show an empty library + real error.
-                        if (BuildConfig.DEBUG) {
-                            val categories = groupVideosIntoCategories(PREVIEW_VIDEOS, PREVIEW_RECENT)
-                            _uiState.update {
-                                it.copy(
-                                    categories = categories,
-                                    recentVideos = PREVIEW_RECENT,
-                                    allVideos = PREVIEW_VIDEOS,
-                                    filteredVideos = PREVIEW_VIDEOS,
-                                    isLoading = false,
-                                    error = if (PREVIEW_VIDEOS.isEmpty()) e.message else null,
-                                )
-                            }
-                        } else {
-                            _uiState.update {
-                                it.copy(
-                                    categories = emptyList(),
-                                    recentVideos = emptyList(),
-                                    allVideos = emptyList(),
-                                    filteredVideos = emptyList(),
-                                    isLoading = false,
-                                    error = e.message,
-                                )
-                            }
-                        }
-                    }
-                    .collect { videos ->
-                        if (videos.isNotEmpty()) {
-                            val cutoff = System.currentTimeMillis() - (7 * 86_400_000L) // 7 days
-                            val recent = videos.filter { it.dateAdded >= cutoff }
-                            val categories = groupVideosIntoCategories(videos, recent)
-
-                            _uiState.update {
-                                it.copy(
-                                    categories = categories,
-                                    recentVideos = recent,
-                                    allVideos = videos,
-                                    filteredVideos = videos,
-                                    isLoading = false,
-                                    isEmpty = false,
-                                )
-                            }
-                        } else {
-                            // Empty result. Only show fictional preview data in debug
-                            // builds; in release, surface an empty library instead.
-                            if (BuildConfig.DEBUG) {
-                                val categories = groupVideosIntoCategories(PREVIEW_VIDEOS)
-                                _uiState.update {
-                                    it.copy(
-                                        categories = categories,
-                                        allVideos = PREVIEW_VIDEOS,
-                                        filteredVideos = PREVIEW_VIDEOS,
-                                        isLoading = false,
-                                        isEmpty = PREVIEW_VIDEOS.isEmpty(),
-                                    )
-                                }
-                            } else {
-                                _uiState.update {
-                                    it.copy(
-                                        categories = emptyList(),
-                                        allVideos = emptyList(),
-                                        filteredVideos = emptyList(),
-                                        isLoading = false,
-                                        isEmpty = true,
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    .catch { e -> emitFailure(e.message) }
+                    .collect { videos -> emitLoaded(videos) }
             } catch (e: Exception) {
-                if (BuildConfig.DEBUG) {
-                    val categories = groupVideosIntoCategories(PREVIEW_VIDEOS, PREVIEW_RECENT)
-                    _uiState.update {
-                        it.copy(
-                            categories = categories,
-                            recentVideos = PREVIEW_RECENT,
-                            allVideos = PREVIEW_VIDEOS,
-                            filteredVideos = PREVIEW_VIDEOS,
-                            isLoading = false,
-                            error = if (PREVIEW_VIDEOS.isEmpty()) e.message else null,
-                        )
-                    }
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            categories = emptyList(),
-                            recentVideos = emptyList(),
-                            allVideos = emptyList(),
-                            filteredVideos = emptyList(),
-                            isLoading = false,
-                            error = e.message,
-                        )
-                    }
+                emitFailure(e.message)
+            }
+        }
+    }
+
+    /** Real data arrived (or an explicitly empty result). */
+    private fun emitLoaded(videos: List<VideoItem>) {
+        if (videos.isNotEmpty()) {
+            val cutoff = System.currentTimeMillis() - (7 * 86_400_000L) // 7 days
+            val recent = videos.filter { it.dateAdded >= cutoff }
+            val categories = groupVideosIntoCategories(videos, recent)
+            _uiState.update {
+                it.copy(
+                    categories = categories,
+                    recentVideos = recent,
+                    allVideos = videos,
+                    filteredVideos = videos,
+                    isLoading = false,
+                    isEmpty = false,
+                )
+            }
+        } else {
+            // Empty result. Only show fictional preview data in debug
+            // builds; in release, surface an empty library instead.
+            if (BuildConfig.DEBUG) {
+                val categories = groupVideosIntoCategories(PREVIEW_VIDEOS)
+                _uiState.update {
+                    it.copy(
+                        categories = categories,
+                        allVideos = PREVIEW_VIDEOS,
+                        filteredVideos = PREVIEW_VIDEOS,
+                        isLoading = false,
+                        isEmpty = PREVIEW_VIDEOS.isEmpty(),
+                    )
                 }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        categories = emptyList(),
+                        allVideos = emptyList(),
+                        filteredVideos = emptyList(),
+                        isLoading = false,
+                        isEmpty = true,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Load failed — fall back to preview data only in debug; real error in release. */
+    private fun emitFailure(message: String?) {
+        if (BuildConfig.DEBUG) {
+            val categories = groupVideosIntoCategories(PREVIEW_VIDEOS, PREVIEW_RECENT)
+            _uiState.update {
+                it.copy(
+                    categories = categories,
+                    recentVideos = PREVIEW_RECENT,
+                    allVideos = PREVIEW_VIDEOS,
+                    filteredVideos = PREVIEW_VIDEOS,
+                    isLoading = false,
+                    error = if (PREVIEW_VIDEOS.isEmpty()) message else null,
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    categories = emptyList(),
+                    recentVideos = emptyList(),
+                    allVideos = emptyList(),
+                    filteredVideos = emptyList(),
+                    isLoading = false,
+                    error = message,
+                )
             }
         }
     }

@@ -17,7 +17,7 @@ import com.rhnxdev.hzplayer.core.util.bitsToHuman
 import com.rhnxdev.hzplayer.core.util.formatBitsPerSecond
 import com.rhnxdev.hzplayer.core.util.formatDebugBytes
 import com.rhnxdev.hzplayer.core.util.formatDebugSpeed
-import com.rhnxdev.hzplayer.domain.usecase.ResumeProgressUseCase
+import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -42,45 +42,68 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
-    private val resumeProgress: ResumeProgressUseCase,
+    private val resumeProgress: ResumeRepository,
     private val mediaDao: MediaDao,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
+    private val positionController = PlayerPositionController(
+        scope = viewModelScope,
+        playerRepository = playerRepository,
+        resumeProgress = resumeProgress,
+        uiState = _uiState,
+    )
+
     /**
-     * High-frequency playback position (ms). Emitted every 250 ms by
-     * [startPositionUpdates]. Kept separate from [uiState] so the 250 ms tick
-     * only recomposes the seek bar, not the entire player UI.
+     * High-frequency playback position (ms), updated every 250 ms. Kept separate
+     * from [uiState] so the tick only recomposes the seek bar, not the whole UI.
      */
-    private val _position = MutableStateFlow(0L)
-    val position: StateFlow<Long> = _position.asStateFlow()
+    val position: StateFlow<Long> = positionController.position
 
     val orientationMode: StateFlow<OrientationMode> = userPreferencesRepository.orientationMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrientationMode.AUTO)
 
-    private var positionUpdateJob: Job? = null
+    /** Floating video player (in-app mini + system PiP) master toggle. */
+    val backgroundPlay: StateFlow<Boolean> = userPreferencesRepository.backgroundPlay
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    // Outlives viewModelScope so a final save during onCleared() still completes.
-    private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var saveTick = 0
-
-    private var isSeeking = false
-    private var lastSeekTimestamp = 0L
-    private var seekTargetPosition = 0L
+    /**
+     * Set when minimizing to the floating window so the full-screen surface's
+     * ON_STOP (fired by the NavBackStackEntry when the route is popped) does NOT
+     * pause playback. The engine is a singleton and must keep running so the
+     * in-app mini player can take over the surface.
+     */
+    var isMinimizing = false
 
     // Cached track lists — updated only after explicit track selection or READY state
-    private var cachedSubtitleTracks: List<String> = emptyList()
-    private var cachedSelectedSubtitle: Int = -1
-    private var cachedAudioTracks: List<String> = emptyList()
-    private var cachedSelectedAudio: Int = -1
-    private var trackRefreshNeeded = false
-    private var debugPollJob: Job? = null
+    private val trackCache = PlayerTrackCache(
+        playerRepository = playerRepository,
+        uiState = _uiState,
+    )
+
+    private val playlistController = PlayerPlaylistController(
+        playerRepository = playerRepository,
+        uiState = _uiState,
+        trackCache = trackCache,
+    )
+
+    private val debugController = PlayerDebugController(
+        scope = viewModelScope,
+        playerRepository = playerRepository,
+        userPreferencesRepository = userPreferencesRepository,
+        uiState = _uiState,
+    )
+
+    /** Current resume preference, kept in sync from DataStore. */
+    private var resumeMode: com.rhnxdev.hzplayer.domain.model.ResumeMode =
+        com.rhnxdev.hzplayer.domain.model.ResumeMode.ALWAYS
 
     companion object {
         private const val TAG = "PlayerViewModel"
-        private const val SEEK_DEBOUNCE_MS = 150L
+        /** Positions below this are treated as "not really started" — no resume prompt. */
+        private const val RESUME_THRESHOLD_MS = 5_000L
     }
 
     fun getActiveEngine(): IPlayerEngine = playerRepository.activeEngine
@@ -90,45 +113,11 @@ class PlayerViewModel @Inject constructor(
         observeSubtitleStyle()
         observeNetworkTraffic()
         observeSeekSensitivity()
-        observeHdrSettings()
         observeActiveEngine()
-        observeDebugMode()
-        startPositionUpdates()
-        refreshTrackCache()
-    }
-
-    /**
-     * Subscribe to the user's "Enable HDR playback" preference.
-     *
-     * The pref is still persisted and exposed in settings — but the actual video
-     * pipeline now has no HDR/SDR mode swap, so this observer keeps the value
-     * flowing into [PlayerUiState.hdrEnabled] (for any future consumer) without
-     * touching the surface, window color mode, or effect chain.
-     */
-    private fun observeHdrSettings() {
-        viewModelScope.launch {
-            userPreferencesRepository.enableHdrPlayback
-                .distinctUntilChanged()
-                .collect { enabled ->
-                    _uiState.update { it.copy(hdrEnabled = enabled) }
-                }
-        }
-    }
-
-    private fun refreshTrackCache() {
-        trackRefreshNeeded = false
-        cachedSubtitleTracks = playerRepository.getSubtitleTracks()
-        cachedSelectedSubtitle = playerRepository.getSelectedSubtitleTrack()
-        cachedAudioTracks = playerRepository.getAudioTracks()
-        cachedSelectedAudio = playerRepository.getSelectedAudioTrack()
-        _uiState.update {
-            it.copy(
-                subtitleTracks = cachedSubtitleTracks,
-                selectedSubtitleTrack = cachedSelectedSubtitle,
-                audioTracks = cachedAudioTracks,
-                selectedAudioTrack = cachedSelectedAudio,
-            )
-        }
+        observeResumeMode()
+        debugController.observe()
+        positionController.start()
+        trackCache.refresh()
     }
 
     private fun observePlaybackState() {
@@ -165,12 +154,10 @@ class PlayerViewModel @Inject constructor(
                 // Refresh track cache once ExoPlayer finishes preparing (state == READY).
                 // querying tracks before prepare() returns empty because currentTracks is
                 // populated asynchronously by the media pipeline.
-                if (info.state == PlayerState.READY && trackRefreshNeeded) {
-                    refreshTrackCache()
+                if (info.state == PlayerState.READY) {
+                    trackCache.refreshIfNeeded()
                 }
-                if (isSeeking && info.state != PlayerState.BUFFERING) {
-                    isSeeking = false
-                }
+                positionController.onPlaybackState(info.state)
             }
         }
     }
@@ -180,6 +167,12 @@ class PlayerViewModel @Inject constructor(
             userPreferencesRepository.activeEngine
                 .distinctUntilChanged()
                 .collect { type -> _uiState.update { it.copy(activeEngineType = type) } }
+        }
+    }
+
+    private fun observeResumeMode() {
+        viewModelScope.launch {
+            userPreferencesRepository.resumeMode.collect { resumeMode = it }
         }
     }
 
@@ -199,94 +192,15 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private fun startPositionUpdates() {
-        positionUpdateJob?.cancel()
-        positionUpdateJob = viewModelScope.launch {
-            while (isActive) {
-                delay(250)
-                val engine = playerRepository.activeEngine
-                val duration = engine.getDuration()
-                val position = engine.getCurrentPosition()
-                val bufferedPos = engine.getBufferedPosition()
-                val bufferedPct = if (duration > 0) {
-                    ((bufferedPos * 100) / duration).toInt().coerceIn(0, 100)
-                } else 0
-                val currentUri = playerRepository.currentPlaybackUri
+    fun selectSubtitleTrack(index: Int) = trackCache.selectSubtitleTrack(index)
 
-                val effectivePosition = if (isSeeking) seekTargetPosition else position
-
-                // Position flows on its own channel — see [_position] / [position].
-                _position.value = effectivePosition
-
-                _uiState.update { state ->
-                    val uriChanged = state.currentPlaybackUri != currentUri
-                    if (uriChanged || state.duration != duration || state.bufferedPercentage != bufferedPct) {
-                        state.copy(
-                            
-                            duration = duration,
-                            bufferedPercentage = bufferedPct,
-                            currentPlaybackUri = currentUri,
-                        )
-                    } else state
-                }
-
-                // Persist progress every ~5s so a crash/kill can still resume.
-                if (!isSeeking && ++saveTick >= 20) {
-                    saveTick = 0
-                    if (currentUri != null && position > 0 && duration > 0) {
-                        saveScope.launch { resumeProgress.save(currentUri, position, duration) }
-                    }
-                }
-            }
-        }
-    }
-
-    /** Read engine position on the current (main) thread, persist off-thread. */
-    private fun saveProgressNow() {
-        val uri = playerRepository.currentPlaybackUri ?: return
-        val engine = playerRepository.activeEngine
-        val pos = engine.getCurrentPosition()
-        val dur = engine.getDuration()
-        saveScope.launch { resumeProgress.save(uri, pos, dur) }
-    }
-
-    /** Seek to the saved position for [uri], if any. Runs on main (ExoPlayer requires it). */
-    private fun restoreProgress(uri: String) {
-        viewModelScope.launch {
-            val pos = resumeProgress.getResumePosition(uri)
-            if (pos > 0) playerRepository.seekTo(pos)
-        }
-    }
-
-    fun selectSubtitleTrack(index: Int) {
-        playerRepository.selectSubtitleTrack(index)
-        cachedSubtitleTracks = playerRepository.getSubtitleTracks()
-        cachedSelectedSubtitle = playerRepository.getSelectedSubtitleTrack()
-        _uiState.update { state ->
-            state.copy(
-                subtitleTracks = cachedSubtitleTracks,
-                selectedSubtitleTrack = cachedSelectedSubtitle,
-            )
-        }
-    }
-
-    fun selectAudioTrack(index: Int) {
-        playerRepository.selectAudioTrack(index)
-        cachedAudioTracks = playerRepository.getAudioTracks()
-        cachedSelectedAudio = playerRepository.getSelectedAudioTrack()
-        _uiState.update { state ->
-            state.copy(
-                audioTracks = cachedAudioTracks,
-                selectedAudioTrack = cachedSelectedAudio,
-            )
-        }
-    }
+    fun selectAudioTrack(index: Int) = trackCache.selectAudioTrack(index)
 
     fun addExternalSubtitle(uri: Uri, displayName: String? = null) {
         val name = displayName ?: uri.lastPathSegment ?: uri.toString()
         val success = playerRepository.addExternalSubtitle(uri)
         if (success) {
-            refreshTrackCache()
+            trackCache.refresh()
             _uiState.update { state ->
                 state.copy(
                     externalSubtitles = state.externalSubtitles + (name to uri)
@@ -346,9 +260,6 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun playVideo(video: com.rhnxdev.hzplayer.domain.model.VideoItem) {
-        playerRepository.playVideo(video)
-        restoreProgress(video.uri)
-        trackRefreshNeeded = true
         _uiState.update { state ->
             state.copy(
                 currentTitle = video.title,
@@ -362,6 +273,20 @@ class PlayerViewModel @Inject constructor(
                 videoPlaylist = emptyList(),
             )
         }
+        // Decide how to handle a saved resume position, then start accordingly.
+        viewModelScope.launch {
+            val resumePos = resumeProgress.getResumePosition(video.uri)
+            startWithResumeDecision(
+                uri = video.uri,
+                title = video.title,
+                isVideo = true,
+                mimeType = video.mimeType,
+                artist = null,
+                savedPositionMs = resumePos,
+                play = { pos -> playerRepository.playVideo(video, resumePositionMs = pos) },
+            )
+        }
+        trackCache.markNeedsRefresh()
     }
 
     fun playUri(
@@ -384,9 +309,19 @@ class PlayerViewModel @Inject constructor(
                 videoPlaylist = emptyList(),
             )
         }
-        playerRepository.playUri(uri, title, isVideo = isVideo, mimeType = mimeType)
-        restoreProgress(uri)
-        trackRefreshNeeded = true
+        viewModelScope.launch {
+            val resumePos = resumeProgress.getResumePosition(uri)
+            startWithResumeDecision(
+                uri = uri,
+                title = title,
+                isVideo = isVideo,
+                mimeType = mimeType,
+                artist = null,
+                savedPositionMs = resumePos,
+                play = { pos -> playerRepository.playUri(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = pos) },
+            )
+        }
+        trackCache.markNeedsRefresh()
     }
 
     fun onPlayPause() {
@@ -415,8 +350,103 @@ class PlayerViewModel @Inject constructor(
                 videoPlaylist = emptyList(),
             )
         }
-        playerRepository.playAudio(audio)
-        trackRefreshNeeded = true
+        viewModelScope.launch {
+            val resumePos = resumeProgress.getResumePosition(audio.uri)
+            startWithResumeDecision(
+                uri = audio.uri,
+                title = audio.title,
+                isVideo = false,
+                mimeType = null,
+                artist = audio.artist,
+                savedPositionMs = resumePos,
+                id = audio.id,
+                play = { pos -> playerRepository.playAudio(audio, resumePositionMs = pos) },
+            )
+        }
+        trackCache.markNeedsRefresh()
+    }
+
+    /**
+     * Apply the user's resume preference to a saved position and start playback.
+     * - NONE: always start from 0.
+     * - ALWAYS: resume from [savedPositionMs] if it is past a small threshold.
+     * - ASK: if there is a meaningful saved position, surface a confirm dialog
+     *   (pendingResume) instead of starting immediately; the user confirms via
+     *   [confirmResume] or dismisses via [dismissResume].
+     */
+    private fun startWithResumeDecision(
+        uri: String,
+        title: String,
+        isVideo: Boolean,
+        mimeType: String?,
+        artist: String?,
+        savedPositionMs: Long,
+        id: Long = 0,
+        play: (Long) -> Unit,
+    ) {
+        val hasProgress = savedPositionMs > RESUME_THRESHOLD_MS
+        when (resumeMode) {
+            com.rhnxdev.hzplayer.domain.model.ResumeMode.NONE -> play(0)
+            com.rhnxdev.hzplayer.domain.model.ResumeMode.ALWAYS -> play(savedPositionMs)
+            com.rhnxdev.hzplayer.domain.model.ResumeMode.ASK -> {
+                if (hasProgress) {
+                    _uiState.update {
+                        it.copy(
+                            pendingResume = PendingResume(
+                                uri = uri,
+                                resumePositionMs = savedPositionMs,
+                                title = title,
+                                isVideo = isVideo,
+                                mimeType = mimeType,
+                                artist = artist,
+                                id = id,
+                            ),
+                        )
+                    }
+                } else {
+                    play(0)
+                }
+            }
+        }
+    }
+
+    /** User confirmed resume from the pending position. */
+    fun confirmResume() {
+        val pending = _uiState.value.pendingResume ?: return
+        _uiState.update { it.copy(pendingResume = null) }
+        startPending(pending, resume = true)
+    }
+
+    /** User dismissed the resume prompt — start from the beginning. */
+    fun dismissResume() {
+        val pending = _uiState.value.pendingResume ?: return
+        _uiState.update { it.copy(pendingResume = null) }
+        startPending(pending, resume = false)
+    }
+
+    private fun startPending(pending: PendingResume, resume: Boolean) {
+        val pos = if (resume) pending.resumePositionMs else 0
+        if (pending.isVideo) {
+            playerRepository.playUri(
+                pending.uri,
+                pending.title,
+                isVideo = true,
+                mimeType = pending.mimeType,
+                resumePositionMs = pos,
+            )
+        } else {
+            // Audio without a full AudioItem: reconstruct a minimal one so the
+            // engine gets artist metadata; resume position is applied via the play call.
+            val audio = AudioItem(
+                id = pending.id,
+                uri = pending.uri,
+                title = pending.title,
+                artist = pending.artist,
+                durationMs = 0,
+            )
+            playerRepository.playAudio(audio, resumePositionMs = pos)
+        }
+        trackCache.markNeedsRefresh()
     }
 
     fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int = 0) {
@@ -436,25 +466,14 @@ class PlayerViewModel @Inject constructor(
             )
         }
         playerRepository.playAudioPlaylist(items, startIndex)
-        trackRefreshNeeded = true
+        trackCache.markNeedsRefresh()
     }
 
-    fun onSeekTo(positionMs: Long) {
-        val now = System.currentTimeMillis()
-        if (now - lastSeekTimestamp < SEEK_DEBOUNCE_MS) return
-        markSeekStart(positionMs)
-        playerRepository.seekTo(positionMs)
-    }
+    fun onSeekTo(positionMs: Long) = positionController.onSeekTo(positionMs)
 
-    fun onSkipForward() {
-        markSeekStart(position.value + 10_000)
-        playerRepository.skipForward(10000)
-    }
+    fun onSkipForward() = positionController.onSkipForward()
 
-    fun onSkipBackward() {
-        markSeekStart((position.value - 10_000).coerceAtLeast(0))
-        playerRepository.skipBackward(10000)
-    }
+    fun onSkipBackward() = positionController.onSkipBackward()
 
     fun onSkipNext() {
         playerRepository.skipToNext()
@@ -486,7 +505,7 @@ class PlayerViewModel @Inject constructor(
 
     fun stop() {
         android.util.Log.d(TAG, "stop() called")
-        saveProgressNow()
+        positionController.saveProgressNow()
         playerRepository.stop()
         _uiState.update { it.copy(
             currentTitle = null, 
@@ -520,145 +539,27 @@ class PlayerViewModel @Inject constructor(
         _uiState.update { it.copy(showControls = false) }
     }
 
-    fun onSeekBy(deltaMs: Long) {
-        val target = (playerRepository.activeEngine.getCurrentPosition() + deltaMs).coerceAtLeast(0)
-        markSeekStart(target)
-        if (deltaMs >= 0) playerRepository.skipForward(deltaMs)
-        else playerRepository.skipBackward(-deltaMs)
-    }
+    fun onSeekBy(deltaMs: Long) = positionController.onSeekBy(deltaMs)
 
     fun playNetworkUri(uri: String, title: String, isVideo: Boolean, mimeType: String? = null) {
         android.util.Log.d(TAG, "playNetworkUri: scheme=${uri.substringBefore("://")} uri=$uri")
         playUri(uri, title, isVideo, mimeType = mimeType)
     }
 
-    fun playVideoPlaylist(items: List<VideoItem>, startIndex: Int = 0) {
-        if (items.isEmpty()) return
-        val item = items[startIndex.coerceIn(0, items.lastIndex)]
-        _uiState.update { state ->
-            state.copy(
-                currentTitle = item.title,
-                currentArtist = null,
-                isVideo = true,
-                isPlaying = true,
-                isLoading = true,
-                duration = item.durationMs,
-                currentPlaybackUri = item.uri,
-                videoPlaylist = items,
-                currentPlaylistIndex = startIndex,
-                showPlaylistDrawer = false,
-            )
-        }
-        val playlistItems: List<Pair<String, String>> = items.map { it.uri to it.title }
-        playerRepository.playPlaylist(playlistItems, startIndex, 0L)
-        trackRefreshNeeded = true
-    }
+    fun playVideoPlaylist(items: List<VideoItem>, startIndex: Int = 0) =
+        playlistController.playVideoPlaylist(items, startIndex)
 
-    fun onPlaylistNext(): Boolean {
-        val playlist = _uiState.value.videoPlaylist
-        if (playlist.isEmpty()) return false
-        val nextIndex = _uiState.value.currentPlaylistIndex + 1
-        if (nextIndex >= playlist.size) return false
-        val item = playlist[nextIndex]
-        _uiState.update { it.copy(currentPlaylistIndex = nextIndex, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs) }
-        playerRepository.seekTo(0)
-        playerRepository.activeEngine.play(item.uri, item.title, isVideo = true)
-        return true
-    }
+    fun onPlaylistNext(): Boolean = playlistController.onPlaylistNext()
 
-    fun onPlaylistPrevious(): Boolean {
-        val playlist = _uiState.value.videoPlaylist
-        if (playlist.isEmpty()) return false
-        val prevIndex = _uiState.value.currentPlaylistIndex - 1
-        if (prevIndex < 0) return false
-        val item = playlist[prevIndex]
-        _uiState.update { it.copy(currentPlaylistIndex = prevIndex, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs) }
-        playerRepository.seekTo(0)
-        playerRepository.activeEngine.play(item.uri, item.title, isVideo = true)
-        return true
-    }
+    fun onPlaylistPrevious(): Boolean = playlistController.onPlaylistPrevious()
 
-    fun onPlaylistSelect(index: Int) {
-        val playlist = _uiState.value.videoPlaylist
-        if (index !in playlist.indices) return
-        val item = playlist[index]
-        _uiState.update { it.copy(currentPlaylistIndex = index, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs, showPlaylistDrawer = false) }
-        playerRepository.seekTo(0)
-        playerRepository.activeEngine.play(item.uri, item.title, isVideo = true)
-    }
+    fun onPlaylistSelect(index: Int) = playlistController.onPlaylistSelect(index)
 
-    fun onTogglePlaylistDrawer() {
-        _uiState.update {
-            val opening = !it.showPlaylistDrawer
-            it.copy(
-                showPlaylistDrawer = opening,
-                // Opening the drawer hides the HUD; hiding the HUD also hides the
-                // system bars (nav bar) via the showControls → systemBars sync in the screen.
-                showControls = if (opening) false else it.showControls,
-            )
-        }
-    }
+    fun onTogglePlaylistDrawer() = playlistController.onTogglePlaylistDrawer()
 
-    fun clearPlaylist() {
-        _uiState.update { it.copy(videoPlaylist = emptyList(), showPlaylistDrawer = false) }
-    }
+    fun clearPlaylist() = playlistController.clearPlaylist()
 
-    private fun observeDebugMode() {
-        viewModelScope.launch {
-            userPreferencesRepository.debugMode.collect { enabled ->
-                _uiState.update { it.copy(debugMode = enabled) }
-                if (enabled && _uiState.value.debugOverlayVisible) startDebugPolling()
-                else stopDebugPolling()
-            }
-        }
-    }
-
-    fun onToggleDebugOverlay() {
-        val show = !_uiState.value.debugOverlayVisible
-        _uiState.update { it.copy(debugOverlayVisible = show) }
-        if (show && _uiState.value.debugMode) startDebugPolling()
-        else stopDebugPolling()
-    }
-
-    private fun startDebugPolling() {
-        debugPollJob?.cancel()
-        debugPollJob = viewModelScope.launch {
-            while (isActive) {
-                try {
-                    val stats = playerRepository.getDebugStats() ?: DebugStats()
-                    val nt = _uiState.value.networkTraffic
-                    val speedDown = nt.speedDown
-                    val duration = _uiState.value.duration
-                    // compute avg bitrate from total bytes / duration when fmt.bitrate is 0
-                    val totalBytes = nt.bytesDown
-                    val videoBitrate = if (stats.videoBitrate.isEmpty() && duration > 0 && totalBytes > 0) {
-                        formatBitsPerSecond(((totalBytes * 8) / (duration / 1000)).toLong())
-                    } else if (stats.videoBitrate.isNotEmpty()) {
-                        bitsToHuman(stats.videoBitrate)
-                    } else ""
-                    val audioBitrate = if (stats.audioBitrate.isNotEmpty()) bitsToHuman(stats.audioBitrate) else ""
-                    _uiState.update { it.copy(
-                        debugStats = stats.copy(
-                            videoBitrateEstimated = videoBitrate,
-                            audioBitrateEstimated = audioBitrate,
-                            bufferedPct = it.bufferedPercentage,
-                            networkSpeed = if (speedDown > 0) formatDebugSpeed(speedDown) else "",
-                            bytesDownloaded = if (totalBytes > 0) formatDebugBytes(totalBytes) else "",
-                            isVisible = true,
-                        )
-                    ) }
-                } catch (_: Exception) { }
-                delay(1000)
-            }
-        }
-    }
-
-    private fun stopDebugPolling() {
-        debugPollJob?.cancel()
-        debugPollJob = null
-        _uiState.update { it.copy(debugStats = DebugStats()) }
-    }
-
+    fun onToggleDebugOverlay() = debugController.onToggleDebugOverlay()
 
     private fun observeSeekSensitivity() {
         viewModelScope.launch {
@@ -668,17 +569,10 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private fun markSeekStart(targetMs: Long) {
-        isSeeking = true
-        lastSeekTimestamp = System.currentTimeMillis()
-        seekTargetPosition = targetMs.coerceAtLeast(0)
-    }
-
     override fun onCleared() {
         super.onCleared()
         android.util.Log.d(TAG, "onCleared() called")
-        positionUpdateJob?.cancel()
-        saveProgressNow()
+        positionController.onCleared()
         playerRepository.stop()
     }
 }

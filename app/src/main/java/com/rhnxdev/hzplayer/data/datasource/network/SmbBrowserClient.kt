@@ -24,7 +24,7 @@ class SmbBrowserClient(
         try {
             SmbFile("smb://$host:${if (port > 0) port else 445}/", ctx).listFiles()
         } catch (_: SmbAuthException) {
-            ConnectionPool.returnSmbBrowser(host, port, username)
+            ConnectionPool.returnSmbBrowser(host, port, username, password)
             throw com.rhnxdev.hzplayer.domain.model.RemoteAuthException()
         }
         Unit
@@ -69,7 +69,7 @@ class SmbBrowserClient(
     }
 
     override suspend fun disconnect() = withContext(Dispatchers.IO) {
-        ConnectionPool.returnSmbBrowser(host, port, username)
+        ConnectionPool.returnSmbBrowser(host, port, username, password)
     }
 
     /**

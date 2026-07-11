@@ -48,14 +48,16 @@ class NetworkViewModel @Inject constructor(
     private val dirCache = DirectoryLruCache<RemoteFileItem>()
 
     /** Serializes per-folder child-count updates so concurrent refreshes don't clobber each other. */
-    private val countMutex = kotlinx.coroutines.sync.Mutex()
+    private val countMutex = Mutex()
 
     private val sortKey = "network_browser"
 
     val search = SearchDelegate()
 
     init {
-        android.util.Log.d("NetworkViewModel", "NetworkViewModel initialized")
+        if (com.rhnxdev.hzplayer.BuildConfig.DEBUG) {
+            android.util.Log.d("NetworkViewModel", "NetworkViewModel initialized")
+        }
         observeServers(); observeHistory(); observeDiscovery()
         viewModelScope.launch {
             val savedSort = networkRepository.getSortType(sortKey).first()

@@ -27,6 +27,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,6 +47,13 @@ class ExoPlayerEngine @Inject constructor(
     override val engineType: EngineType = EngineType.EXO_PLAYER
 
     val player: Player get() = playerHolder.player
+
+    /** Apply a decoder preference. Forwards to the holder, which rebuilds the
+     *  underlying ExoPlayer so the choice takes effect on the next play. */
+    @OptIn(androidx.media3.common.util.UnstableApi::class)
+    override fun setDecoderMode(mode: com.rhnxdev.hzplayer.domain.model.DecoderMode) {
+        playerHolder.decoderMode = mode
+    }
 
     private var lastRenderedFrames: Long = 0
     private var lastFrameTimestamp: Long = 0L
@@ -78,58 +86,75 @@ class ExoPlayerEngine @Inject constructor(
     private var currentPlaylist: List<androidx.media3.common.MediaItem>? = null
     private val subtitleDiscoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    companion object {
-        private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "sub")
-        private val SUBTITLE_SCHEMES_WITH_DIR = setOf("file", "smb", "ftp", "sftp", "webdav", "webdavs")
-    }
-
-    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?) {
-        currentMediaUri = uri
-        currentMediaTitle = title
+    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?, resumePositionMs: Long) {
         currentPlaylist = null
-        subtitleConfigs.clear()
-        discoverNeighborSubtitles(uri)
-        playerHolder.clearError()
-        player.setMediaItem(buildMediaItemWithSubtitles(uri, title, artist, mimeType))
-        player.prepare()
-        player.play()
+        // Subtitle discovery (disk/network scan) runs off the main thread; the
+        // player calls below must run on the main thread (Media3 requirement), so
+        // we hop back to Dispatchers.Main after discovery completes.
+        subtitleDiscoveryScope.launch {
+            val subs = discoverNeighborSubtitles(uri)
+            withContext(Dispatchers.Main) {
+                subtitleConfigs.clear()
+                subtitleConfigs.addAll(subs)
+                currentMediaUri = uri
+                currentMediaTitle = title
+                playerHolder.clearError()
+                player.setMediaItem(buildMediaItemWithSubtitles(uri, title, artist, mimeType, subs = subs))
+                player.prepare()
+                if (resumePositionMs > 0) player.seekTo(resumePositionMs)
+                player.play()
+            }
+        }
     }
 
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
         if (items.isEmpty()) return
         currentPlaylist = null
         subtitleConfigs.clear()
-        val mediaItems = items.map { (uri, title) ->
-            // Only discover subtitles for the first item (startIndex); others get plain items
-            if (uri == items[startIndex].first) {
-                currentMediaUri = uri
-                currentMediaTitle = title
-                discoverNeighborSubtitles(uri)
+        val startUri = items[startIndex].first
+        val startTitle = items[startIndex].second
+        // Neighbor-subtitle discovery only for the start item; others get plain items.
+        subtitleDiscoveryScope.launch {
+            val subs = discoverNeighborSubtitles(startUri)
+            withContext(Dispatchers.Main) {
+                subtitleConfigs.clear()
+                subtitleConfigs.addAll(subs)
+                currentMediaUri = startUri
+                currentMediaTitle = startTitle
+                val mediaItems = items.map { (uri, title) ->
+                    val itemSubs = if (uri == startUri) subs else emptyList()
+                    buildMediaItemWithSubtitles(uri, title, subs = itemSubs)
+                }
+                playerHolder.clearError()
+                player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), startPositionMs)
+                player.prepare()
+                player.play()
             }
-            buildMediaItemWithSubtitles(uri, title)
         }
-        playerHolder.clearError()
-        player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), startPositionMs)
-        player.prepare()
-        player.play()
     }
 
     override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
         if (items.isEmpty()) return
         currentPlaylist = null
         subtitleConfigs.clear()
-        val mediaItems = items.map { audio ->
-            if (audio.uri == items[startIndex].uri) {
-                currentMediaUri = audio.uri
-                currentMediaTitle = audio.title
-                discoverNeighborSubtitles(audio.uri)
+        val startItem = items[startIndex]
+        subtitleDiscoveryScope.launch {
+            val subs = discoverNeighborSubtitles(startItem.uri)
+            withContext(Dispatchers.Main) {
+                subtitleConfigs.clear()
+                subtitleConfigs.addAll(subs)
+                currentMediaUri = startItem.uri
+                currentMediaTitle = startItem.title
+                val mediaItems = items.map { audio ->
+                    val itemSubs = if (audio.uri == startItem.uri) subs else emptyList()
+                    buildMediaItemWithSubtitles(audio.uri, audio.title, audio.artist, subs = itemSubs)
+                }
+                playerHolder.clearError()
+                player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), 0L)
+                player.prepare()
+                player.play()
             }
-            buildMediaItemWithSubtitles(audio.uri, audio.title, audio.artist)
         }
-        playerHolder.clearError()
-        player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), 0L)
-        player.prepare()
-        player.play()
     }
 
     override fun pause() {
@@ -222,7 +247,13 @@ class ExoPlayerEngine @Inject constructor(
 
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
 
-    private fun buildMediaItemWithSubtitles(uri: String, title: String, artist: String? = null, mimeType: String? = null): MediaItem {
+    private fun buildMediaItemWithSubtitles(
+        uri: String,
+        title: String,
+        artist: String? = null,
+        mimeType: String? = null,
+        subs: List<MediaItem.SubtitleConfiguration> = emptyList(),
+    ): MediaItem {
         val builder = MediaItem.Builder()
         builder.setUri(uri)
         // When we know the type (e.g. a server Content-Type probe), set it explicitly
@@ -237,10 +268,18 @@ class ExoPlayerEngine @Inject constructor(
                     .setArtist(artist)
                     .build(),
             )
-        if (subtitleConfigs.isNotEmpty()) {
-            builder.setSubtitleConfigurations(subtitleConfigs.toList())
+        // Subtitles are scoped per-media-item: the global `subtitleConfigs` must not
+        // be applied to every playlist entry (it was), or all items would inherit the
+        // first item's discovered subs.
+        if (subs.isNotEmpty()) {
+            builder.setSubtitleConfigurations(subs)
         }
         return builder.build()
+    }
+
+    companion object {
+        private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "sub")
+        private val SUBTITLE_SCHEMES_WITH_DIR = setOf("file", "smb", "ftp", "sftp", "webdav", "webdavs")
     }
 
     override fun addExternalSubtitle(uri: Uri): Boolean {
@@ -255,12 +294,20 @@ class ExoPlayerEngine @Inject constructor(
 
             val currentUri = currentMediaUri
             val currentTitle = currentMediaTitle
+            val playlist = currentPlaylist
             if (currentUri != null) {
                 val position = player.currentPosition
                 val wasPlaying = player.isPlaying
-                player.setMediaItem(buildMediaItemWithSubtitles(currentUri, currentTitle ?: ""))
+                val currentIndex = player.currentMediaItemIndex
+                // ponytail: never call setMediaItem here — it wipes the playlist and
+                // loses resume position. Rebuild the whole list with the updated
+                // subtitle config on the current item, then restore index+position.
+                val rebuilt = rebuildPlaylistForSubtitleSwap(
+                    playlist, currentUri, currentTitle ?: "",
+                    currentIndex, position, subtitleConfigs.toList()
+                ) { uri, title, s -> buildMediaItemWithSubtitles(uri, title, subs = s) }
+                player.setMediaItems(rebuilt.items, rebuilt.startIndex, rebuilt.startPositionMs)
                 player.prepare()
-                player.seekTo(position)
                 if (wasPlaying) player.play()
             }
             true
@@ -408,9 +455,16 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun retry() {
-        val item = player.currentMediaItem ?: return
         playerHolder.clearError()
-        player.setMediaItem(item)
+        // ponytail: keep playlist intact — setMediaItem wipes it and loses position.
+        val playlist = currentPlaylist
+        val index = player.currentMediaItemIndex
+        if (playlist != null && playlist.isNotEmpty()) {
+            player.setMediaItems(playlist, index, player.currentPosition)
+        } else {
+            val item = player.currentMediaItem ?: return
+            player.setMediaItem(item)
+        }
         player.prepare()
         player.play()
     }
@@ -423,11 +477,11 @@ class ExoPlayerEngine @Inject constructor(
 
     /**
      * Build the Media3 [PlayerView] that renders this engine's video. The surface
-     * type (SurfaceView for HDR passthrough vs TextureView for composited survival
+     * type (SurfaceView vs TextureView) is chosen from [useSurfaceView] and fixed at
      * across brief app switches) is chosen from [useSurfaceView] and fixed at
      * construction via the XML layout â€” there is no programmatic setter.
      */
-    fun createRenderView(context: Context, useSurfaceView: Boolean): View {
+    override fun createRenderView(context: Context, useSurfaceView: Boolean): View {
         val layoutRes = if (useSurfaceView) {
             com.rhnxdev.hzplayer.R.layout.view_exo_player_surface
         } else {
@@ -439,9 +493,8 @@ class ExoPlayerEngine @Inject constructor(
         playerView.useController = false
         val subtitleView = playerView.subtitleView
         if (subtitleView != null) {
-            // For HDR content, SurfaceView renders at 10-bit luminance. SDR white text
-            // appears dim against HDR video â€” use a semi-transparent black background +
-            // thick outline to ensure legibility regardless of HDR peak brightness.
+            // Render subtitles with a semi-transparent black background + thick outline
+            // so white text stays legible over bright video frames.
             subtitleView.setStyle(
                 CaptionStyleCompat(
                     0xFFFFFFFF.toInt(),
@@ -457,7 +510,7 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     /** Apply aspect-ratio + subtitle style to an existing [PlayerView]. */
-    fun updateRenderView(view: View, config: RenderViewConfig) {
+    override fun updateRenderView(view: View, config: RenderViewConfig) {
         val playerView = view as PlayerView
         playerView.resizeMode = when (config.aspectRatioMode) {
             com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO -> AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -467,28 +520,29 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     /** Surface lifecycle â€” mirrors PlayerView.onPause/onResume. */
-    fun onRenderViewPaused(view: View) = (view as PlayerView).onPause()
-    fun onRenderViewResumed(view: View) = (view as PlayerView).onResume()
+    override fun onRenderViewPaused(view: View) = (view as PlayerView).onPause()
+    override fun onRenderViewResumed(view: View) = (view as PlayerView).onResume()
+
+    /** Backs the system MediaSession for lock-screen / media controls. */
+    override fun getMedia3Player(): Player = playerHolder.player
 
     // â”€â”€ Subtitle discovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    private fun discoverNeighborSubtitles(uri: String) {
+    private suspend fun discoverNeighborSubtitles(uri: String): List<MediaItem.SubtitleConfiguration> {
         playerHolder.setDiscovering()
-        val subs = try {
-            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                findNeighborSubtitleFiles(uri)
-            }
+        // Runs inside subtitleDiscoveryScope (Dispatchers.IO) — no runBlocking, so
+        // the playback-start call never blocks the caller (usually main) thread.
+        val subUris = try {
+            findNeighborSubtitleFiles(uri)
         } catch (_: Exception) {
-            emptyList()
+            emptyList<Uri>()
         }
-        if (subs.isNotEmpty()) {
-            subtitleConfigs.addAll(subs.map { subUri ->
-                MediaItem.SubtitleConfiguration.Builder(subUri)
-                    .setMimeType(inferSubtitleMimeType(subUri))
-                    .setLanguage("und")
-                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                    .build()
-            })
+        return subUris.map { subUri ->
+            MediaItem.SubtitleConfiguration.Builder(subUri)
+                .setMimeType(inferSubtitleMimeType(subUri))
+                .setLanguage("und")
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
         }
     }
 
@@ -717,4 +771,37 @@ class ExoPlayerEngine @Inject constructor(
             else -> MimeTypes.APPLICATION_SUBRIP
         }
     }
+}
+
+/** Result of [rebuildPlaylistForSubtitleSwap]: rebuilt items + replay index/position. */
+internal data class PlaylistRebuild(
+    val items: List<MediaItem>,
+    val startIndex: Int,
+    val startPositionMs: Long,
+)
+
+/**
+ * Rebuild a media-item list so the current item carries new [subtitleConfigs],
+ * keeping every other item and the active [currentIndex]/[startPositionMs].
+ *
+ * ponytail: pure fn extracted so the P0 regression (setMediaItem wiping the
+ * playlist on subtitle-add) is unit-testable without a real ExoPlayer.
+ */
+internal fun rebuildPlaylistForSubtitleSwap(
+    playlist: List<MediaItem>?,
+    currentUri: String,
+    currentTitle: String,
+    currentIndex: Int,
+    startPositionMs: Long,
+    subtitleConfigs: List<MediaItem.SubtitleConfiguration>,
+    buildItem: (String, String, List<MediaItem.SubtitleConfiguration>) -> MediaItem,
+): PlaylistRebuild {
+    val items = playlist?.mapIndexed { idx, item ->
+        if (idx == currentIndex) {
+            buildItem(currentUri, currentTitle, subtitleConfigs)
+        } else {
+            item
+        }
+    } ?: listOf(buildItem(currentUri, currentTitle, subtitleConfigs))
+    return PlaylistRebuild(items, currentIndex, startPositionMs)
 }
