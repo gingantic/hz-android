@@ -19,7 +19,6 @@ import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
-import com.rhnxdev.hzplayer.domain.player.MediaSessionProvider
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +41,7 @@ import javax.inject.Singleton
 class ExoPlayerEngine @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val playerHolder: MediaPlayerHolder,
-) : IPlayerEngine, MediaSessionProvider {
+) : IPlayerEngine {
 
     override val engineType: EngineType = EngineType.EXO_PLAYER
 
@@ -209,7 +208,7 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.updateSpeed(speed)
     }
 
-    // ── Subtitle delay ─────────────────────────────────────────────
+    // â”€â”€ Subtitle delay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private var subtitleDelayMs: Long = 0
 
@@ -219,7 +218,7 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun getSubtitleDelay(): Long = subtitleDelayMs
 
-    // ── External subtitles ─────────────────────────────────────────
+    // â”€â”€ External subtitles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
 
@@ -270,7 +269,7 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    // ── Subtitle track selection ───────────────────────────────
+    // â”€â”€ Subtitle track selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private data class ExoTrackInfo(
         val group: Tracks.Group,
@@ -342,7 +341,7 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    // ── Audio track selection ──────────────────────────────────
+    // â”€â”€ Audio track selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private fun getExoAudioTracks(): List<ExoTrackInfo> {
         val list = mutableListOf<ExoTrackInfo>()
@@ -420,13 +419,13 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.release()
     }
 
-    // ── Rendering seam (engine-private; surfaced via PlayerSurface) ──
+    // â”€â”€ Rendering seam (engine-private; surfaced via PlayerSurface) â”€â”€
 
     /**
      * Build the Media3 [PlayerView] that renders this engine's video. The surface
      * type (SurfaceView for HDR passthrough vs TextureView for composited survival
      * across brief app switches) is chosen from [useSurfaceView] and fixed at
-     * construction via the XML layout — there is no programmatic setter.
+     * construction via the XML layout â€” there is no programmatic setter.
      */
     fun createRenderView(context: Context, useSurfaceView: Boolean): View {
         val layoutRes = if (useSurfaceView) {
@@ -441,7 +440,7 @@ class ExoPlayerEngine @Inject constructor(
         val subtitleView = playerView.subtitleView
         if (subtitleView != null) {
             // For HDR content, SurfaceView renders at 10-bit luminance. SDR white text
-            // appears dim against HDR video — use a semi-transparent black background +
+            // appears dim against HDR video â€” use a semi-transparent black background +
             // thick outline to ensure legibility regardless of HDR peak brightness.
             subtitleView.setStyle(
                 CaptionStyleCompat(
@@ -467,13 +466,11 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    /** Surface lifecycle — mirrors PlayerView.onPause/onResume. */
+    /** Surface lifecycle â€” mirrors PlayerView.onPause/onResume. */
     fun onRenderViewPaused(view: View) = (view as PlayerView).onPause()
     fun onRenderViewResumed(view: View) = (view as PlayerView).onResume()
 
-    override fun getMedia3Player(): Player = player
-
-    // ── Subtitle discovery ───────────────────────────────────────
+    // â”€â”€ Subtitle discovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private fun discoverNeighborSubtitles(uri: String) {
         playerHolder.setDiscovering()
@@ -495,7 +492,7 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    // ── Debug stats ─────────────────────────────────────────────
+    // â”€â”€ Debug stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     override fun getDebugStats(): com.rhnxdev.hzplayer.domain.model.DebugStats? {
         val currentTracks = player.currentTracks
@@ -614,9 +611,9 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     /** Tag decoder as HW or SW by its registration name.
-     *  OMX.google.* / c2.android.* → SW (Android software).
-     *  OMX.* (not google) / c2.{qti,mediatek,exynos,ti}.* → HW.
-     *  Anything else → SW (conservative). */
+     *  OMX.google.* / c2.android.* â†’ SW (Android software).
+     *  OMX.* (not google) / c2.{qti,mediatek,exynos,ti}.* â†’ HW.
+     *  Anything else â†’ SW (conservative). */
     private fun labelHwSw(decoderName: String): String = when {
         decoderName.startsWith("c2.android.") -> "SW"
         decoderName.startsWith("c2.") -> "HW"
@@ -624,7 +621,7 @@ class ExoPlayerEngine @Inject constructor(
         else -> "SW"
     }
 
-    // ── External subtitle helpers ────────────────────────────────
+    // â”€â”€ External subtitle helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private fun findNeighborSubtitleFiles(videoUri: String): List<Uri> {
         val androidUri = Uri.parse(videoUri)
@@ -689,7 +686,7 @@ class ExoPlayerEngine @Inject constructor(
                 .map { file ->
                     // Rebuild the sibling URI from the *original* androidUri, swapping
                     // only the last path segment. This preserves the existing encoding
-                    // (avoids double-encoding %20 → %2520) and the userInfo/host/port,
+                    // (avoids double-encoding %20 â†’ %2520) and the userInfo/host/port,
                     // instead of string-splicing "smb://$credPrefix$host:$port$path".
                     val encodedName = Uri.encode(file.name.trimEnd('/'))
                     androidUri.buildUpon()

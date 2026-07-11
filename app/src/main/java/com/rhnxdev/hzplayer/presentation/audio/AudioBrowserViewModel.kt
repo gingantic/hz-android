@@ -74,11 +74,18 @@ class AudioBrowserViewModel @Inject constructor(
                     val currentSongs = _uiState.value.songs
                     val filtered = Companion.filterSongs(currentSongs, "", minSecs)
                     _uiState.update { it.copy(filteredSongs = filtered) }
+                    // Albums/artists are derived from songs, so re-group with the new limit.
+                    audioRepository.getAlbums(forceRefresh = true, minDurationSecs = minSecs)
+                        .catch { /* ignore */ }
+                        .collect { albums -> _uiState.update { it.copy(albums = albums) } }
+                    audioRepository.getArtists(forceRefresh = true, minDurationSecs = minSecs)
+                        .catch { /* ignore */ }
+                        .collect { artists -> _uiState.update { it.copy(artists = artists) } }
                 }
             }
 
             val albumJob = launch {
-                audioRepository.getAlbums(forceRefresh)
+                audioRepository.getAlbums(forceRefresh, minDurationSecs = cachedMinSecs)
                     .catch { /* fallback handled below */ }
                     .collect { albums ->
                         if (albums.isNotEmpty()) {
@@ -88,7 +95,7 @@ class AudioBrowserViewModel @Inject constructor(
             }
 
             val artistJob = launch {
-                audioRepository.getArtists(forceRefresh)
+                audioRepository.getArtists(forceRefresh, minDurationSecs = cachedMinSecs)
                     .catch { /* fallback handled below */ }
                     .collect { artists ->
                         if (artists.isNotEmpty()) {

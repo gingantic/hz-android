@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
+import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
@@ -12,7 +13,11 @@ import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
-import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
+import com.rhnxdev.hzplayer.core.util.bitsToHuman
+import com.rhnxdev.hzplayer.core.util.formatBitsPerSecond
+import com.rhnxdev.hzplayer.core.util.formatDebugBytes
+import com.rhnxdev.hzplayer.core.util.formatDebugSpeed
+import com.rhnxdev.hzplayer.domain.usecase.ResumeProgressUseCase
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +29,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -34,12 +42,23 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
-    private val resumeRepository: ResumeRepository,
+    private val resumeProgress: ResumeProgressUseCase,
     private val mediaDao: MediaDao,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
+
+    /**
+     * High-frequency playback position (ms). Emitted every 250 ms by
+     * [startPositionUpdates]. Kept separate from [uiState] so the 250 ms tick
+     * only recomposes the seek bar, not the entire player UI.
+     */
+    private val _position = MutableStateFlow(0L)
+    val position: StateFlow<Long> = _position.asStateFlow()
+
+    val orientationMode: StateFlow<OrientationMode> = userPreferencesRepository.orientationMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrientationMode.AUTO)
 
     private var positionUpdateJob: Job? = null
 
@@ -196,11 +215,14 @@ class PlayerViewModel @Inject constructor(
 
                 val effectivePosition = if (isSeeking) seekTargetPosition else position
 
+                // Position flows on its own channel — see [_position] / [position].
+                _position.value = effectivePosition
+
                 _uiState.update { state ->
                     val uriChanged = state.currentPlaybackUri != currentUri
-                    if (uriChanged || state.currentPosition != effectivePosition || state.duration != duration || state.bufferedPercentage != bufferedPct) {
+                    if (uriChanged || state.duration != duration || state.bufferedPercentage != bufferedPct) {
                         state.copy(
-                            currentPosition = effectivePosition,
+                            
                             duration = duration,
                             bufferedPercentage = bufferedPct,
                             currentPlaybackUri = currentUri,
@@ -212,7 +234,7 @@ class PlayerViewModel @Inject constructor(
                 if (!isSeeking && ++saveTick >= 20) {
                     saveTick = 0
                     if (currentUri != null && position > 0 && duration > 0) {
-                        saveScope.launch { resumeRepository.saveProgress(currentUri, position, duration) }
+                        saveScope.launch { resumeProgress.save(currentUri, position, duration) }
                     }
                 }
             }
@@ -225,13 +247,13 @@ class PlayerViewModel @Inject constructor(
         val engine = playerRepository.activeEngine
         val pos = engine.getCurrentPosition()
         val dur = engine.getDuration()
-        saveScope.launch { resumeRepository.saveProgress(uri, pos, dur) }
+        saveScope.launch { resumeProgress.save(uri, pos, dur) }
     }
 
     /** Seek to the saved position for [uri], if any. Runs on main (ExoPlayer requires it). */
     private fun restoreProgress(uri: String) {
         viewModelScope.launch {
-            val pos = resumeRepository.getResumePosition(uri)
+            val pos = resumeProgress.getResumePosition(uri)
             if (pos > 0) playerRepository.seekTo(pos)
         }
     }
@@ -301,6 +323,21 @@ class PlayerViewModel @Inject constructor(
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             else ->
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        }
+    }
+
+    /**
+     * Apply the user's orientation preference. When [OrientationMode.AUTO] the
+     * screen follows the sensor; otherwise it is locked to portrait/landscape.
+     */
+    fun applyOrientationMode(activity: android.app.Activity, mode: com.rhnxdev.hzplayer.domain.model.OrientationMode) {
+        activity.requestedOrientation = when (mode) {
+            com.rhnxdev.hzplayer.domain.model.OrientationMode.AUTO ->
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            com.rhnxdev.hzplayer.domain.model.OrientationMode.PORTRAIT ->
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            com.rhnxdev.hzplayer.domain.model.OrientationMode.LANDSCAPE ->
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
     }
 
@@ -410,12 +447,12 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onSkipForward() {
-        markSeekStart(_uiState.value.currentPosition + 10_000)
+        markSeekStart(position.value + 10_000)
         playerRepository.skipForward(10000)
     }
 
     fun onSkipBackward() {
-        markSeekStart((_uiState.value.currentPosition - 10_000).coerceAtLeast(0))
+        markSeekStart((position.value - 10_000).coerceAtLeast(0))
         playerRepository.skipBackward(10000)
     }
 
@@ -484,7 +521,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onSeekBy(deltaMs: Long) {
-        val target = (_uiState.value.currentPosition + deltaMs).coerceAtLeast(0)
+        val target = (playerRepository.activeEngine.getCurrentPosition() + deltaMs).coerceAtLeast(0)
         markSeekStart(target)
         if (deltaMs >= 0) playerRepository.skipForward(deltaMs)
         else playerRepository.skipBackward(-deltaMs)
@@ -620,30 +657,6 @@ class PlayerViewModel @Inject constructor(
         debugPollJob?.cancel()
         debugPollJob = null
         _uiState.update { it.copy(debugStats = DebugStats()) }
-    }
-
-    private fun bitsToHuman(bitrateStr: String): String {
-        val bps = bitrateStr.toLongOrNull() ?: return bitrateStr
-        return formatBitsPerSecond(bps)
-    }
-
-    private fun formatBitsPerSecond(bps: Long): String = when {
-        bps < 1_000 -> "$bps bps"
-        bps < 1_000_000 -> "${bps / 1000} kbps"
-        else -> "${"%.2f".format(bps.toDouble() / 1_000_000)} Mbps"
-    }
-
-    private fun formatDebugSpeed(bytesPerSec: Long): String = when {
-        bytesPerSec < 1024 -> "$bytesPerSec B/s"
-        bytesPerSec < 1024 * 1024 -> "%.1f KB/s".format(bytesPerSec / 1024.0)
-        else -> "%.1f MB/s".format(bytesPerSec / (1024.0 * 1024.0))
-    }
-
-    private fun formatDebugBytes(bytes: Long): String = when {
-        bytes < 1024 -> "$bytes B"
-        bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-        bytes < 1024L * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
-        else -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
     }
 
 

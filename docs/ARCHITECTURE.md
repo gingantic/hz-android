@@ -1,6 +1,7 @@
 # Hz Player — Architecture
 
 > Clean MVVM with unidirectional data flow for a Compose-first media player.
+> Last refreshed: 2026-07-11 (post engine-modularity refactor + i18n sweep).
 
 ---
 
@@ -9,215 +10,167 @@
 ```
 ┌─────────────────────────────────────────────────┐
 │  Presentation (Compose UI)                      │
-│  screens / components / viewmodels / preview    │
+│  screens / components / viewmodels / ui-state    │
+│  / navigation / player (PlayerSurface seam)      │
 └──────────────────────┬──────────────────────────┘
                        │ StateFlow<UiState>
                        │ Events (callbacks)
 ┌──────────────────────▼──────────────────────────┐
 │  Domain (pure Kotlin)                            │
-│  models / repository interfaces / use cases      │
+│  models / repository interfaces / use cases /    │
+│  player contract (IPlayerEngine)                 │
 └──────────────────────┬──────────────────────────┘
                        │ suspend fun / Flow
 ┌──────────────────────▼──────────────────────────┐
 │  Data                                            │
-│  repository impls / datasources / DAOs / player  │
+│  repository impls / datasources / DAOs / engines │
+│  / network clients / connection pool             │
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────┐
 │  DI (Hilt modules)                               │
-│  AppModule / RepositoryModule / PlayerModule     │
+│  AppModule / RepositoryModule / DatabaseModule / │
+│  PlayerEngineModule                              │
 └─────────────────────────────────────────────────┘
 ```
 
+**Playback seam:** The presentation layer never imports Media3 types. It talks to
+`IPlayerEngine` (defined in `domain/player/`) and renders through the `PlayerSurface`
+composable. Only `ExoPlayerEngine` (in `data/`) knows about `ExoPlayer`/`PlayerView`.
+See `docs/ENGINE_MODULARITY.md`.
+
 ---
 
-## Package Structure (Full)
+## Package Structure (current)
 
 ```
 com.rhnxdev.hzplayer/
 ├── HzPlayerApplication.kt          (@HiltAndroidApp)
-├── MainActivity.kt                 (single activity host)
+├── MainActivity.kt                 (single activity host → AppNavigation)
 │
 ├── presentation/
 │   ├── navigation/
-│   │   ├── AppNavigation.kt        (NavHost with route definitions)
-│   │   └── AppDestinations.kt      (sealed class of routes)
+│   │   ├── AppDestinations.kt      (sealed class of 5 bottom-nav tabs)
+│   │   └── AppNavigation.kt        (NavRoutes + NavHost route builder)
 │   │
-│   ├── theme/
-│   │   ├── Color.kt
-│   │   ├── Type.kt
-│   │   └── Theme.kt
+│   ├── theme/                      (Color.kt / Type.kt / Theme.kt — M3 dynamic)
+│   │
+│   ├── main/
+│   │   └── MainViewModel.kt        (shared "now playing" / active-tab state)
 │   │
 │   ├── video/
-│   │   ├── VideoLibraryScreen.kt
-│   │   ├── VideoLibraryViewModel.kt
-│   │   ├── VideoLibraryUiState.kt
-│   │   └── components/
-│   │       └── VideoCategorySection.kt
+│   │   ├── VideoLibraryScreen.kt / VideoLibraryViewModel.kt / VideoLibraryUiState.kt
+│   │   └── components/VideoCategorySection.kt
 │   │
 │   ├── audio/
-│   │   ├── AudioBrowserScreen.kt
-│   │   ├── AudioBrowserViewModel.kt
-│   │   ├── AudioBrowserUiState.kt
-│   │   └── components/
-│   │       └── AlbumCard.kt
+│   │   ├── AudioBrowserScreen.kt / AudioBrowserViewModel.kt / AudioBrowserUiState.kt
+│   │   ├── AlbumDetailScreen.kt / ArtistDetailScreen.kt / AudioDetailViewModel.kt
+│   │   └── components/AlbumCard.kt / AudioDetailHeader.kt
 │   │
 │   ├── browse/
-│   │   ├── FileBrowserScreen.kt
-│   │   ├── FileBrowserViewModel.kt
-│   │   ├── FileBrowserUiState.kt
-│   │   └── components/
-│   │       └── FileListItem.kt
+│   │   ├── FileBrowserScreen.kt / FileBrowserViewModel.kt / FileBrowserUiState.kt
+│   │
+│   ├── network/
+│   │   ├── NetworkScreen.kt / NetworkViewModel.kt / NetworkUiState.kt
+│   │   └── components/ServerCard.kt / ServerConfigDialog.kt / StreamHistoryListItem.kt
 │   │
 │   ├── player/
-│   │   ├── VideoPlayerScreen.kt
-│   │   ├── PlayerViewModel.kt
-│   │   ├── PlayerUiState.kt
-│   │   └── components/
-│   │       ├── PlayerControlsOverlay.kt
-│   │       ├── PlayerSeekBar.kt
-│   │       ├── MiniPlayerBar.kt
-│   │       └── AudioPlayerSheet.kt
-│   │
-│   ├── settings/
-│   │   ├── SettingsScreen.kt
-│   │   └── components/
-│   │       ├── SettingsSection.kt
-│   │       └── SettingsItem.kt
+│   │   ├── VideoPlayerScreen.kt / AudioPlayerScreen.kt
+│   │   ├── PlayerViewModel.kt / PlayerUiState.kt
+│   │   ├── PlayerSurface.kt          (engine-agnostic render seam)
+│   │   ├── SubtitleBrowserViewModel.kt / SubtitleSearchViewModel.kt ( + UiState files)
+│   │   └── components/   (see UI_COMPONENTS.md — overlay, seek, sheets, dialogs, …)
 │   │
 │   ├── search/
-│   │   ├── SearchScreen.kt
-│   │   ├── SearchViewModel.kt
-│   │   └── SearchUiState.kt
+│   │   ├── SearchScreen.kt / SearchViewModel.kt / SearchUiState.kt
 │   │
-│   └── preview/
-│       └── PreviewMedia.kt
+│   ├── settings/
+│   │   ├── SettingsScreen.kt / SettingsViewModel.kt
+│   │   └── components/SettingsDialogs.kt / SettingsItem.kt / SettingsSection.kt
+│   │
+│   └── preview/PreviewMedia.kt      (DEBUG-only sample data)
 │
 ├── domain/
 │   ├── model/
-│   │   ├── MediaItem.kt           (generic media model)
-│   │   ├── VideoItem.kt
-│   │   ├── AudioItem.kt
-│   │   ├── Album.kt
-│   │   ├── Artist.kt
-│   │   ├── Playlist.kt
-│   │   ├── FolderItem.kt
-│   │   └── PlayerState.kt
+│   │   ├── MediaItem.kt VideoItem.kt AudioItem.kt Album.kt Artist.kt Playlist.kt
+│   │   ├── FolderItem.kt FolderCounts.kt MediaType.kt
+│   │   ├── PlayerState.kt PlayerStateInfo.kt RepeatMode.kt PlaybackProgress.kt
+│   │   ├── NetworkProtocol.kt ServerConfig.kt RemoteFileItem.kt RemoteAuthException.kt
+│   │   ├── NetworkTraffic.kt StreamHistoryItem.kt DebugStats.kt
+│   │   ├── SubtitleStyle.kt AspectRatioMode.kt ThemeMode.kt
 │   │
-│   ├── repository/
-│   │   ├── MediaRepository.kt
-│   │   ├── AudioRepository.kt
-│   │   ├── FileRepository.kt
-│   │   ├── PlayerRepository.kt
-│   │   └── UserPreferencesRepository.kt
+│   ├── player/
+│   │   ├── EngineType.kt IPlayerEngine.kt MediaSessionProvider.kt
+│   │   ├── RenderViewConfig.kt PlaybackErrorMapper.kt
 │   │
-│   └── usecase/
-│       ├── GetVideosUseCase.kt
-│       ├── GetAudioUseCase.kt
-│       ├── SearchMediaUseCase.kt
-│       └── ToggleFavoriteUseCase.kt
+│   ├── repository/   (one interface per domain area — see below)
+│   │
+│   └── usecase/ResumeProgressUseCase.kt
 │
 ├── data/
 │   ├── repository/
-│   │   ├── MediaRepositoryImpl.kt
-│   │   ├── AudioRepositoryImpl.kt
-│   │   ├── FileRepositoryImpl.kt
-│   │   ├── PlayerRepositoryImpl.kt
-│   │   └── UserPreferencesRepositoryImpl.kt
+│   │   ├── MediaRepositoryImpl.kt AudioRepositoryImpl.kt FileRepositoryImpl.kt
+│   │   ├── NetworkRepositoryImpl.kt RemoteBrowseRepositoryImpl.kt
+│   │   ├── PlayerRepositoryImpl.kt ResumeRepositoryImpl.kt
+│   │   ├── SubtitleRepositoryImpl.kt UserPreferencesRepositoryImpl.kt
 │   │
 │   ├── datasource/
-│   │   ├── local/
-│   │   │   ├── room/
-│   │   │   │   ├── HzPlayerDatabase.kt
-│   │   │   │   ├── MediaDao.kt
-│   │   │   │   ├── PlaylistDao.kt
-│   │   │   │   ├── FavoriteDao.kt
-│   │   │   │   └── entities/
-│   │   │   │       ├── MediaEntity.kt
-│   │   │   │       ├── PlaylistEntity.kt
-│   │   │   │       └── PlaylistMediaCrossRef.kt
-│   │   │   └── datastore/
-│   │   │       └── UserPreferencesSerializer.kt
-│   │   │
-│   │   ├── media/
-│   │   │   └── MediaScanner.kt
-│   │   │
-│   │   └── player/
-│   │       └── MediaPlayerHolder.kt
+│   │   ├── local/room/  (HzPlayerDatabase + dao/ + entities/)
+│   │   ├── local/ (MediaScanner)        (MediaStore index → Room cache)
+│   │   ├── media/MediaScanner.kt
+│   │   ├── network/
+│   │   │   ├── RemoteBrowserClient.kt   (interface)
+│   │   │   ├── SmbBrowserClient.kt FtpBrowserClient.kt
+│   │   │   ├── SftpBrowserClient.kt WebDavBrowserClient.kt
+│   │   ├── player/
+│   │   │   ├── MediaPlayerHolder.kt     (owns the single ExoPlayer)
+│   │   │   ├── ExoPlayerEngine.kt       (IPlayerEngine impl)
+│   │   │   ├── ExoPlayerMediaSessionProvider.kt
+│   │   │   ├── ConnectionPool.kt        (SMB/FTP/SSH pooling)
+│   │   │   ├── FtpDataSource.kt SftpDataSource.kt SmbDataSource.kt WebDavDataSource.kt
+│   │   │   ├── SmbPathResolver.kt
+│   │   │   └── MediaPlaybackService.kt  (Media3 MediaSessionService)
+│   │   └── remote/OpenSubtitlesApi.kt
 │   │
-│   ├── mapper/
-│   │   ├── MediaMappers.kt
-│   │   └── AudioMappers.kt
-│   │
-│   └── model/
-│       └── PlaybackStateAdapter.kt
+│   ├── mapper/MediaMappers.kt NetworkMappers.kt
+│   └── security/PasswordCrypto.kt     (encrypted server credentials in Room)
 │
 ├── core/
-│   ├── designsystem/
-│   │   ├── HzPlayerIcons.kt
-│   │   └── Dimens.kt
-│   │
-│   ├── components/
-│   │   ├── MediaCard.kt
-│   │   ├── MediaGrid.kt
-│   │   ├── MediaListItem.kt
-│   │   ├── SortFilterChips.kt
-│   │   ├── ViewToggleFab.kt
-│   │   ├── MediaEmptyState.kt
-│   │   ├── MediaLoadingState.kt
-│   │   ├── MediaErrorState.kt
-│   │   ├── DurationBadge.kt
-│   │   └── ThumbnailPlaceholder.kt
-│   │
-│   ├── util/
-│   │   ├── DateUtils.kt
-│   │   ├── FileSizeUtils.kt
-│   │   └── MediaTimeUtils.kt
-│   │
-│   └── extensions/
-│       ├── ContextExtensions.kt
-│       ├── UriExtensions.kt
-│       └── FlowExtensions.kt
+│   ├── designsystem/  (HzPlayerIcons.kt Dimens.kt NavBarInsets.kt)
+│   ├── components/    (see UI_COMPONENTS.md)
+│   ├── thumbnail/     (native FFmpeg extractor + Coil fetcher; see below)
+│   └── util/          (MediaTimeUtils / MediaExtensions / MimeTypeUtil /
+│                       BreadcrumbBuilder / DirectoryLruCache / PlaybackFormatters /
+│                       ServerDiscoverer)
 │
 └── di/
-    ├── AppModule.kt
-    ├── RepositoryModule.kt
-    ├── PlayerModule.kt
-    └── DatabaseModule.kt
+    ├── AppModule.kt RepositoryModule.kt DatabaseModule.kt
+    ├── PlayerEngineModule.kt EngineKey.kt
 ```
+
+### Native thumbnail pipeline (`core/thumbnail` + `cpp/`)
+- `VideoThumbnailFetcher.kt` — Coil `Fetcher` that drives extraction and caches to disk.
+- `NativeThumbnailExtractor.kt` — JNI bridge; guards `System.loadLibrary` so it degrades
+  to a placeholder on devices without the native lib (e.g. x86 emulator).
+- `RandomAccessBridge.kt` / `LocalRandomAccessBridge.kt` / `ThumbnailSource.kt` — expose a
+  `seek`/`readAt` interface over any URI (local, SMB, …) so FFmpeg reads remotely.
+- `cpp/ThumbnailExtractor.cpp` — FFmpeg-based frame decode → RGBA for any source URI.
 
 ---
 
-## Data Flow
+## Domain Repository Interfaces
 
-### Read (display media)
-
-```
-UI (Composable) 
-  ← observes StateFlow<UiState>
-    ← VideoLibraryViewModel
-      ← MediaRepository.getAllVideos(): Flow<List<VideoItem>>
-        ← MediaDao.getAll(): Flow<List<MediaEntity>>
-```
-
-### Write (play, favorite, delete)
-
-```
-UI (user taps play)
-  → ViewModel.onPlayVideo(item)
-    → useCase(PlayVideoUseCase) 
-      → PlayerRepository.play(mediaItem)
-        → MediaPlayerHolder.play(uri)
-```
-
-### Settings
-
-```
-UI (user changes sort)
-  → ViewModel.onSortChanged(SortType)
-    → UserPreferencesRepository.setSortPreference(key, value)
-      → DataStore.edit { ... }
-```
+| Interface | Impl | Responsibility |
+|---|---|---|
+| `MediaRepository` | `MediaRepositoryImpl` | Video library from MediaStore→Room cache |
+| `AudioRepository` | `AudioRepositoryImpl` | Albums/artists/tracks + detail queries |
+| `FileRepository` | `FileRepositoryImpl` | Local filesystem browse (SAF / MediaStore) |
+| `NetworkRepository` | `NetworkRepositoryImpl` | Server config CRUD, stream history |
+| `RemoteBrowseRepository` | `RemoteBrowseRepositoryImpl` | SMB/FTP/SFTP/WebDAV directory listing |
+| `PlayerRepository` | `PlayerRepositoryImpl` | Delegates to active `IPlayerEngine` |
+| `ResumeRepository` | `ResumeRepositoryImpl` | Persisted playback position resume |
+| `SubtitleRepository` | `SubtitleRepositoryImpl` | OpenSubtitles search + local subs |
+| `UserPreferencesRepository` | `UserPreferencesRepositoryImpl` | DataStore prefs + active engine |
 
 ---
 
@@ -255,30 +208,27 @@ fun VideoLibraryScreen(
 )
 ```
 
+Engine selection in the player stack is **not** in the screen: `PlayerRepositoryImpl`
+holds `Map<EngineType, IPlayerEngine>` and exposes `activeEngine` + `availableEngines`.
+`PlayerUiState.activeEngineType` lets `PlayerSurface` `key()` on the engine to swap
+render views.
+
 ---
 
 ## Dependency Injection
 
 ```kotlin
-@Module
-@InstallIn(SingletonComponent::class)
+@Module @InstallIn(SingletonComponent::class)
 object AppModule {
-    @Provides @Singleton
-    fun provideExoPlayer(@ApplicationContext context: Context): ExoPlayer = ...
+    @Provides @Singleton fun provideExoPlayer(...) = MediaPlayerHolder(...)   // single instance
 }
 
-@Module
-@InstallIn(SingletonComponent::class)
-object DatabaseModule {
-    @Provides @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): HzPlayerDatabase = ...
-}
-
-@Module
-@InstallIn(SingletonComponent::class)
-object RepositoryModule {
-    @Provides @Singleton
-    fun provideMediaRepository(impl: MediaRepositoryImpl): MediaRepository = impl
+@Module @InstallIn(SingletonComponent::class)
+abstract class PlayerEngineModule {
+    @Binds @IntoMap @EngineKey(EngineType.EXO_PLAYER) @Singleton
+    abstract fun bindExoPlayerEngine(impl: ExoPlayerEngine): IPlayerEngine
+    @Binds @Singleton
+    abstract fun bindMediaSessionProvider(impl: ExoPlayerMediaSessionProvider): MediaSessionProvider
 }
 ```
 
@@ -287,14 +237,17 @@ object RepositoryModule {
 ## Navigation
 
 ```kotlin
-sealed class AppDestinations(val route: String, val label: String) {
-    data object VideoLibrary : AppDestinations("video", "Video")
-    data object AudioBrowser : AppDestinations("audio", "Audio")
-    data object FileBrowser : AppDestinations("browse", "Browse")
-    data object VideoPlayer : AppDestinations("player/{videoId}", "Player")
-    data object Settings : AppDestinations("settings", "Settings")
+sealed class AppDestination(val route: String, @StringRes val labelRes: Int, val icon: ImageVector) {
+    data object VideoLibrary : AppDestination("video_library", R.string.nav_video, …)
+    data object AudioBrowser : AppDestination("audio_browser", R.string.nav_audio, …)
+    data object FileBrowser  : AppDestination("file_browser",  R.string.nav_browse, …)
+    data object Network      : AppDestination("network",       R.string.nav_network, …)
+    data object Settings     : AppDestination("settings",      R.string.nav_settings, …)
 }
 
-// Bottom navigation destinations (for NavigationSuiteScaffold)
-val bottomNavItems = listOf(AppDestinations.VideoLibrary, AppDestinations.AudioBrowser, AppDestinations.FileBrowser, AppDestinations.Settings)
+// Detail / overlay routes live in AppNavigation.NavRoutes:
+//   video_player/{videoId}  audio_player  search
+//   album_detail/{title}    artist_detail/{name}
 ```
+
+`NavigationSuiteScaffold` hosts the 5 tabs; detail screens push onto the same NavHost.

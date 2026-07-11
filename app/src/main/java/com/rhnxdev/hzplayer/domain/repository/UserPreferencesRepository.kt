@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.domain.repository
 
+import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
@@ -19,6 +20,7 @@ interface UserPreferencesRepository {
     val useSurfaceView: Flow<Boolean>
     val enableHdrPlayback: Flow<Boolean>
     val fileBrowserMediaMode: Flow<Boolean>
+    val orientationMode: Flow<OrientationMode>
 
     fun getViewMode(key: String): Flow<ViewMode>
     fun getSortType(key: String): Flow<SortType>
@@ -36,6 +38,7 @@ interface UserPreferencesRepository {
     suspend fun setUseSurfaceView(enabled: Boolean)
     suspend fun setEnableHdrPlayback(enabled: Boolean)
     suspend fun setFileBrowserMediaMode(enabled: Boolean)
+    suspend fun setOrientationMode(mode: OrientationMode)
     suspend fun setViewMode(key: String, mode: ViewMode)
     suspend fun setSortType(key: String, sort: SortType)
     suspend fun setMinSongDurationSecs(seconds: Int)

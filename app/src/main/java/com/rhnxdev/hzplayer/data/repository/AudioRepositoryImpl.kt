@@ -57,7 +57,7 @@ class AudioRepositoryImpl @Inject constructor(
         } catch (_: Exception) { /* preview already emitted */ }
     }.flowOn(Dispatchers.IO)
 
-    override fun getAlbums(forceRefresh: Boolean): Flow<List<Album>> = flow {
+    override fun getAlbums(forceRefresh: Boolean, minDurationSecs: Int): Flow<List<Album>> = flow {
         val memCache = cachedAlbums
         if (memCache != null && !forceRefresh) {
             emit(memCache)
@@ -67,6 +67,7 @@ class AudioRepositoryImpl @Inject constructor(
         // (compilations, "feat." credits) — DISTINCT album+artist would split it into
         // many cards. One card per title; artist = the album's common/first artist.
         val songs = mediaDao.getAllAudio().first().map { it.toAudioItem() }
+            .filter { minDurationSecs <= 0 || it.durationMs >= minDurationSecs * 1000L }
         if (songs.isNotEmpty()) {
             val albums = songs
                 .filter { !it.album.isNullOrBlank() }
@@ -95,7 +96,7 @@ class AudioRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun getArtists(forceRefresh: Boolean): Flow<List<Artist>> = flow {
+    override fun getArtists(forceRefresh: Boolean, minDurationSecs: Int): Flow<List<Artist>> = flow {
         val memCache = cachedArtists
         if (memCache != null && !forceRefresh) {
             emit(memCache)
@@ -105,6 +106,7 @@ class AudioRepositoryImpl @Inject constructor(
         // counts + a cover (first song's album art). DISTINCT-artist projection alone
         // can't give counts. Artist identity is the name string (no ARTIST_ID scanned).
         val songs = mediaDao.getAllAudio().first().map { it.toAudioItem() }
+            .filter { minDurationSecs <= 0 || it.durationMs >= minDurationSecs * 1000L }
         if (songs.isNotEmpty()) {
             val artists = songs
                 .filter { !it.artist.isNullOrBlank() }

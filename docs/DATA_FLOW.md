@@ -1,6 +1,8 @@
 # Hz Player — Data Flow Architecture
 
 > How data moves from persistence to pixels.
+> Last refreshed: 2026-07-11. Reflects the modular `IPlayerEngine` seam, the remote
+> network stack, and resumable playback.
 
 ---
 
@@ -9,239 +11,138 @@
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │                         PRESENTATION                               │
-│                                                                    │
-│  Screen (Composable)                                               │
-│    • Stateless — receives UiState + callbacks                      │
-│    • Observes StateFlow via collectAsStateWithLifecycle()          │
-│    • Never accesses repositories directly                          │
-│                                                                    │
-│  ViewModel (@HiltViewModel)                                        │
-│    • Owns MutableStateFlow<UiState>                                │
-│    • Calls repository suspend functions / collects Flows           │
-│    • Transforms domain models → UiState (mapping)                  │
-│    • Handles user intents (play, delete, favorite)                 │
-│                                                                    │
-│  UiState (data class)                                              │
-│    • Immutable snapshot of screen state                            │
-│    • Contains exactly what the screen renders                      │
-│    • No business logic — pure data                                 │
+│  Screen (stateless) — collects StateFlow via collectAsStateWithLife │
+│  ViewModel (@HiltViewModel) — owns MutableStateFlow<UiState>        │
+│  UiState — immutable snapshot                                       │
+│  PlayerSurface — the ONLY place rendering touches the engine type   │
 └───────────────────────┬────────────────────────────────────────────┘
-                        │ StateFlow<UiState>
-                        │ Event callbacks
+                        │ StateFlow<UiState> / callbacks
 ┌───────────────────────▼────────────────────────────────────────────┐
 │                          DOMAIN                                    │
-│                                                                    │
-│  Model                                                             │
-│    • Pure Kotlin data classes (MediaItem, Album, Playlist...)      │
-│    • No Android dependencies                                       │
-│                                                                    │
-│  Repository Interface                                              │
-│    • Contract between data and presentation layers                 │
-│    • Returns Flow<List<T>> for observable reads                    │
-│    • suspend fun for writes                                        │
-│                                                                    │
-│  UseCase (optional, add when cross-repo orchestration needed)      │
-│    • Single-responsibility operations                              │
-│    • E.g., SearchMediaUseCase (queries video + audio repos)        │
+│  Model (pure Kotlin) • Repository interfaces • IPlayerEngine        │
+│  UseCase (only ResumeProgressUseCase today)                        │
 └───────────────────────┬────────────────────────────────────────────┘
-                        │ Flow / suspend fun
+                        │ Flow / suspend
 ┌───────────────────────▼────────────────────────────────────────────┐
 │                           DATA                                     │
-│                                                                    │
-│  Repository Implementation                                         │
-│    • Combines data sources                                         │
-│    • Maps entities → domain models                                 │
-│    • Handles error recovery, caching strategy                      │
-│                                                                    │
-│  DataSource                                                        │
-│    • Room DAO: Flow-based, type-safe SQL                           │
-│    • MediaStore ContentResolver: system-wide media index           │
-│    • DataStore: preference persistence                             │
-│    • Media3 ExoPlayer: playback state                              │
-│                                                                    │
-│  Entity (Room)                                                     │
-│    • Database-row representation                                   │
-│    • Has @Entity annotation                                        │
+│  Repository impls • Datasources (Room / MediaStore / DataStore /    │
+│  ExoPlayer / network clients / connection pool) • Entities          │
 └───────────────────────┬────────────────────────────────────────────┘
-                        │ SQLite / ContentProvider / SharedPreferences
+                        │ SQLite / ContentProvider / network / JNI
 ```
 
 ---
 
 ## Read Flows
 
-### Video Library — Grid Display
-
+### Video Library (with resume badges)
 ```
-User opens video tab
-  → VideoLibraryScreen collects VideoLibraryViewModel.uiState
-    → ViewModel collects MediaRepository.getAllVideos()
-      → MediaRepositoryImpl collects MediaDao.getAllVideos()
-        → Room queries SQLite, returns Flow<List<MediaEntity>>
-      → Maps List<MediaEntity> → List<VideoItem>
-    → Maps List<VideoItem> → VideoLibraryUiState(videos=..., isLoading=false)
-  → Screen renders LazyVerticalGrid with MediaCard components
+VideoLibraryScreen
+  ← VideoLibraryViewModel.uiState
+    ← MediaRepository.getAllVideos()        // MediaStore → Room cache
+      ← MediaScanner (refresh) + MediaDao
+    ← ResumeRepository.getResumeFor(id)     // shows "resume from 01:23"
 ```
 
-### Audio Browser — Albums Tab
-
+### Audio Browser + Detail
 ```
-User taps Albums tab
-  → AudioBrowserScreen collects AudioBrowserViewModel.uiState
-    → ViewModel collects AudioRepository.getAlbums()
-      → AudioRepositoryImpl collects from:
-          → MediaDao.getAlbums() (cached Room data)
-          → MediaScanner.scanAlbums() (refreshes from MediaStore)
-      → Merges lists, deduplicates, returns Flow<List<Album>>
-    → Maps → AudioBrowserUiState(albums=..., currentTab=ALBUMS)
-  → Screen renders LazyVerticalGrid with AlbumCard components
+AudioBrowserScreen
+  ← AudioRepository.getAlbums() / getArtists() / getTracks()
+AlbumDetailScreen(album)
+  ← AudioRepository.getTracksForAlbum(title)
+ArtistDetailScreen(name)
+  ← AudioRepository.getAlbumsForArtist(name)
 ```
 
-### File Browser — Directory Listing
-
+### File Browser
 ```
-User navigates to /storage/emulated/0/Movies
-  → FileBrowserScreen collects FileBrowserViewModel.uiState
-    → ViewModel calls FileRepository.listDirectory(path)
-      → FileRepositoryImpl queries ContentResolver with URI
-        → Returns List<FolderItem>
-    → Maps → FileBrowserUiState(items=..., currentPath=...)
-  → Screen renders LazyColumn with FileListItem components
+FileBrowserScreen
+  ← FileRepository.listDirectory(path)      // SAF / MediaStore
+```
+
+### Network Browse (remote server)
+```
+NetworkScreen → ServerCard tap
+  → Navigates to FileBrowser-style listing backed by:
+  RemoteBrowseRepositoryImpl.listDirectory(serverConfig, path)
+    → RemoteBrowserClient (Smb/Ftp/Sftp/WebDav)      // ConnectionPool reuse
+    → maps RemoteFileItem → domain
 ```
 
 ---
 
 ## Write Flows
 
-### Play Video
-
+### Play (local or remote, identical call path)
 ```
-User taps MediaCard
-  → Screen calls onVideoClick(videoItem)
-    → ViewModel.onPlayVideo(videoItem)
-      → PlayerUseCase.play(videoItem)
-        → PlayerRepository.play(mediaItem)
-          → MediaPlayerHolder.player.setMediaItem(Media3 item)
-          → MediaPlayerHolder.player.prepare()
-          → MediaPlayerHolder.player.play()
-      → Updates PlayerUiState
+Screen → ViewModel.onPlay(item)
+  → PlayerRepository.playVideo / playAudio / playUri(uri, title, isVideo, mimeType)
+    → activeEngine.play(uri, …)        // IPlayerEngine — no Media3 in caller
+      → ExoPlayerEngine → MediaPlayerHolder.player.setMediaItem + prepare + play
+    → startTrafficPolling() if uri is remote
+  → playbackStateInfo Flow updates PlayerUiState
 ```
 
-### Toggle Favorite
-
+### Switch playback engine
 ```
-User long-presses MediaCard, selects "Favorite"
-  → Screen calls onFavoriteClick(videoItem)
-    → ViewModel.onToggleFavorite(videoItem)
-      → MediaRepository.toggleFavorite(videoItem.id)
-        → MediaDao.updateFavorite(id, !currentState)
-      → Flow re-emits, UiState updates automatically
+SettingsScreen → onEngineSelected(type)
+  → PlayerRepository.setActiveEngine(type)
+    → active engine .stop() (kept alive for switch-back)
+    → _activeEngineType.value = type
+    → userPreferencesRepository.setActiveEngine(type)   // persisted
+  → PlayerSurface key(activeEngineType) recomposes render view
 ```
 
-### Change Sort Order
-
+### Persist playback position (resume)
 ```
-User selects "Date" in SortFilterChips
-  → Screen calls onSortChanged(SortType.DATE)
-    → ViewModel.onSortChanged(SortType.DATE)
-      → UserPreferencesRepository.setSortOrder("video_sort", SortType.DATE)
-        → DataStore.edit { prefs[sortKey] = sortType.name }
-      → Re-collects MediaRepository with new sort
+PlayerRepository.playbackStateInfo (on pause / stop)
+  → ResumeRepository.savePosition(mediaId, positionMs, durationMs)
+    → PlaybackPositionDao upsert
+```
+
+### Change Sort
+```
+Screen → ViewModel.onSortChanged(SortType)
+  → UserPreferencesRepository.setSortOrder(...)
+    → DataStore.edit { prefs[sortKey] = sortType.name }
 ```
 
 ---
 
-## Player Data Flow
-
-### Playback State
+## Player Data Flow (through the engine seam)
 
 ```
 ExoPlayer (in MediaPlayerHolder)
-  → Player.Listener.onIsPlayingChanged(), onPlaybackStateChanged()
-    → PlayerRepository updates MutableStateFlow<PlayerState>
-      → PlayerViewModel collects and maps to PlayerUiState.isPlaying, .currentPosition
-        → Screen shows play/pause icon, seekbar position
+  → Player.Listener → MediaPlayerHolder updates PlayerStateInfo
+    → ExoPlayerEngine.playbackState: StateFlow<PlayerStateInfo>
+      → PlayerRepositoryImpl.playbackStateInfo (flatMapLatest over active engine)
+        → PlayerViewModel maps → PlayerUiState
+          → VideoPlayerScreen (controls) + PlayerSurface (render)
 ```
 
-### Seeking
+Only `ExoPlayerEngine` imports Media3 `Player`/`PlayerView`. `PlayerViewModel` and
+both player screens import **only** `domain` types (`IPlayerEngine`, `PlayerUiState`,
+`PlayerStateInfo`). New engines plug in without touching the ViewModel or screens.
 
-```
-User drags seekbar
-  → onSeek(position)
-    → PlayerViewModel.onSeek(position)
-      → PlayerRepository.seekTo(position)
-        → MediaPlayerHolder.player.seekTo(position)
-      → ViewModel updates uiState.currentPosition (optimistic)
-```
-
-### Track Selection
-
-```
-User opens subtitle track selector
-  → PlayerViewModel collects subtitleTracks from PlayerRepository
-    → PlayerRepository reads ExoPlayer.getCurrentTracks()
-      → Returns List<TrackInfo>
-  → Screen shows bottom sheet with track list
-  → User selects track
-    → ViewModel.onSubtitleTrackSelected(index)
-      → PlayerRepository.selectSubtitleTrack(index)
-        → Calls player.setTrackSelectionParameters()
-```
+### Seeking / track selection / error
+- Seek: `ViewModel.onSeekTo` → `PlayerRepository.seekTo` → `engine.seekTo`.
+- Tracks: `engine.getSubtitleTracks()/getAudioTracks()` surfaced to bottom sheets.
+- Error: `MediaPlayerHolder.onPlayerError` → `PlaybackErrorMapper.map(error)`
+  returns a redacted `(PlaybackErrorKind, message)`; `errorKind` drives the overlay
+  icon + which errors get a Retry button (network/timeout/auth/file — not format).
 
 ---
 
 ## Data Source Strategy
 
-### Room (Primary Cache)
-
-```kotlin
-@Dao
-interface MediaDao {
-    @Query("SELECT * FROM media WHERE type = 'video' ORDER BY date_added DESC")
-    fun getAllVideos(): Flow<List<MediaEntity>>
-
-    @Query("SELECT * FROM media WHERE id = :id")
-    suspend fun getById(id: Long): MediaEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(media: List<MediaEntity>)
-
-    @Query("UPDATE media SET is_favorite = :fav WHERE id = :id")
-    suspend fun updateFavorite(id: Long, fav: Boolean)
-}
-```
-
-### MediaStore (System Index)
-
-```kotlin
-class MediaScanner(private val context: Context) {
-    fun scanVideos(): Flow<List<VideoItem>> = flow {
-        val cursor = context.contentResolver.query(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            projection, null, null, null
-        )
-        cursor?.use { /* iterate, map to VideoItem */ }
-    }
-}
-```
-
-### DataStore (Preferences)
-
-```kotlin
-class UserPreferencesRepository(private val dataStore: DataStore<Preferences>) {
-    val sortPreferences: Flow<Map<String, SortType>> = dataStore.data.map { prefs ->
-        SORT_KEYS.associateWith { key ->
-            SortType.valueOf(prefs[stringPreferencesKey(key)] ?: "TITLE")
-        }
-    }
-
-    suspend fun setSortOrder(key: String, sort: SortType) {
-        dataStore.edit { prefs ->
-            prefs[stringPreferencesKey(key)] = sort.name
-        }
-    }
-}
-```
+| Source | Use | Notes |
+|---|---|---|
+| Room | Persistent cache for media index, server configs, resume positions, stream history | 5 DAOs; KSP-generated |
+| MediaStore | System media index | `MediaScanner` syncs into Room |
+| DataStore | User preferences (sort, theme, active engine) | Type-safe `Preferences` |
+| Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` |
+| Remote clients | SMB/FTP/SFTP/WebDAV browse + streaming | pooled in `ConnectionPool` |
+| Native FFmpeg | Video thumbnails | JNI in `core/thumbnail` + `cpp/` |
 
 ---
 
@@ -249,10 +150,13 @@ class UserPreferencesRepository(private val dataStore: DataStore<Preferences>) {
 
 | Layer | Coroutine Context |
 |---|---|
-| UI (Composable) | Main (via `collectAsStateWithLifecycle`) |
-| ViewModel | Main (via `viewModelScope`) |
-| Repository | Dispatchers.Default or IO (via `withContext`) |
-| Room DAO | Auto-dispatched by Room |
-| MediaStore scan | Dispatchers.IO |
-| ExoPlayer | Manages its own internal thread |
+| UI (Composable) | Main (`collectAsStateWithLifecycle`) |
+| ViewModel | Main (`viewModelScope`) |
+| PlayerRepository | Main (engine delegation) + `Dispatchers.Default` for traffic polling |
+| Repository (IO) | `Dispatchers.IO` |
+| Room DAO | Auto-dispatched |
+| MediaStore scan | `Dispatchers.IO` |
+| Network clients | `ConnectionPool` threads + `Dispatchers.IO` |
+| ExoPlayer | Own internal threads |
+| Native thumbnail | JNI off the main thread (Coil fetcher scope) |
 | DataStore | Auto-dispatched (IO) |

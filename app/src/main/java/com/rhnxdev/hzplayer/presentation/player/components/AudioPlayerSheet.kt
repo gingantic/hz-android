@@ -28,6 +28,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.ui.Alignment
@@ -55,6 +59,8 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 @Composable
 fun AudioPlayerSheet(
     uiState: PlayerUiState,
+    /** High-frequency playback position; see [PlayerViewModel.position]. */
+    positionFlow: StateFlow<Long>,
     title: String?,
     artist: String?,
     onPlayPause: () -> Unit,
@@ -138,8 +144,8 @@ fun AudioPlayerSheet(
                 Spacer(modifier = Modifier.height(Spacing.sm))
 
                 // Seekbar
-                PlayerSeekBar(
-                    currentPosition = uiState.currentPosition,
+                AudioSeekProgressRow(
+                    positionFlow = positionFlow,
                     duration = uiState.duration,
                     bufferedPercentage = uiState.bufferedPercentage,
                     onSeek = onSeekTo,
@@ -284,8 +290,8 @@ fun AudioPlayerSheet(
             Spacer(modifier = Modifier.height(Spacing.md))
 
             // Seekbar
-            PlayerSeekBar(
-                currentPosition = uiState.currentPosition,
+            AudioSeekProgressRow(
+                positionFlow = positionFlow,
                 duration = uiState.duration,
                 bufferedPercentage = uiState.bufferedPercentage,
                 onSeek = onSeekTo,
@@ -378,6 +384,30 @@ fun AudioPlayerSheet(
     }
 }
 
+/**
+ * Collects the high-frequency playback position from [positionFlow] so the 250 ms
+ * tick only recomposes this small row (and the [PlayerSeekBar] inside it).
+ */
+@Composable
+private fun AudioSeekProgressRow(
+    positionFlow: StateFlow<Long>,
+    duration: Long,
+    bufferedPercentage: Int,
+    onSeek: (Long) -> Unit,
+    onSeekStart: () -> Unit,
+    onSeekEnd: () -> Unit,
+) {
+    val currentPosition by positionFlow.collectAsStateWithLifecycle()
+    PlayerSeekBar(
+        currentPosition = currentPosition,
+        duration = duration,
+        bufferedPercentage = bufferedPercentage,
+        onSeek = onSeek,
+        onSeekStart = onSeekStart,
+        onSeekEnd = onSeekEnd,
+    )
+}
+
 @PreviewLightDark
 @Preview
 @Composable
@@ -386,9 +416,9 @@ private fun AudioPlayerSheetPreview() {
         AudioPlayerSheet(
             uiState = PlayerUiState(
                 isPlaying = true,
-                currentPosition = 180000,
                 duration = 369000,
             ),
+            positionFlow = MutableStateFlow(180000L),
             title = "Get Lucky",
             artist = "Daft Punk",
             onPlayPause = {},

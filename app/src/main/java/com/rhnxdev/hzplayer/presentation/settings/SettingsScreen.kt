@@ -28,6 +28,7 @@ import com.rhnxdev.hzplayer.MainActivity
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.presentation.settings.components.ColorPickerDialog
@@ -36,7 +37,9 @@ import com.rhnxdev.hzplayer.presentation.settings.components.SettingsItem
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsSection
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsSliderItem
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsToggleItem
+import com.rhnxdev.hzplayer.presentation.settings.components.AboutDialog
 import com.rhnxdev.hzplayer.presentation.settings.components.ThemeSelectionDialog
+import com.rhnxdev.hzplayer.presentation.settings.components.OrientationDialog
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 @Composable
@@ -49,6 +52,8 @@ fun SettingsScreen(
     var showColorDialog by remember { mutableStateOf(false) }
     var resumePlayback by remember { mutableStateOf(true) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    var showOrientationDialog by remember { mutableStateOf(false) }
 
 
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
@@ -62,6 +67,7 @@ fun SettingsScreen(
     val minSongDurationSecs by settingsViewModel.minSongDurationSecs.collectAsStateWithLifecycle()
     val enableHdrPlayback by settingsViewModel.enableHdrPlayback.collectAsStateWithLifecycle()
     val debugMode by settingsViewModel.debugMode.collectAsStateWithLifecycle()
+    val orientationMode by settingsViewModel.orientationMode.collectAsStateWithLifecycle()
     val activeEngine by settingsViewModel.activeEngine.collectAsStateWithLifecycle()
     val availableEngines = settingsViewModel.availableEngines
 
@@ -94,6 +100,21 @@ fun SettingsScreen(
             onSelect = { argb ->
                 settingsViewModel.saveAppColorArgb(argb)
                 showColorDialog = false
+            },
+        )
+    }
+
+    if (showAboutDialog) {
+        AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    if (showOrientationDialog) {
+        OrientationDialog(
+            currentMode = orientationMode,
+            onDismiss = { showOrientationDialog = false },
+            onSelect = { mode ->
+                settingsViewModel.saveOrientationMode(mode)
+                showOrientationDialog = false
             },
         )
     }
@@ -133,6 +154,15 @@ fun SettingsScreen(
                                 subtitle = stringResource(R.string.settings_dynamic_colors_sub),
                                 checked = dynamicColors,
                                 onCheckedChange = { settingsViewModel.saveDynamicColors(it) },
+                            )
+                            SettingsItem(
+                                title = stringResource(R.string.settings_orientation),
+                                subtitle = when (orientationMode) {
+                                    OrientationMode.AUTO -> stringResource(R.string.orientation_auto)
+                                    OrientationMode.PORTRAIT -> stringResource(R.string.orientation_portrait)
+                                    OrientationMode.LANDSCAPE -> stringResource(R.string.orientation_landscape)
+                                },
+                                onClick = { showOrientationDialog = true },
                             )
                         }
                     },
@@ -352,7 +382,7 @@ fun SettingsScreen(
                             SettingsItem(
                                 title = stringResource(R.string.settings_about),
                                 subtitle = stringResource(R.string.settings_version),
-                                onClick = {},
+                                onClick = { showAboutDialog = true },
                             )
                             SettingsItem(
                                 title = stringResource(R.string.settings_licenses),

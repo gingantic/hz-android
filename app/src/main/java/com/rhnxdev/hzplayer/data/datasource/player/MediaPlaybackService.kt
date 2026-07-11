@@ -7,6 +7,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.rhnxdev.hzplayer.MainActivity
 import com.rhnxdev.hzplayer.domain.player.MediaSessionProvider
+import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -16,6 +17,7 @@ import javax.inject.Inject
 class MediaPlaybackService : MediaSessionService() {
 
     @Inject lateinit var playerRepository: PlayerRepository
+    @Inject lateinit var mediaSessionProvider: MediaSessionProvider
 
     private var mediaSession: MediaSession? = null
 
@@ -24,7 +26,11 @@ class MediaPlaybackService : MediaSessionService() {
 
         // Only Media3-backed engines can supply a Player for the system MediaSession
         // (notification / media controls). Non-Media3 engines run without it for now.
-        val player = (playerRepository.activeEngine as? MediaSessionProvider)?.getMedia3Player()
+        val player = if (playerRepository.activeEngine.engineType == EngineType.EXO_PLAYER) {
+            mediaSessionProvider.getMedia3Player()
+        } else {
+            null
+        }
 
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -46,7 +52,11 @@ class MediaPlaybackService : MediaSessionService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = (playerRepository.activeEngine as? MediaSessionProvider)?.getMedia3Player()
+        val player = if (playerRepository.activeEngine.engineType == EngineType.EXO_PLAYER) {
+            mediaSessionProvider.getMedia3Player()
+        } else {
+            null
+        }
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }

@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
@@ -76,6 +77,9 @@ class SettingsViewModel @Inject constructor(
     val debugMode: StateFlow<Boolean> = prefs.debugMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val orientationMode: StateFlow<OrientationMode> = prefs.orientationMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrientationMode.AUTO)
+
     /** Engines registered via Hilt multibinding. */
     val availableEngines: List<EngineType> get() = playerRepository.availableEngines
 
@@ -126,6 +130,10 @@ class SettingsViewModel @Inject constructor(
 
     fun saveDebugMode(enabled: Boolean) {
         viewModelScope.launch { prefs.setDebugMode(enabled) }
+    }
+
+    fun saveOrientationMode(mode: OrientationMode) {
+        viewModelScope.launch { prefs.setOrientationMode(mode) }
     }
 
 }

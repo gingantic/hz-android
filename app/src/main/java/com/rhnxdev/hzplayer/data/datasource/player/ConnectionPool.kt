@@ -7,7 +7,13 @@ import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionPool as OkHttpConnectionPool
 import okhttp3.OkHttpClient
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
@@ -29,13 +35,67 @@ import java.util.concurrent.TimeUnit
  */
 internal object ConnectionPool {
 
-    private val ftpPool = ConcurrentHashMap<String, PooledFtpConnection>()
-    private val sftpPool = ConcurrentHashMap<String, PooledSshConnection>()
-    private val smbPool = ConcurrentHashMap<String, CIFSContext>()
-    private val webdavPool = ConcurrentHashMap<String, OkHttpClient>()
+    /** Idle connections older than this are evicted by the sweeper. */
+    private const val IDLE_TIMEOUT_MS = 5 * 60_000L
+
+    /**
+     * Wraps a pooled value with its last-use time and a checkout count, so the
+     * sweeper can evict connections that have been idle (not checked out) longer
+     * than [IDLE_TIMEOUT_MS] without ever closing a connection that is still in
+     * active use by a running stream.
+     */
+    private class Timed<V>(val value: V) {
+        @Volatile var lastUsed = System.currentTimeMillis()
+        @Volatile var inUse = 0
+        fun acquire() { inUse = inUse + 1; lastUsed = System.currentTimeMillis() }
+        fun release() { inUse = (inUse - 1).coerceAtLeast(0); lastUsed = System.currentTimeMillis() }
+    }
+
+    private fun <V> ConcurrentHashMap<String, Timed<V>>.evictIdle(close: (V) -> Unit) {
+        val now = System.currentTimeMillis()
+        val it = entries.iterator()
+        while (it.hasNext()) {
+            val (_, timed) = it.next()
+            if (timed.inUse == 0 && now - timed.lastUsed > IDLE_TIMEOUT_MS) {
+                try { close(timed.value) } catch (_: Exception) {}
+                it.remove()
+            }
+        }
+    }
+
+    private val evictionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var sweeperStarted = false
+    private fun ensureSweeper() {
+        if (sweeperStarted) return
+        sweeperStarted = true
+        evictionScope.launch {
+            while (isActive) {
+                delay(IDLE_TIMEOUT_MS / 2)
+                evictIdle()
+            }
+        }
+    }
+
+    init { ensureSweeper() }
+
+    private fun evictIdle() {
+        ftpPool.evictIdle { c -> try { c.logout() } catch (_: Exception) {}; try { c.disconnect() } catch (_: Exception) {} }
+        sftpPool.evictIdle { c -> try { c.disconnect() } catch (_: Exception) {} }
+        smbPool.evictIdle { ctx -> try { ctx.close() } catch (_: Exception) {} }
+        webdavPool.evictIdle { c ->
+            try { c.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}
+            try { c.connectionPool.evictAll() } catch (_: Exception) {}
+        }
+    }
+
+    private val ftpPool = ConcurrentHashMap<String, Timed<FTPClient>>()
+    private val sftpPool = ConcurrentHashMap<String, Timed<SSHClient>>()
+    private val smbPool = ConcurrentHashMap<String, Timed<CIFSContext>>()
+    private val webdavPool = ConcurrentHashMap<String, Timed<OkHttpClient>>()
 
     // Browser-level pooling — separate from DataSource pool to allow
-    // simultaneous browse + stream connections to the same server.
+    // simultaneous browse + stream connections to the same server. These are
+    // removed from the map on return, so they need no idle sweeper.
     private val ftpBrowserPool = ConcurrentHashMap<String, FTPClient>()
     private val sftpBrowserPool = ConcurrentHashMap<String, SSHClient>()
     private val smbBrowserPool = ConcurrentHashMap<String, CIFSContext>()
@@ -60,12 +120,13 @@ internal object ConnectionPool {
     fun borrowFtp(host: String, port: Int, user: String, pass: String): FTPClient {
         val k = key("ftp", host, port, user, pass)
         val existing = ftpPool[k]
-        if (existing != null && existing.client.isConnected && !existing.client.isAvailable) {
-            return existing.client
+        if (existing != null && existing.value.isConnected && !existing.value.isAvailable) {
+            existing.acquire()
+            return existing.value
         }
         existing?.let {
-            try { it.client.logout() } catch (_: Exception) {}
-            try { it.client.disconnect() } catch (_: Exception) {}
+            try { it.value.logout() } catch (_: Exception) {}
+            try { it.value.disconnect() } catch (_: Exception) {}
         }
         val ftp = FTPClient().apply {
             autodetectUTF8 = true // negotiate UTF-8 from server FEAT — emoji/CJK filenames
@@ -77,12 +138,14 @@ internal object ConnectionPool {
             enterLocalPassiveMode()
             setFileType(FTP.BINARY_FILE_TYPE)
         }
-        ftpPool[k] = PooledFtpConnection(ftp)
+        ftpPool[k] = Timed(ftp).also { it.acquire() }
         android.util.Log.d("ConnectionPool", "FTP new connection $k")
         return ftp
     }
 
-    fun returnFtp(host: String, port: Int, user: String) {} // keep alive
+    fun returnFtp(host: String, port: Int, user: String, pass: String) {
+        ftpPool[key("ftp", host, port, user, pass)]?.release() // keep alive; sweeper evicts when idle
+    }
 
     // ── SFTP (DataSource) ──────────────────────────────────────────
 
@@ -90,11 +153,12 @@ internal object ConnectionPool {
     fun borrowSsh(host: String, port: Int, user: String, pass: String): SSHClient {
         val k = key("sftp", host, port, user, pass)
         val existing = sftpPool[k]
-        if (existing != null && existing.client.isConnected && existing.client.isAuthenticated) {
-            return existing.client
+        if (existing != null && existing.value.isConnected && existing.value.isAuthenticated) {
+            existing.acquire()
+            return existing.value
         }
         existing?.let {
-            try { it.client.disconnect() } catch (_: Exception) {}
+            try { it.value.disconnect() } catch (_: Exception) {}
         }
         val ssh = SSHClient().apply {
             addHostKeyVerifier(PromiscuousVerifier())
@@ -102,12 +166,14 @@ internal object ConnectionPool {
             connect(host, port)
             authPassword(user, pass)
         }
-        sftpPool[k] = PooledSshConnection(ssh)
+        sftpPool[k] = Timed(ssh).also { it.acquire() }
         android.util.Log.d("ConnectionPool", "SFTP new connection $k")
         return ssh
     }
 
-    fun returnSsh(host: String, port: Int, user: String) {} // keep alive
+    fun returnSsh(host: String, port: Int, user: String, pass: String) {
+        sftpPool[key("sftp", host, port, user, pass)]?.release() // keep alive; sweeper evicts when idle
+    }
 
     // ── SMB (DataSource) ──────────────────────────────────────────
 
@@ -133,8 +199,8 @@ internal object ConnectionPool {
                 base.withGuestCrendentials()
             }
             android.util.Log.d("ConnectionPool", "SMB new context $k")
-            ctx
-        }
+            Timed(ctx)
+        }.also { it.acquire() }.value
     }
 
     /** Borrow (or create) a shared [CIFSContext] for remote SMB thumbnails with tight timeouts. */
@@ -159,8 +225,8 @@ internal object ConnectionPool {
                 base.withGuestCrendentials()
             }
             android.util.Log.d("ConnectionPool", "SMB new thumbnail context $k")
-            ctx
-        }
+            Timed(ctx)
+        }.also { it.acquire() }.value
     }
 
     fun returnSmbContext(host: String, port: Int, user: String) {} // keep alive
@@ -177,18 +243,24 @@ internal object ConnectionPool {
     ): OkHttpClient {
         val k = webdavKey(host, port, useTls, user)
         return webdavPool.getOrPut(k) {
-            OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(15, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .followSslRedirects(true)
-                .build()
-                .also { android.util.Log.d("ConnectionPool", "WebDAV new client $k") }
-        }
+            Timed(
+                OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .writeTimeout(15, TimeUnit.SECONDS)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    // Bounded idle socket eviction at the HTTP layer so pooled
+                    // clients don't hold open sockets for the app lifetime.
+                    .connectionPool(OkHttpConnectionPool(8, 5, TimeUnit.MINUTES))
+                    .build(),
+            ).also { it.acquire() }
+        }.value
     }
 
-    fun returnWebDavClient(host: String, port: Int, useTls: Boolean) {} // keep alive
+    fun returnWebDavClient(host: String, port: Int, useTls: Boolean, user: String, pass: String) {
+        webdavPool[webdavKey(host, port, useTls, user)]?.release() // keep alive; sweeper evicts when idle
+    }
 
     // ── Browser-level pooling ─────────────────────────────────────
 
@@ -316,8 +388,8 @@ internal object ConnectionPool {
     /** Release all pooled connections (call from application onDestroy). */
     fun releaseAll() {
         ftpPool.values.forEach {
-            try { it.client.logout() } catch (_: Exception) {}
-            try { it.client.disconnect() } catch (_: Exception) {}
+            try { it.value.logout() } catch (_: Exception) {}
+            try { it.value.disconnect() } catch (_: Exception) {}
         }
         ftpPool.clear()
         ftpBrowserPool.values.forEach {
@@ -327,7 +399,7 @@ internal object ConnectionPool {
         ftpBrowserPool.clear()
 
         sftpPool.values.forEach {
-            try { it.client.disconnect() } catch (_: Exception) {}
+            try { it.value.disconnect() } catch (_: Exception) {}
         }
         sftpPool.clear()
         sftpBrowserPool.values.forEach {
@@ -340,8 +412,8 @@ internal object ConnectionPool {
         SmbPathResolver.clearCache()
 
         webdavPool.values.forEach {
-            try { it.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}
-            try { it.connectionPool.evictAll() } catch (_: Exception) {}
+            try { it.value.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}
+            try { it.value.connectionPool.evictAll() } catch (_: Exception) {}
         }
         webdavPool.clear()
         webdavBrowserPool.values.forEach {
@@ -351,6 +423,4 @@ internal object ConnectionPool {
         webdavBrowserPool.clear()
     }
 
-    private class PooledFtpConnection(val client: FTPClient)
-    private class PooledSshConnection(val client: SSHClient)
 }

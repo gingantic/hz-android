@@ -18,7 +18,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -42,7 +47,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.BuildConfig
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 
 @Composable
@@ -74,6 +81,50 @@ fun ThemeSelectionDialog(
                                 ThemeMode.LIGHT -> stringResource(R.string.theme_light)
                                 ThemeMode.DARK -> stringResource(R.string.theme_dark)
                                 ThemeMode.VOID -> stringResource(R.string.theme_void)
+                            },
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dialog_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun OrientationDialog(
+    currentMode: OrientationMode,
+    onDismiss: () -> Unit,
+    onSelect: (OrientationMode) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.orientation_selection_title)) },
+        text = {
+            Column {
+                OrientationMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(mode) }
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = currentMode == mode,
+                            onClick = { onSelect(mode) }
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = when (mode) {
+                                OrientationMode.AUTO -> stringResource(R.string.orientation_auto)
+                                OrientationMode.PORTRAIT -> stringResource(R.string.orientation_portrait)
+                                OrientationMode.LANDSCAPE -> stringResource(R.string.orientation_landscape)
                             },
                             style = MaterialTheme.typography.bodyLarge
                         )
@@ -367,5 +418,93 @@ fun OpenSubtitlesApiKeyDialog(
                 Text(stringResource(R.string.dialog_cancel))
             }
         }
+    )
+}
+
+@Composable
+fun AboutDialog(
+    onDismiss: () -> Unit,
+) {
+    val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+    val tech = listOf(
+        stringResource(R.string.about_tech_kotlin),
+        stringResource(R.string.about_tech_compose),
+        stringResource(R.string.about_tech_exoplayer),
+        stringResource(R.string.about_tech_room),
+        stringResource(R.string.about_tech_hilt),
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = stringResource(R.string.about_title),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_version),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.about_tagline),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = stringResource(R.string.about_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                HorizontalDivider()
+                Text(
+                    text = stringResource(R.string.about_built_with),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                tech.forEach { techName ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = techName, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                HorizontalDivider()
+                Text(
+                    text = stringResource(R.string.about_copyright, year),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dialog_close))
+            }
+        },
     )
 }

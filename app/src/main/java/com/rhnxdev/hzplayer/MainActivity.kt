@@ -568,8 +568,9 @@ private fun MiniPlayerSection(
     onNavigateToPlayer: () -> Unit,
 ) {
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
+    val currentPosition by playerViewModel.position.collectAsStateWithLifecycle()
     val progress = if (playerState.duration > 0) {
-        (playerState.currentPosition.toFloat() / playerState.duration.toFloat())
+        (currentPosition.toFloat() / playerState.duration.toFloat())
             .coerceIn(0f, 1f)
     } else 0f
     MiniPlayerBar(
