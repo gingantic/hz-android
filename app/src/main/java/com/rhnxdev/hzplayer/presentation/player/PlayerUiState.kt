@@ -21,7 +21,12 @@ data class PlayerUiState(
     val isVideo: Boolean = false,
     val isPlaying: Boolean = false,
     val isLoading: Boolean = false,
-    val currentPosition: Long = 0,
+    /**
+     * Playback position is intentionally NOT part of this state. It changes every
+     * 250 ms, so keeping it here would force the whole player UI to recompose on
+     * every tick. Consume it separately via [PlayerViewModel.position] (a dedicated
+     * StateFlow) so only the seek bar re-renders.
+     */
     val duration: Long = 0,
     val bufferedPercentage: Int = 0,
     val playbackSpeed: Float = 1.0f,

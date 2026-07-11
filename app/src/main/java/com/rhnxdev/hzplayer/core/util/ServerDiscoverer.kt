@@ -431,15 +431,15 @@ class ServerDiscoverer @Inject constructor(
         }
 
         override fun onDiscoveryStarted(serviceType: String) {
-            Log.d(TAG, "onDiscoveryStarted: $serviceType")
+            Log.v(TAG, "onDiscoveryStarted: $serviceType")
         }
 
         override fun onDiscoveryStopped(serviceType: String) {
-            Log.d(TAG, "onDiscoveryStopped: $serviceType")
+            Log.v(TAG, "onDiscoveryStopped: $serviceType")
         }
 
         override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-            Log.d(TAG, "onServiceFound: name=${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
+            Log.v(TAG, "onServiceFound: name=${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
             val name = serviceInfo.serviceName
             if (name.isBlank() || discoveredNames.contains(name)) {
                 Log.d(TAG, "onServiceFound: already found or empty: $name, skip")
@@ -461,7 +461,7 @@ class ServerDiscoverer @Inject constructor(
 
         override fun onServiceLost(serviceInfo: NsdServiceInfo) {
             val name = serviceInfo.serviceName
-            Log.d(TAG, "onServiceLost: $name")
+            Log.v(TAG, "onServiceLost: $name")
             discoveredNames.remove(name)
             
             // Remove from uiState

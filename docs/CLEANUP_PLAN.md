@@ -1,6 +1,11 @@
 # Hz Player — Code Cleanup, Bug & Error-Text Plan
 
-> Status: DONE. Items #1–#21 + #22 verified. #21 cross-file refactors: dialog extraction,
+> Status: DONE (historical record). All 27 items implemented and verified.
+> Last refreshed: 2026-07-11. This is now a closed record of the reliability/i18n
+> pass; see `docs/PROJECT_PLAN.md` "Known debt" for the few deferred cross-file
+> refactors that remain open.
+>
+> Items #1–#21 + #22 verified. #21 cross-file refactors: dialog extraction,
 > MediaType move, thumbnail color tokens DONE; i18n DONE (#27); MainActivity/HzPlayerApp, ConnectionPool
 > split still deferred (heavy cross-file). #6 anonymous-FTP opt-in DONE.
 > Scope: the 70+ modified files across the video player, SMB/WebDAV stack, native

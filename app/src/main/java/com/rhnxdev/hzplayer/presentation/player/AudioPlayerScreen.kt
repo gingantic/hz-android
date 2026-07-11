@@ -149,6 +149,7 @@ fun AudioPlayerScreen(
 
         AudioPlayerSheet(
             uiState = uiState,
+            positionFlow = viewModel.position,
             title = uiState.currentTitle,
             artist = uiState.currentArtist,
             onPlayPause = viewModel::onPlayPause,

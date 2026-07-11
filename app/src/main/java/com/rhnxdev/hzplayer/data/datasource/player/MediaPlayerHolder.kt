@@ -49,10 +49,10 @@ class MediaPlayerHolder @Inject constructor(
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            /* minBufferMs = */ 15_000,
-            /* maxBufferMs = */ 30_000,
-            /* bufferForPlaybackMs = */ 500,
-            /* bufferForPlaybackAfterUserActionMs = */ 500
+            /* minBufferMs = */ 50_000,
+            /* maxBufferMs = */ 90_000,
+            /* bufferForPlaybackMs = */ 2_500,
+            /* bufferForPlaybackAfterUserActionMs = */ 5_000
         )
         .build()
 

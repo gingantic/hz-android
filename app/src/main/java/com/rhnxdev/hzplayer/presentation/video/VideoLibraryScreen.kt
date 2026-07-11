@@ -224,7 +224,7 @@ private fun GridContent(
                     items(category.videos, key = { it.id }) { video ->
                         MediaCard(
                             title = video.title,
-                            subtitle = buildSubtitle(video),
+                            subtitle = remember(video) { buildSubtitle(video) },
                             durationMs = video.durationMs,
                             progress = video.watchedProgress.takeIf { it > 0f },
                             thumbnailContent = {
@@ -264,7 +264,7 @@ private fun ListContent(
         items(videos, key = { it.id }) { video ->
             MediaListItem(
                 title = video.title,
-                subtitle = buildSubtitle(video),
+                subtitle = remember(video) { buildSubtitle(video) },
                 durationMs = video.durationMs,
                 thumbnailContent = {
                     SubcomposeAsyncImage(
@@ -309,7 +309,7 @@ private fun SearchResultsContent(
             items(videos, key = { it.id }) { video ->
                 MediaCard(
                     title = video.title,
-                    subtitle = buildSubtitle(video),
+                    subtitle = remember(video) { buildSubtitle(video) },
                     durationMs = video.durationMs,
                     thumbnailContent = {
                         SubcomposeAsyncImage(
@@ -337,7 +337,7 @@ private fun SearchResultsContent(
             items(videos, key = { it.id }) { video ->
                 MediaListItem(
                     title = video.title,
-                    subtitle = buildSubtitle(video),
+                    subtitle = remember(video) { buildSubtitle(video) },
                     durationMs = video.durationMs,
                     thumbnailContent = {
                         SubcomposeAsyncImage(

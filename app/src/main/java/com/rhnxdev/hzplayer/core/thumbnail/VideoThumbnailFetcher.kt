@@ -28,6 +28,8 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import okhttp3.Credentials
+import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 /** Coil model: a video file whose frame we want as a thumbnail. */
@@ -40,7 +42,7 @@ fun frameTimeUs(durationMs: Long): Long = durationMs * 1000L * 40 / 100
 private const val THUMB_MAX_WIDTH = 720
 
 /** How many bytes to download from a remote video for thumbnail extraction. */
-private const val REMOTE_HEAD_BYTES = 1_024_000L // 1 MB
+private const val REMOTE_HEAD_BYTES = 512_000L // 512 KB — enough for the moov atom; smaller range = faster thumbnail fetch on slow links
 
 /** Memory-cache key — path + mtime so an edited file gets a fresh frame. */
 class VideoFrameKeyer : Keyer<VideoFrame> {
@@ -282,16 +284,57 @@ class VideoFrameFetcher(
     }
 
     private fun downloadHttpHead(url: String, dest: File, maxBytes: Long) {
+        val scheme = url.substringBefore("://").lowercase()
+        val isWebDav = scheme == "webdav" || scheme == "webdavs"
+        // Plain HTTP(S) remote thumbnails keep a lightweight direct connection.
+        if (!isWebDav) {
+            val httpUrl = url
+                .replaceFirst("webdav://", "http://", ignoreCase = true)
+                .replaceFirst("webdavs://", "https://", ignoreCase = true)
+            val conn = URL(httpUrl).openConnection() as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            conn.setRequestProperty("Range", "bytes=0-${maxBytes - 1}")
+            try {
+                conn.connect()
+                val stream = conn.inputStream ?: return
+                FileOutputStream(dest).use { out ->
+                    val buf = ByteArray(8192)
+                    var total = 0L
+                    while (total < maxBytes) {
+                        val n = stream.read(buf, 0, buf.size.coerceAtMost((maxBytes - total).toInt()))
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        total += n
+                    }
+                }
+            } finally {
+                conn.disconnect()
+            }
+            return
+        }
+
+        // WebDAV(S): route through the pooled, auth-aware OkHttpClient so thumbnails
+        // reuse the same connections as playback and actually work with credentials
+        // (URL.openConnection can't emit the Authorization header and rejects the scheme).
+        val uri = Uri.parse(url)
+        val host = uri.host ?: return
+        val port = uri.port.takeIf { it > 0 } ?: if (scheme == "webdavs") 443 else 80
+        val userInfo = uri.userInfo ?: ""
+        val parts = userInfo.split(":", limit = 2)
+        val user = Uri.decode(parts.getOrNull(0) ?: "")
+        val pass = Uri.decode(parts.getOrNull(1) ?: "")
         val httpUrl = url
             .replaceFirst("webdav://", "http://", ignoreCase = true)
             .replaceFirst("webdavs://", "https://", ignoreCase = true)
-        val conn = URL(httpUrl).openConnection() as HttpURLConnection
-        conn.connectTimeout = 5000
-        conn.readTimeout = 5000
-        conn.setRequestProperty("Range", "bytes=0-${maxBytes - 1}")
-        try {
-            conn.connect()
-            val stream = conn.inputStream ?: return
+        val client = ConnectionPool.borrowWebDavClient(host, port, scheme == "webdavs", user, pass)
+        val request = Request.Builder().url(httpUrl)
+            .header("Range", "bytes=0-${maxBytes - 1}")
+            .apply { if (user.isNotEmpty()) header("Authorization", Credentials.basic(user, pass)) }
+            .build()
+        client.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) return
+            val stream = resp.body?.byteStream() ?: return
             FileOutputStream(dest).use { out ->
                 val buf = ByteArray(8192)
                 var total = 0L
@@ -302,8 +345,6 @@ class VideoFrameFetcher(
                     total += n
                 }
             }
-        } finally {
-            conn.disconnect()
         }
     }
 

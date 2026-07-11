@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
+import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
@@ -80,6 +81,16 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override val fileBrowserMediaMode: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[PrefKey.FileBrowserMediaMode.key] ?: false
     }.distinctUntilChanged()
+
+    override val orientationMode: Flow<OrientationMode> = dataStore.data.map { prefs ->
+        val name = prefs[PrefKey.OrientationMode.key]
+        try {
+            name?.let { OrientationMode.valueOf(it) } ?: OrientationMode.AUTO
+        } catch (_: IllegalArgumentException) {
+            OrientationMode.AUTO
+        }
+    }.distinctUntilChanged()
+
 
     override val minSongDurationSecs: Flow<Int> = dataStore.data.map { prefs ->
         prefs[PrefKey.MinSongDurationSecs.key] ?: 0
@@ -191,6 +202,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[PrefKey.FileBrowserMediaMode.key] = enabled }
     }
 
+    override suspend fun setOrientationMode(mode: OrientationMode) {
+        dataStore.edit { prefs -> prefs[PrefKey.OrientationMode.key] = mode.name }
+    }
+
     override suspend fun setMinSongDurationSecs(seconds: Int) {
         dataStore.edit { prefs -> prefs[PrefKey.MinSongDurationSecs.key] = seconds }
     }
@@ -216,6 +231,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object UseSurfaceView : PrefKey<Boolean>(booleanPreferencesKey("use_surface_view"))
         object EnableHdrPlayback : PrefKey<Boolean>(booleanPreferencesKey("enable_hdr_playback"))
         object FileBrowserMediaMode : PrefKey<Boolean>(booleanPreferencesKey("file_browser_media_mode"))
+        object OrientationMode : PrefKey<String>(stringPreferencesKey("orientation_mode"))
         object SelectedTabIndex : PrefKey<Int>(intPreferencesKey("selected_tab_index"))
         object MinSongDurationSecs : PrefKey<Int>(intPreferencesKey("min_song_duration_secs"))
         object DebugMode : PrefKey<Boolean>(booleanPreferencesKey("debug_mode"))

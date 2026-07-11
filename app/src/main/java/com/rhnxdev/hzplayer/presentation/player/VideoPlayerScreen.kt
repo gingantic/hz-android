@@ -1,7 +1,11 @@
+
 package com.rhnxdev.hzplayer.presentation.player
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
@@ -48,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
@@ -72,14 +77,18 @@ import android.view.Window
 import android.view.WindowManager
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rhnxdev.hzplayer.presentation.player.components.PlaybackErrorOverlay
+import com.rhnxdev.hzplayer.presentation.player.components.SeekIndicators
+import com.rhnxdev.hzplayer.presentation.player.components.UnlockPill
+import com.rhnxdev.hzplayer.presentation.player.components.pauseRenderView
+import com.rhnxdev.hzplayer.presentation.player.components.resumeRenderView
 import com.rhnxdev.hzplayer.data.datasource.player.ExoPlayerEngine
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
+import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.presentation.player.components.DebugOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerControlsOverlay
-import com.rhnxdev.hzplayer.presentation.player.components.SeekIndicator
-import com.rhnxdev.hzplayer.presentation.player.components.DragSeekIndicator
 import com.rhnxdev.hzplayer.presentation.player.components.AudioSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SlideIndicator
 import com.rhnxdev.hzplayer.presentation.player.components.SlideType
@@ -91,6 +100,11 @@ import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSearchDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleStylingDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleFileBrowserBottomSheet
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 
 /** Duration in ms for double-tap fixed seeks (left/right thirds). */
 private const val TAP_SEEK_MS = 10_000L
@@ -98,23 +112,49 @@ private const val TAP_SEEK_MS = 10_000L
 /** Dominant drag direction used to disambiguate vertical (brightness/volume) from horizontal (seek). */
 private enum class DragDirection { SEEK, ADJUST }
 
+/** Playback speed once hold-to-speed engages (base for the ramp below). */
+private const val HOLD_SPEED_MULTIPLIER = 2f
+
+/** Hold-to-speed ramp: +HOLD_RAMP_STEP every HOLD_RAMP_INTERVAL_MS of holding. */
+private const val HOLD_RAMP_STEP = 0.2f
+private const val HOLD_RAMP_INTERVAL_MS = 10_000L
+// ponytail: cap keeps audio pitch sane; raise if users want faster.
+private const val HOLD_SPEED_CAP = 4f
+
+/** Hold this long in a third before 2x engages (shorter = tap/double-tap). */
+private const val HOLD_SPEED_THRESHOLD_MS = 1000L
+
+/** Ignore finger jitter below this many px before deciding drag direction. */
+private const val DRAG_DEAD_ZONE_PX = 24f
+
+/** Any movement beyond this many px immediately cancels the hold-to-speed timer
+ *  (prevents 2x from triggering when the user moves their finger). */
+private const val HOLD_JITTER_PX = 8f
+
 @Composable
 fun VideoPlayerScreen(
     viewModel: PlayerViewModel = hiltViewModel(),
     onBack: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val orientationMode by viewModel.orientationMode.collectAsStateWithLifecycle()
     val view = LocalView.current
     val context = view.context
     val activity = remember(view) { context as? android.app.Activity }
     val window = remember(activity) { activity?.window }
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
+    // Apply the user's orientation preference on enter (AUTO / portrait / landscape).
+    LaunchedEffect(activity, orientationMode) {
+        activity?.let { viewModel.applyOrientationMode(it, orientationMode) }
+    }
+
     BackHandler { onBack() }
 
     // --- Seek indicator local state ---
     var seekDelta by remember { mutableLongStateOf(0L) }
     var seekVisible by remember { mutableStateOf(false) }
+    var seekShowTick by remember { mutableLongStateOf(0L) }
     var isDragSeeking by remember { mutableStateOf(false) }
     var isSeekForward by remember { mutableStateOf(true) }
 
@@ -131,16 +171,19 @@ fun VideoPlayerScreen(
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showUnlockOverlay by remember { mutableStateOf(false) }
     var hudInteractionTick by remember { mutableLongStateOf(0L) }
+    var isHoldSpeeding by remember { mutableStateOf(false) }
+    var holdGainedMs by remember { mutableLongStateOf(0L) }
     val renderViewRef = remember { mutableStateOf<View?>(null) }
+    val gestureTimerScope = rememberCoroutineScope()
 
-    // Bug 5: whether seeking (drag-to-seek) is allowed — disabled for live/unknown streams
-    val canSeek = uiState.duration > 0
-
-    // Auto-hide the indicators after the last gesture
-    LaunchedEffect(seekVisible, isDragSeeking) {
-        if (seekVisible && !isDragSeeking) {
+    // Auto-hide the indicators after the last gesture. Use a tick so re-showing
+    // while already visible (e.g. double-tap twice) re-arms the timer instead of
+    // leaving the pill stuck.
+    LaunchedEffect(seekShowTick) {
+        if (seekShowTick > 0 && !isDragSeeking) {
             delay(1200)
             seekVisible = false
+            seekDelta = 0L
         }
     }
 
@@ -148,6 +191,19 @@ fun VideoPlayerScreen(
         if (slideVisible) {
             delay(1000)
             slideVisible = false
+        }
+    }
+
+    // Accumulate real time while hold-to-speed is engaged. 2x → 1 extra
+    // second per real second (HOLD_SPEED_MULTIPLIER - 1 = gained ratio).
+    LaunchedEffect(isHoldSpeeding) {
+        if (!isHoldSpeeding) {
+            holdGainedMs = 0L
+            return@LaunchedEffect
+        }
+        while (isHoldSpeeding) {
+            delay(250)
+            holdGainedMs += (250 * (HOLD_SPEED_MULTIPLIER - 1)).toLong()
         }
     }
 
@@ -289,175 +345,208 @@ fun VideoPlayerScreen(
             modifier = if (!uiState.playerLocked) Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = { offset ->
-                            if (uiState.showControls) {
-                                val topBarHeight = 80.dp.toPx()
-                                val bottomBarHeight = 160.dp.toPx()
-                                if (offset.y < topBarHeight || offset.y > size.height - bottomBarHeight) {
-                                    return@detectTapGestures
+                    // ponytail: single gesture loop so hold-to-speed survives finger drag
+                    // (two stacked pointerInput blocks stole the stream and cancelled the hold)
+                    var lastTapTime = 0L
+                    var pendingSingleTap: Job? = null
+                    val DOUBLE_TAP_MS = 300L
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = true)
+                        val start = down.position
+                        val downTime = down.uptimeMillis
+                        val third = size.width / 3f
+                        val dir = when {
+                            start.x < third -> -1
+                            start.x > third * 2 -> 1
+                            else -> 0
+                        }
+                        val topBarHeight = 80.dp.toPx()
+                        val bottomBarHeight = 160.dp.toPx()
+                        val isControlsVisible = viewModel.uiState.value.showControls
+                        val inControlsZone = isControlsVisible &&
+                            (start.y < topBarHeight || start.y > size.height - bottomBarHeight)
+
+                        val isLeftSideEdge = start.x < size.width * 0.3f
+                        val isRightSideEdge = start.x > size.width * 0.7f
+                        val isMiddleArea = !isLeftSideEdge && !isRightSideEdge
+
+                        var initialBrightness = 0f
+                        var maxVolume = 0
+                        var currentVolume = 0
+                        if (isLeftSideEdge) {
+                            val w = window
+                            initialBrightness = if (w != null) {
+                                val b = w.attributes.screenBrightness
+                                if (b >= 0f) b else {
+                                    try {
+                                        Settings.System.getInt(
+                                            view.context.contentResolver,
+                                            Settings.System.SCREEN_BRIGHTNESS
+                                        ) / 255f
+                                    } catch (_: Exception) { 0.5f }
                                 }
-                            }
-                            val third = size.width / 3f
-                            when {
-                                offset.x < third -> {
-                                    isDragSeeking = false
-                                    isSeekForward = false
-                                    viewModel.onSeekBy(-TAP_SEEK_MS)
-                                    seekDelta = -TAP_SEEK_MS
-                                    seekVisible = true
-                                }
-                                offset.x > third * 2 -> {
-                                    isDragSeeking = false
-                                    isSeekForward = true
-                                    viewModel.onSeekBy(TAP_SEEK_MS)
-                                    seekDelta = TAP_SEEK_MS
-                                    seekVisible = true
-                                }
-                                else -> viewModel.onPlayPause()
-                            }
-                        },
-                        onTap = { _ -> viewModel.onToggleControls() },
-                    )
-                }
-                .pointerInput(Unit) {
-                    // Unified drag: vertical → brightness/volume, horizontal → seek
-                    var dragAccumulated = 0f
-                    var offsetAccumulated = Offset.Zero
-                    var dominantDirection: DragDirection? = null // null=undecided, SEEK, ADJUST
-                    var isLeftSideEdge = false
-                    var isRightSideEdge = false
-                    var isMiddleArea = false
-                    var ignoreGesture = false
-                    var initialBrightness = 0f
+                            } else 0.5f
+                            slideValue = initialBrightness
+                        } else if (isRightSideEdge) {
+                            maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                            slideValue = if (maxVolume > 0) currentVolume.toFloat() / maxVolume else 0f
+                        }
 
-                    // Volume helpers captured once per gesture
-                    var maxVolume = 0
-                    var currentVolume = 0
+                        var dragAccumulated = Offset.Zero
+                        var dominantDirection: DragDirection? = null
+                        var holdActive = false
+                        var holdTriggered = false
+                        var prevSpeed = 1f
+                        var seekConsumed = false
+                        var dragStarted = false
 
-                    detectDragGestures(
-                        onDragStart = { startOffset ->
-                            ignoreGesture = false
-                            if (uiState.showControls) {
-                                val topBarHeight = 80.dp.toPx()
-                                val bottomBarHeight = 160.dp.toPx()
-                                if (startOffset.y < topBarHeight || startOffset.y > size.height - bottomBarHeight) {
-                                    ignoreGesture = true
-                                    return@detectDragGestures
-                                }
-                            }
-
-                            // Hide controls for an immersive gesture adjustment
-                            viewModel.onHideControls()
-
-                            isDragSeeking = false
-                            seekDelta = 0L
-                            dragAccumulated = 0f
-                            offsetAccumulated = Offset.Zero
-                            dominantDirection = null
-
-                            val isLeft = startOffset.x < size.width * 0.3f
-                            val isRight = startOffset.x > size.width * 0.7f
-                            val isMiddle = !isLeft && !isRight
-
-                            isLeftSideEdge = isLeft
-                            isRightSideEdge = isRight
-                            isMiddleArea = isMiddle
-
-                            if (isLeft) {
-                                // Initialize brightness from window
-                                val w = window
-                                if (w != null) {
-                                    val b = w.attributes.screenBrightness
-                                    initialBrightness = if (b >= 0f) b else {
-                                        // Auto-brightness → read system value to switch to manual
-                                        try {
-                                            Settings.System.getInt(
-                                                view.context.contentResolver,
-                                                Settings.System.SCREEN_BRIGHTNESS
-                                            ) / 255f
-                                        } catch (_: Exception) { 0.5f }
-                                    }
-                                } else {
-                                    initialBrightness = 0.5f
-                                }
-                                slideValue = initialBrightness
-                            } else if (isRight) {
-                                // Initialize volume
-                                maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                                currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                                slideValue = if (maxVolume > 0) currentVolume.toFloat() / maxVolume else 0f
-                            }
-                        },
-                        onDrag = { change, dragAmount ->
-                            if (ignoreGesture) return@detectDragGestures
-                            change.consume()
-                            offsetAccumulated += dragAmount
-
-                            if (dominantDirection == null) {
-                                val v = kotlin.math.abs(offsetAccumulated.y)
-                                val h = kotlin.math.abs(offsetAccumulated.x)
-                                if (v > h + 20f) {
-                                    dominantDirection = DragDirection.ADJUST
-                                } else if (h > v + 20f) {
-                                    // Block horizontal seek for live/unknown duration streams
-                                    dominantDirection = if (canSeek) DragDirection.SEEK else null
-                                }
-                            }
-
-                            when (dominantDirection) {
-                                DragDirection.ADJUST -> {
-                                    if (!isMiddleArea) {
-                                        val deltaNormal = -offsetAccumulated.y / size.height.coerceAtLeast(1)
-                                        val newVal = (if (isLeftSideEdge) initialBrightness else (if (maxVolume > 0) currentVolume.toFloat() / maxVolume else 0f)) + deltaNormal
-                                        val clamped = newVal.coerceIn(0f, 1f)
-                                        slideValue = clamped
-                                        slideType = if (isLeftSideEdge) SlideType.BRIGHTNESS else SlideType.VOLUME
-                                        slideVisible = true
-                                        slideShowCount++
-
-                                        if (isLeftSideEdge) {
-                                            window?.attributes = window?.attributes?.apply { screenBrightness = clamped }
-                                        } else {
-                                            val vol = (clamped * maxVolume).toInt().coerceIn(0, maxVolume)
-                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
+                        // ponytail: 2x arms only after 1s still-hold. Finger idle sends no
+                        // events, so a timer (not the loop) drives the delay. Drag cancels it.
+                        var holdTimer: Job? = null
+                        var rampTimer: Job? = null
+                        if (dir != 0 && !inControlsZone) {
+                            holdTimer = gestureTimerScope.launch {
+                                delay(HOLD_SPEED_THRESHOLD_MS)
+                                if (dominantDirection == null) {
+                                    holdTriggered = true
+                                    holdActive = true
+                                    isHoldSpeeding = true
+                                    prevSpeed = viewModel.uiState.value.playbackSpeed
+                                    // ponytail: hold-to-speed implies watching — resume if paused
+                                    if (!viewModel.uiState.value.isPlaying) viewModel.resume()
+                                    viewModel.onSetSpeed(HOLD_SPEED_MULTIPLIER)
+                                    // Ramp +0.2 every 10s until cap.
+                                    var speed = HOLD_SPEED_MULTIPLIER
+                                    rampTimer = gestureTimerScope.launch {
+                                        while (true) {
+                                            delay(HOLD_RAMP_INTERVAL_MS)
+                                            if (speed >= HOLD_SPEED_CAP) break
+                                            speed = (speed + HOLD_RAMP_STEP).coerceAtMost(HOLD_SPEED_CAP)
+                                            viewModel.onSetSpeed(speed)
                                         }
                                     }
                                 }
-                                DragDirection.SEEK -> {
-                                    if (!canSeek) return@detectDragGestures
-                                    isDragSeeking = true
-                                    val durationMs = uiState.duration
-                                    // Linear seek: full-width swipe = 300s * sensitivity
-                                    // sensitivity 1.0 = 5 minutes, 3.0 = 15 minutes, 0.2 = 1 minute per full swipe
-                                    val widthPx = size.width.coerceAtLeast(1).toFloat()
-                                    val maxSwipeMs = (300_000L * uiState.seekSensitivity).toLong()
-                                    val ratio = offsetAccumulated.x / widthPx
-                                    val rawDelta = (ratio * maxSwipeMs).toLong()
-                                    isSeekForward = rawDelta >= 0
-                                    seekDelta = rawDelta.coerceIn(
-                                        -uiState.currentPosition,
-                                        (durationMs - uiState.currentPosition).coerceAtLeast(0L)
-                                    )
-                                    seekVisible = true
+                            }
+                        }
+
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.any { it.id == down.id && it.changedToUpIgnoreConsumed() }) break
+                                val change = event.changes.firstOrNull { it.id == down.id && it.pressed }
+                                    ?: continue
+                                if (inControlsZone) continue
+                                // Net displacement from touch-start: finger jitter cancels out.
+                                dragAccumulated = change.position - start
+                                // Cancel the hold timer as soon as the finger moves more than
+                                // HOLD_JITTER_PX — this prevents 2x speed from firing when the
+                                // user moves their finger, even before the drag dead-zone is hit.
+                                val totalMovement = kotlin.math.sqrt(
+                                    dragAccumulated.x * dragAccumulated.x +
+                                    dragAccumulated.y * dragAccumulated.y
+                                )
+                                if (totalMovement > HOLD_JITTER_PX && holdTimer?.isActive == true) {
+                                    holdTimer?.cancel()
                                 }
-                                null -> {}
+                                // While hold-to-speed is engaged, suppress ALL gesture processing.
+                                // Moving the finger during 2x hold should do nothing — no seek,
+                                // no brightness/volume adjust. Speed restores on finger lift (finally).
+                                if (holdActive) continue
+                                if (dominantDirection == null) {
+                                    val v = kotlin.math.abs(dragAccumulated.y)
+                                    val h = kotlin.math.abs(dragAccumulated.x)
+                                    if (v > DRAG_DEAD_ZONE_PX && v > h + DRAG_DEAD_ZONE_PX) {
+                                        dominantDirection = DragDirection.ADJUST
+                                    } else if (h > DRAG_DEAD_ZONE_PX && h > v + DRAG_DEAD_ZONE_PX) {
+                                        val canSeek = viewModel.uiState.value.duration > 0
+                                        dominantDirection = if (canSeek) DragDirection.SEEK else null
+                                    }
+                                }
+                                if (dominantDirection != null && !dragStarted) {
+                                    dragStarted = true
+                                    viewModel.onHideControls()
+                                }
+                                when (dominantDirection) {
+                                    DragDirection.ADJUST -> {
+                                        if (!isMiddleArea) {
+                                            val deltaNormal = -dragAccumulated.y / size.height.coerceAtLeast(1)
+                                            val base = if (isLeftSideEdge) initialBrightness
+                                            else (if (maxVolume > 0) currentVolume.toFloat() / maxVolume else 0f)
+                                            val clamped = (base + deltaNormal).coerceIn(0f, 1f)
+                                            slideValue = clamped
+                                            slideType = if (isLeftSideEdge) SlideType.BRIGHTNESS else SlideType.VOLUME
+                                            slideVisible = true
+                                            slideShowCount++
+                                            if (isLeftSideEdge) {
+                                                window?.attributes = window?.attributes?.apply { screenBrightness = clamped }
+                                            } else {
+                                                val vol = (clamped * maxVolume).toInt().coerceIn(0, maxVolume)
+                                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
+                                            }
+                                        }
+                                    }
+                                    DragDirection.SEEK -> {
+                                        val canSeek = viewModel.uiState.value.duration > 0
+                                        if (!canSeek) { dominantDirection = null; continue }
+                                        isDragSeeking = true
+                                        val durationMs = viewModel.uiState.value.duration
+                                        val widthPx = size.width.coerceAtLeast(1).toFloat()
+                                        val maxSwipeMs = (300_000L * viewModel.uiState.value.seekSensitivity).toLong()
+                                        val ratio = dragAccumulated.x / widthPx
+                                        val rawDelta = (ratio * maxSwipeMs).toLong()
+                                        isSeekForward = rawDelta >= 0
+                                        seekDelta = rawDelta.coerceIn(
+                                            -viewModel.position.value,
+                                            (durationMs - viewModel.position.value).coerceAtLeast(0L)
+                                        )
+                                        seekVisible = true
+                                        seekShowTick++
+                                        seekConsumed = true
+                                    }
+                                    null -> {}
+                                }
                             }
-                        },
-                        onDragEnd = {
-                            if (ignoreGesture) return@detectDragGestures
-                            if (dominantDirection == DragDirection.SEEK && seekDelta != 0L) {
-                                viewModel.onSeekBy(seekDelta)
-                            }
+                        } finally {
+                            holdTimer?.cancel()
+                            rampTimer?.cancel()
+                            if (holdActive) viewModel.onSetSpeed(prevSpeed)
+                            isHoldSpeeding = false
+                            if (seekConsumed && seekDelta != 0L) viewModel.onSeekBy(seekDelta)
                             isDragSeeking = false
                             seekDelta = 0L
-                        },
-                        onDragCancel = {
-                            seekVisible = false; seekDelta = 0L
-                            slideVisible = false
-                            isDragSeeking = false
-                        },
-                    )
+                            if (!holdTriggered && dominantDirection == null && !inControlsZone) {
+                                // Pure tap → double-tap seek / single-tap toggle
+                                val now = System.currentTimeMillis()
+                                if (now - lastTapTime <= DOUBLE_TAP_MS) {
+                                    pendingSingleTap?.cancel()
+                                    lastTapTime = 0L
+                                    when {
+                                        dir < 0 -> {
+                                            isDragSeeking = false; isSeekForward = false
+                                            viewModel.onSeekBy(-TAP_SEEK_MS)
+                                            seekDelta = -TAP_SEEK_MS; seekVisible = true; seekShowTick++
+                                        }
+                                        dir > 0 -> {
+                                            isDragSeeking = false; isSeekForward = true
+                                            viewModel.onSeekBy(TAP_SEEK_MS)
+                                            seekDelta = TAP_SEEK_MS; seekVisible = true; seekShowTick++
+                                        }
+                                        else -> viewModel.onPlayPause()
+                                    }
+                                } else {
+                                    lastTapTime = now
+                                    pendingSingleTap = gestureTimerScope.launch {
+                                        delay(DOUBLE_TAP_MS)
+                                        if (lastTapTime != 0L) {
+                                            viewModel.onToggleControls()
+                                            lastTapTime = 0L
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             else Modifier.fillMaxSize().pointerInput(Unit) {
                 detectTapGestures { showUnlockOverlay = true }
@@ -467,6 +556,7 @@ fun VideoPlayerScreen(
             if (uiState.showControls && !uiState.playerLocked) {
                 PlayerControlsOverlay(
                     uiState = uiState,
+                    positionFlow = viewModel.position,
                     title = uiState.currentTitle,
                     onBack = onBack,
                     onPlayPause = viewModel::onPlayPause,
@@ -588,26 +678,44 @@ fun VideoPlayerScreen(
                 )
             }
 
-            // Seek indicator (positioned on the correct side automatically for double tap,
-            // or central progress indicator for drag seeks)
-            if (isDragSeeking) {
-                DragSeekIndicator(
-                    deltaMs = seekDelta,
-                    currentPositionMs = uiState.currentPosition,
-                    durationMs = uiState.duration,
-                    visible = seekVisible,
+            // Hold-to-speed visual cue (above HUD, below slide/seek indicators)
+            AnimatedVisibility(
+                visible = isHoldSpeeding,
+                modifier = Modifier.fillMaxSize(),
+                enter = fadeIn(animationSpec = tween(120)),
+                exit = fadeOut(animationSpec = tween(200)),
+            ) {
+                Box(
                     modifier = Modifier.fillMaxSize(),
-                    isForward = isSeekForward,
-                )
-            } else {
-                SeekIndicator(
-                    deltaMs = seekDelta,
-                    currentPositionMs = uiState.currentPosition,
-                    visible = seekVisible,
-                    modifier = Modifier.fillMaxSize(),
-                    isForward = isSeekForward,
-                )
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(end = 24.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "Hold · ${"%.1f".format(uiState.playbackSpeed)}x  +${formatDuration(holdGainedMs)}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
+                }
             }
+
+            SeekIndicators(
+                positionFlow = viewModel.position,
+                duration = uiState.duration,
+                isDragSeeking = isDragSeeking,
+                seekDelta = seekDelta,
+                seekVisible = seekVisible,
+                isSeekForward = isSeekForward,
+            )
 
             // Slide indicator (brightness / volume)
             SlideIndicator(
@@ -645,204 +753,13 @@ fun VideoPlayerScreen(
                 )
             }
 
-            // Error overlay (network timeout, disconnected, etc.)
-            val errorMsg = uiState.errorMessage
-            val errorKind = uiState.errorKind
-            if (errorMsg != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.85f))
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() },
-                        ) { /* consume clicks */ },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(24.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(32.dp))
-                                .background(Color.Red.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Error,
-                                contentDescription = null,
-                                tint = Color(0xFFEF5350),
-                                modifier = Modifier.size(32.dp),
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Text(
-                            text = stringResource(R.string.playback_error),
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = errorMsg,
-                            color = Color.White.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-
-                        Spacer(modifier = Modifier.height(32.dp))
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(
-                                onClick = onBack,
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = Color.White,
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = stringResource(R.string.go_back))
-                            }
-
-                            // Retry only for recoverable errors (network/timeout/auth/file).
-                            // Format/DRM/decoder failures won't succeed on retry.
-                            val canRetry = errorKind in setOf(
-                                com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind.NETWORK,
-                                com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind.TIMEOUT,
-                                com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind.AUTH,
-                                com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind.FILE_NOT_FOUND,
-                            )
-                            if (canRetry) {
-                                OutlinedButton(
-                                    onClick = viewModel::retry,
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = Color.White,
-                                    ),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text(text = stringResource(R.string.retry))
-                                }
-                            }
-
-                            Button(
-                                onClick = viewModel::clearError,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(text = stringResource(R.string.dismiss))
-                            }
-                        }
-                    }
-                }
-            }
+                        PlaybackErrorOverlay(
+                errorMessage = uiState.errorMessage,
+                errorKind = uiState.errorKind,
+                onBack = onBack,
+                onRetry = viewModel::retry,
+                onDismiss = viewModel::clearError,
+            )
         }
-    }
-}
-
-/**
- * Pill-shaped lock at the bottom of the screen when player is locked.
- * Swipe left or right on the pill to unlock.
- * Less sensitive: needs ~60% of pill width before unlocking.
- */
-@Composable
-private fun UnlockPill(
-    onUnlock: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    val pillWidth = 100.dp
-    val pillHeight = 56.dp
-    val threshold = pillWidth * 0.5f
-
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.BottomCenter,
-    ) {
-        Box(
-            modifier = Modifier
-                .offset(x = offsetX.dp)
-                .width(pillWidth)
-                .height(pillHeight)
-                .clip(RoundedCornerShape(28.dp))
-                .background(Color.White.copy(alpha = 0.12f))
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            if (kotlin.math.abs(offsetX) >= threshold.value) {
-                                onUnlock()
-                            }
-                            offsetX = 0f
-                        },
-                        onDragCancel = { offsetX = 0f },
-                        onHorizontalDrag = { _, dragAmount ->
-                            offsetX = (offsetX + dragAmount * 0.3f).coerceIn(-pillWidth.value, pillWidth.value)
-                        },
-                    )
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            AnimatedVisibility(
-                visible = kotlin.math.abs(offsetX) < threshold.value,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.swipe),
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-            }
-            AnimatedVisibility(
-                visible = kotlin.math.abs(offsetX) >= threshold.value,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.LockOpen,
-                    contentDescription = stringResource(R.string.unlocked),
-                    tint = Color(0xFF4CAF50),
-                    modifier = Modifier.size(28.dp),
-                )
-            }
-        }
-    }
-}
-
-/** Engine-specific surface pause — calls into the concrete engine via the seam. */
-private fun pauseRenderView(engine: IPlayerEngine, view: View?) {
-    view ?: return
-    when (engine.engineType) {
-        EngineType.EXO_PLAYER -> (engine as ExoPlayerEngine).onRenderViewPaused(view)
-    }
-}
-
-/** Engine-specific surface resume — calls into the concrete engine via the seam. */
-private fun resumeRenderView(engine: IPlayerEngine, view: View?) {
-    view ?: return
-    when (engine.engineType) {
-        EngineType.EXO_PLAYER -> (engine as ExoPlayerEngine).onRenderViewResumed(view)
     }
 }

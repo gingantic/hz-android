@@ -26,6 +26,7 @@ class FtpDataSource : BaseDataSource(/* isNetwork = */ true) {
     private var ftpHost: String? = null
     private var ftpPort: Int = 21
     private var ftpUser: String? = null
+    private var ftpPass: String? = null
 
     override fun open(dataSpec: DataSpec): Long {
         uri = dataSpec.uri
@@ -43,6 +44,7 @@ class FtpDataSource : BaseDataSource(/* isNetwork = */ true) {
         ftpHost = host
         ftpPort = port
         ftpUser = user
+        ftpPass = pass
 
         // Borrow from pool — keeps control connection alive across seeks
         val ftp = ConnectionPool.borrowFtp(host, port, user, pass)
@@ -93,7 +95,7 @@ class FtpDataSource : BaseDataSource(/* isNetwork = */ true) {
         try { ftp?.completePendingCommand() } catch (_: Exception) {}
         client = null // release reference — control connection stays pooled
         ftpHost?.let { host ->
-            ConnectionPool.returnFtp(host, ftpPort, ftpUser ?: "")
+            ConnectionPool.returnFtp(host, ftpPort, ftpUser ?: "", ftpPass ?: "")
         }
         transferEnded()
     }

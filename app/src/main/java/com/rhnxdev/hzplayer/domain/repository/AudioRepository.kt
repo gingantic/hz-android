@@ -7,8 +7,8 @@ import kotlinx.coroutines.flow.Flow
 
 interface AudioRepository {
     fun getAllSongs(forceRefresh: Boolean = false): Flow<List<AudioItem>>
-    fun getAlbums(forceRefresh: Boolean = false): Flow<List<Album>>
-    fun getArtists(forceRefresh: Boolean = false): Flow<List<Artist>>
+    fun getAlbums(forceRefresh: Boolean = false, minDurationSecs: Int = 0): Flow<List<Album>>
+    fun getArtists(forceRefresh: Boolean = false, minDurationSecs: Int = 0): Flow<List<Artist>>
     fun getSongsByAlbum(albumTitle: String): Flow<List<AudioItem>>
     fun getSongsByArtist(artistName: String): Flow<List<AudioItem>>
     suspend fun toggleFavorite(songId: Long, isFavorite: Boolean)

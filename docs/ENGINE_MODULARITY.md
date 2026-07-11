@@ -4,6 +4,10 @@
 > (`Player`, `PlayerView`, `Cue`, `MediaSession`, …) may cross the domain /
 > presentation boundary. A second backend (libVLC, mpv, …) is added by writing
 > one class + one Hilt binding + one `when` branch in the surface composable.
+>
+> **Status: IMPLEMENTED.** The refactor landed in commit `57e66db`. This doc
+> describes the design that is now in code; the "implementation phases" below are
+> historical and complete. Last refreshed: 2026-07-11.
 
 ---
 
@@ -338,6 +342,23 @@ That is the entire integration surface. Nothing in `PlayerViewModel`,
 changes — they are engine-agnostic by construction.
 
 ---
+
+## 6b. As-built notes (vs. the design above)
+
+- **`MediaSessionProvider` is a standalone Hilt binding**, not reached via
+  `engine as?`. `PlayerEngineModule` binds `ExoPlayerMediaSessionProvider` directly to
+  `MediaSessionProvider`; `MediaPlaybackService` injects it and builds the `MediaSession`
+  from `getMedia3Player()`. Simpler than the `as?` cast and avoids leaking the question
+  into the service.
+- **Error mapping is in place**: `domain/player/PlaybackErrorMapper.kt` produces a
+  redacted `(PlaybackErrorKind, message)` from `PlaybackException`; `PlayerStateInfo`
+  carries `errorKind`/`errorMessage`; `PlaybackErrorOverlay` consumes it. The
+  `subtitleCueTexts`/`subtitleCues` boundary types mentioned in §5 were dropped — native
+  `PlayerView` renders subtitles.
+- **`EngineType` currently has only `EXO_PLAYER`.** `PlayerRepositoryImpl` falls back to
+  `EXO_PLAYER` if a persisted engine isn't in the binding map, so stale prefs are safe.
+- **`getMedia3Player()` lives on the provider**, returning `playerHolder.player`. The
+  service asks only for the provider, never for the engine map.
 
 ## 7. Deferred (YAGNI until a real 2nd engine exists)
 

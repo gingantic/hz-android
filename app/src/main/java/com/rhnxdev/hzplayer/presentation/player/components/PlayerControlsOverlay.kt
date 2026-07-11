@@ -33,6 +33,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -71,6 +75,8 @@ private val bottomGradient = Brush.verticalGradient(
 @Composable
 fun PlayerControlsOverlay(
     uiState: PlayerUiState,
+    /** High-frequency playback position; see [PlayerViewModel.position]. */
+    positionFlow: StateFlow<Long>,
     title: String?,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
@@ -202,9 +208,10 @@ fun PlayerControlsOverlay(
                 .padding(stableNavBarPaddingValues())
                 .padding(bottom = 8.dp),
         ) {
-            // Row 1: seekbar
-            PlayerSeekBar(
-                currentPosition = uiState.currentPosition,
+            // Row 1: seekbar — position is collected from a dedicated flow so the
+            // 250 ms tick only recomposes this small row, not the whole overlay.
+            SeekProgressRow(
+                positionFlow = positionFlow,
                 duration = uiState.duration,
                 bufferedPercentage = uiState.bufferedPercentage,
                 onSeek = onSeekTo,
@@ -368,6 +375,31 @@ private fun NetworkSpeedChip(traffic: NetworkTraffic) {
     )
 }
 
+/**
+ * Collects the high-frequency playback position from [positionFlow] so the 250 ms
+ * tick only recomposes this tiny row (and the [PlayerSeekBar] Canvas inside it),
+ * not the entire controls overlay / player screen.
+ */
+@Composable
+private fun SeekProgressRow(
+    positionFlow: StateFlow<Long>,
+    duration: Long,
+    bufferedPercentage: Int,
+    onSeek: (Long) -> Unit,
+    onSeekStart: () -> Unit,
+    onSeekEnd: () -> Unit,
+) {
+    val currentPosition by positionFlow.collectAsStateWithLifecycle()
+    PlayerSeekBar(
+        currentPosition = currentPosition,
+        duration = duration,
+        bufferedPercentage = bufferedPercentage,
+        onSeek = onSeek,
+        onSeekStart = onSeekStart,
+        onSeekEnd = onSeekEnd,
+    )
+}
+
 private fun formatSpeed(bytesPerSec: Long): String = when {
     bytesPerSec < 1024 -> "$bytesPerSec B/s"
     bytesPerSec < 1024 * 1024 -> "%.1f KB/s".format(bytesPerSec / 1024.0)
@@ -391,9 +423,9 @@ private fun PlayerControlsOverlayPreview() {
             PlayerControlsOverlay(
                 uiState = PlayerUiState(
                     isPlaying = true,
-                    currentPosition = 180000,
                     duration = 369000,
                 ),
+                positionFlow = MutableStateFlow(0L),
                 title = "Blade Runner 2049 - Final Cut (2017)",
                 onBack = {},
                 onPlayPause = {},

@@ -94,6 +94,7 @@
     <!-- Shared dialog controls -->
     <string name="dialog_save">Save</string>
     <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_close">Close</string>
     <string name="dialog_select">Select</string>
 
     <!-- Not-implemented suffix (concatenated where needed) -->
@@ -106,6 +107,7 @@
     <string name="settings_theme_color">Theme color</string>
     <string name="settings_dynamic_colors">Dynamic colors</string>
     <string name="settings_dynamic_colors_sub">Use system accent color</string>
+    <string name="settings_orientation">Screen orientation</string>
     <string name="settings_playback_engine">Playback Engine</string>
     <string name="settings_media_engine">Media engine</string>
     <string name="settings_engine_active">Active — switches on next playback</string>
@@ -155,6 +157,18 @@
     <string name="settings_licenses">Open source licenses</string>
     <string name="settings_licenses_sub">View third-party licenses</string>
 
+    <!-- About dialog -->
+    <string name="about_title">About Hz Player</string>
+    <string name="about_tagline">A modern, open media player for Android.</string>
+    <string name="about_description">Hz Player is a VLC-inspired media player built from scratch with Jetpack Compose and Media3. Browse your video, audio, and files, tune playback to your taste, and stream with full gesture control.</string>
+    <string name="about_built_with">Built with</string>
+    <string name="about_tech_kotlin">Kotlin 2.0 &amp; Coroutines</string>
+    <string name="about_tech_compose">Jetpack Compose &amp; Material 3</string>
+    <string name="about_tech_exoplayer">Media3 ExoPlayer</string>
+    <string name="about_tech_room">Room &amp; DataStore</string>
+    <string name="about_tech_hilt">Hilt (DI) &amp; Coil</string>
+    <string name="about_copyright">© %1$d Hz Player. Free &amp; open source.</string>
+
     <!-- Server config dialog -->
     <string name="label_name">Name</string>
     <string name="placeholder_name">My Server</string>
@@ -179,6 +193,10 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_void">Void</string>
+    <string name="orientation_selection_title">Screen Orientation</string>
+    <string name="orientation_auto">Auto (follow sensor)</string>
+    <string name="orientation_portrait">Portrait</string>
+    <string name="orientation_landscape">Landscape</string>
     <string name="color_picker_title">Theme Color Picker</string>
     <string name="color_red">Red</string>
     <string name="color_green">Green</string>

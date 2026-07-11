@@ -1,6 +1,8 @@
 # Hz Player — Player Architecture
 
-> Media3 ExoPlayer integration with MVVM for the Hz Player.
+> Media3 ExoPlayer behind the `IPlayerEngine` contract, rendered through `PlayerSurface`.
+> Last refreshed: 2026-07-11. Supersedes the earlier "ExoPlayer wired directly into
+> every layer" design — see `docs/ENGINE_MODULARITY.md` for the refactor rationale.
 
 ---
 
@@ -10,46 +12,35 @@
 ┌───────────────────────────────────────────────────────────┐
 │                    MediaPlaybackService                    │
 │                  (Media3 MediaSessionService)              │
-│                                                           │
-│  ┌─────────────────┐     ┌───────────────────────────┐    │
-│  │   MediaSession   │────▶│      ExoPlayer            │    │
-│  │  (Media3)        │     │  (single JVM singleton)    │    │
-│  └─────────────────┘     └───────────┬───────────────┘    │
-│                                      │                    │
-│  ┌────────────────────────────────────▼───────────────┐   │
-│  │           Notification Manager                      │   │
-│  │  (Media3 MediaNotificationService integration)      │   │
-│  └────────────────────────────────────────────────────┘   │
-└───────────────────────────────────────────────────────────┘
-                              │
-                              │ Binder / Bundle
-                              ▼
-┌───────────────────────────────────────────────────────────┐
-│                    PlayerRepositoryImpl                     │
-│                                                           │
-│  • Holds reference to ExoPlayer                           │
-│  • Exposes StateFlow<PlayerState>                         │
-│  • Proxy for player operations (play/pause/seek/tracks)   │
-└───────────────────────────────────────────────────────────┘
-                              │
-                              │ Flow / suspend
-                              ▼
-┌───────────────────────────────────────────────────────────┐
+│  • builds MediaSession from ExoPlayerMediaSessionProvider  │
+│  • Media3 MediaNotificationService → system controls       │
+└───────────────────────────┬───────────────────────────────┘
+                            │ Media3 Player (via provider)
+┌───────────────────────────▼───────────────────────────────┐
+│                    ExoPlayerEngine                         │
+│  • implements IPlayerEngine (the only playback contract)   │
+│  • owns rendering: createRenderView / updateRenderView     │
+│  • wraps MediaPlayerHolder.player                          │
+└───────────────────────────┬───────────────────────────────┘
+                            │ IPlayerEngine calls
+┌───────────────────────────▼───────────────────────────────┐
+│                    PlayerRepositoryImpl                    │
+│  • Map<EngineType, IPlayerEngine> (Hilt @IntoMap)          │
+│  • activeEngine resolved from UserPreferencesRepository     │
+│  • delegates every call; exposes playbackStateInfo Flow    │
+│  • network traffic polling for remote URIs                 │
+└───────────────────────────┬───────────────────────────────┘
+                            │ Flow / callbacks
+┌───────────────────────────▼───────────────────────────────┐
 │                    PlayerViewModel                         │
-│                                                           │
-│  • Maps PlayerState → PlayerUiState                       │
-│  • Exposes StateFlow<PlayerUiState>                       │
-│  • Binds player state to screen lifecycle                 │
-└───────────────────────────────────────────────────────────┘
-                              │
-                              │ collectAsStateWithLifecycle
-                              ▼
-┌───────────────────────────────────────────────────────────┐
-│                    VideoPlayerScreen                       │
-│                                                           │
-│  • AndroidView(TextureView) for video output              │
-│  • PlayerControlsOverlay composable                       │
-│  • Gesture handlers                                       │
+│  • maps PlayerStateInfo → PlayerUiState                    │
+│  • exposes StateFlow<PlayerUiState> (activeEngineType etc) │
+└───────────────────────────┬───────────────────────────────┘
+                            │ collectAsStateWithLifecycle
+┌───────────────────────────▼───────────────────────────────┐
+│   VideoPlayerScreen / AudioPlayerScreen + PlayerSurface    │
+│  • PlayerSurface(engine) renders; no Media3 import         │
+│  • PlayerControlsOverlay, gestures, sheets, dialogs        │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -57,42 +48,49 @@
 
 ## MediaPlayerHolder (Singleton)
 
+Owns the single `ExoPlayer`. Configured for this app:
+- `DefaultTrackSelector` with **tunneling disabled** (4K HDR HEVC tunneled seek stall).
+- `DefaultLoadControl` with larger buffers (50s/90s) for smoother remote streaming.
+- `DefaultRenderersFactory` with `EXTENSION_RENDERER_MODE_ON` (FFmpeg extension decoders).
+- Exposes `PlayerStateInfo` via `playbackState: StateFlow`.
+- `onPlayerError` routes through `PlaybackErrorMapper` → redacted `(kind, message)`.
+
 ```kotlin
 @Singleton
-class MediaPlayerHolder @Inject constructor(
-    @ApplicationContext private val context: Context,
-) {
-    val player: ExoPlayer = ExoPlayer.Builder(context)
-        .setAudioAttributes(AudioAttributes.DEFAULT, true)
-        .setHandleAudioBecomingNoisy(true)
-        .setRenderersFactory(DefaultRenderersFactory(context))
-        .build()
+class MediaPlayerHolder @Inject constructor(@ApplicationContext context: Context) {
+    var player: ExoPlayer = buildPlayer()   // single instance, private set
+    val playbackState: StateFlow<PlayerStateInfo>
+}
+```
 
-    private val _playbackState = MutableStateFlow(PlayerState.IDLE)
-    val playbackState: StateFlow<PlayerState> = _playbackState.asStateFlow()
+---
 
-    private val _currentPosition = MutableStateFlow(0L)
-    val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
+## Engine seam — `PlayerSurface`
 
-    init {
-        player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                _playbackState.value = when (state) {
-                    Player.STATE_IDLE -> PlayerState.IDLE
-                    Player.STATE_BUFFERING -> PlayerState.BUFFERING
-                    Player.STATE_READY -> PlayerState.READY
-                    Player.STATE_ENDED -> PlayerState.ENDED
-                    else -> PlayerState.IDLE
-                }
-            }
+Presentation renders video through one composable; it switches on `engine.engineType`
+and asks the concrete engine for its render view. Screens never import `PlayerView`.
 
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                // Update position tracking
-            }
-        })
+```kotlin
+@Composable
+fun PlayerSurface(engine: IPlayerEngine, uiState: PlayerUiState, modifier: Modifier, onRenderView: (View?) -> Unit) {
+    key(engine.engineType) {
+        AndroidView(
+            factory = { ctx ->
+                when (engine.engineType) {
+                    EngineType.EXO_PLAYER ->
+                        (engine as ExoPlayerEngine).createRenderView(ctx, uiState.useSurfaceView)
+                    // EngineType.VLC / MPV → their engine.createRenderView(ctx)
+                }.also(onRenderView)
+            },
+            update = { view -> /* engine.updateRenderView(view, RenderViewConfig(...)) */ },
+        )
     }
 }
 ```
+
+Lifecycle (brightness/volume pause on `ON_STOP`, resume on `ON_RESUME`) lives in
+`VideoPlayerScreen` and calls engine-specific `onRenderViewPaused/Resumed` through the
+typed cast — those methods are **not** on `IPlayerEngine`.
 
 ---
 
@@ -101,38 +99,25 @@ class MediaPlayerHolder @Inject constructor(
 ```kotlin
 @AndroidEntryPoint
 class MediaPlaybackService : MediaSessionService() {
-
-    @Inject lateinit var playerHolder: MediaPlayerHolder
-
+    @Inject lateinit var mediaSessionProvider: MediaSessionProvider
     private var mediaSession: MediaSession? = null
 
     override fun onCreate() {
         super.onCreate()
-        mediaSession = MediaSession.Builder(this, playerHolder.player)
-            .build()
+        // ExoPlayerMediaSessionProvider.getMedia3Player() returns the ExoPlayer.
+        mediaSession = MediaSession.Builder(this, mediaSessionProvider.getMedia3Player()!!).build()
     }
-
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
-        return mediaSession
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = playerHolder.player
-        if (!player.playWhenReady || player.mediaItemCount == 0) {
-            stopSelf()
-        }
-    }
-
+    override fun onGetSession(c: ControllerInfo) = mediaSession
     override fun onDestroy() {
-        mediaSession?.run {
-            controllerCompat.unregisterCallback(callback)
-            release()
-            mediaSession = null
-        }
+        mediaSession?.release().also { mediaSession = null }
+        playerHolder.release()
         super.onDestroy()
     }
 }
 ```
+
+A `MediaSession` is only built when the active engine is `MediaSessionProvider`
+(i.e. `EXO_PLAYER` today). A future non-Media3 engine would skip system media controls.
 
 ---
 
@@ -142,33 +127,35 @@ class MediaPlaybackService : MediaSessionService() {
 enum class PlayerState { IDLE, BUFFERING, READY, ENDED }
 
 data class PlayerStateInfo(
-    val state: PlayerState = PlayerState.IDLE,
+    val state: PlayerState = IDLE,
     val isPlaying: Boolean = false,
-    val currentMediaItem: MediaItem? = null,
+    val currentUri: String? = null,
     val currentPosition: Long = 0,
     val duration: Long = 0,
     val bufferedPosition: Long = 0,
     val playbackSpeed: Float = 1.0f,
     val shuffleModeEnabled: Boolean = false,
-    val repeatMode: Int = Player.REPEAT_MODE_OFF,
-    val subtitleTracks: List<Media3TrackInfo> = emptyList(),
-    val audioTracks: List<Media3TrackInfo> = emptyList(),
-    val selectedSubtitleTrackId: Int = -1,
-    val selectedAudioTrackId: Int = -1,
+    val repeatMode: RepeatMode = RepeatMode.NONE,
+    val subtitleTracks: List<String> = emptyList(),
+    val audioTracks: List<String> = emptyList(),
+    val selectedSubtitleTrack: Int = -1,
+    val selectedAudioTrack: Int = -1,
+    val errorKind: PlaybackErrorKind? = null,
+    val errorMessage: String? = null,
 )
 ```
 
 ---
 
-## PlayerViewModel
+## PlayerViewModel (engine-agnostic)
 
 ```kotlin
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
@@ -182,121 +169,38 @@ class PlayerViewModel @Inject constructor(
                         currentPosition = info.currentPosition,
                         duration = info.duration,
                         bufferedPercentage = if (info.duration > 0)
-                            (info.bufferedPosition * 100 / info.duration).toInt()
-                        else 0,
+                            (info.bufferedPosition * 100 / info.duration).toInt() else 0,
                         playbackSpeed = info.playbackSpeed,
                         shuffleMode = info.shuffleModeEnabled,
-                        repeatMode = when (info.repeatMode) {
-                            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
-                            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
-                            else -> RepeatMode.NONE
-                        },
+                        repeatMode = info.repeatMode,
                         subtitleTracks = info.subtitleTracks,
                         audioTracks = info.audioTracks,
-                        selectedSubtitleTrack = info.selectedSubtitleTrackId,
-                        selectedAudioTrack = info.selectedAudioTrackId,
+                        selectedSubtitleTrack = info.selectedSubtitleTrack,
+                        selectedAudioTrack = info.selectedAudioTrack,
+                        errorMessage = info.errorMessage,
+                        errorKind = info.errorKind,
+                        activeEngineType = playerRepository.activeEngine.engineType,
                     )
                 }
             }
         }
     }
-
-    fun onPlayPause() = playerRepository.togglePlayPause()
-    fun onSeekTo(positionMs: Long) = playerRepository.seekTo(positionMs)
-    fun onSkipForward(ms: Long) = playerRepository.skipForward(ms)
-    fun onSkipBackward(ms: Long) = playerRepository.skipBackward(ms)
-    fun onSetSpeed(speed: Float) = playerRepository.setSpeed(speed)
-    fun onToggleShuffle() = playerRepository.toggleShuffle()
-    fun onCycleRepeatMode() = playerRepository.cycleRepeatMode()
-    fun onSelectSubtitleTrack(trackId: Int) = playerRepository.selectSubtitleTrack(trackId)
-    fun onSelectAudioTrack(trackId: Int) = playerRepository.selectAudioTrack(trackId)
+    // onPlayPause / onSeekTo / onSkipForward/Back / onSetSpeed / onToggleShuffle /
+    // onCycleRepeatMode / onSelectSubtitleTrack / onSelectAudioTrack / retry / clearError
+    // — all delegate to playerRepository (which delegates to the active engine).
 }
 ```
 
 ---
 
-## VideoPlayerScreen — Gesture Handling
+## VideoPlayerScreen — Gestures
 
-```kotlin
-@Composable
-fun VideoPlayerScreen(
-    uiState: PlayerUiState,
-    onBack: () -> Unit,
-    onPlayPause: () -> Unit,
-    onSeekTo: (Long) -> Unit,
-    onSkipForward: () -> Unit,
-    onSkipBackward: () -> Unit,
-    onSetSpeed: (Float) -> Unit,
-    onToggleShuffle: () -> Unit,
-    onCycleRepeatMode: () -> Unit,
-    onSubtitleTrackSelected: (Int) -> Unit,
-    onAudioTrackSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var showControls by remember { mutableStateOf(true) }
-    var controlsJob by remember { mutableStateOf<Job?>(null) }
-
-    // Auto-hide controls after 3s
-    LaunchedEffect(showControls) {
-        if (showControls) {
-            controlsJob?.cancel()
-            controlsJob = coroutineScope.launch {
-                delay(3000)
-                showControls = false
-            }
-        }
-    }
-
-    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
-        // Video surface
-        AndroidView(
-            factory = { context ->
-                TextureView(context).apply { /* surfaceTextureListener */ }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // Touch gesture handler
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { showControls = !showControls },
-                        onDoubleTap = { offset ->
-                            // Seek 10s back/forward based on tap x position
-                        }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures { _, dragAmount ->
-                        // Left half: brightness, Right half: volume
-                    }
-                }
-        )
-
-        // Controls overlay (fade animation)
-        AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            PlayerControlsOverlay(
-                uiState = uiState,
-                onPlayPause = onPlayPause,
-                onSeekTo = onSeekTo,
-                onSkipForward = onSkipForward,
-                onSkipBackward = onSkipBackward,
-                onBack = onBack,
-                onSpeedClick = { showSpeedSelector = true },
-                onSubtitleClick = { showSubtitleSheet = true },
-                onAudioTrackClick = { showAudioTrackSheet = true },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-```
+- **Single tap**: toggle controls overlay (auto-hide ~3s).
+- **Double tap left/right**: seek ∓10s (with `SeekIndicator`/`DragSeekIndicator`).
+- **Swipe left half**: brightness. **Swipe right half**: volume.
+- **Swipe up/down**: dismiss player (portrait).
+- **Pinch / aspect button**: zoom-to-fit / fill (`AspectRatioMode`).
+- Lock pill (`UnlockPill`) disables gestures; swipe to unlock.
 
 ---
 
@@ -304,13 +208,13 @@ fun VideoPlayerScreen(
 
 | VLC Feature | Media3 Equivalent |
 |---|---|
-| `MediaPlayer.play()` | `ExoPlayer.play()` |
-| `MediaPlayer.pause()` | `ExoPlayer.pause()` |
-| `MediaPlayer.time` | `ExoPlayer.currentPosition` |
-| `MediaPlayer.length` | `ExoPlayer.duration` |
-| `MediaPlayer.setRate()` | `ExoPlayer.setPlaybackSpeed()` |
-| `MediaPlayer.setEqualizer()` | `ExoPlayer.audioSessionId` + AudioEffect |
-| Subtitles: `IVLCVout.setSubtitle()` | `ExoPlayer.setTrackSelectionParameters()` |
-| Audio tracks: `MediaPlayer.getAudioTracks()` | `ExoPlayer.getCurrentTracks().getGroups()` |
-| Chapters: `MediaPlayer.getChapterCount()` | `ExoPlayer.timeline.getPeriod()` |
-| ABRepeat: Custom VLC feature | Not natively supported (manual impl) |
+| `MediaPlayer.play()/pause()` | `ExoPlayer.play()/pause()` |
+| `MediaPlayer.time/length` | `currentPosition` / `duration` |
+| `setRate()` | `setPlaybackSpeed()` |
+| Subtitles `setSubtitle()` | `setTrackSelectionParameters()` + external `.addExternalSubtitle(uri)` |
+| Audio tracks `getAudioTracks()` | `getCurrentTracks().getGroups()` |
+| Chapters | `timeline.getPeriod()` |
+| ABRepeat | manual (not native) |
+
+Subtitle timing offset is exposed via `IPlayerEngine.setSubtitleDelay/getSubtitleDelay`
+and styled through `SubtitleStyle` + `SubtitleStylingDialog`.

@@ -31,6 +31,8 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
     private var httpHost: String? = null
     private var httpPort: Int = 80
     private var useTls: Boolean = false
+    private var webdavUser: String = ""
+    private var webdavPass: String = ""
 
     override fun open(dataSpec: DataSpec): Long {
         uri = dataSpec.uri
@@ -44,6 +46,8 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
         val parts = userInfo.split(":", limit = 2)
         val user = Uri.decode(parts.getOrNull(0) ?: "")
         val pass = Uri.decode(parts.getOrNull(1) ?: "")
+        webdavUser = user
+        webdavPass = pass
         val host = dataSpec.uri.host ?: throw IOException("No host in URI")
         val port = dataSpec.uri.port.takeIf { it > 0 } ?: if (isTls) 443 else 80
         val path = dataSpec.uri.encodedPath ?: "/"
@@ -151,7 +155,7 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
             stream.read(buffer, offset, toRead)
         } catch (e: IOException) {
             android.util.Log.w(TAG, "read error", e)
-            C.RESULT_END_OF_INPUT
+            throw e
         }
         if (bytesRead == -1) return C.RESULT_END_OF_INPUT
         if (bytesRemaining != C.LENGTH_UNSET.toLong()) bytesRemaining -= bytesRead
@@ -168,7 +172,7 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
         try { response?.close() } catch (_: Exception) {}
         response = null
         httpHost?.let { host ->
-            ConnectionPool.returnWebDavClient(host, httpPort, useTls)
+            ConnectionPool.returnWebDavClient(host, httpPort, useTls, webdavUser, webdavPass)
         }
         transferEnded()
     }
