@@ -36,9 +36,6 @@ import javax.inject.Singleton
 class MediaPlayerHolder @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    private var trackSelector: DefaultTrackSelector = buildTrackSelector()
-
     /** Current decoder preference. Drives the [MediaCodecSelector] used when
      *  the player is (re)built. Changing it mid-playback defers the rebuild
      *  until playback returns to idle, so it takes effect on the next play
@@ -53,12 +50,14 @@ class MediaPlayerHolder @Inject constructor(
     /** Set when a [decoderMode] change arrived during active playback. */
     private var pendingRebuild = false
 
+    /**
+     * Build a TrackSelector with tunneling disabled. Tunneling on 4K HDR HEVC
+     * stalls 1-2s after a seek (frame shows while audio continues). 1080p hides
+     * it; off = safe default.
+     */
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildTrackSelector(): DefaultTrackSelector =
         DefaultTrackSelector(context).apply {
-            // Tunneling disabled: on 4K HDR HEVC the tunneled codec stalls ~1-2s
-            // after a seek (shows the seek frame while audio keeps playing), then
-            // resumes already synced. 1080p hides it. Off = default, fixes the stall.
             setParameters(buildUponParameters().setTunnelingEnabled(false))
         }
 
@@ -91,7 +90,7 @@ class MediaPlayerHolder @Inject constructor(
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildPlayer(): ExoPlayer {
         return ExoPlayer.Builder(context)
-            .setTrackSelector(trackSelector)
+            .setTrackSelector(buildTrackSelector())
             .setLoadControl(loadControl)
             .setRenderersFactory(
                 DefaultRenderersFactory(context)
