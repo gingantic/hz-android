@@ -73,9 +73,31 @@ fun VideoLibraryScreen(
     onVideoClicked: (Long) -> Unit = {},
     isActive: Boolean = true,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
+
+    var hasPermission by remember {
+        mutableStateOf(com.rhnxdev.hzplayer.MainActivity.isMediaPermissionGranted(context))
+    }
+
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                val granted = com.rhnxdev.hzplayer.MainActivity.isMediaPermissionGranted(context)
+                if (granted != hasPermission) {
+                    hasPermission = granted
+                    if (granted) {
+                        viewModel.onRefresh()
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Refresh from source when this tab regains focus (skip the initial composition,
     // which already loaded via the ViewModel init).
@@ -85,7 +107,7 @@ fun VideoLibraryScreen(
             firstComposition = false
             return@LaunchedEffect
         }
-        if (isActive) viewModel.onTabFocused()
+        if (isActive && hasPermission) viewModel.onTabFocused()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -166,64 +188,77 @@ fun VideoLibraryScreen(
             },
         ) {
             // Content
-            val pullState = rememberPullToRefreshState()
-            PullToRefreshBox(
-                isRefreshing = uiState.isLoading,
-                onRefresh = viewModel::onRefresh,
-                state = pullState,
-                modifier = Modifier.weight(1f).fillMaxSize(),
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    when {
-                        uiState.isLoading && uiState.allVideos.isEmpty() -> {
-                            MediaLoadingState(
-                                itemCount = 3,
-                                shape = if (uiState.viewMode == ViewMode.GRID) ShimmerShape.VIDEO_CATEGORY else ShimmerShape.LIST_ITEM,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                        uiState.error != null -> {
-                            MediaErrorState(
-                                title = stringResource(R.string.video_load_error),
-                                subtitle = uiState.error ?: "",
-                                onRetry = viewModel::onRetry,
-                            )
-                        }
-                        uiState.isEmpty && !isSearchActive -> {
-                            MediaEmptyState(
-                                icon = Icons.Filled.VideoLibrary,
-                                title = stringResource(R.string.video_empty_title),
-                                subtitle = stringResource(R.string.video_empty_subtitle),
-                            )
-                        }
-                        isSearchActive -> {
-                            SearchResultsContent(
-                                videos = uiState.filteredVideos,
-                                viewMode = uiState.viewMode,
-                                onVideoClicked = { v ->
-                                    viewModel.onVideoClicked(v)
-                                    onVideoClicked(v.id)
-                                },
-                                searchQuery = searchQuery,
-                            )
-                        }
-                        uiState.viewMode == ViewMode.GRID -> {
-                            GridContent(
-                                categories = uiState.categories,
-                                onVideoClicked = { v ->
-                                    viewModel.onVideoClicked(v)
-                                    onVideoClicked(v.id)
-                                },
-                            )
-                        }
-                        else -> {
-                            ListContent(
-                                videos = uiState.allVideos,
-                                onVideoClicked = { v ->
-                                    viewModel.onVideoClicked(v)
-                                    onVideoClicked(v.id)
-                                },
-                            )
+            if (!hasPermission) {
+                com.rhnxdev.hzplayer.core.components.PermissionRequiredState(
+                    onGrantClick = {
+                        val activity = context as? com.rhnxdev.hzplayer.MainActivity
+                        activity?.requestMediaPermissions()
+                    },
+                    onSettingsClick = {
+                        com.rhnxdev.hzplayer.MainActivity.openAppSettings(context)
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                val pullState = rememberPullToRefreshState()
+                PullToRefreshBox(
+                    isRefreshing = uiState.isLoading,
+                    onRefresh = viewModel::onRefresh,
+                    state = pullState,
+                    modifier = Modifier.weight(1f).fillMaxSize(),
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when {
+                            uiState.isLoading && uiState.allVideos.isEmpty() -> {
+                                MediaLoadingState(
+                                    itemCount = 3,
+                                    shape = if (uiState.viewMode == ViewMode.GRID) ShimmerShape.VIDEO_CATEGORY else ShimmerShape.LIST_ITEM,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            uiState.error != null -> {
+                                MediaErrorState(
+                                    title = stringResource(R.string.video_load_error),
+                                    subtitle = uiState.error ?: "",
+                                    onRetry = viewModel::onRetry,
+                                )
+                            }
+                            uiState.isEmpty && !isSearchActive -> {
+                                MediaEmptyState(
+                                    icon = Icons.Filled.VideoLibrary,
+                                    title = stringResource(R.string.video_empty_title),
+                                    subtitle = stringResource(R.string.video_empty_subtitle),
+                                )
+                            }
+                            isSearchActive -> {
+                                SearchResultsContent(
+                                    videos = uiState.filteredVideos,
+                                    viewMode = uiState.viewMode,
+                                    onVideoClicked = { v ->
+                                        viewModel.onVideoClicked(v)
+                                        onVideoClicked(v.id)
+                                    },
+                                    searchQuery = searchQuery,
+                                )
+                            }
+                            uiState.viewMode == ViewMode.GRID -> {
+                                GridContent(
+                                    categories = uiState.categories,
+                                    onVideoClicked = { v ->
+                                        viewModel.onVideoClicked(v)
+                                        onVideoClicked(v.id)
+                                    },
+                                )
+                            }
+                            else -> {
+                                ListContent(
+                                    videos = uiState.allVideos,
+                                    onVideoClicked = { v ->
+                                        viewModel.onVideoClicked(v)
+                                        onVideoClicked(v.id)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -231,13 +266,15 @@ fun VideoLibraryScreen(
         }
 
         // FAB
-        ViewToggleFab(
-            currentView = uiState.viewMode,
-            onToggle = viewModel::onViewModeChanged,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(Spacing.lg),
-        )
+        if (hasPermission) {
+            ViewToggleFab(
+                currentView = uiState.viewMode,
+                onToggle = viewModel::onViewModeChanged,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(Spacing.lg),
+            )
+        }
     }
 }
 

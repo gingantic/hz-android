@@ -399,4 +399,8 @@
     <string name="github_token_title">GitHub Access Token</string>
     <string name="github_token_desc">Enter a Personal Access Token (PAT) with \"repo\" permissions to fetch releases and download APK files from this private repository.</string>
     <string name="github_token_placeholder">ghp_...</string>
+    <string name="permission_required_title">Storage Permission Required</string>
+    <string name="permission_required_desc">Hz Player requires access to your device storage to scan and show your local audio and video files.</string>
+    <string name="permission_grant_button">Grant Permission</string>
+    <string name="permission_settings_button">Open App Settings</string>
 </resources>

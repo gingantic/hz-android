@@ -59,10 +59,32 @@ fun AudioBrowserScreen(
     onArtistClicked: (Artist) -> Unit = {},
     isActive: Boolean = true,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
     val tabs = AudioTab.entries
+
+    var hasPermission by remember {
+        mutableStateOf(com.rhnxdev.hzplayer.MainActivity.isMediaPermissionGranted(context))
+    }
+
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                val granted = com.rhnxdev.hzplayer.MainActivity.isMediaPermissionGranted(context)
+                if (granted != hasPermission) {
+                    hasPermission = granted
+                    if (granted) {
+                        viewModel.onRefresh()
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Refresh from source when this tab regains focus (skip the initial composition).
     var firstComposition by remember { mutableStateOf(true) }
@@ -71,7 +93,7 @@ fun AudioBrowserScreen(
             firstComposition = false
             return@LaunchedEffect
         }
-        if (isActive) viewModel.onTabFocused()
+        if (isActive && hasPermission) viewModel.onTabFocused()
     }
 
     HzPlayerSearchableScaffold(
@@ -83,66 +105,79 @@ fun AudioBrowserScreen(
         onClearSearch = viewModel::onClearSearch,
         searchPlaceholder = stringResource(R.string.search_songs),
     ) {
-        // Tab row synced directly to ViewModel tab state
-        TabRow(
-            selectedTabIndex = tabs.indexOf(uiState.currentTab),
-            contentColor = MaterialTheme.colorScheme.primary,
-        ) {
-            tabs.forEach { tab ->
-                Tab(
-                    selected = uiState.currentTab == tab,
-                    onClick = { viewModel.onTabSelected(tab) },
-                    text = {
-                        Text(
-                            text = tab.label,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    },
-                )
-            }
-        }
-
-        // Tab content using AnimatedContent (bypasses horizontal pager interception)
-        val pullState = rememberPullToRefreshState()
-        val isRefreshing = when (uiState.currentTab) {
-            AudioTab.SONGS -> uiState.isLoadingSongs
-            AudioTab.ALBUMS -> uiState.isLoadingAlbums
-            AudioTab.ARTISTS -> uiState.isLoadingArtists
-        }
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = viewModel::onRefresh,
-            state = pullState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-        ) {
-            AnimatedContent(
-                targetState = uiState.currentTab,
-                modifier = Modifier.fillMaxSize(),
-                label = "tab_transition"
-            ) { targetTab ->
-                when (targetTab) {
-                    AudioTab.SONGS -> SongsTab(
-                        songs = uiState.filteredSongs,
-                        isLoading = uiState.isLoadingSongs && uiState.songs.isEmpty(),
-                        searchQuery = if (isSearchActive) searchQuery else null,
-                        onSongClicked = { song ->
-                            viewModel.onSongClicked(song)
-                            onSongClicked?.invoke(song, uiState.filteredSongs)
+        if (!hasPermission) {
+            com.rhnxdev.hzplayer.core.components.PermissionRequiredState(
+                onGrantClick = {
+                    val activity = context as? com.rhnxdev.hzplayer.MainActivity
+                    activity?.requestMediaPermissions()
+                },
+                onSettingsClick = {
+                    com.rhnxdev.hzplayer.MainActivity.openAppSettings(context)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Tab row synced directly to ViewModel tab state
+            TabRow(
+                selectedTabIndex = tabs.indexOf(uiState.currentTab),
+                contentColor = MaterialTheme.colorScheme.primary,
+            ) {
+                tabs.forEach { tab ->
+                    Tab(
+                        selected = uiState.currentTab == tab,
+                        onClick = { viewModel.onTabSelected(tab) },
+                        text = {
+                            Text(
+                                text = tab.label,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
                         },
-                        modifier = Modifier,
                     )
-                    AudioTab.ALBUMS -> AlbumsTab(
-                        albums = uiState.albums,
-                        isLoading = uiState.isLoadingAlbums && uiState.albums.isEmpty(),
-                        onAlbumClicked = onAlbumClicked,
-                        modifier = Modifier,
-                    )
-                    AudioTab.ARTISTS -> ArtistsTab(
-                        artists = uiState.artists,
-                        isLoading = uiState.isLoadingArtists && uiState.artists.isEmpty(),
-                        onArtistClicked = onArtistClicked,
-                        modifier = Modifier,
-                    )
+                }
+            }
+
+            // Tab content using AnimatedContent (bypasses horizontal pager interception)
+            val pullState = rememberPullToRefreshState()
+            val isRefreshing = when (uiState.currentTab) {
+                AudioTab.SONGS -> uiState.isLoadingSongs
+                AudioTab.ALBUMS -> uiState.isLoadingAlbums
+                AudioTab.ARTISTS -> uiState.isLoadingArtists
+            }
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = viewModel::onRefresh,
+                state = pullState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
+                AnimatedContent(
+                    targetState = uiState.currentTab,
+                    modifier = Modifier.fillMaxSize(),
+                    label = "tab_transition"
+                ) { targetTab ->
+                    when (targetTab) {
+                        AudioTab.SONGS -> SongsTab(
+                            songs = uiState.filteredSongs,
+                            isLoading = uiState.isLoadingSongs && uiState.songs.isEmpty(),
+                            searchQuery = if (isSearchActive) searchQuery else null,
+                            onSongClicked = { song ->
+                                viewModel.onSongClicked(song)
+                                  onSongClicked?.invoke(song, uiState.filteredSongs)
+                            },
+                            modifier = Modifier,
+                        )
+                        AudioTab.ALBUMS -> AlbumsTab(
+                            albums = uiState.albums,
+                            isLoading = uiState.isLoadingAlbums && uiState.albums.isEmpty(),
+                            onAlbumClicked = onAlbumClicked,
+                            modifier = Modifier,
+                        )
+                        AudioTab.ARTISTS -> ArtistsTab(
+                            artists = uiState.artists,
+                            isLoading = uiState.isLoadingArtists && uiState.artists.isEmpty(),
+                            onArtistClicked = onArtistClicked,
+                            modifier = Modifier,
+                        )
+                    }
                 }
             }
         }

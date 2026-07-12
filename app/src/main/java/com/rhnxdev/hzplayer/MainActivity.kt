@@ -176,7 +176,7 @@ class MainActivity : ComponentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
     }
 
-    private fun requestMediaPermissions() {
+    fun requestMediaPermissions() {
         val permissions = mutableListOf<String>()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -259,6 +259,16 @@ class MainActivity : ComponentActivity() {
                     data = android.net.Uri.fromParts("package", context.packageName, null)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
+            }
+            context.startActivity(intent)
+        }
+
+        fun openAppSettings(context: android.content.Context) {
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+            ).apply {
+                data = android.net.Uri.fromParts("package", context.packageName, null)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
         }
