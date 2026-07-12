@@ -19,3 +19,12 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Ignore missing JDK/system classes referenced by EdDSA / SSHJ (SFTP library)
+-dontwarn net.i2p.crypto.eddsa.**
+-dontwarn sun.security.**
+-dontwarn org.bouncycastle.**
+-dontwarn com.jcraft.jsch.**
+-dontwarn okhttp3.internal.platform.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**
