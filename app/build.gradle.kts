@@ -2,6 +2,26 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
 
+fun getGitCommitCount(): Int {
+    return try {
+        providers.exec {
+            commandLine("git", "rev-list", "--count", "HEAD")
+        }.standardOutput.asText.get().trim().toIntOrNull() ?: 1
+    } catch (e: java.lang.Exception) {
+        1
+    }
+}
+
+fun getGitCommitHash(): String {
+    return try {
+        providers.exec {
+            commandLine("git", "rev-parse", "--short", "HEAD")
+        }.standardOutput.asText.get().trim()
+    } catch (e: java.lang.Exception) {
+        "unknown"
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -20,8 +40,16 @@ android {
         applicationId = "com.rhnxdev.hzplayer"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+
+        val commitCount = getGitCommitCount()
+        val commitHash = getGitCommitHash()
+        versionCode = commitCount
+        versionName = "0.9.0-build.$commitCount+$commitHash"
+
+        val ghUpdateToken = (project.findProperty("GITHUB_UPDATE_TOKEN") as? String)
+            ?: System.getenv("GITHUB_UPDATE_TOKEN")
+            ?: ""
+        buildConfigField("String", "GITHUB_UPDATE_TOKEN", "\"$ghUpdateToken\"")
 
         buildConfigField("String", "BUILD_DATE", "\"${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())}\"")
         buildConfigField("String", "BUILD_TIME", "\"${SimpleDateFormat("HH:mm", Locale.US).format(Date())}\"")
@@ -36,6 +64,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -136,4 +166,10 @@ ksp {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+}
+
+tasks.register("printVersionName") {
+    doLast {
+        println(android.defaultConfig.versionName)
+    }
 }

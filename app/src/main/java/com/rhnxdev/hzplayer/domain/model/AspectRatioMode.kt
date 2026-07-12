@@ -14,7 +14,19 @@ enum class AspectRatioMode(val label: String) {
     RATIO_16_9("16:9"),
 
     /** Force 4:3 aspect ratio. */
-    RATIO_4_3("4:3");
+    RATIO_4_3("4:3"),
+
+    /** Force 21:9 aspect ratio. */
+    RATIO_21_9("21:9"),
+
+    /** Force 18:9 aspect ratio. */
+    RATIO_18_9("18:9"),
+
+    /** Zoom/crop to fill screen, maintaining video's aspect ratio. */
+    ZOOM("Zoom"),
+
+    /** Stretch video to fill screen completely. */
+    STRETCH("Stretch");
 
     /** Cycle to the next mode in the enum order. */
     fun next(): AspectRatioMode {

@@ -61,6 +61,9 @@ class SettingsViewModel @Inject constructor(
     val openSubtitlesApiKey: StateFlow<String> = prefs.openSubtitlesApiKey
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
+    val githubToken: StateFlow<String> = prefs.githubToken
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
     val seekSensitivity: StateFlow<Float> = prefs.seekSensitivity
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
 
@@ -114,6 +117,10 @@ class SettingsViewModel @Inject constructor(
 
     fun saveOpenSubtitlesApiKey(key: String) {
         viewModelScope.launch { prefs.setOpenSubtitlesApiKey(key) }
+    }
+
+    fun saveGithubToken(token: String) {
+        viewModelScope.launch { prefs.setGithubToken(token) }
     }
 
     fun saveSeekSensitivity(value: Float) {
