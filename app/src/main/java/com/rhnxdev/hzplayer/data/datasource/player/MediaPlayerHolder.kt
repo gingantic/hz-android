@@ -80,10 +80,16 @@ class MediaPlayerHolder @Inject constructor(
         DecoderMode.AUTO -> MediaCodecSelector.DEFAULT
         DecoderMode.SOFTWARE -> MediaCodecSelector.PREFER_SOFTWARE
         DecoderMode.HARDWARE -> MediaCodecSelector { mimeType, secure, tunneling ->
-            // Keep only decoders that are NOT software-only, preserving the
-            // default priority order. Filters MediaCodecUtil output.
-            MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling)
-                .filter { !it.softwareOnly && it.name != "OMX.google.raw.decoder" }
+            val infos = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling)
+            // HW mode targets video only. Many devices expose no hardware audio
+            // codec, so filtering software-only decoders from audio mimes would
+            // leave audio without a decoder (silent playback). Keep audio/etc.
+            // on the default list; strip software-only decoders for video only.
+            if (mimeType.startsWith("video/")) {
+                infos.filter { !it.softwareOnly && it.name != "OMX.google.raw.decoder" }
+            } else {
+                infos
+            }
         }
     }
 
@@ -156,20 +162,15 @@ class MediaPlayerHolder @Inject constructor(
     }
 
     /**
-     * Apply a [decoderMode] change: if playback is active, defer the rebuild
-     * until the player returns to idle (so current media isn't interrupted);
-     * otherwise rebuild now. The engine reads [player] live, so the next play
-     * uses the new selector.
+     * Apply a [decoderMode] change: always defer the rebuild to [flushPendingDecoderRebuild]
+     * (called on the main thread from play()), which runs on the next play. Reading
+     * player state here would be off-main (this setter is public API and may be
+     * called from any thread) — a Media3 threading violation — so we never touch
+     * the player from this path. The rebuild itself only ever happens on main.
      */
     private fun requestDecoderRebuild() {
-        val active = player.playbackState == Player.STATE_BUFFERING
-            || player.playbackState == Player.STATE_READY && player.isPlaying
-        if (active) {
-            pendingRebuild = true
-            android.util.Log.d(TAG, "Decoder rebuild defered — playback active")
-        } else {
-            rebuildPlayer()
-        }
+        pendingRebuild = true
+        android.util.Log.d(TAG, "Decoder rebuild scheduled — applied on next play")
     }
 
     /**
@@ -177,6 +178,16 @@ class MediaPlayerHolder @Inject constructor(
      * change takes effect without losing the singleton. The engine reads [player]
      * live, so the next play uses the new selector.
      */
+    /**
+     * Apply a deferred decoder-mode rebuild before new media is loaded. This is
+     * the sole place a rebuild is triggered and it always runs on the main thread
+     * (called from play()). Call before setMediaItem so the new selector takes
+     * effect on the upcoming play.
+     */
+    fun flushPendingDecoderRebuild() {
+        if (pendingRebuild) rebuildPlayer()
+    }
+
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun rebuildPlayer() {
         val newPlayer = buildPlayer()
@@ -185,7 +196,16 @@ class MediaPlayerHolder @Inject constructor(
         attachListeners(newPlayer)
         old.release()
         pendingRebuild = false
+        // Notify observers (MediaPlaybackService) so a live MediaSession can be
+        // re-pointed at the new player instead of the now-released one.
+        onPlayerReplacedListener?.invoke(newPlayer)
         android.util.Log.d(TAG, "ExoPlayer rebuilt for decoderMode=$decoderMode")
+    }
+
+    /** Set when the underlying [ExoPlayer] is swapped (decoder rebuild). */
+    private var onPlayerReplacedListener: ((ExoPlayer) -> Unit)? = null
+    fun setOnPlayerReplacedListener(listener: ((ExoPlayer) -> Unit)?) {
+        onPlayerReplacedListener = listener
     }
 
     private val _playbackStateInfo = MutableStateFlow(PlayerStateInfo())
@@ -209,7 +229,11 @@ class MediaPlayerHolder @Inject constructor(
 
     fun readFrameCounters(): Pair<Long, Long> {
         val dc = videoDecoderCounters ?: return 0L to 0L
-        return dc.renderedOutputBufferCount.toLong() to dc.droppedBufferCount.toLong()
+        // renderedOutputBufferCount = frames actually shown; skippedOutputBufferCount
+        // = output buffers skipped at render time (arrived too late) — this is the
+        // "dropped frames" figure, not droppedBufferCount (pre-render discards) or
+        // droppedToKeyframeCount (decoder-triggered reseeks).
+        return dc.renderedOutputBufferCount.toLong() to dc.skippedOutputBufferCount.toLong()
     }
 
     init {
@@ -245,10 +269,9 @@ class MediaPlayerHolder @Inject constructor(
                         bufferedPosition = target.bufferedPosition.coerceAtLeast(0),
                         errorMessage = if (isNewPlayback) null else _playbackStateInfo.value.errorMessage
                     )
-                    // Flush a defered decoder-mode rebuild now that playback is idle.
-                    if (state == Player.STATE_IDLE && pendingRebuild) {
-                        rebuildPlayer()
-                    }
+                    // Decoder rebuild is deferred to flushPendingDecoderRebuild()
+                    // (main thread, from play()) — never rebuild from inside this
+                    // callback, as releasing the player here races the dispatch.
                 }
 
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -259,9 +282,15 @@ class MediaPlayerHolder @Inject constructor(
                     // shown. Credentials/hostnames are stripped in the mapper.
                     val mapped = PlaybackErrorMapper.map(error)
                     val ctx = context
-                    val message = ctx.getString(
-                        ctx.resources.getIdentifier(mapped.stringResName, "string", ctx.packageName)
-                    )
+                    // getIdentifier returns 0 when the mapped resource is absent;
+                    // getString(0) throws Resources.NotFoundException inside this
+                    // callback, turning every playback error into a crash. Guard it.
+                    val resId = ctx.resources.getIdentifier(mapped.stringResName, "string", ctx.packageName)
+                    val message = if (resId != 0) {
+                        ctx.getString(resId)
+                    } else {
+                        mapped.sanitizedDetail.ifBlank { "Playback failed." }
+                    }
 
                     _playbackStateInfo.value = _playbackStateInfo.value.copy(
                         state = PlayerState.ERROR,
@@ -325,17 +354,6 @@ class MediaPlayerHolder @Inject constructor(
     /** Signal subtitle discovery is in progress — surface BUFFERING to the UI. */
     fun setDiscovering() {
         _playbackStateInfo.value = _playbackStateInfo.value.copy(state = PlayerState.BUFFERING)
-    }
-
-    fun buildMediaItem(uri: String, title: String): MediaItem {
-        return MediaItem.Builder()
-            .setUri(uri)
-            .setMediaMetadata(
-                androidx.media3.common.MediaMetadata.Builder()
-                    .setTitle(title)
-                    .build(),
-            )
-            .build()
     }
 
     fun release() {

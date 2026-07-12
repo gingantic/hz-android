@@ -38,7 +38,9 @@ class FileRepositoryImpl @Inject constructor(
         emit(
             files.asSequence()
                 .filter { f ->
-                    if (noMedia && !showHidden) false
+                    // .nomedia marks the directory as media-hidden; skip only the
+                    // marker file itself, not the entire tree.
+                    if (f.name == ".nomedia") false
                     else showHidden || !f.name.startsWith(".")
                 }
                 .map { f ->

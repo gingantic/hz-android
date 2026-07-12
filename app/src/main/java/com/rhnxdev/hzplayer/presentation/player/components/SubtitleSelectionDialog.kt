@@ -28,8 +28,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -91,13 +89,13 @@ fun SubtitleSelectionDialog(
                 )
                 if (tracksExpanded) {
                     // Off
-                    TrackRow(
+                    TrackSelectionRow(
                         name = stringResource(R.string.subtitle_off),
                         isSelected = selectedTrackIndex == -1,
                         onClick = { onTrackSelected(-1); onDismiss() },
                     )
                     subtitleTracks.forEachIndexed { index, name ->
-                        TrackRow(
+                        TrackSelectionRow(
                             name = name,
                             isSelected = selectedTrackIndex == index,
                             onClick = { onTrackSelected(index); onDismiss() },
@@ -215,36 +213,6 @@ private fun SectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit
             contentDescription = if (expanded) stringResource(R.string.collapse) else stringResource(R.string.expand),
             tint = Color.Gray,
             modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-@Composable
-private fun TrackRow(name: String, isSelected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(
-            selected = isSelected,
-            onClick = onClick,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = MaterialTheme.colorScheme.primary,
-                unselectedColor = Color.Gray,
-            ),
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = name,
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = if (isSelected) Color.White else Color.LightGray,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-            ),
-            modifier = Modifier.weight(1f),
         )
     }
 }

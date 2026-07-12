@@ -88,6 +88,8 @@ class ServerDiscoverer @Inject constructor(
     private val activeListeners = mutableMapOf<String, NsdManager.DiscoveryListener>()
     private val resolveMutex = Mutex()
     private val subnetProbeThrottle = Semaphore(64)
+    /** Tracks the in-flight subnet scan so a new scan cancels the previous one. */
+    private var subnetScanJob: kotlinx.coroutines.Job? = null
 
     init {
         Log.d(TAG, "ServerDiscoverer constructor: registering network callback")
@@ -143,15 +145,19 @@ class ServerDiscoverer @Inject constructor(
                 "NSD skipped — subnet scan fallback still runs")
         }
 
-        // Launch fallback subnet port scanning to discover servers not advertising via mDNS
-        discoveryScope.launch {
-            val address = getActiveNetworkInetAddress()
-            if (address == null) {
-                Log.w(TAG, "startScan: no active network address, subnet scan skipped")
-            } else {
-                val ipStr = address.hostAddress
-                if (!ipStr.isNullOrEmpty() && ipStr.contains(".")) {
-                    startSubnetScan(ipStr)
+        // Launch fallback subnet port scanning to discover servers not advertising via mDNS.
+        // Guard so a second startScan (after stopScan) cancels the prior in-flight scan
+        // instead of stacking another /24 of probes.
+        if (subnetScanJob?.isActive != true) {
+            subnetScanJob = discoveryScope.launch {
+                val address = getActiveNetworkInetAddress()
+                if (address == null) {
+                    Log.w(TAG, "startScan: no active network address, subnet scan skipped")
+                } else {
+                    val ipStr = address.hostAddress
+                    if (!ipStr.isNullOrEmpty() && ipStr.contains(".")) {
+                        startSubnetScan(ipStr)
+                    }
                 }
             }
         }
@@ -161,6 +167,10 @@ class ServerDiscoverer @Inject constructor(
         if (!_isScanning.value) return
         Log.d(TAG, "stopScan")
         _isScanning.value = false
+
+        // Cancel any in-flight subnet scan so its probes don't keep running.
+        subnetScanJob?.cancel()
+        subnetScanJob = null
 
         // Unregister all active listeners
         activeListeners.forEach { (type, listener) ->

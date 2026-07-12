@@ -4,10 +4,6 @@ import com.rhnxdev.hzplayer.BuildConfig
 import com.rhnxdev.hzplayer.domain.model.Album
 import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
-import com.rhnxdev.hzplayer.domain.model.FolderItem
-import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
-import com.rhnxdev.hzplayer.domain.model.ServerConfig
-import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
 
 object PreviewMedia {
 
@@ -140,34 +136,5 @@ object PreviewMedia {
         AudioItem(id = 10, title = "Let It Happen", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3", artist = "Tame Impala", album = "Currents", durationMs = 498_000, trackNumber = 1),
         AudioItem(id = 11, title = "Ivy", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3", artist = "Frank Ocean", album = "Blonde", durationMs = 249_000, trackNumber = 2),
         AudioItem(id = 12, title = "Interstellar (Main Theme)", uri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3", artist = "Hans Zimmer", album = "Interstellar (OST)", durationMs = 475_000, trackNumber = 1),
-    ) else emptyList()
-
-    // ── Files/Folders ─────────────────────────────────────────────
-
-    val folders: List<FolderItem> = if (BuildConfig.DEBUG) listOf(
-        FolderItem(id = 1, name = "Movies", path = "/storage/emulated/0/Movies", isDirectory = true, childCount = 15, dateModified = 1_700_000_000_000),
-        FolderItem(id = 2, name = "TV Shows", path = "/storage/emulated/0/TV", isDirectory = true, childCount = 8, dateModified = 1_690_000_000_000),
-        FolderItem(id = 3, name = "Music", path = "/storage/emulated/0/Music", isDirectory = true, childCount = 42, dateModified = 1_710_000_000_000),
-        FolderItem(id = 4, name = "Downloads", path = "/storage/emulated/0/Download", isDirectory = true, childCount = 23, dateModified = 1_715_000_000_000),
-        FolderItem(id = 5, name = "Recordings", path = "/storage/emulated/0/Recordings", isDirectory = true, childCount = 5, dateModified = 1_695_000_000_000),
-        FolderItem(id = 10, name = "blade_runner_2049.mkv", path = "/storage/emulated/0/Movies/blade_runner_2049.mkv", isDirectory = false, fileSize = 12_500_000_000, dateModified = 1_700_000_000_000, mimeType = "video/x-matroska"),
-        FolderItem(id = 11, name = "interstellar.mkv", path = "/storage/emulated/0/Movies/interstellar.mkv", isDirectory = false, fileSize = 15_800_000_000, dateModified = 1_700_000_000_000, mimeType = "video/x-matroska"),
-        FolderItem(id = 12, name = "lecture_notes.pdf", path = "/storage/emulated/0/Download/lecture_notes.pdf", isDirectory = false, fileSize = 2_400_000, dateModified = 1_712_000_000_000, mimeType = "application/pdf"),
-        FolderItem(id = 13, name = "photo_2024.jpg", path = "/storage/emulated/0/Download/photo_2024.jpg", isDirectory = false, fileSize = 3_200_000, dateModified = 1_714_000_000_000, mimeType = "image/jpeg"),
-    ) else emptyList()
-
-    // ── Network Servers ─────────────────────────────────────────────
-
-    val servers: List<ServerConfig> = if (BuildConfig.DEBUG) listOf(
-        ServerConfig(id = 1, name = "Home NAS", protocol = NetworkProtocol.SMB, host = "192.168.1.100", port = 445, username = "user"),
-        ServerConfig(id = 2, name = "Office FTP", protocol = NetworkProtocol.FTP, host = "ftp.office.com", port = 21, username = "admin"),
-        ServerConfig(id = 3, name = "Dev Server", protocol = NetworkProtocol.SFTP, host = "dev.example.com", port = 22, username = "deploy"),
-    ) else emptyList()
-
-    // ── Stream History ──────────────────────────────────────────────
-
-    val streamHistory: List<StreamHistoryItem> = if (BuildConfig.DEBUG) listOf(
-        StreamHistoryItem(id = 1, url = "https://example.com/live/stream.m3u8", title = "Live Stream", isFavorite = true, lastPlayedAt = System.currentTimeMillis() - 3_600_000),
-        StreamHistoryItem(id = 2, url = "rtsp://camera.local/feed", title = "Security Camera", isFavorite = false, lastPlayedAt = System.currentTimeMillis() - 86_400_000),
     ) else emptyList()
 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -52,10 +54,10 @@ import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
 import com.rhnxdev.hzplayer.domain.model.MediaType
-import com.rhnxdev.hzplayer.core.components.SortChipOption
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.components.ViewToggleFab
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
@@ -110,15 +112,54 @@ fun VideoLibraryScreen(
                     ) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.sort_by_title)) },
-                            onClick = { viewModel.onSortChanged(SortType.TITLE); showSortMenu = false },
+                            onClick = {
+                                viewModel.onSortChanged(SortType.TITLE, uiState.sortDirection)
+                                showSortMenu = false
+                            },
+                            leadingIcon = if (uiState.sortType == SortType.TITLE) {
+                                { Icon(Icons.Filled.Check, null) }
+                            } else null,
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.sort_by_date)) },
-                            onClick = { viewModel.onSortChanged(SortType.DATE_ADDED); showSortMenu = false },
+                            onClick = {
+                                viewModel.onSortChanged(SortType.DATE_ADDED, uiState.sortDirection)
+                                showSortMenu = false
+                            },
+                            leadingIcon = if (uiState.sortType == SortType.DATE_ADDED) {
+                                { Icon(Icons.Filled.Check, null) }
+                            } else null,
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.sort_by_duration)) },
-                            onClick = { viewModel.onSortChanged(SortType.DURATION); showSortMenu = false },
+                            onClick = {
+                                viewModel.onSortChanged(SortType.DURATION, uiState.sortDirection)
+                                showSortMenu = false
+                            },
+                            leadingIcon = if (uiState.sortType == SortType.DURATION) {
+                                { Icon(Icons.Filled.Check, null) }
+                            } else null,
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.sort_ascending)) },
+                            onClick = {
+                                viewModel.onSortChanged(uiState.sortType, SortDirection.ASCENDING)
+                                showSortMenu = false
+                            },
+                            leadingIcon = if (uiState.sortDirection == SortDirection.ASCENDING) {
+                                { Icon(Icons.Filled.Check, null) }
+                            } else null,
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.sort_descending)) },
+                            onClick = {
+                                viewModel.onSortChanged(uiState.sortType, SortDirection.DESCENDING)
+                                showSortMenu = false
+                            },
+                            leadingIcon = if (uiState.sortDirection == SortDirection.DESCENDING) {
+                                { Icon(Icons.Filled.Check, null) }
+                            } else null,
                         )
                     }
                 }
@@ -371,12 +412,6 @@ private fun buildSubtitle(video: VideoItem): String {
     }
     return parts.joinToString(" • ")
 }
-
-private val sortOptions = listOf(
-    SortChipOption("Title", SortType.TITLE),
-    SortChipOption("Date", SortType.DATE_ADDED),
-    SortChipOption("Duration", SortType.DURATION),
-)
 
 @PreviewLightDark
 @Preview

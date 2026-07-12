@@ -20,7 +20,7 @@
 ┌───────────────────────▼────────────────────────────────────────────┐
 │                          DOMAIN                                    │
 │  Model (pure Kotlin) • Repository interfaces • IPlayerEngine        │
-│  UseCase (only ResumeProgressUseCase today)                        │
+│  UseCase layer (none currently -- ViewModels call repos directly)                        │
 └───────────────────────┬────────────────────────────────────────────┘
                         │ Flow / suspend
 ┌───────────────────────▼────────────────────────────────────────────┐

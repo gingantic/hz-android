@@ -43,10 +43,10 @@ class MediaScanner @Inject constructor(
             val titleCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
             val dataCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DATA)
             val durationCol = it.getColumnIndex(MediaStore.Video.Media.DURATION)
-            val sizeCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+            val sizeCol = it.getColumnIndex(MediaStore.Video.Media.SIZE)
             val dateAddedCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
             val dateModifiedCol = it.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
-            val mimeCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
+            val mimeCol = it.getColumnIndex(MediaStore.Video.Media.MIME_TYPE)
             val resolutionCol = it.getColumnIndex(MediaStore.Video.Media.RESOLUTION)
 
             while (it.moveToNext()) {
@@ -57,7 +57,7 @@ class MediaScanner @Inject constructor(
                         uri = it.getString(dataCol) ?: "",
                         mediaType = "video",
                         durationMs = if (durationCol >= 0) it.getLong(durationCol) else 0,
-                        fileSize = it.getLong(sizeCol),
+                        fileSize = if (sizeCol >= 0) it.getLong(sizeCol) else 0,
                         mimeType = if (mimeCol >= 0) it.getString(mimeCol) else null,
                         resolution = if (resolutionCol >= 0) it.getString(resolutionCol) else null,
                         dateAdded = it.getLong(dateAddedCol),
@@ -99,7 +99,7 @@ class MediaScanner @Inject constructor(
             val titleCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val dataCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val durationCol = it.getColumnIndex(MediaStore.Audio.Media.DURATION)
-            val sizeCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val sizeCol = it.getColumnIndex(MediaStore.Audio.Media.SIZE)
             val artistCol = it.getColumnIndex(MediaStore.Audio.Media.ARTIST)
             val albumCol = it.getColumnIndex(MediaStore.Audio.Media.ALBUM)
             val albumIdCol = it.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
@@ -118,7 +118,7 @@ class MediaScanner @Inject constructor(
                         uri = it.getString(dataCol) ?: "",
                         mediaType = "audio",
                         durationMs = if (durationCol >= 0) it.getLong(durationCol) else 0,
-                        fileSize = it.getLong(sizeCol),
+                        fileSize = if (sizeCol >= 0) it.getLong(sizeCol) else 0,
                         mimeType = if (mimeCol >= 0) it.getString(mimeCol) else null,
                         artist = if (artistCol >= 0) it.getString(artistCol) else null,
                         album = if (albumCol >= 0) it.getString(albumCol) else null,

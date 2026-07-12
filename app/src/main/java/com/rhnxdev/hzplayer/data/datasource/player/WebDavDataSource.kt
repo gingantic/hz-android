@@ -2,11 +2,10 @@ package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.net.Uri
 import androidx.media3.common.C
-import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
 import okhttp3.HttpUrl
 import okhttp3.Request
-import java.io.EOFException
+import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
 
@@ -22,11 +21,8 @@ import java.io.InputStream
  * - `webdavs://host:port/path` → translated to `https://host:port/path`
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
+class WebDavDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
 
-    private var inputStream: InputStream? = null
-    private var bytesRemaining: Long = C.LENGTH_UNSET.toLong()
-    private var uri: Uri? = null
     private var response: okhttp3.Response? = null
     private var httpHost: String? = null
     private var httpPort: Int = 80
@@ -35,7 +31,7 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
     private var webdavPass: String = ""
 
     override fun open(dataSpec: DataSpec): Long {
-        uri = dataSpec.uri
+        uriValue = dataSpec.uri
         transferInitializing(dataSpec)
         android.util.Log.d(TAG, "open: scheme=${dataSpec.uri.scheme} host=${dataSpec.uri.host} " +
             "path=${dataSpec.uri.path} position=${dataSpec.position} length=${dataSpec.length}")
@@ -113,7 +109,10 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
         response = httpResponse
 
         val body = httpResponse.body ?: throw IOException("No response body from $safeUrl")
-        var stream = body.byteStream()
+        // Buffered so skip() is efficient — an unbuffered network stream often
+        // returns 0 from skip() and falls back to one byte per read, which makes
+        // a large seek (200 with Range ignored) crawl.
+        var stream = BufferedInputStream(body.byteStream(), 64 * 1024)
 
         // Some servers ignore the Range header and answer 200 with the *whole*
         // file. Skip to the requested offset so ExoPlayer gets the right bytes.
@@ -145,32 +144,23 @@ class WebDavDataSource : BaseDataSource(/* isNetwork = */ true) {
         return bytesRemaining
     }
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        if (length == 0) return 0
-        if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
-        val stream = inputStream ?: return C.RESULT_END_OF_INPUT
-        val toRead = if (bytesRemaining == C.LENGTH_UNSET.toLong()) length
-            else length.toLong().coerceAtMost(bytesRemaining).toInt()
-        val bytesRead = try {
-            stream.read(buffer, offset, toRead)
-        } catch (e: IOException) {
-            android.util.Log.w(TAG, "read error", e)
-            throw e
-        }
-        if (bytesRead == -1) return C.RESULT_END_OF_INPUT
-        if (bytesRemaining != C.LENGTH_UNSET.toLong()) bytesRemaining -= bytesRead
-        bytesTransferred(bytesRead)
-        return bytesRead
+    override fun readFromStream(
+        stream: InputStream,
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int = try {
+        stream.read(buffer, offset, length)
+    } catch (e: IOException) {
+        android.util.Log.w(TAG, "read error", e)
+        throw e
     }
 
-    override fun getUri(): Uri? = uri
-
     override fun close() {
-        uri = null
         try { inputStream?.close() } catch (_: Exception) {}
-        inputStream = null
         try { response?.close() } catch (_: Exception) {}
         response = null
+        resetSharedState()
         httpHost?.let { host ->
             ConnectionPool.returnWebDavClient(host, httpPort, useTls, webdavUser, webdavPass)
         }

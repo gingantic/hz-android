@@ -12,10 +12,10 @@
 ┌───────────────────────────────────────────────────────────┐
 │                    MediaPlaybackService                    │
 │                  (Media3 MediaSessionService)              │
-│  • builds MediaSession from ExoPlayerMediaSessionProvider  │
+│  • builds MediaSession from engine.getMedia3Player()  │
 │  • Media3 MediaNotificationService → system controls       │
 └───────────────────────────┬───────────────────────────────┘
-                            │ Media3 Player (via provider)
+                            │ Media3 Player (via IPlayerEngine)
 ┌───────────────────────────▼───────────────────────────────┐
 │                    ExoPlayerEngine                         │
 │  • implements IPlayerEngine (the only playback contract)   │
@@ -94,32 +94,45 @@ typed cast — those methods are **not** on `IPlayerEngine`.
 
 ---
 
+---
+
 ## MediaPlaybackService
+
+Built inline in `MediaPlaybackService.kt` — the service calls `engine.getMedia3Player()`
+on the active engine and wraps it in a `Media3 MediaSession`. No separate provider class.
 
 ```kotlin
 @AndroidEntryPoint
 class MediaPlaybackService : MediaSessionService() {
-    @Inject lateinit var mediaSessionProvider: MediaSessionProvider
+    @Inject lateinit var playerRepository: PlayerRepository
     private var mediaSession: MediaSession? = null
 
     override fun onCreate() {
         super.onCreate()
-        // ExoPlayerMediaSessionProvider.getMedia3Player() returns the ExoPlayer.
-        mediaSession = MediaSession.Builder(this, mediaSessionProvider.getMedia3Player()!!).build()
+        val engine = playerRepository.activeEngine
+        val player = engine.getMedia3Player()
+        mediaSession = player?.let {
+            MediaSession.Builder(this, it).setSessionActivity(pendingIntent).build()
+        }
+        // Re-point session when the engine swaps its player (decoder rebuild).
+        engine.setOnPlayerReplacedListener { newPlayer ->
+            mediaSession?.setPlayer(newPlayer)
+        }
     }
     override fun onGetSession(c: ControllerInfo) = mediaSession
     override fun onDestroy() {
         mediaSession?.release().also { mediaSession = null }
-        playerHolder.release()
+        playerRepository.release()
         super.onDestroy()
     }
 }
 ```
 
-A `MediaSession` is only built when the active engine is `MediaSessionProvider`
-(i.e. `EXO_PLAYER` today). A future non-Media3 engine would skip system media controls.
+A `MediaSession` is only built when the active engine's `getMedia3Player()` returns
+non-null (ExoPlayer today). A future non-Media3 backend returns `null` and opts out.
 
 ---
+
 
 ## PlayerState
 

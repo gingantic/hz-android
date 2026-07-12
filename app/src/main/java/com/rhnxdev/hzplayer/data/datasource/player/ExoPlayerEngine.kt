@@ -88,6 +88,11 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?, resumePositionMs: Long) {
         currentPlaylist = null
+        // Set the current-uri fields up front: addExternalSubtitle reads them on
+        // the main thread and would otherwise see null during the (async) discovery
+        // window, silently no-op'ing the add.
+        currentMediaUri = uri
+        currentMediaTitle = title
         // Subtitle discovery (disk/network scan) runs off the main thread; the
         // player calls below must run on the main thread (Media3 requirement), so
         // we hop back to Dispatchers.Main after discovery completes.
@@ -96,9 +101,8 @@ class ExoPlayerEngine @Inject constructor(
             withContext(Dispatchers.Main) {
                 subtitleConfigs.clear()
                 subtitleConfigs.addAll(subs)
-                currentMediaUri = uri
-                currentMediaTitle = title
                 playerHolder.clearError()
+                playerHolder.flushPendingDecoderRebuild()
                 player.setMediaItem(buildMediaItemWithSubtitles(uri, title, artist, mimeType, subs = subs))
                 player.prepare()
                 if (resumePositionMs > 0) player.seekTo(resumePositionMs)
@@ -113,19 +117,25 @@ class ExoPlayerEngine @Inject constructor(
         subtitleConfigs.clear()
         val startUri = items[startIndex].first
         val startTitle = items[startIndex].second
+        // Set before the async discovery window so addExternalSubtitle (main-thread)
+        // never sees a null current uri.
+        currentMediaUri = startUri
+        currentMediaTitle = startTitle
         // Neighbor-subtitle discovery only for the start item; others get plain items.
         subtitleDiscoveryScope.launch {
             val subs = discoverNeighborSubtitles(startUri)
             withContext(Dispatchers.Main) {
                 subtitleConfigs.clear()
                 subtitleConfigs.addAll(subs)
-                currentMediaUri = startUri
-                currentMediaTitle = startTitle
                 val mediaItems = items.map { (uri, title) ->
                     val itemSubs = if (uri == startUri) subs else emptyList()
                     buildMediaItemWithSubtitles(uri, title, subs = itemSubs)
                 }
+                // ponytail: populate currentPlaylist so retry()/addExternalSubtitle()
+                // see the real list instead of null (which collapsed to 1 item).
+                currentPlaylist = mediaItems
                 playerHolder.clearError()
+                playerHolder.flushPendingDecoderRebuild()
                 player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), startPositionMs)
                 player.prepare()
                 player.play()
@@ -138,18 +148,22 @@ class ExoPlayerEngine @Inject constructor(
         currentPlaylist = null
         subtitleConfigs.clear()
         val startItem = items[startIndex]
+        // Set before the async discovery window so addExternalSubtitle (main-thread)
+        // never sees a null current uri.
+        currentMediaUri = startItem.uri
+        currentMediaTitle = startItem.title
         subtitleDiscoveryScope.launch {
             val subs = discoverNeighborSubtitles(startItem.uri)
             withContext(Dispatchers.Main) {
                 subtitleConfigs.clear()
                 subtitleConfigs.addAll(subs)
-                currentMediaUri = startItem.uri
-                currentMediaTitle = startItem.title
                 val mediaItems = items.map { audio ->
                     val itemSubs = if (audio.uri == startItem.uri) subs else emptyList()
                     buildMediaItemWithSubtitles(audio.uri, audio.title, audio.artist, subs = itemSubs)
                 }
+                currentPlaylist = mediaItems
                 playerHolder.clearError()
+                playerHolder.flushPendingDecoderRebuild()
                 player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), 0L)
                 player.prepare()
                 player.play()
@@ -447,6 +461,13 @@ class ExoPlayerEngine @Inject constructor(
                     )
                 )
                 .build()
+        } else {
+            // Mirror selectSubtitleTrack: index == -1 disables the audio track.
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .build()
         }
     }
 
@@ -525,6 +546,10 @@ class ExoPlayerEngine @Inject constructor(
 
     /** Backs the system MediaSession for lock-screen / media controls. */
     override fun getMedia3Player(): Player = playerHolder.player
+
+    override fun setOnPlayerReplacedListener(listener: ((Player) -> Unit)?) {
+        playerHolder.setOnPlayerReplacedListener(listener)
+    }
 
     // â”€â”€ Subtitle discovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

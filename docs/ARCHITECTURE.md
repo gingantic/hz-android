@@ -100,12 +100,12 @@ com.rhnxdev.hzplayer/
 │   │   ├── SubtitleStyle.kt AspectRatioMode.kt ThemeMode.kt
 │   │
 │   ├── player/
-│   │   ├── EngineType.kt IPlayerEngine.kt MediaSessionProvider.kt
+│   │   ├── EngineType.kt IPlayerEngine.kt
 │   │   ├── RenderViewConfig.kt PlaybackErrorMapper.kt
 │   │
 │   ├── repository/   (one interface per domain area — see below)
 │   │
-│   └── usecase/ResumeProgressUseCase.kt
+│   └── usecase/   (none — ViewModels call repositories directly)
 │
 ├── data/
 │   ├── repository/
@@ -125,7 +125,6 @@ com.rhnxdev.hzplayer/
 │   │   ├── player/
 │   │   │   ├── MediaPlayerHolder.kt     (owns the single ExoPlayer)
 │   │   │   ├── ExoPlayerEngine.kt       (IPlayerEngine impl)
-│   │   │   ├── ExoPlayerMediaSessionProvider.kt
 │   │   │   ├── ConnectionPool.kt        (SMB/FTP/SSH pooling)
 │   │   │   ├── FtpDataSource.kt SftpDataSource.kt SmbDataSource.kt WebDavDataSource.kt
 │   │   │   ├── SmbPathResolver.kt
@@ -227,8 +226,6 @@ object AppModule {
 abstract class PlayerEngineModule {
     @Binds @IntoMap @EngineKey(EngineType.EXO_PLAYER) @Singleton
     abstract fun bindExoPlayerEngine(impl: ExoPlayerEngine): IPlayerEngine
-    @Binds @Singleton
-    abstract fun bindMediaSessionProvider(impl: ExoPlayerMediaSessionProvider): MediaSessionProvider
 }
 ```
 

@@ -6,9 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
+import com.rhnxdev.hzplayer.core.util.sortFilesByType
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.domain.model.FolderItem
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.repository.FileRepository
@@ -61,8 +63,9 @@ class FileBrowserViewModel @Inject constructor(
         loadRoots()
         viewModelScope.launch {
             val savedSort = userPrefs.getSortType(sortKey).first()
+            val savedDir = userPrefs.getSortDirection(sortKey).first()
             val savedMediaMode = userPrefs.fileBrowserMediaMode.first()
-            _uiState.update { it.copy(sortType = savedSort, isMediaMode = savedMediaMode) }
+            _uiState.update { it.copy(sortType = savedSort, sortDirection = savedDir, isMediaMode = savedMediaMode) }
         }
         viewModelScope.launch {
             userPrefs.showHiddenFiles.collect { hidden ->
@@ -199,10 +202,11 @@ class FileBrowserViewModel @Inject constructor(
     fun onSearchQueryChanged(query: String) = search.queryChanged(query)
     fun onClearSearch() = search.clear()
 
-    fun onSortChanged(sort: SortType) {
-        _uiState.update { it.copy(sortType = sort) }
+    fun onSortChanged(sort: SortType, direction: SortDirection = SortDirection.ASCENDING) {
+        _uiState.update { it.copy(sortType = sort, sortDirection = direction) }
         viewModelScope.launch {
             userPrefs.setSortType(sortKey, sort)
+            userPrefs.setSortDirection(sortKey, direction)
         }
         // Re-apply sort to current visible layers
         reapplySort()
@@ -268,7 +272,14 @@ class FileBrowserViewModel @Inject constructor(
             val cached = cache.get(path)
             if (cached != null) {
                 val enriched = enrichItemsWithPlaybackMetadata(cached)
-                val sorted = sortItems(enriched, _uiState.value.sortType)
+                val sorted = sortFilesByType(
+                    enriched,
+                    _uiState.value.sortType,
+                    isDirectory = { it.isDirectory },
+                    name = { it.name },
+                    dateModified = { it.dateModified },
+                    size = { it.fileSize },
+                )
                 updateLayer(layerIndex) {
                     it.copy(items = sorted, isEmpty = cached.isEmpty(), error = null, isLoading = false)
                 }
@@ -280,7 +291,14 @@ class FileBrowserViewModel @Inject constructor(
                 fileRepository.listDirectory(path, showHidden).collect { items ->
                     cache.put(path, items)
                     val enriched = enrichItemsWithPlaybackMetadata(items)
-                    val sorted = sortItems(enriched, _uiState.value.sortType)
+                    val sorted = sortFilesByType(
+                        enriched,
+                        _uiState.value.sortType,
+                        isDirectory = { it.isDirectory },
+                        name = { it.name },
+                        dateModified = { it.dateModified },
+                        size = { it.fileSize },
+                    )
                     minDelayJob.join()
                     updateLayer(layerIndex) {
                         it.copy(items = sorted, isEmpty = items.isEmpty(), error = null, isLoading = false)
@@ -307,25 +325,16 @@ class FileBrowserViewModel @Inject constructor(
     private fun reapplySort() {
         val state = _uiState.value
         val sortedLayers = state.layers.map { layer ->
-            layer.copy(items = sortItems(layer.items, state.sortType))
+            layer.copy(items = sortFilesByType(
+                layer.items,
+                state.sortType,
+                isDirectory = { it.isDirectory },
+                name = { it.name },
+                dateModified = { it.dateModified },
+                size = { it.fileSize },
+                descending = state.sortDirection == SortDirection.DESCENDING,
+            ))
         }
         _uiState.update { it.copy(layers = sortedLayers) }
-    }
-
-    private fun sortItems(items: List<FolderItem>, sort: SortType): List<FolderItem> {
-        val (dirs, files) = items.partition { it.isDirectory }
-        val sortedDirs = when (sort) {
-            SortType.TITLE -> dirs.sortedBy { it.name.lowercase() }
-            SortType.DATE_MODIFIED -> dirs.sortedByDescending { it.dateModified }
-            SortType.FILE_SIZE -> dirs.sortedByDescending { it.fileSize }
-            else -> dirs.sortedBy { it.name.lowercase() }
-        }
-        val sortedFiles = when (sort) {
-            SortType.TITLE -> files.sortedBy { it.name.lowercase() }
-            SortType.DATE_MODIFIED -> files.sortedByDescending { it.dateModified }
-            SortType.FILE_SIZE -> files.sortedByDescending { it.fileSize }
-            else -> files.sortedBy { it.name.lowercase() }
-        }
-        return sortedDirs + sortedFiles
     }
 }

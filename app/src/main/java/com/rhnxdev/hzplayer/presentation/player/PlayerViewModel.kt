@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
+import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.VideoItem
@@ -62,6 +63,29 @@ class PlayerViewModel @Inject constructor(
      */
     val position: StateFlow<Long> = positionController.position
 
+    /**
+     * Real-time network throughput (polled during streaming). Kept out of
+     * [uiState] so the per-tick update only recomposes [NetworkSpeedChip], not
+     * the whole player screen.
+     */
+    val networkTraffic: StateFlow<NetworkTraffic> =
+        playerRepository.networkTraffic.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NetworkTraffic.DEFAULT)
+
+    private val debugController = PlayerDebugController(
+        scope = viewModelScope,
+        playerRepository = playerRepository,
+        userPreferencesRepository = userPreferencesRepository,
+        uiState = _uiState,
+        networkTrafficFlow = networkTraffic,
+    )
+
+    /**
+     * "Stats for nerds" snapshot (refreshed ~1 Hz while the debug overlay is on).
+     * Kept out of [uiState] so the poll only recomposes [DebugOverlay].
+     */
+    val debugStats: StateFlow<DebugStats> =
+        debugController.debugStats
+
     val orientationMode: StateFlow<OrientationMode> = userPreferencesRepository.orientationMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrientationMode.AUTO)
 
@@ -89,13 +113,6 @@ class PlayerViewModel @Inject constructor(
         trackCache = trackCache,
     )
 
-    private val debugController = PlayerDebugController(
-        scope = viewModelScope,
-        playerRepository = playerRepository,
-        userPreferencesRepository = userPreferencesRepository,
-        uiState = _uiState,
-    )
-
     /** Current resume preference, kept in sync from DataStore. */
     private var resumeMode: com.rhnxdev.hzplayer.domain.model.ResumeMode =
         com.rhnxdev.hzplayer.domain.model.ResumeMode.ALWAYS
@@ -111,7 +128,6 @@ class PlayerViewModel @Inject constructor(
     init {
         observePlaybackState()
         observeSubtitleStyle()
-        observeNetworkTraffic()
         observeSeekSensitivity()
         observeActiveEngine()
         observeResumeMode()
@@ -180,14 +196,6 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             userPreferencesRepository.subtitleStyle.collect { style ->
                 _uiState.update { it.copy(subtitleStyle = style) }
-            }
-        }
-    }
-
-    private fun observeNetworkTraffic() {
-        viewModelScope.launch {
-            playerRepository.networkTraffic.collect { traffic ->
-                _uiState.update { it.copy(networkTraffic = traffic) }
             }
         }
     }

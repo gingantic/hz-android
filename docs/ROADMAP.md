@@ -14,7 +14,7 @@ Gradle catalog, Hilt, Room, DataStore, Navigation Compose — all wired. See `gr
 ## Phase 2: Architecture ✅
 
 Domain models, repository interfaces, DI modules, `PreviewMedia` placeholder data.
-`domain/usecase` currently holds only `ResumeProgressUseCase` (ViewModels call repos
+`domain/usecase` is currently empty (ViewModels call repositories directly) (ViewModels call repos
 directly otherwise — documented as accepted debt in `CLEANUP_PLAN.md`).
 
 ## Phase 3: Design System ✅

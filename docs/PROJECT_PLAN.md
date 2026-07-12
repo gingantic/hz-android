@@ -36,7 +36,7 @@ three additional subsystems have been added on top:
 - ⏸ `MainActivity` extraction to `presentation/navigation/HzPlayerApp` (heavy cross-file)
 - ⏸ `ConnectionPool` per-protocol split (heavy cross-file)
 - ⏸ `VideoPlayerScreen` / `NetworkScreen` over the ~300-line file convention
-- ⏸ `domain/usecase` layer (only `ResumeProgressUseCase` exists; VMs call repos directly)
+- ⏸ `domain/usecase` layer (no use case layer; VMs call repositories directly)
 - ❌ Second playback engine (libVLC/mpv) — architecture supports it, none implemented
 - ❌ Android Auto, equalizer
 - ❌ Tests beyond mapper/cache/path unit tests + Robolectric

@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
 import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import kotlinx.coroutines.Dispatchers
@@ -37,16 +38,9 @@ class SftpBrowserClient(
                         mimeType = if (!entry.isDirectory) guessMimeType(entry.name) else null,
                     )
                 }
-                .sortedWith(compareByDescending<RemoteFileItem> { it.isDirectory }.thenBy { it.name.lowercase() })
+                .sortedRemote()
             }
         }
-
-    override suspend fun countChildren(path: String): Int = withContext(Dispatchers.IO) {
-        val ssh = ConnectionPool.borrowSftpBrowser(host, port, username, password)
-        try {
-            ssh.newSFTPClient().use { it.ls(path).count { e -> e.isDirectory } }
-        } catch (_: Exception) { 0 }
-    }
 
     override suspend fun disconnect() = withContext(Dispatchers.IO) {
         ConnectionPool.returnSftpBrowser(host, port)

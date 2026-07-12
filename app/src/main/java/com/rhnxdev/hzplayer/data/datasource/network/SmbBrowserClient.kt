@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
 import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
@@ -57,16 +58,8 @@ class SmbBrowserClient(
                         mimeType = if (!isDir) guessMimeType(name) else null,
                     )
                 }
-                .sortedWith(compareByDescending<RemoteFileItem> { it.isDirectory }.thenBy { it.name.lowercase() })
+                .sortedRemote()
         }
-
-    override suspend fun countChildren(path: String): Int = withContext(Dispatchers.IO) {
-        val normalized = normalizeRemotePath(path) ?: return@withContext 0
-        val ctx = ConnectionPool.borrowSmbBrowser(host, port, username, password)
-        try {
-            resolveDir(ctx, normalized)?.listFiles()?.size ?: 0
-        } catch (_: Exception) { 0 }
-    }
 
     override suspend fun disconnect() = withContext(Dispatchers.IO) {
         ConnectionPool.returnSmbBrowser(host, port, username, password)

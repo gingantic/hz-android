@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.domain.repository
 
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
 import com.rhnxdev.hzplayer.domain.model.SortType
 import kotlinx.coroutines.flow.Flow
@@ -21,4 +22,6 @@ interface NetworkRepository {
 
     fun getSortType(key: String): Flow<SortType>
     suspend fun setSortType(key: String, sort: SortType)
+    fun getSortDirection(key: String): Flow<SortDirection>
+    suspend fun setSortDirection(key: String, direction: SortDirection)
 }

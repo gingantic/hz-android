@@ -32,7 +32,6 @@ fun PlayerSurface(
                     view,
                     RenderViewConfig(
                         aspectRatioMode = uiState.aspectRatioMode,
-                        subtitleStyle = uiState.subtitleStyle,
                     ),
                 )
             },

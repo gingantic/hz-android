@@ -67,6 +67,8 @@ class PlayerGestureState {
 
     // Hold-to-speed
     var isHoldSpeeding by mutableStateOf(false)
+    /** Current hold-to-speed multiplier (ramps 2x→4x); drives the gain cue. */
+    var holdSpeed by mutableFloatStateOf(1f)
 }
 
 /**
@@ -158,6 +160,7 @@ fun Modifier.playerGestures(
                     holdTriggered = true
                     holdActive = true
                     state.isHoldSpeeding = true
+                    state.holdSpeed = HOLD_SPEED_MULTIPLIER
                     prevSpeed = callbacks.uiState().playbackSpeed
                     // ponytail: hold-to-speed implies watching — resume if paused
                     if (!callbacks.uiState().isPlaying) callbacks.resume()
@@ -169,6 +172,7 @@ fun Modifier.playerGestures(
                             delay(HOLD_RAMP_INTERVAL_MS)
                             if (speed >= HOLD_SPEED_CAP) break
                             speed = (speed + HOLD_RAMP_STEP).coerceAtMost(HOLD_SPEED_CAP)
+                            state.holdSpeed = speed
                             callbacks.onSetSpeed(speed)
                         }
                     }
@@ -278,6 +282,7 @@ fun Modifier.playerGestures(
             rampTimer?.cancel()
             if (holdActive) callbacks.onSetSpeed(prevSpeed)
             state.isHoldSpeeding = false
+            state.holdSpeed = 1f
             if (seekConsumed && state.seekDelta != 0L) callbacks.onSeekBy(state.seekDelta)
             state.isDragSeeking = false
             state.seekDelta = 0L

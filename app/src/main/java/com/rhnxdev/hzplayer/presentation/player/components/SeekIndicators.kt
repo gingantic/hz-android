@@ -5,34 +5,33 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rhnxdev.hzplayer.presentation.player.components.PlayerGestureState
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun SeekIndicators(
+    state: PlayerGestureState,
     positionFlow: StateFlow<Long>,
     duration: Long,
-    isDragSeeking: Boolean,
-    seekDelta: Long,
-    seekVisible: Boolean,
-    isSeekForward: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val currentPosition by positionFlow.collectAsStateWithLifecycle()
-    if (isDragSeeking) {
+    if (state.isDragSeeking) {
         DragSeekIndicator(
-            deltaMs = seekDelta,
+            deltaMs = state.seekDelta,
             currentPositionMs = currentPosition,
             durationMs = duration,
-            visible = seekVisible,
-            modifier = Modifier.fillMaxSize(),
-            isForward = isSeekForward,
+            visible = state.seekVisible,
+            modifier = modifier.fillMaxSize(),
+            isForward = state.isSeekForward,
         )
     } else {
         SeekIndicator(
-            deltaMs = seekDelta,
+            deltaMs = state.seekDelta,
             currentPositionMs = currentPosition,
-            visible = seekVisible,
-            modifier = Modifier.fillMaxSize(),
-            isForward = isSeekForward,
+            visible = state.seekVisible,
+            modifier = modifier.fillMaxSize(),
+            isForward = state.isSeekForward,
         )
     }
 }
