@@ -523,6 +523,8 @@ fun AboutDialog(
         stringResource(R.string.about_tech_room),
         stringResource(R.string.about_tech_hilt),
     )
+    val version = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+    val buildDate = "${BuildConfig.BUILD_DATE} ${BuildConfig.BUILD_TIME}"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -541,7 +543,7 @@ fun AboutDialog(
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
-                        text = stringResource(R.string.settings_version),
+                        text = version,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -564,6 +566,11 @@ fun AboutDialog(
                 Text(
                     text = stringResource(R.string.about_description),
                     style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = stringResource(R.string.about_build_date, buildDate),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 HorizontalDivider()
                 Text(

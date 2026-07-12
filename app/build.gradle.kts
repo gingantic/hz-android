@@ -19,6 +19,9 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        buildConfigField("String", "BUILD_DATE", "\"${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())}\"")
+        buildConfigField("String", "BUILD_TIME", "\"${java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())}\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
