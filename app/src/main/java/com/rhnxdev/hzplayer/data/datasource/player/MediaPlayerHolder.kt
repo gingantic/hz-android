@@ -62,14 +62,20 @@ class MediaPlayerHolder @Inject constructor(
         }
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    private val loadControl = DefaultLoadControl.Builder()
-        .setBufferDurationsMs(
-            /* minBufferMs = */ 50_000,
-            /* maxBufferMs = */ 90_000,
-            /* bufferForPlaybackMs = */ 2_500,
-            /* bufferForPlaybackAfterUserActionMs = */ 5_000
-        )
-        .build()
+    private val loadControl = run {
+        // ponytail: 90s max buffer holds tens of MB on a high-bitrate stream —
+        // too much for low-RAM SoCs. Halve it there to free memory under pressure.
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val (minMs, maxMs) = if (am.isLowRamDevice) 25_000 to 45_000 else 50_000 to 90_000
+        DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ minMs,
+                /* maxBufferMs = */ maxMs,
+                /* bufferForPlaybackMs = */ 2_500,
+                /* bufferForPlaybackAfterUserActionMs = */ 5_000
+            )
+            .build()
+    }
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     var player: ExoPlayer = buildPlayer()

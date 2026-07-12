@@ -50,11 +50,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -651,10 +653,13 @@ private fun MiniPlayerSection(
 ) {
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val currentPosition by playerViewModel.position.collectAsStateWithLifecycle()
-    val progress = if (playerState.duration > 0) {
-        (currentPosition.toFloat() / playerState.duration.toFloat())
-            .coerceIn(0f, 1f)
-    } else 0f
+    val progress: State<Float> = remember {
+        derivedStateOf {
+            if (playerState.duration > 0) {
+                (currentPosition.toFloat() / playerState.duration.toFloat()).coerceIn(0f, 1f)
+            } else 0f
+        }
+    }
     MiniPlayerBar(
         title = playerState.currentTitle ?: "",
         subtitle = playerState.currentArtist ?: "",

@@ -227,6 +227,10 @@ internal object ConnectionPool {
             .also { it.acquire() }.value
     }
 
+    fun returnSmbThumbnailContext(host: String, port: Int, user: String, pass: String) {
+        smbPool[key("smb_thumb", host, port, user, pass)]?.release() // keep alive; sweeper evicts when idle
+    }
+
     // ── WebDAV (DataSource) ──────────────────────────────────────
 
     /** Borrow a reusable [OkHttpClient] for WebDAV streaming. */

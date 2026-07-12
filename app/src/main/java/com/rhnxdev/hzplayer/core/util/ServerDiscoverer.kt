@@ -202,12 +202,10 @@ class ServerDiscoverer @Inject constructor(
     }
 
     fun cleanup() {
+        // Per-screen exit: only stop the active scan. ServerDiscoverer is a
+        // @Singleton, so cancelling discoveryScope or unregistering the network
+        // callback here would break discovery for the rest of the process.
         stopScan()
-        discoveryScope.cancel()
-        if (registerNetworkCalled) {
-            try { connectivityManager.unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
-            registerNetworkCalled = false
-        }
     }
 
     // ── Subnet Port Scanner Fallback ───────────────────────────────────

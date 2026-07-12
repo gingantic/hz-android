@@ -1,6 +1,8 @@
 package com.rhnxdev.hzplayer
 
+import android.app.ActivityManager
 import android.app.Application
+import android.content.Context
 import coil3.ImageLoader
 import java.io.File
 import coil3.PlatformContext
@@ -27,12 +29,16 @@ class HzPlayerApplication : Application(), SingletonImageLoader.Factory {
         ConnectionPool.releaseAll()
     }
 
-    override fun newImageLoader(context: PlatformContext): ImageLoader =
-        ImageLoader.Builder(context)
+    override fun newImageLoader(context: PlatformContext): ImageLoader {
+        // ponytail: 20% of RAM held Bitmaps is the single biggest memory sink on
+        // low-end SoCs; scale down so a grid of thumbnails can't OOM the process.
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memPercent = if (am.isLowRamDevice) 0.05 else 0.10
+        return ImageLoader.Builder(context)
             .crossfade(true)
             .memoryCache {
                 coil3.memory.MemoryCache.Builder()
-                    .maxSizePercent(context, 0.20)
+                    .maxSizePercent(context, memPercent)
                     .build()
             }
             .diskCache {
@@ -46,4 +52,5 @@ class HzPlayerApplication : Application(), SingletonImageLoader.Factory {
                 add(VideoFrameFetcher.Factory())
             }
             .build()
+    }
 }

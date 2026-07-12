@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,11 +27,10 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,26 +68,26 @@ fun SubtitleSelectionDialog(
         onDismiss = onDismiss,
         columnModifier = Modifier
             .fillMaxWidth()
-            // ModalBottomSheet already insets for the nav bar; don't add it again
-            // or the bottom gap is doubled.
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp),
     ) {
-            Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-            // ── Scrollable content ──
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                // ═══ Track list ═══
-                SectionHeader(
-                    title = stringResource(R.string.subtitle_tracks),
-                    expanded = tracksExpanded,
-                    onToggle = { tracksExpanded = !tracksExpanded },
-                )
-                if (tracksExpanded) {
+        // ── Scrollable content ──
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // ═══ Track list ═══
+            SectionHeader(
+                title = stringResource(R.string.subtitle_tracks),
+                expanded = tracksExpanded,
+                onToggle = { tracksExpanded = !tracksExpanded },
+            )
+            if (tracksExpanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // Off
                     TrackSelectionRow(
                         name = stringResource(R.string.subtitle_off),
@@ -102,7 +102,9 @@ fun SubtitleSelectionDialog(
                         )
                     }
 
-                    // External addition
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // External addition actions
                     ActionRow(
                         icon = Icons.Default.Add,
                         text = stringResource(R.string.add_subtitle_file),
@@ -114,77 +116,110 @@ fun SubtitleSelectionDialog(
                         onClick = onSearchOnlineClick,
                     )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-                Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            Spacer(modifier = Modifier.height(4.dp))
 
-                // ═══ Delay ═══
-                SectionHeader(
-                    title = stringResource(R.string.subtitle_delay),
-                    expanded = delayExpanded,
-                    onToggle = { delayExpanded = !delayExpanded },
-                )
-                if (delayExpanded) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+            // ═══ Delay ═══
+            SectionHeader(
+                title = stringResource(R.string.subtitle_delay),
+                expanded = delayExpanded,
+                onToggle = { delayExpanded = !delayExpanded },
+            )
+            if (delayExpanded) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = { onSubtitleDelayChange(subtitleDelayMs - 100) },
+                        enabled = subtitleDelayMs > -5000,
+                        modifier = Modifier
+                            .background(
+                                if (subtitleDelayMs > -5000) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f),
+                                CircleShape
+                            )
+                            .size(40.dp)
                     ) {
-                        TextButton(
-                            onClick = { onSubtitleDelayChange(subtitleDelayMs - 100) },
-                            enabled = subtitleDelayMs > -5000,
-                        ) {
-                            Text(text = stringResource(R.string.delay_decrease), color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                        }
+                        Text(
+                            text = "–",
+                            color = if (subtitleDelayMs > -5000) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Text(
                             text = stringResource(R.string.delay_value, subtitleDelayMs),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
                             ),
                         )
-                        TextButton(
-                            onClick = { onSubtitleDelayChange(subtitleDelayMs + 100) },
-                            enabled = subtitleDelayMs < 5000,
-                        ) {
-                            Text(text = stringResource(R.string.delay_increase), color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        TextButton(
-                            onClick = { onSubtitleDelayChange(0) },
-                            enabled = subtitleDelayMs != 0L,
-                        ) {
+                        if (subtitleDelayMs != 0L) {
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = stringResource(R.string.reset),
-                                color = if (subtitleDelayMs != 0L) MaterialTheme.colorScheme.primary else Color.Gray,
-                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .clickable { onSubtitleDelayChange(0) }
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
                             )
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // ═══ Bottom actions ═══
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    TextButton(onClick = onStyleClick) {
-                        Text(text = stringResource(R.string.style), color = MaterialTheme.colorScheme.primary)
-                    }
-                    TextButton(onClick = onDismiss) {
-                        Text(text = stringResource(R.string.close), color = Color.White.copy(alpha = 0.7f))
+                    IconButton(
+                        onClick = { onSubtitleDelayChange(subtitleDelayMs + 100) },
+                        enabled = subtitleDelayMs < 5000,
+                        modifier = Modifier
+                            .background(
+                                if (subtitleDelayMs < 5000) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f),
+                                CircleShape
+                            )
+                            .size(40.dp)
+                    ) {
+                        Text(
+                            text = "+",
+                            color = if (subtitleDelayMs < 5000) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // ═══ Bottom actions ═══
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+            ) {
+                TextButton(onClick = onStyleClick) {
+                    Text(
+                        text = stringResource(R.string.style),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -203,7 +238,7 @@ private fun SectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit
         Text(
             text = title,
             style = MaterialTheme.typography.titleSmall.copy(
-                color = Color.White.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 fontWeight = FontWeight.Medium,
             ),
         )
@@ -211,7 +246,7 @@ private fun SectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit
         Icon(
             imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
             contentDescription = if (expanded) stringResource(R.string.collapse) else stringResource(R.string.expand),
-            tint = Color.Gray,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
             modifier = Modifier.size(20.dp),
         )
     }
@@ -226,24 +261,26 @@ private fun ActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 16.dp),
+            .padding(vertical = 12.dp, horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(20.dp),
         )
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
             ),
         )
     }
 }
+
