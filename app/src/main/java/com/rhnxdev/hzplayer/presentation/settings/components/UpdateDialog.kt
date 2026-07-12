@@ -40,7 +40,6 @@ import java.io.File
 @Composable
 fun UpdateDialog(
     updateInfo: UpdateChecker.UpdateInfo,
-    githubToken: String = "",
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -149,7 +148,6 @@ fun UpdateDialog(
                             val success = UpdateChecker.downloadApk(
                                 downloadUrl = updateInfo.downloadUrl,
                                 destinationFile = apkFile,
-                                token = githubToken,
                                 onProgress = { progress ->
                                     downloadProgress = progress
                                 }

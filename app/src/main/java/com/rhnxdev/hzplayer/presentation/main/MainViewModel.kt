@@ -32,7 +32,7 @@ class MainViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = ThemeMode.DARK,
+            initialValue = ThemeMode.SYSTEM,
         )
 
     val appColorArgb: StateFlow<Int> = userPreferencesRepository.appColorArgb

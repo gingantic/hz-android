@@ -19,7 +19,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.rhnxdev.hzplayer.presentation.settings.components.UpdateDialog
-import com.rhnxdev.hzplayer.presentation.settings.components.GithubTokenDialog
 import kotlinx.coroutines.launch
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
@@ -71,12 +70,10 @@ fun SettingsScreen(
     var isCheckingUpdates by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<com.rhnxdev.hzplayer.core.util.UpdateChecker.UpdateInfo?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
-    var showGithubTokenDialog by remember { mutableStateOf(false) }
 
 
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
     val appColorArgb by settingsViewModel.appColorArgb.collectAsStateWithLifecycle()
-    val githubToken by settingsViewModel.githubToken.collectAsStateWithLifecycle()
     val dynamicColors by settingsViewModel.useDynamicColors.collectAsStateWithLifecycle()
 
     val currentApiKey by settingsViewModel.openSubtitlesApiKey.collectAsStateWithLifecycle()
@@ -132,19 +129,7 @@ fun SettingsScreen(
     if (showUpdateDialog && updateInfo != null) {
         UpdateDialog(
             updateInfo = updateInfo!!,
-            githubToken = githubToken,
             onDismiss = { showUpdateDialog = false }
-        )
-    }
-
-    if (showGithubTokenDialog) {
-        GithubTokenDialog(
-            currentToken = githubToken,
-            onDismiss = { showGithubTokenDialog = false },
-            onSave = { token ->
-                settingsViewModel.saveGithubToken(token)
-                showGithubTokenDialog = false
-            }
         )
     }
 
@@ -202,6 +187,7 @@ fun SettingsScreen(
                                     ThemeMode.LIGHT -> stringResource(R.string.theme_light)
                                     ThemeMode.DARK -> stringResource(R.string.theme_dark)
                                     ThemeMode.VOID -> stringResource(R.string.theme_void)
+                                    ThemeMode.SYSTEM -> stringResource(R.string.theme_system)
                                 },
                                 onClick = { showThemeDialog = true },
                             )
@@ -414,18 +400,13 @@ fun SettingsScreen(
                                 onCheckedChange = { settingsViewModel.saveDebugMode(it) },
                             )
                             SettingsItem(
-                                title = stringResource(R.string.settings_github_token),
-                                subtitle = if (githubToken.isEmpty()) stringResource(R.string.settings_github_token_sub) else "••••••••••••••••",
-                                onClick = { showGithubTokenDialog = true }
-                            )
-                            SettingsItem(
                                 title = stringResource(R.string.settings_check_updates),
                                 subtitle = if (isCheckingUpdates) stringResource(R.string.update_checking) else stringResource(R.string.settings_check_updates_sub),
                                 enabled = !isCheckingUpdates,
                                 onClick = {
                                     isCheckingUpdates = true
                                     coroutineScope.launch {
-                                        val info = com.rhnxdev.hzplayer.core.util.UpdateChecker.checkForUpdates(githubToken)
+                                        val info = com.rhnxdev.hzplayer.core.util.UpdateChecker.checkForUpdates()
                                         isCheckingUpdates = false
                                         if (info != null) {
                                             updateInfo = info
@@ -442,7 +423,7 @@ fun SettingsScreen(
                             )
                             SettingsItem(
                                 title = stringResource(R.string.settings_about),
-                                subtitle = stringResource(R.string.settings_version),
+                                subtitle = "Version ${com.rhnxdev.hzplayer.BuildConfig.VERSION_NAME}",
                                 onClick = { showAboutDialog = true },
                             )
                             SettingsItem(

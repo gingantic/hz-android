@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.presentation.settings.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -79,9 +80,26 @@ fun AboutDialog(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                 )
+                val context = androidx.compose.ui.platform.LocalContext.current
                 Text(
                     text = stringResource(R.string.about_description),
                     style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = "GitHub: https://github.com/gingantic/hz-android",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        try {
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://github.com/gingantic/hz-android")
+                            )
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                 )
                 Text(
                     text = stringResource(R.string.about_build_date, buildDate),

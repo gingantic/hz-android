@@ -199,7 +199,8 @@
     <string name="theme_selection_title">Select Theme</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
-    <string name="theme_void">Void</string>
+    <string name="theme_void">Void (AMOLED)</string>
+    <string name="theme_system">Auto (System)</string>
     <string name="orientation_selection_title">Screen Orientation</string>
     <string name="orientation_auto">Auto (follow sensor)</string>
     <string name="orientation_portrait">Portrait</string>

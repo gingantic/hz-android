@@ -122,9 +122,11 @@ fun HzPlayerTheme(
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val isSystemDark = isSystemInDarkTheme()
     val isDark = when (themeMode) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK, ThemeMode.VOID -> true
+        ThemeMode.SYSTEM -> isSystemDark
     }
 
     val baseColorScheme = when {
@@ -134,6 +136,7 @@ fun HzPlayerTheme(
         }
         themeMode == ThemeMode.VOID -> VoidColorScheme
         themeMode == ThemeMode.DARK -> DarkColorScheme
+        themeMode == ThemeMode.SYSTEM -> if (isSystemDark) DarkColorScheme else LightColorScheme
         else -> LightColorScheme
     }
 
