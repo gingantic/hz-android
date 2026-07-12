@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -38,12 +39,18 @@ class AudioBrowserViewModel @Inject constructor(
     /** Active load job so a forced refresh cancels the previous collection. */
     private var loadJob: kotlinx.coroutines.Job? = null
 
+    /** Sub-jobs for album/artist re-fetch on min-duration change (cancelled before re-launch). */
+    private var albumRefetchJob: kotlinx.coroutines.Job? = null
+    private var artistRefetchJob: kotlinx.coroutines.Job? = null
+
     init {
         loadAll()
     }
 
     private fun loadAll(forceRefresh: Boolean = false) {
         loadJob?.cancel()
+        albumRefetchJob?.cancel()
+        artistRefetchJob?.cancel()
         loadJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(isLoadingSongs = true, isLoadingAlbums = true, isLoadingArtists = true)
@@ -67,11 +74,9 @@ class AudioBrowserViewModel @Inject constructor(
                     }
             }
 
-            // Reactively re-filter when min duration preference changes. Albums and
-            // artists are derived from (filtered) songs, so re-group on each change.
-            // Each source gets its own collector — chaining getAlbums().collect {}
-            // before getArtists().collect {} starves artists, because Room flows never
-            // complete and the second collection is never reached.
+            // Reactively re-filter songs when min duration changes. Albums/artists
+            // are re-fetched (and their prior refetch job cancelled) so we never
+            // stack collectors across preference emissions.
             val minDurationJob = launch {
                 userPrefs.minSongDurationSecs.collect { minSecs ->
                     cachedMinSecs = minSecs
@@ -79,12 +84,14 @@ class AudioBrowserViewModel @Inject constructor(
                     val filtered = Companion.filterSongs(currentSongs, "", minSecs)
                     _uiState.update { it.copy(filteredSongs = filtered) }
 
-                    launch {
+                    albumRefetchJob?.cancel()
+                    artistRefetchJob?.cancel()
+                    albumRefetchJob = launch {
                         audioRepository.getAlbums(forceRefresh = true, minDurationSecs = minSecs)
                             .catch { /* ignore */ }
                             .collect { albums -> _uiState.update { it.copy(albums = albums) } }
                     }
-                    launch {
+                    artistRefetchJob = launch {
                         audioRepository.getArtists(forceRefresh = true, minDurationSecs = minSecs)
                             .catch { /* ignore */ }
                             .collect { artists -> _uiState.update { it.copy(artists = artists) } }
@@ -95,21 +102,17 @@ class AudioBrowserViewModel @Inject constructor(
             val albumJob = launch {
                 audioRepository.getAlbums(forceRefresh, minDurationSecs = cachedMinSecs)
                     .catch { /* fallback handled below */ }
-                    .collect { albums ->
-                        if (albums.isNotEmpty()) {
-                            _uiState.update { it.copy(albums = albums, isLoadingAlbums = false) }
-                        }
-                    }
+                    // Clear the spinner on the first emission even if the list is empty
+                    // (an empty library must not spin forever).
+                    .onEach { _uiState.update { it.copy(isLoadingAlbums = false) } }
+                    .collect { albums -> _uiState.update { it.copy(albums = albums) } }
             }
 
             val artistJob = launch {
                 audioRepository.getArtists(forceRefresh, minDurationSecs = cachedMinSecs)
                     .catch { /* fallback handled below */ }
-                    .collect { artists ->
-                        if (artists.isNotEmpty()) {
-                            _uiState.update { it.copy(artists = artists, isLoadingArtists = false) }
-                        }
-                    }
+                    .onEach { _uiState.update { it.copy(isLoadingArtists = false) } }
+                    .collect { artists -> _uiState.update { it.copy(artists = artists) } }
             }
 
             // If after 2s any collection is still loading (edge-case fallback), force preview

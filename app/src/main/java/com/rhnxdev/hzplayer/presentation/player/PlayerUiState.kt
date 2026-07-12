@@ -2,9 +2,7 @@ package com.rhnxdev.hzplayer.presentation.player
 
 import android.net.Uri
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
-import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind
-import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.VideoItem
@@ -43,7 +41,6 @@ data class PlayerUiState(
     val playerLocked: Boolean = false,
     val errorMessage: String? = null,
     val errorKind: PlaybackErrorKind? = null,
-    val networkTraffic: NetworkTraffic = NetworkTraffic.DEFAULT,
     val seekSensitivity: Float = 1.0f,
     val aspectRatioMode: AspectRatioMode = AspectRatioMode.AUTO,
     val useSurfaceView: Boolean = true,
@@ -61,7 +58,6 @@ data class PlayerUiState(
     /** True if the active MediaItem declares `drmConfiguration` (Widevine L1 etc.). */
     val drmSessionActive: Boolean = false,
     val debugMode: Boolean = false,
-    val debugStats: DebugStats = DebugStats(),
     val debugOverlayVisible: Boolean = false,
     /** Active playback engine — drives the surface selection in [VideoPlayerScreen]. */
     val activeEngineType: EngineType = EngineType.EXO_PLAYER,

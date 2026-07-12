@@ -78,6 +78,8 @@ fun PlayerControlsOverlay(
     uiState: PlayerUiState,
     /** High-frequency playback position; see [PlayerViewModel.position]. */
     positionFlow: StateFlow<Long>,
+    /** Real-time throughput; collected only inside [NetworkSpeedChip]. */
+    networkTrafficFlow: StateFlow<NetworkTraffic>,
     title: String?,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
@@ -101,8 +103,10 @@ fun PlayerControlsOverlay(
     Box(
         modifier = modifier.fillMaxSize().pointerInput(Unit) {
             awaitPointerEventScope {
-                awaitPointerEvent()
-                onInteract()
+                while (true) {
+                    awaitPointerEvent()
+                    onInteract()
+                }
             }
         },
     ) {
@@ -141,7 +145,7 @@ fun PlayerControlsOverlay(
 
             // Network speed indicator — only for remote streams, not local files
             if (uiState.currentPlaybackUri?.let { isRemoteUri(it) } == true) {
-                NetworkSpeedChip(uiState.networkTraffic)
+                NetworkSpeedChip(networkTrafficFlow)
             }
 
             Spacer(modifier = Modifier.width(Spacing.xs))
@@ -377,7 +381,8 @@ fun PlayerControlsOverlay(
 }
 
 @Composable
-private fun NetworkSpeedChip(traffic: NetworkTraffic) {
+private fun NetworkSpeedChip(trafficFlow: StateFlow<NetworkTraffic>) {
+    val traffic by trafficFlow.collectAsStateWithLifecycle()
     Text(
         text = stringResource(R.string.network_speed_format, formatSpeed(traffic.speedDown)),
         color = Color.White.copy(alpha = 0.85f),
@@ -441,6 +446,7 @@ private fun PlayerControlsOverlayPreview() {
                     duration = 369000,
                 ),
                 positionFlow = MutableStateFlow(0L),
+                networkTrafficFlow = MutableStateFlow(NetworkTraffic.DEFAULT),
                 title = "Blade Runner 2049 - Final Cut (2017)",
                 onBack = {},
                 onPlayPause = {},

@@ -68,6 +68,7 @@ import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.domain.model.FolderItem
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
@@ -131,7 +132,7 @@ fun FileBrowserScreen(
                         androidx.compose.material3.DropdownMenuItem(
                             text = { androidx.compose.material3.Text(label) },
                             onClick = {
-                                viewModel.onSortChanged(type)
+                                viewModel.onSortChanged(type, uiState.sortDirection)
                                 showSortMenu = false
                             },
                             leadingIcon = if (uiState.sortType == type) {
@@ -144,6 +145,27 @@ fun FileBrowserScreen(
                             } else null,
                         )
                     }
+                    androidx.compose.material3.HorizontalDivider()
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { androidx.compose.material3.Text(stringResource(R.string.sort_ascending)) },
+                        onClick = {
+                            viewModel.onSortChanged(uiState.sortType, SortDirection.ASCENDING)
+                            showSortMenu = false
+                        },
+                        leadingIcon = if (uiState.sortDirection == SortDirection.ASCENDING) {
+                            { androidx.compose.material3.Icon(Icons.Filled.Check, null) }
+                        } else null,
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { androidx.compose.material3.Text(stringResource(R.string.sort_descending)) },
+                        onClick = {
+                            viewModel.onSortChanged(uiState.sortType, SortDirection.DESCENDING)
+                            showSortMenu = false
+                        },
+                        leadingIcon = if (uiState.sortDirection == SortDirection.DESCENDING) {
+                            { androidx.compose.material3.Icon(Icons.Filled.Check, null) }
+                        } else null,
+                    )
                 }
             }
         },

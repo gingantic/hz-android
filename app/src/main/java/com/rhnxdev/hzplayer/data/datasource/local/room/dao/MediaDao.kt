@@ -32,12 +32,6 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE mediaType = 'audio' AND artist = :artistName")
     fun getSongsByArtist(artistName: String): Flow<List<MediaEntity>>
 
-    @Query("SELECT DISTINCT album, artist, albumArtUri FROM media WHERE mediaType = 'audio' AND album IS NOT NULL ORDER BY album")
-    fun getAlbums(): Flow<List<AlbumProjection>>
-
-    @Query("SELECT DISTINCT artist FROM media WHERE mediaType = 'audio' AND artist IS NOT NULL ORDER BY artist")
-    fun getArtists(): Flow<List<ArtistProjection>>
-
     @Query("SELECT * FROM media WHERE title LIKE '%' || :query || '%'")
     fun search(query: String): Flow<List<MediaEntity>>
 
@@ -74,13 +68,3 @@ interface MediaDao {
     @Query("DELETE FROM media WHERE mediaType = 'audio'")
     suspend fun deleteAudio()
 }
-
-data class AlbumProjection(
-    val album: String,
-    val artist: String?,
-    val albumArtUri: String?,
-)
-
-data class ArtistProjection(
-    val artist: String,
-)

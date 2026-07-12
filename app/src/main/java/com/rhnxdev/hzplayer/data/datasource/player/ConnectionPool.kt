@@ -9,6 +9,7 @@ import jcifs.smb.NtlmPasswordAuthenticator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -18,7 +19,8 @@ import okhttp3.OkHttpClient
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
+import net.schmizz.sshj.transport.verification.HostKeyVerifier
+import java.io.File
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -34,6 +36,16 @@ import java.util.concurrent.TimeUnit
  * to reuse the same control connection across directory listings.
  */
 internal object ConnectionPool {
+
+    /**
+     * App-private file for the SFTP TOFU known-hosts store. The [Application]
+     * sets this at startup (see [com.rhnxdev.hzplayer.HzPlayerApplication]);
+     * until then a temp file is used as a fallback.
+     */
+    var sftpKnownHostsFile: File? = null
+
+    private fun sftpHostKeyVerifier(): HostKeyVerifier =
+        SftpTofuVerifier(sftpKnownHostsFile ?: File(System.getProperty("java.io.tmpdir"), "hz_sftp_known_hosts"))
 
     /** Idle connections older than this are evicted by the sweeper. */
     private const val IDLE_TIMEOUT_MS = 5 * 60_000L
@@ -77,6 +89,11 @@ internal object ConnectionPool {
     }
 
     init { ensureSweeper() }
+
+    /** Tear down the sweeper scope. Called from the Application's onTerminate. */
+    fun shutdown() {
+        evictionScope.cancel()
+    }
 
     private fun evictIdle() {
         ftpPool.evictIdle { c -> try { c.logout() } catch (_: Exception) {}; try { c.disconnect() } catch (_: Exception) {} }
@@ -166,7 +183,7 @@ internal object ConnectionPool {
             try { it.value.disconnect() } catch (_: Exception) {}
         }
         val ssh = SSHClient().apply {
-            addHostKeyVerifier(PromiscuousVerifier())
+            addHostKeyVerifier(sftpHostKeyVerifier())
             connectTimeout = 15000
             connect(host, port)
             authPassword(user, pass)
@@ -199,53 +216,15 @@ internal object ConnectionPool {
     /** Borrow (or create) a shared [CIFSContext] for the given server. */
     fun borrowSmbContext(host: String, port: Int, user: String, pass: String): CIFSContext {
         val k = key("smb", host, port, user, pass)
-        return smbPool.getOrPut(k) {
-            val props = Properties().apply {
-                setProperty("jcifs.smb.client.minVersion", "SMB202")
-                setProperty("jcifs.smb.client.maxVersion", "SMB311")
-                setProperty("jcifs.smb.client.responseTimeout", "15000")
-                setProperty("jcifs.smb.client.soTimeout", "15000")
-                setProperty("jcifs.smb.client.dfs.disabled", "true")
-                setProperty("jcifs.smb.client.signingEnforced", "true")
-                setProperty("jcifs.resolveOrder", "DNS")
-                setProperty("jcifs.encoding", "UTF-8")
-            }
-            val base = BaseContext(PropertyConfiguration(props))
-            val ctx = if (user.isNotEmpty()) {
-                val auth = NtlmPasswordAuthenticator("", user, pass)
-                base.withCredentials(auth)
-            } else {
-                base.withGuestCrendentials()
-            }
-            android.util.Log.d("ConnectionPool", "SMB new context $k")
-            Timed(ctx)
-        }.also { it.acquire() }.value
+        return smbPool.getOrPut(k) { Timed(newSmbContext(host, user, pass, 15000, 15000, k)) }
+            .also { it.acquire() }.value
     }
 
     /** Borrow (or create) a shared [CIFSContext] for remote SMB thumbnails with tight timeouts. */
     fun borrowSmbThumbnailContext(host: String, port: Int, user: String, pass: String): CIFSContext {
         val k = key("smb_thumb", host, port, user, pass)
-        return smbPool.getOrPut(k) {
-            val props = Properties().apply {
-                setProperty("jcifs.smb.client.minVersion", "SMB202")
-                setProperty("jcifs.smb.client.maxVersion", "SMB311")
-                setProperty("jcifs.smb.client.responseTimeout", "10000") // 10 seconds timeout for thumbnails
-                setProperty("jcifs.smb.client.soTimeout", "10000")       // 10 seconds socket timeout for thumbnails
-                setProperty("jcifs.smb.client.dfs.disabled", "true")
-                setProperty("jcifs.smb.client.signingEnforced", "true")
-                setProperty("jcifs.resolveOrder", "DNS")
-                setProperty("jcifs.encoding", "UTF-8")
-            }
-            val base = BaseContext(PropertyConfiguration(props))
-            val ctx = if (user.isNotEmpty()) {
-                val auth = NtlmPasswordAuthenticator("", user, pass)
-                base.withCredentials(auth)
-            } else {
-                base.withGuestCrendentials()
-            }
-            android.util.Log.d("ConnectionPool", "SMB new thumbnail context $k")
-            Timed(ctx)
-        }.also { it.acquire() }.value
+        return smbPool.getOrPut(k) { Timed(newSmbContext(host, user, pass, 10000, 10000, k)) }
+            .also { it.acquire() }.value
     }
 
     // ── WebDAV (DataSource) ──────────────────────────────────────
@@ -318,7 +297,7 @@ internal object ConnectionPool {
         val k = browserKey(host, port, "sftp")
         return sftpBrowserPool.getOrPut(k) {
             SSHClient().apply {
-                addHostKeyVerifier(PromiscuousVerifier())
+                addHostKeyVerifier(sftpHostKeyVerifier())
                 connectTimeout = 10000
                 connect(host, port)
                 try {
@@ -341,25 +320,40 @@ internal object ConnectionPool {
 
     fun borrowSmbBrowser(host: String, port: Int, user: String, pass: String): CIFSContext {
         val k = key("smb-brw", host, port, user, pass)
-        return smbBrowserPool.getOrPut(k) {
-            val props = Properties().apply {
-                setProperty("jcifs.smb.client.minVersion", "SMB202")
-                setProperty("jcifs.smb.client.maxVersion", "SMB311")
-                setProperty("jcifs.smb.client.responseTimeout", "10000")
-                setProperty("jcifs.smb.client.soTimeout", "10000")
-                setProperty("jcifs.smb.client.dfs.disabled", "true")
-                setProperty("jcifs.smb.client.signingEnforced", "true")
-                setProperty("jcifs.resolveOrder", "DNS")
-                setProperty("jcifs.encoding", "UTF-8")
-            }
-            val base = BaseContext(PropertyConfiguration(props))
-            if (user.isNotEmpty()) {
-                val auth = NtlmPasswordAuthenticator("", user, pass)
-                base.withCredentials(auth)
-            } else {
-                base.withGuestCrendentials()
-            }
+        return smbBrowserPool.getOrPut(k) { newSmbContext(host, user, pass, 10000, 10000, k) }
+    }
+
+    /**
+     * Build a [CIFSContext] with the shared jcifs property set, varying only the
+     * response/socket timeouts. Auth uses the given credentials, or guest access
+     * when the username is empty. Used by all three SMB borrow paths.
+     */
+    private fun newSmbContext(
+        host: String,
+        user: String,
+        pass: String,
+        responseTimeout: Int,
+        soTimeout: Int,
+        k: String,
+    ): CIFSContext {
+        val props = Properties().apply {
+            setProperty("jcifs.smb.client.minVersion", "SMB202")
+            setProperty("jcifs.smb.client.maxVersion", "SMB311")
+            setProperty("jcifs.smb.client.responseTimeout", responseTimeout.toString())
+            setProperty("jcifs.smb.client.soTimeout", soTimeout.toString())
+            setProperty("jcifs.smb.client.dfs.disabled", "true")
+            setProperty("jcifs.smb.client.signingEnforced", "true")
+            setProperty("jcifs.resolveOrder", "DNS")
+            setProperty("jcifs.encoding", "UTF-8")
         }
+        val base = BaseContext(PropertyConfiguration(props))
+        val ctx = if (user.isNotEmpty()) {
+            base.withCredentials(NtlmPasswordAuthenticator("", user, pass))
+        } else {
+            base.withGuestCrendentials()
+        }
+        android.util.Log.d("ConnectionPool", "SMB new context $k")
+        return ctx
     }
 
     // ponytail: borrow keys with the real password (line 329), so return must match

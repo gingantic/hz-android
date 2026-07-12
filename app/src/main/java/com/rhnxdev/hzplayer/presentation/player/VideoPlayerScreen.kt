@@ -80,7 +80,8 @@ import android.view.WindowManager
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.presentation.player.components.PlaybackErrorOverlay
-import com.rhnxdev.hzplayer.presentation.player.components.SeekIndicators
+import com.rhnxdev.hzplayer.presentation.player.components.GestureCueIndicators
+import com.rhnxdev.hzplayer.presentation.player.components.PlayerGestureState
 import com.rhnxdev.hzplayer.presentation.player.components.UnlockPill
 import com.rhnxdev.hzplayer.presentation.player.components.pauseRenderView
 import com.rhnxdev.hzplayer.presentation.player.components.resumeRenderView
@@ -92,9 +93,7 @@ import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.presentation.player.components.DebugOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerControlsOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.AudioSelectionDialog
-import com.rhnxdev.hzplayer.presentation.player.components.SlideIndicator
 import com.rhnxdev.hzplayer.presentation.player.components.SlideType
-import com.rhnxdev.hzplayer.presentation.player.components.PlayerGestureState
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerGestureCallbacks
 import com.rhnxdev.hzplayer.presentation.player.components.playerGestures
 import com.rhnxdev.hzplayer.presentation.player.components.SpeedSelectionDialog
@@ -143,7 +142,6 @@ fun VideoPlayerScreen(
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showUnlockOverlay by remember { mutableStateOf(false) }
     var hudInteractionTick by remember { mutableLongStateOf(0L) }
-    var holdGainedMs by remember { mutableLongStateOf(0L) }
     val gestureCallbacks = remember(viewModel) {
         PlayerGestureCallbacks(
             onSetSpeed = viewModel::onSetSpeed,
@@ -173,37 +171,6 @@ fun VideoPlayerScreen(
             }
         } else {
             onDispose {}
-        }
-    }
-
-    // Auto-hide the indicators after the last gesture. Use a tick so re-showing
-    // while already visible (e.g. double-tap twice) re-arms the timer instead of
-    // leaving the pill stuck.
-    LaunchedEffect(gestureState.seekShowTick) {
-        if (gestureState.seekShowTick > 0 && !gestureState.isDragSeeking) {
-            delay(1200)
-            gestureState.seekVisible = false
-            gestureState.seekDelta = 0L
-        }
-    }
-
-    LaunchedEffect(gestureState.slideShowCount) {
-        if (gestureState.slideVisible) {
-            delay(1000)
-            gestureState.slideVisible = false
-        }
-    }
-
-    // Accumulate real time while hold-to-speed is engaged. 2x → 1 extra
-    // second per real second (2x - 1 = gained ratio).
-    LaunchedEffect(gestureState.isHoldSpeeding) {
-        if (!gestureState.isHoldSpeeding) {
-            holdGainedMs = 0L
-            return@LaunchedEffect
-        }
-        while (gestureState.isHoldSpeeding) {
-            delay(250)
-            holdGainedMs += (250 * (2f - 1)).toLong()
         }
     }
 
@@ -361,6 +328,7 @@ fun VideoPlayerScreen(
                     PlayerControlsOverlay(
                         uiState = uiState,
                         positionFlow = viewModel.position,
+                        networkTrafficFlow = viewModel.networkTraffic,
                         title = uiState.currentTitle,
                         onBack = onBack,
                         onPlayPause = viewModel::onPlayPause,
@@ -483,50 +451,12 @@ fun VideoPlayerScreen(
                     )
                 }
 
-                // Hold-to-speed visual cue (above HUD, below slide/seek indicators)
-                AnimatedVisibility(
-                    visible = gestureState.isHoldSpeeding,
-                    modifier = Modifier.fillMaxSize(),
-                    enter = fadeIn(animationSpec = tween(120)),
-                    exit = fadeOut(animationSpec = tween(200)),
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.CenterEnd,
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .padding(end = 24.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color.Black.copy(alpha = 0.6f))
-                                .padding(horizontal = 18.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = "Hold · ${"%.1f".format(uiState.playbackSpeed)}x  +${formatDuration(holdGainedMs)}",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
-                            )
-                        }
-                    }
-                }
-
-                SeekIndicators(
+                // Gesture cues: seek / slide / hold-to-speed. Reads gestureState
+                // internally so per-pointer-move updates recompose only this leaf.
+                GestureCueIndicators(
+                    state = gestureState,
                     positionFlow = viewModel.position,
                     duration = uiState.duration,
-                    isDragSeeking = gestureState.isDragSeeking,
-                    seekDelta = gestureState.seekDelta,
-                    seekVisible = gestureState.seekVisible,
-                    isSeekForward = gestureState.isSeekForward,
-                )
-
-                // Slide indicator (brightness / volume)
-                SlideIndicator(
-                    value = gestureState.slideValue,
-                    type = gestureState.slideType,
-                    visible = gestureState.slideVisible,
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -543,8 +473,9 @@ fun VideoPlayerScreen(
 
                 // Debug overlay (stats for nerds) — floating top-right
                 if (uiState.debugOverlayVisible) {
+                    val debugStats by viewModel.debugStats.collectAsStateWithLifecycle()
                     DebugOverlay(
-                        stats = uiState.debugStats,
+                        stats = debugStats,
                         onDismiss = { viewModel.onToggleDebugOverlay() },
                         modifier = Modifier.fillMaxSize(),
                     )

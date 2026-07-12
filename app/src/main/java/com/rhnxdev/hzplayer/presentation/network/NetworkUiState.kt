@@ -4,6 +4,7 @@ import com.rhnxdev.hzplayer.core.components.BreadcrumbItem
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import androidx.compose.runtime.Immutable
 
@@ -40,6 +41,7 @@ data class NetworkUiState(
     /** Layers in order: index 0 = root, last = topmost visible directory */
     val remoteLayers: List<RemoteDirectoryLayer> = emptyList(),
     val sortType: SortType = SortType.TITLE,
+    val sortDirection: SortDirection = SortDirection.ASCENDING,
     val isMediaMode: Boolean = false,
     val isHomeListView: Boolean = false,
 )

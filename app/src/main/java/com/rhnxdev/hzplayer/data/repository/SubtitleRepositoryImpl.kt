@@ -40,12 +40,18 @@ class SubtitleRepositoryImpl @Inject constructor(
                 ?: return Result.failure(Exception("Failed to download subtitle content"))
 
             val cacheDir = File(appContext.cacheDir, "subtitles").also { it.mkdirs() }
+            // API-supplied fileName is hostile: strip any path segments so a
+            // crafted "../../evil.srt" can't escape cacheDir.
             val outputName = fileName.substringAfterLast('/').substringBefore('?').let { name ->
                 if (name.isBlank()) "subtitle_${fileId}.srt"
                 else if (!name.contains('.')) "$name.srt"
                 else name
             }
             val outputFile = File(cacheDir, outputName)
+            // ponytail: guard against canonical-path escape; cheap and fails closed.
+            require(outputFile.canonicalPath.startsWith(cacheDir.canonicalPath + File.separator)) {
+                "Refusing subtitle write outside cacheDir: ${outputFile.path}"
+            }
             outputFile.writeBytes(bytes)
 
             Result.success(outputFile.toUri())

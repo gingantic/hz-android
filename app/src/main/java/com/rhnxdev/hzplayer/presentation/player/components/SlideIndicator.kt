@@ -30,14 +30,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.presentation.player.components.PlayerGestureState
 
 enum class SlideType { BRIGHTNESS, VOLUME }
 
 @Composable
 fun SlideIndicator(
-    value: Float,        // 0..1
-    type: SlideType,
-    visible: Boolean,
+    state: PlayerGestureState,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -45,7 +44,7 @@ fun SlideIndicator(
         contentAlignment = Alignment.Center,
     ) {
         AnimatedVisibility(
-            visible = visible,
+            visible = state.slideVisible,
             enter = fadeIn(animationSpec = tween(120)),
             exit = fadeOut(animationSpec = tween(300)),
         ) {
@@ -57,7 +56,7 @@ fun SlideIndicator(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                when (type) {
+                when (state.slideType) {
                     SlideType.BRIGHTNESS -> BrightnessIcon(
                         modifier = Modifier.size(22.dp),
                         tint = Color.White,
@@ -73,7 +72,7 @@ fun SlideIndicator(
                 }
 
                 LinearProgressIndicator(
-                    progress = { value.coerceIn(0f, 1f) },
+                    progress = { state.slideValue.coerceIn(0f, 1f) },
                     modifier = Modifier.width(120.dp),
                     color = Color.White,
                     trackColor = Color.White.copy(alpha = 0.25f),
@@ -83,7 +82,7 @@ fun SlideIndicator(
                 Spacer(modifier = Modifier.width(4.dp))
 
                 Text(
-                    text = "${(value * 100).toInt()}%",
+                    text = "${(state.slideValue * 100).toInt()}%",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,

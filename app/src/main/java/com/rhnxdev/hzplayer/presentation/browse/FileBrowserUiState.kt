@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.presentation.browse
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.rhnxdev.hzplayer.core.components.BreadcrumbItem
 import com.rhnxdev.hzplayer.domain.model.FolderItem
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 
 import androidx.compose.runtime.Immutable
@@ -40,6 +41,7 @@ data class FileBrowserUiState(
     /** Layers in order: index 0 = first directory, last = topmost visible */
     val layers: List<DirectoryLayer> = emptyList(),
     val sortType: SortType = SortType.TITLE,
+    val sortDirection: SortDirection = SortDirection.ASCENDING,
     /** When true, browsing shows only video files (+ folders) as large thumbnails. */
     val isMediaMode: Boolean = false,
 )

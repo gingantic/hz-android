@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
 import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,19 @@ class WebDavBrowserClient(
         get() = "${if (useTls) "https" else "http"}://$host:$port"
 
     private val authHeader: String
-        get() = if (username.isNotEmpty()) Credentials.basic(username, password) else ""
+        get() {
+            if (username.isEmpty()) return ""
+            // ponytail: never send Basic credentials over cleartext HTTP — that
+            // transmits user:pass in base64 (trivially reversible) on the wire.
+            // Over non-TLS we omit the header and warn; the server may still work
+            // anonymously, or the user should switch to WEBDAVS.
+            if (!useTls) {
+                android.util.Log.w("WebDavBrowserClient",
+                    "Refusing to send WebDAV credentials over cleartext HTTP to $host:$port — use WEBDAVS/TLS")
+                return ""
+            }
+            return Credentials.basic(username, password)
+        }
 
     override suspend fun connect() = withContext(Dispatchers.IO) {
         val client = ConnectionPool.borrowWebDavBrowser(host, port, useTls)
@@ -73,20 +86,37 @@ class WebDavBrowserClient(
             }
         }
 
-    override suspend fun countChildren(path: String): Int = withContext(Dispatchers.IO) {
-        try {
-            listDirectory(path).count { it.isDirectory }
-        } catch (_: Exception) { 0 }
-    }
-
     override suspend fun disconnect() = withContext(Dispatchers.IO) {
         ConnectionPool.returnWebDavBrowser(host, port, useTls)
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
 
-    private fun normalizePath(path: String): String =
-        if (path.startsWith("/")) path else "/$path"
+    private fun normalizePath(path: String): String {
+        val cleaned = if (path.startsWith("/")) path else "/$path"
+        // ponytail: reject path-traversal segments — a crafted server href or
+        // client path with ".." must not escape the share root.
+        return sanitizePath(cleaned)
+    }
+
+    /**
+     * Strip `.`/`..` segments from a normalized path. Throws on traversal so
+     * callers surface it instead of silently escaping the share root.
+     */
+    private fun sanitizePath(path: String): String {
+        val out = mutableListOf<String>()
+        for (seg in path.split('/')) {
+            when {
+                seg.isEmpty() || seg == "." -> {} // skip
+                seg == ".." -> {
+                    if (out.isNotEmpty()) out.removeAt(out.lastIndex)
+                    else throw IOException("Path traversal denied: $path")
+                }
+                else -> out.add(seg)
+            }
+        }
+        return "/" + out.joinToString("/")
+    }
 
     // ── PROPFIND response XML parsing ───────────────────────────────
 
@@ -143,7 +173,9 @@ class WebDavBrowserClient(
                                 val hrefPath = current.href!!.substringBefore("?")
                                 val name = current.name?.ifBlank { null }
                                     ?: hrefPath.substringAfterLast("/").trimEnd('/')
-                                val filePath = if (hrefPath.startsWith("/")) hrefPath else "/$hrefPath"
+                                val filePath = sanitizePath(
+                                    if (hrefPath.startsWith("/")) hrefPath else "/$hrefPath"
+                                )
                                 items.add(
                                     RemoteFileItem(
                                         name = name,
@@ -170,10 +202,7 @@ class WebDavBrowserClient(
             // Stream error — return what we parsed so far
         }
 
-        return items.sortedWith(
-            compareByDescending<RemoteFileItem> { it.isDirectory }
-                .thenBy { it.name.lowercase() }
-        )
+        return items.sortedRemote()
     }
 
     private class RemoteFileItemBuilder {

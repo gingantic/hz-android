@@ -17,6 +17,11 @@ enum class SortType {
     ALBUM,
 }
 
+enum class SortDirection {
+    ASCENDING,
+    DESCENDING,
+}
+
 enum class ViewMode {
     GRID,
     LIST,
@@ -27,17 +32,3 @@ enum class RepeatMode {
     ALL,
     ONE,
 }
-
-data class MediaItem(
-    val id: Long,
-    val title: String,
-    val uri: String,
-    val type: MediaType,
-    val durationMs: Long = 0,
-    val fileSize: Long = 0,
-    val dateAdded: Long = 0,
-    val dateModified: Long = 0,
-    val mimeType: String? = null,
-    val isFavorite: Boolean = false,
-    val thumbnailUri: String? = null,
-)

@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.domain.repository
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ResumeMode
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
@@ -27,6 +28,7 @@ interface UserPreferencesRepository {
 
     fun getViewMode(key: String): Flow<ViewMode>
     fun getSortType(key: String): Flow<SortType>
+    fun getSortDirection(key: String): Flow<SortDirection>
     val minSongDurationSecs: Flow<Int>
     val debugMode: Flow<Boolean>
     val backgroundPlay: Flow<Boolean>
@@ -46,6 +48,7 @@ interface UserPreferencesRepository {
     suspend fun setResumeMode(mode: ResumeMode)
     suspend fun setViewMode(key: String, mode: ViewMode)
     suspend fun setSortType(key: String, sort: SortType)
+    suspend fun setSortDirection(key: String, direction: SortDirection)
     suspend fun setMinSongDurationSecs(seconds: Int)
     suspend fun setDebugMode(enabled: Boolean)
     suspend fun setBackgroundPlay(enabled: Boolean)

@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.presentation.video
 
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
@@ -16,6 +17,7 @@ data class VideoLibraryUiState(
     val error: String? = null,
     val viewMode: ViewMode = ViewMode.GRID,
     val sortType: SortType = SortType.TITLE,
+    val sortDirection: SortDirection = SortDirection.ASCENDING,
     val isEmpty: Boolean = false,
 )
 

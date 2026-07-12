@@ -2,6 +2,8 @@
 
 import android.util.Log
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
+import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
+import com.rhnxdev.hzplayer.domain.model.SortType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -135,5 +137,47 @@ fun isVideoOrStreamDefault(url: String): Boolean {
     if (isVideoExtension(url)) return true
     if (isAudioExtension(url)) return false
     return true
+}
+
+/**
+ * Sort remote listings dirs-first, then by name (case-insensitive). Shared by
+ * every protocol browser client so ordering stays consistent.
+ */
+fun List<RemoteFileItem>.sortedRemote(): List<RemoteFileItem> =
+    sortedWith(
+        compareByDescending<RemoteFileItem> { it.isDirectory }
+            .thenBy { it.name.lowercase() },
+    )
+
+/**
+ * Sort a file listing dirs-first, then by the chosen [SortType] (name /
+ * date-modified / size). Generic over both [FolderItem] and [RemoteFileItem],
+ * which expose the same accessors, so the local and remote VMs share one impl.
+ */
+fun <T> sortFilesByType(
+    items: List<T>,
+    sort: SortType,
+    isDirectory: (T) -> Boolean,
+    name: (T) -> String,
+    dateModified: (T) -> Long,
+    size: (T) -> Long,
+    descending: Boolean = false,
+): List<T> {
+    val (dirs, files) = items.partition(isDirectory)
+    val sortDirs = when (sort) {
+        SortType.TITLE -> dirs.sortedBy { name(it).lowercase() }
+        SortType.DATE_MODIFIED -> dirs.sortedByDescending(dateModified)
+        SortType.FILE_SIZE -> dirs.sortedByDescending(size)
+        else -> dirs.sortedBy { name(it).lowercase() }
+    }
+    val sortFiles = when (sort) {
+        SortType.TITLE -> files.sortedBy { name(it).lowercase() }
+        SortType.DATE_MODIFIED -> files.sortedByDescending(dateModified)
+        SortType.FILE_SIZE -> files.sortedByDescending(size)
+        else -> files.sortedBy { name(it).lowercase() }
+    }
+    val orderedDirs = if (descending) sortDirs.asReversed() else sortDirs
+    val orderedFiles = if (descending) sortFiles.asReversed() else sortFiles
+    return orderedDirs + orderedFiles
 }
 

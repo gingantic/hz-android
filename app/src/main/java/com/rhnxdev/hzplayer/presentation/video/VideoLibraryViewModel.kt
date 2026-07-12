@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.presentation.video
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.ViewMode
@@ -74,6 +75,7 @@ class VideoLibraryViewModel @Inject constructor(
             try {
                 // Load initial sort type
                 val sortType = userPreferencesRepository.getSortType("video_library").first()
+                val sortDirection = userPreferencesRepository.getSortDirection("video_library").first()
 
                 // Try real data from MediaStore via repository
                 mediaRepository.getAllVideos(sortType, forceRefresh)
@@ -169,6 +171,12 @@ class VideoLibraryViewModel @Inject constructor(
                 applySort(sort)
             }
         }
+        viewModelScope.launch {
+            userPreferencesRepository.getSortDirection("video_library").collect { dir ->
+                _uiState.update { it.copy(sortDirection = dir) }
+                applySort(_uiState.value.sortType)
+            }
+        }
     }
 
     fun onViewModeChanged(mode: ViewMode) {
@@ -177,10 +185,13 @@ class VideoLibraryViewModel @Inject constructor(
         }
     }
 
-    fun onSortChanged(sort: SortType) {
+    fun onSortChanged(sort: SortType, direction: SortDirection = SortDirection.ASCENDING) {
+        _uiState.update { it.copy(sortType = sort, sortDirection = direction) }
         viewModelScope.launch {
             userPreferencesRepository.setSortType("video_library", sort)
+            userPreferencesRepository.setSortDirection("video_library", direction)
         }
+        applySort(sort)
     }
 
     fun onSearchToggle() {
@@ -217,14 +228,17 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     private fun applySort(sort: SortType) {
+        // Only TITLE / DATE_ADDED / DURATION are exposed in the video library sort
+        // menu; DATE_MODIFIED / FILE_SIZE are reachable from the file/network
+        // browsers, not here.
+        val descending = _uiState.value.sortDirection == SortDirection.DESCENDING
+        val source = _uiState.value.allVideos
         val sorted = when (sort) {
-            SortType.TITLE -> _uiState.value.allVideos.sortedBy { it.title }
-            SortType.DATE_ADDED -> _uiState.value.allVideos.sortedByDescending { it.dateAdded }
-            SortType.DURATION -> _uiState.value.allVideos.sortedByDescending { it.durationMs }
-            SortType.DATE_MODIFIED -> _uiState.value.allVideos.sortedByDescending { it.dateModified }
-            SortType.FILE_SIZE -> _uiState.value.allVideos.sortedByDescending { it.fileSize }
-            else -> _uiState.value.allVideos.sortedBy { it.title }
-        }
+            SortType.TITLE -> source.sortedBy { it.title }
+            SortType.DATE_ADDED -> source.sortedBy { it.dateAdded }
+            SortType.DURATION -> source.sortedBy { it.durationMs }
+            else -> source.sortedBy { it.title }
+        }.let { if (descending) it.asReversed() else it }
         val categories = groupVideosIntoCategories(sorted, _uiState.value.recentVideos)
         _uiState.update {
             it.copy(

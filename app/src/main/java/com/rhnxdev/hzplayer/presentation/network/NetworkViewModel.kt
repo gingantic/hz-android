@@ -11,10 +11,12 @@ import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isVideoContentType
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.core.util.probeContentType
+import com.rhnxdev.hzplayer.core.util.sortFilesByType
 import com.rhnxdev.hzplayer.domain.model.RemoteAuthException
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
@@ -61,7 +63,8 @@ class NetworkViewModel @Inject constructor(
         observeServers(); observeHistory(); observeDiscovery()
         viewModelScope.launch {
             val savedSort = networkRepository.getSortType(sortKey).first()
-            _uiState.update { it.copy(sortType = savedSort) }
+            val savedDir = networkRepository.getSortDirection(sortKey).first()
+            _uiState.update { it.copy(sortType = savedSort, sortDirection = savedDir) }
         }
         viewModelScope.launch {
             userPreferencesRepository.getViewMode("network_home").collect { mode ->
@@ -278,10 +281,11 @@ class NetworkViewModel @Inject constructor(
 
     fun onRetryBrowse() { onRefreshBrowse() }
 
-    fun onSortChanged(sort: SortType) {
-        _uiState.update { it.copy(sortType = sort) }
+    fun onSortChanged(sort: SortType, direction: SortDirection = SortDirection.ASCENDING) {
+        _uiState.update { it.copy(sortType = sort, sortDirection = direction) }
         viewModelScope.launch {
             networkRepository.setSortType(sortKey, sort)
+            networkRepository.setSortDirection(sortKey, direction)
         }
         reapplyRemoteSort()
     }
@@ -321,7 +325,14 @@ class NetworkViewModel @Inject constructor(
 
                 val cached = dirCache.get(path)
                 if (cached != null) {
-                    val sorted = sortRemoteItems(cached, _uiState.value.sortType)
+                    val sorted = sortFilesByType(
+                        cached,
+                        _uiState.value.sortType,
+                        isDirectory = { it.isDirectory },
+                        name = { it.name },
+                        dateModified = { it.dateModified },
+                        size = { it.fileSize },
+                    )
                     minDelayJob.join()
                     updateRemoteLayer(layerIndex) {
                         it.copy(items = sorted, isLoading = false)
@@ -333,7 +344,14 @@ class NetworkViewModel @Inject constructor(
                 result.fold(
                     onSuccess = { items ->
                         dirCache.put(path, items)
-                        val sorted = sortRemoteItems(items, _uiState.value.sortType)
+                        val sorted = sortFilesByType(
+                            items,
+                            _uiState.value.sortType,
+                            isDirectory = { it.isDirectory },
+                            name = { it.name },
+                            dateModified = { it.dateModified },
+                            size = { it.fileSize },
+                        )
                         minDelayJob.join()
                         updateRemoteLayer(layerIndex) {
                             it.copy(items = sorted, isEmpty = items.isEmpty(), isLoading = false)
@@ -419,26 +437,17 @@ class NetworkViewModel @Inject constructor(
     private fun reapplyRemoteSort() {
         val state = _uiState.value
         val sortedLayers = state.remoteLayers.map { layer ->
-            layer.copy(items = sortRemoteItems(layer.items, state.sortType))
+            layer.copy(items = sortFilesByType(
+                layer.items,
+                state.sortType,
+                isDirectory = { it.isDirectory },
+                name = { it.name },
+                dateModified = { it.dateModified },
+                size = { it.fileSize },
+                descending = state.sortDirection == SortDirection.DESCENDING,
+            ))
         }
         _uiState.update { it.copy(remoteLayers = sortedLayers) }
-    }
-
-    private fun sortRemoteItems(items: List<RemoteFileItem>, sort: SortType): List<RemoteFileItem> {
-        val (dirs, files) = items.partition { it.isDirectory }
-        val sortedDirs = when (sort) {
-            SortType.TITLE -> dirs.sortedBy { it.name.lowercase() }
-            SortType.DATE_MODIFIED -> dirs.sortedByDescending { it.dateModified }
-            SortType.FILE_SIZE -> dirs.sortedByDescending { it.fileSize }
-            else -> dirs.sortedBy { it.name.lowercase() }
-        }
-        val sortedFiles = when (sort) {
-            SortType.TITLE -> files.sortedBy { it.name.lowercase() }
-            SortType.DATE_MODIFIED -> files.sortedByDescending { it.dateModified }
-            SortType.FILE_SIZE -> files.sortedByDescending { it.fileSize }
-            else -> files.sortedBy { it.name.lowercase() }
-        }
-        return sortedDirs + sortedFiles
     }
 
     fun onToggleMediaMode() {

@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ResumeMode
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
@@ -60,6 +61,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }.distinctUntilChanged()
 
+    // ponytail: OpenSubtitles API key is stored in PLAINTEXT in this DataStore.
+    // The store is app-private (mode 0600, same-UID only), so risk is limited to
+    // a rooted device. Upgrade path if this becomes sensitive: migrate to
+    // androidx.security EncryptedSharedPreferences (AES via AndroidKeyStore).
     override val openSubtitlesApiKey: Flow<String> = dataStore.data.map { prefs ->
         prefs[PrefKey.OpenSubtitlesApiKey.key] ?: ""
     }.distinctUntilChanged()
@@ -172,6 +177,21 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override suspend fun setSortType(key: String, sort: SortType) {
         dataStore.edit { prefs ->
             prefs[stringPreferencesKey("sort_type_$key")] = sort.name
+        }
+    }
+
+    override fun getSortDirection(key: String): Flow<SortDirection> = dataStore.data.map { prefs ->
+        val name = prefs[stringPreferencesKey("sort_dir_$key")]
+        try {
+            name?.let { SortDirection.valueOf(it) } ?: SortDirection.ASCENDING
+        } catch (_: IllegalArgumentException) {
+            SortDirection.ASCENDING
+        }
+    }
+
+    override suspend fun setSortDirection(key: String, direction: SortDirection) {
+        dataStore.edit { prefs ->
+            prefs[stringPreferencesKey("sort_dir_$key")] = direction.name
         }
     }
 

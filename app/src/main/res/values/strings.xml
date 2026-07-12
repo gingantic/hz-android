@@ -20,6 +20,8 @@
     <string name="sort_by_duration">Sort by Duration</string>
     <string name="sort_by_name">Sort by Name</string>
     <string name="sort_by_size">Sort by Size</string>
+    <string name="sort_ascending">Ascending</string>
+    <string name="sort_descending">Descending</string>
     <string name="video_load_error">Could not load videos</string>
     <string name="video_empty_title">No videos found</string>
     <string name="video_empty_subtitle">Tap browse to find media on your device.</string>

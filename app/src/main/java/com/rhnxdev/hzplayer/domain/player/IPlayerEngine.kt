@@ -13,8 +13,13 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Abstraction over a media playback engine. This is the ONLY playback contract:
- * no Media3 type may cross this boundary. A second backend (libVLC, mpv, …) is
- * added by implementing this interface + binding it in [di.PlayerEngineModule].
+ * no Media3 type crosses the boundary for playback logic or state. The two
+ * MediaSession-integration methods ([getMedia3Player], [setOnPlayerReplacedListener])
+ * are the sole, deliberate exception — they hand the underlying Media3 [Player]
+ * to the system MediaSession for lock-screen controls. Non-Media3 backends leave
+ * both as their `null`/no-op defaults and simply opt out. A second backend
+ * (libVLC, mpv, …) is added by implementing this interface + binding it in
+ * [di.PlayerEngineModule].
  */
 interface IPlayerEngine {
 
@@ -173,6 +178,14 @@ interface IPlayerEngine {
      * non-Media3 backend simply opts out and the service skips the MediaSession.
      */
     fun getMedia3Player(): Player? = null
+
+    /**
+     * Register a callback fired when the engine swaps its underlying [Player]
+     * (e.g. a decoder-mode rebuild). The system MediaSession must re-point at the
+     * new player; otherwise lock-screen controls die after the swap. No-op for
+     * engines that never replace their player.
+     */
+    fun setOnPlayerReplacedListener(listener: ((Player) -> Unit)?) {}
 
     // ── Lifecycle ───────────────────────────────────────────────
 

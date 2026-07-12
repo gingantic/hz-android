@@ -88,8 +88,7 @@ com.rhnxdev.hzplayer
 │   │   │                      WebDavBrowserClient, RemoteBrowserClient (interface)
 │   │   ├── player/          — ExoPlayerEngine, MediaPlayerHolder, ConnectionPool,
 │   │   │                      FtpDataSource, SftpDataSource, SmbDataSource, WebDavDataSource,
-│   │   │                      SmbPathResolver, MediaPlaybackService,
-│   │   │                      ExoPlayerMediaSessionProvider
+│   │   │                      SmbPathResolver, MediaPlaybackService
 │   │   └── remote/          — OpenSubtitlesApi
 │   ├── mapper/              — Domain ↔ data mapping
 │   └── repository/          — 9 implementations (see Repositories section)
@@ -107,9 +106,10 @@ com.rhnxdev.hzplayer
 │   │                          AspectRatioMode, DebugStats, NetworkTraffic, Playlist,
 │   │                          RemoteFileItem, StreamHistoryItem, ThemeMode, …)
 │   ├── player/              — IPlayerEngine (interface), EngineType (enum: EXO_PLAYER),
-│   │                          MediaSessionProvider, RenderViewConfig, PlaybackErrorMapper
+│   │                          RenderViewConfig, PlaybackErrorMapper
 │   ├── repository/          — 9 interfaces (see Repositories section)
-│   └── usecase/             — ResumeProgressUseCase
+│   └── usecase/             — (none; ViewModels call repositories directly; resume
+│                              progress lives in ResumeRepository)
 │
 ├── presentation/
 │   ├── audio/               — AudioPlayerScreen + ViewModel
@@ -399,13 +399,21 @@ VLC source is in `vlc-android-master/`. **UX reference only — do not copy code
 2. **Check `docs/`** — architecture decisions are documented there.
 3. **Check `TODO.md`** — see if the feature is tracked or partially done.
 4. **Check VLC reference** — for UX pattern guidance.
-5. **Search official docs if uncertain:**
-   - [Android Developers](https://developer.android.com)
-   - [Media3 / ExoPlayer](https://developer.android.com/media/media3)
-   - [Jetpack Compose](https://developer.android.com/jetpack/compose/documentation)
-   - [Hilt](https://developer.android.com/training/dependency-injection/hilt-android)
-   - [Room](https://developer.android.com/training/data-storage/room)
-6. **Do not guess** — if unclear, search the internet before writing a single line.
+5. **Fetch current docs via MCP — never guess.** Use these before any web search:
+   - **Context7** (`mcp__context7__*`) — official library/framework/SDK/API docs. `resolve-library-id` first, then `query-docs`. Covers Android, Media3/ExoPlayer, Compose, Hilt, Room, Kotlin, OkHttp, Coil, etc. Prefer over web search for library docs.
+   - **Firecrawl** (`mcp__firecrawl__*`) — `firecrawl_scrape` for live pages, `firecrawl_search` for broad web. Use when Context7 has no match (e.g. xAI Grok API, third-party tools) or page is newer than Context7 snapshot.
+   - **Fetch** (`mcp__fetch__imageFetch`) — fetch+markdown a single URL when Context7/Firecrawl unavailable or you need page text + inline images extracted. Also `firecrawl_search_feedback` after searches to improve quality and refund credits.
+   - Fallback links (only if all MCPs fail):
+     - [Android Developers](https://developer.android.com)
+     - [Media3 / ExoPlayer](https://developer.android.com/media/media3)
+     - [Jetpack Compose](https://developer.android.com/jetpack/compose/documentation)
+     - [Hilt](https://developer.android.com/training/dependency-injection/hilt-android)
+     - [Room](https://developer.android.com/training/data-storage/room)
+6. **Do not guess** — if unclear, query the MCP docs before writing a single line. A wrong API call is worse than slow delivery.
+
+### Complex change? Reason it through first
+- Use **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) for multi-step problems, architectural decisions, or anything touching 3+ files. Build the analysis step-by-step, revise prior steps as understanding deepens, branch when exploring alternatives. Run this *before* editing — comprehension first, then the smallest diff.
+- Apply the Ponytail ladder (CLAUDE.md header) *after* understanding the full flow: reuse existing code → stdlib → installed dep → one line → minimum code.
 
 ### Before modifying existing code
 

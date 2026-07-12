@@ -1,10 +1,6 @@
 package com.rhnxdev.hzplayer.data.mapper
 
-import com.rhnxdev.hzplayer.data.datasource.local.room.dao.AlbumProjection
-import com.rhnxdev.hzplayer.data.datasource.local.room.dao.ArtistProjection
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.MediaEntity
-import com.rhnxdev.hzplayer.domain.model.Album
-import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 
@@ -36,19 +32,4 @@ fun MediaEntity.toAudioItem(): AudioItem = AudioItem(
     dateAdded = dateAdded,
     mimeType = mimeType,
     isFavorite = isFavorite,
-)
-
-fun AlbumProjection.toAlbum(trackCount: Int = 0): Album = Album(
-    // Same album title can appear under different artists — key on both to avoid
-    // duplicate list keys (LazyGrid crashes on collisions).
-    id = "$album|$artist".hashCode().toLong(),
-    title = album,
-    artist = artist,
-    albumArtUri = albumArtUri,
-    trackCount = trackCount,
-)
-
-fun ArtistProjection.toArtist(): Artist = Artist(
-    id = artist.hashCode().toLong(),
-    name = artist,
 )

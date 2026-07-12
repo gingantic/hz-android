@@ -4,6 +4,7 @@ import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -143,5 +144,6 @@ internal class PlayerPositionController(
     fun onCleared() {
         positionUpdateJob?.cancel()
         saveProgressNow()
+        saveScope.cancel()
     }
 }

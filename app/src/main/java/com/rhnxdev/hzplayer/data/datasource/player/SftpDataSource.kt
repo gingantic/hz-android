@@ -2,7 +2,6 @@ package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.net.Uri
 import androidx.media3.common.C
-import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
 import net.schmizz.sshj.sftp.SFTPClient
 import java.io.BufferedInputStream
@@ -16,19 +15,17 @@ import java.io.InputStream
  * the ~500ms key-exchange handshake on every seek.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
+class SftpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
 
     private var sftpClient: SFTPClient? = null
-    private var inputStream: InputStream? = null
-    private var bytesRemaining: Long = C.LENGTH_UNSET.toLong()
-    private var uri: Uri? = null
+    private var sftpHandle: net.schmizz.sshj.sftp.RemoteFile? = null
     private var sshHost: String? = null
     private var sshPort: Int = 22
     private var sshUser: String? = null
     private var sshPass: String? = null
 
     override fun open(dataSpec: DataSpec): Long {
-        uri = dataSpec.uri
+        uriValue = dataSpec.uri
         transferInitializing(dataSpec)
         android.util.Log.d(TAG, "open: uri=${dataSpec.uri} position=${dataSpec.position} length=${dataSpec.length}")
 
@@ -46,11 +43,18 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
         sshPass = pass
 
         val ssh = ConnectionPool.borrowSsh(host, port, user, pass)
-        sftpClient = ssh.newSFTPClient()
-            ?: throw IOException("Failed to create SFTP client for $host:$port")
+        try {
+            sftpClient = ssh.newSFTPClient()
+                ?: throw IOException("Failed to create SFTP client for $host:$port")
 
-        val sftpHandle = sftpClient!!.open(path)
-        val fileLength = try { sftpHandle.length() } catch (_: Exception) { C.LENGTH_UNSET.toLong() }
+            sftpHandle = sftpClient!!.open(path)
+        } catch (e: IOException) {
+            // open() threw after borrow but before close() runs → return the
+            // session so it isn't pinned inUse=1 for the process lifetime.
+            ConnectionPool.returnSsh(host, port, user, pass)
+            throw e
+        }
+        val fileLength = try { sftpHandle!!.length() } catch (_: Exception) { C.LENGTH_UNSET.toLong() }
 
         // Read via SSHJ's RemoteFile.read(position, buffer, offset, len).
         // Pass the full requested length — SSHJ handles internal chunking.
@@ -63,7 +67,7 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
             }
             override fun read(b: ByteArray, off: Int, len: Int): Int {
                 if (pos >= fileLength && fileLength > 0) return -1
-                val count = sftpHandle.read(pos, b, off, len)
+                val count = sftpHandle!!.read(pos, b, off, len)
                 if (count < 0) return -1
                 pos += count
                 return count
@@ -84,29 +88,15 @@ class SftpDataSource : BaseDataSource(/* isNetwork = */ true) {
         return bytesRemaining
     }
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        if (length == 0) return 0
-        if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
-        val stream = inputStream ?: return C.RESULT_END_OF_INPUT
-        val toRead = if (bytesRemaining == C.LENGTH_UNSET.toLong()) length
-            else length.toLong().coerceAtMost(bytesRemaining).toInt()
-        val bytesRead = stream.read(buffer, offset, toRead)
-        if (bytesRead == -1) return C.RESULT_END_OF_INPUT
-        if (bytesRemaining != C.LENGTH_UNSET.toLong()) bytesRemaining -= bytesRead
-        bytesTransferred(bytesRead)
-        return bytesRead
-    }
-
-    override fun getUri(): Uri? = uri
-
     override fun close() {
-        uri = null
         try { inputStream?.close() } catch (_: Exception) {}
         // Close only the SFTP channel; the underlying SSHClient is pooled and
         // returned so the sweeper can reuse/evict it. Without returnSsh() the
         // entry stays acquire()'d (inUse=1) forever and leaks per stream.
         try { sftpClient?.close() } catch (_: Exception) {}
         sftpClient = null
+        sftpHandle = null
+        resetSharedState()
         sshHost?.let { host ->
             ConnectionPool.returnSsh(host, sshPort, sshUser ?: "", sshPass ?: "")
         }

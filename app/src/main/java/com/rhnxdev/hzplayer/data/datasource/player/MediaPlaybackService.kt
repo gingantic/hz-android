@@ -21,7 +21,8 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        val player = playerRepository.activeEngine.getMedia3Player()
+        val engine = playerRepository.activeEngine
+        val player = engine.getMedia3Player()
 
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -32,6 +33,13 @@ class MediaPlaybackService : MediaSessionService() {
             MediaSession.Builder(this, it)
                 .setSessionActivity(pendingIntent)
                 .build()
+        }
+
+        // When the engine swaps its underlying player (decoder rebuild), re-point
+        // the MediaSession at the new instance. Without this the session keeps
+        // wrapping the released player and lock-screen controls go dead.
+        engine.setOnPlayerReplacedListener { newPlayer ->
+            mediaSession?.setPlayer(newPlayer)
         }
     }
 

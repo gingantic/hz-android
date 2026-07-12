@@ -54,7 +54,7 @@ The engine-selection preference **already exists** (`UserPreferencesRepository.a
 │  ExoPlayerEngine         │            │  VlcEngine / MpvEngine (later)│
 │  (implements             │            │  (implements IPlayerEngine)   │
 │   IPlayerEngine +        │            │                              │
-│   MediaSessionProvider)  │            │  createRenderView() → its own │
+│   getMedia3Player())│            │  createRenderView() → its own │
 │  createRenderView()→     │            │  SurfaceView / TextureView    │
 │   PlayerView             │            │                              │
 └───────────┬──────────────┘            └──────────────────────────────┘
@@ -139,24 +139,30 @@ private concern, surfaced through the `PlayerSurface` composable (§4), not the
 contract. This keeps `domain` pure and lets a future engine paint however it
 wants.
 
-### 3.3 `domain/player/MediaSessionProvider.kt` (optional capability)
-```kotlin
-/** Implemented only by engines that can back a Media3 MediaSession. */
-interface MediaSessionProvider {
-    fun getMedia3Player(): androidx.media3.common.Player?
-}
+### 3.3 `IPlayerEngine.getMedia3Player()` — Media3 MediaSession bridge
+
+`MediaSessionProvider` was removed in favor of `IPlayerEngine.getMedia3Player()` and
+`setOnPlayerReplacedListener()` — the engine contract itself handles the session bridge,
+so there is no separate provider interface. The service calls:
+
 ```
-`ExoPlayerEngine` implements it (returns its `Player`). Non-Media3 engines do
-not. The service asks `engine as? MediaSessionProvider`.
+val player = engine.getMedia3Player()
+mediaSession = player?.let { MediaSession.Builder(this, it).build() }
+```
+
+Non-Media3 backends return `null` and skip system media controls (lock screen, PiP).
 
 ### 3.4 `domain/player/RenderViewConfig.kt`
+
 ```kotlin
 data class RenderViewConfig(
     val aspectRatioMode: AspectRatioMode,
-    val subtitleStyle: SubtitleStyle,
-    val hdrEnabled: Boolean,
 )
 ```
+
+Pushed through `engine.updateRenderView(view, config)` for the active engine's
+render view (aspect ratio only; subtitle styling runs through the engine's own
+pipeline).
 
 ### 3.5 `di/EngineKey.kt`
 ```kotlin
@@ -198,7 +204,7 @@ fun PlayerSurface(
                 when (engine.engineType) {
                     EngineType.EXO_PLAYER -> (engine as ExoPlayerEngine)
                         .updateRenderView(view, RenderViewConfig(
-                            uiState.aspectRatioMode, uiState.subtitleStyle, uiState.hdrEnabled))
+                            uiState.aspectRatioMode))
                     // other branches delegate to their engine's updateRenderView
                 }
             },
@@ -251,7 +257,7 @@ Promote `playPlaylist`, `playAudioPlaylist`, add `skipToNext/Previous`,
 - `updateRenderView(view, config)` maps `AspectRatioMode` → `RESIZE_MODE_*` and
   reapplies subtitle style.
 - `onRenderViewPaused(view)` / `onRenderViewResumed(view)` → `PlayerView.onPause/onResume`.
-- `implements MediaSessionProvider { override fun getMedia3Player() = player }`.
+- `after: getMedia3Player { override fun getMedia3Player() = player }`.
 - **Remove** `subtitleCues`/`videoDecoderName`/`audioDecoderName`/`pollRenderedFps`
   public getters that cross into the boundary. Keep internal decoder counters in
   `MediaPlayerHolder` for `getDebugStats()` only.
@@ -291,8 +297,8 @@ still depends on it.
   on switch.
 - `PlayerUiState`: drop `subtitleCueTexts` (unused — native `PlayerView` renders subs);
   add `activeEngineType: EngineType`.
-- `MediaPlaybackService`: inject engine map + prefs; build `MediaSession` only when
-  `activeEngine as? MediaSessionProvider != null`.
+- `MediaPlaybackService`: build `MediaSession` via `engine.getMedia3Player()` — no
+  separate provider indirection.
 
 ### Phase 6 — Settings UI
 Replace the `ExoPlayer not_implemented` row with an engine selector listing
@@ -323,7 +329,8 @@ When adding libVLC or mpv later:
      (and wires it to the VLC `IVLCVout`).
    - `updateRenderView(view, config)` applies aspect ratio + subtitle style.
    - `onRenderViewPaused/Resumed(view)` release/reattach the surface.
-   - If it can back system media control, `implement MediaSessionProvider`.
+   - If it can back system media control, override `getMedia3Player()` to return the
+	     Media3 Player (or null for non-Media3 backends).
 
 3. **Bind it in Hilt** — one line in `PlayerEngineModule`:
    ```kotlin
@@ -345,11 +352,10 @@ changes — they are engine-agnostic by construction.
 
 ## 6b. As-built notes (vs. the design above)
 
-- **`MediaSessionProvider` is a standalone Hilt binding**, not reached via
-  `engine as?`. `PlayerEngineModule` binds `ExoPlayerMediaSessionProvider` directly to
-  `MediaSessionProvider`; `MediaPlaybackService` injects it and builds the `MediaSession`
-  from `getMedia3Player()`. Simpler than the `as?` cast and avoids leaking the question
-  into the service.
+- **`getMedia3Player()` lives on `IPlayerEngine`**, not a separate provider.
+  `MediaPlaybackService` calls `engine.getMedia3Player()` directly — no separate
+  `MediaSessionProvider` interface or Hilt binding. Simpler and avoids an extra
+  indirection.
 - **Error mapping is in place**: `domain/player/PlaybackErrorMapper.kt` produces a
   redacted `(PlaybackErrorKind, message)` from `PlaybackException`; `PlayerStateInfo`
   carries `errorKind`/`errorMessage`; `PlaybackErrorOverlay` consumes it. The
@@ -357,16 +363,14 @@ changes — they are engine-agnostic by construction.
   `PlayerView` renders subtitles.
 - **`EngineType` currently has only `EXO_PLAYER`.** `PlayerRepositoryImpl` falls back to
   `EXO_PLAYER` if a persisted engine isn't in the binding map, so stale prefs are safe.
-- **`getMedia3Player()` lives on the provider**, returning `playerHolder.player`. The
-  service asks only for the provider, never for the engine map.
 
 ## 7. Deferred (YAGNI until a real 2nd engine exists)
 
-- **Lazy release of non-active engines.** Today both engine singletons stay alive
-  on switch. For Exo-only that is free. When a heavy native player (mpv/VLC) is
+- **Lazy release of non-active engines.** Today the single engine stays alive
+  on switch. When a heavy native player (mpv/VLC) is
   added, release the inactive instance and rebuild on demand.
 - **`MediaSession` for non-Media3 engines.** Out of scope; system media controls
-  only work with `EXO_PLAYER` until a 2nd engine implements `MediaSessionProvider`.
+  only work with `EXO_PLAYER` until a 2nd engine implements `getMedia3Player()`.
 - **Custom subtitle overlay.** `SubtitleOverlay` is already commented out; native
   rendering suffices. Revisit only if a 2nd engine lacks native subtitle painting.
 - **Hot mid-playback decoder handoff.** Switching engines stops playback and

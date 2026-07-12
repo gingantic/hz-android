@@ -3,7 +3,6 @@ package com.rhnxdev.hzplayer.data.datasource.player
 import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.C
-import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
 import jcifs.smb.SmbException
 import jcifs.smb.SmbFile
@@ -23,11 +22,8 @@ import java.io.InputStream
  * concurrent DataSources (video + subs) stay within connection limits.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class SmbDataSource : BaseDataSource(/* isNetwork = */ true) {
+class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
 
-    private var inputStream: InputStream? = null
-    private var bytesRemaining: Long = C.LENGTH_UNSET.toLong()
-    private var uri: Uri? = null
     private var closed = false
 
     /** URI with user-info stripped — safe for logs and thrown error messages. */
@@ -42,7 +38,7 @@ class SmbDataSource : BaseDataSource(/* isNetwork = */ true) {
 
     override fun open(dataSpec: DataSpec): Long {
         val openStart = SystemClock.elapsedRealtime()
-        uri = dataSpec.uri
+        uriValue = dataSpec.uri
         closed = false
         transferInitializing(dataSpec)
         android.util.Log.d(TAG, "open: uri=${safeUri(dataSpec.uri)} pos=${dataSpec.position} len=${dataSpec.length}")
@@ -104,14 +100,10 @@ class SmbDataSource : BaseDataSource(/* isNetwork = */ true) {
         return bytesRead
     }
 
-    override fun getUri(): Uri? = uri
-
     override fun close() {
         closed = true
-        val stream = inputStream
-        inputStream = null
-        uri = null
-        try { stream?.close() } catch (_: Exception) {}
+        try { inputStream?.close() } catch (_: Exception) {}
+        resetSharedState()
         transferEnded()
     }
 
