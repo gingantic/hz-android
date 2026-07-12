@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.presentation.player.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,19 +18,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import com.rhnxdev.hzplayer.core.designsystem.stableNavBarPaddingValues
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -73,134 +72,181 @@ fun SubtitleStylingDialog(
         onDismiss = onDismiss,
         columnModifier = Modifier
             .fillMaxWidth()
-            .padding(stableNavBarPaddingValues())
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-            Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-            // Font size
-            Text(
-                text = stringResource(R.string.size_label, fontSize.toInt()),
-                style = MaterialTheme.typography.bodyMedium.copy(color = Color.White.copy(alpha = 0.8f)),
-            )
-            Slider(
-                value = fontSize,
-                onValueChange = { fontSize = it },
-                valueRange = 14f..32f,
-                steps = 17,
-                modifier = Modifier.fillMaxWidth(),
-            )
+        // Font size
+        Text(
+            text = stringResource(R.string.size_label, fontSize.toInt()),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                fontWeight = FontWeight.Medium
+            ),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Slider(
+            value = fontSize,
+            onValueChange = { fontSize = it },
+            valueRange = 14f..32f,
+            steps = 17,
+            modifier = Modifier.fillMaxWidth(),
+        )
 
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-            Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        Spacer(modifier = Modifier.height(12.dp))
 
-            // Color
-            Text(
-                text = stringResource(R.string.color_label),
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontWeight = FontWeight.Medium,
-                ),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                colorOptions.forEachIndexed { index, (label, argb) ->
-                    val selected = textColorArgb == index
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { textColorArgb = index }
-                            .padding(2.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(Color(argb.toLong())),
-                        )
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = if (selected) Color.White else Color.Gray,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            ),
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Background
-            Text(
-                text = stringResource(R.string.background_label),
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontWeight = FontWeight.Medium,
-                ),
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            listOf(stringResource(R.string.background_none) to 0, stringResource(R.string.background_semi) to 1, stringResource(R.string.background_full) to 2).forEach { (label, value) ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+        // Color
+        Text(
+            text = stringResource(R.string.color_label),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                fontWeight = FontWeight.Medium,
+            ),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            colorOptions.forEachIndexed { index, (label, argb) ->
+                val selected = textColorArgb == index
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { edgeStyle = value }
-                        .padding(vertical = 4.dp, horizontal = 4.dp),
+                        .clickable { textColorArgb = index }
+                        .padding(4.dp),
                 ) {
-                    RadioButton(
-                        selected = edgeStyle == value,
-                        onClick = { edgeStyle = value },
-                        colors = RadioButtonDefaults.colors(
-                            selectedColor = MaterialTheme.colorScheme.primary,
-                            unselectedColor = Color.Gray,
-                        ),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color(argb.toLong()))
+                            .then(
+                                if (label == "White") Modifier.border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                                    CircleShape
+                                ) else Modifier
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (selected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = if (label == "White" || label == "Yellow") Color.Black else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = label,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = if (edgeStyle == value) Color.White else Color.LightGray,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                         ),
                     )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        Spacer(modifier = Modifier.height(12.dp))
 
-            // Actions
+        // Background
+        Text(
+            text = stringResource(R.string.background_label),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                fontWeight = FontWeight.Medium,
+            ),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        listOf(
+            stringResource(R.string.background_none) to 0,
+            stringResource(R.string.background_semi) to 1,
+            stringResource(R.string.background_full) to 2
+        ).forEach { (label, value) ->
+            val isSelected = edgeStyle == value
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = {
-                    onStyleChange(SubtitleStyle.DEFAULT)
-                    onDismiss()
-                }) {
-                    Text(text = stringResource(R.string.reset), color = Color.Gray)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                TextButton(onClick = {
-                    onStyleChange(
-                        SubtitleStyle(
-                            fontSizeSp = fontSize.toInt(),
-                            textColorArgb = colorOptions[textColorArgb].second,
-                            edgeStyle = edgeStyle,
-                        )
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        else Color.Transparent
                     )
-                    onDismiss()
-                }) {
-                    Text(text = stringResource(R.string.apply), color = MaterialTheme.colorScheme.primary)
-                }
+                    .then(
+                        if (isSelected) Modifier.border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        else Modifier
+                    )
+                    .clickable { edgeStyle = value }
+                    .padding(vertical = 12.dp, horizontal = 16.dp),
+            ) {
+                RadioButton(
+                    selected = isSelected,
+                    onClick = { edgeStyle = value },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary,
+                        unselectedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    ),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                )
             }
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Actions
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = {
+                onStyleChange(SubtitleStyle.DEFAULT)
+                onDismiss()
+            }) {
+                Text(text = stringResource(R.string.reset), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            TextButton(onClick = {
+                onStyleChange(
+                    SubtitleStyle(
+                        fontSizeSp = fontSize.toInt(),
+                        textColorArgb = colorOptions[textColorArgb].second,
+                        edgeStyle = edgeStyle,
+                    )
+                )
+                onDismiss()
+            }) {
+                Text(text = stringResource(R.string.apply), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
+

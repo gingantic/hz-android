@@ -136,15 +136,19 @@ class VideoFrameFetcher(
 
         return try {
             val ctx = ConnectionPool.borrowSmbThumbnailContext(host, port, username, password)
-            val file = SmbPathResolver.resolve(ctx, host, port, segments) ?: run {
-                Log.w(TAG, "extractSmbFrame: file not found: $remoteUri"); return null
-            }
-            val size = file.length()
-            val bridge = RandomAccessBridge(file, size)
             try {
-                NativeThumbnailExtractor.extractThumbnail(bridge, 0.40f, THUMB_MAX_WIDTH)
+                val file = SmbPathResolver.resolve(ctx, host, port, segments) ?: run {
+                    Log.w(TAG, "extractSmbFrame: file not found: $remoteUri"); return null
+                }
+                val size = file.length()
+                val bridge = RandomAccessBridge(file, size)
+                try {
+                    NativeThumbnailExtractor.extractThumbnail(bridge, 0.40f, THUMB_MAX_WIDTH)
+                } finally {
+                    bridge.close()
+                }
             } finally {
-                bridge.close()
+                ConnectionPool.returnSmbThumbnailContext(host, port, username, password)
             }
         } catch (e: Exception) {
             Log.e(TAG, "extractSmbFrame: failed", e)

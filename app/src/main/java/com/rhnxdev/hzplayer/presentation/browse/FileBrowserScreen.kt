@@ -490,9 +490,13 @@ private fun DirectoryLayerView(
     val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
     // Filter items: media mode shows only videos; normal mode hides documents.
-    val visibleItems = when {
-        mediaMode -> layer.items.filter { it.isDirectory || it.isVideo() }
-        else -> layer.items.filter { it.isDirectory || (!isDocumentExtension(it.name) && !isBinaryExtension(it.name)) }
+    // ponytail: remember keyed on inputs — this runs for every one of the up to
+    // 32 retained layers on each recomposition, so without caching it's O(32 × list).
+    val visibleItems = remember(layer.items, mediaMode) {
+        when {
+            mediaMode -> layer.items.filter { it.isDirectory || it.isVideo() }
+            else -> layer.items.filter { it.isDirectory || (!isDocumentExtension(it.name) && !isBinaryExtension(it.name)) }
+        }
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -519,7 +523,7 @@ private fun DirectoryLayerView(
         }
 
         DirectoryBrowsePane(
-            items = visibleItems.map { it.toFileItemData() },
+            items = remember(visibleItems) { visibleItems.map { it.toFileItemData() } },
             isLoading = layer.isLoading,
             isEmpty = if (mediaMode) visibleItems.isEmpty() else layer.isEmpty,
             error = layer.error,

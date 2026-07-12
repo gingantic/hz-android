@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.presentation.main
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+@Immutable
 data class MainUiState(
     val selectedTabIndex: Int = 0,
     val isReady: Boolean = false,

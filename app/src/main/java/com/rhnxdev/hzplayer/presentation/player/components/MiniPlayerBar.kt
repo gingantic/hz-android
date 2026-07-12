@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,7 +74,7 @@ fun MiniPlayerBar(
     title: String,
     subtitle: String,
     isPlaying: Boolean,
-    progress: Float,
+    progress: State<Float>,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onClick: () -> Unit,
@@ -263,19 +264,27 @@ fun MiniPlayerBar(
                 }
 
                 // Progress bar at top (thin line, full width, overlaying the card's top edge)
-                LinearProgressIndicator(
-                    progress = { progress.coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .align(Alignment.TopCenter),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = Color.Transparent,
-                )
+                MiniPlayerProgress(progress = progress)
             }
         }
     }
 }
+}
+
+/**
+ * Leaf composable that reads [progress] so the 250 ms position tick recomposes
+ * only this indicator, not the whole [MiniPlayerBar] (artwork, swipe box, text).
+ */
+@Composable
+private fun MiniPlayerProgress(progress: State<Float>) {
+    LinearProgressIndicator(
+        progress = { progress.value.coerceIn(0f, 1f) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(2.dp),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = Color.Transparent,
+    )
 }
 
 @PreviewLightDark
@@ -287,7 +296,7 @@ private fun MiniPlayerBarPreview() {
             title = "Get Lucky",
             subtitle = "Daft Punk",
             isPlaying = true,
-            progress = 0.45f,
+            progress = remember { mutableStateOf(0.45f) },
             onPlayPause = {},
             onNext = {},
             onClick = {},

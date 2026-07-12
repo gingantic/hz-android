@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.presentation.audio
 
 import androidx.lifecycle.ViewModel
+import androidx.compose.runtime.Stable
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.model.Album
 import com.rhnxdev.hzplayer.domain.model.AudioItem
@@ -16,6 +17,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /** Shared UI state for album and artist detail screens. */
+@Stable
 data class AudioDetailUiState(
     val title: String = "",
     val subtitle: String = "",
