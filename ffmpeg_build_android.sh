@@ -85,7 +85,7 @@ else
   export PATH="$TC:$PATH"
 fi
 
-cd /root/ffmpeg-src
+cd "${FFMPEG_SRC_DIR:-ffmpeg-src}"
 export TMPDIR=/tmp
 make clean 2>/dev/null || true
 
@@ -126,13 +126,27 @@ done
 
 # Rebuild libavformat now that all flat .so files exist
 echo "=== Rebuilding libavformat with flat deps ==="
-export PATH="/tmp/ndk-wrappers:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+if [[ "$TC_HOST" == "windows-x86_64" ]]; then
+  export PATH="/tmp/ndk-wrappers:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+else
+  export PATH="$TC_REAL:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+fi
 make -j4 libavformat/libavformat.so.63 2>&1 | tail -5
 
-# Strip debug symbols from all built libs (saves ~60% size)
-echo "=== Stripping .so files ==="
-for f in libavutil/libavutil.so libavcodec/libavcodec.so.63 libavformat/libavformat.so.63 libswscale/libswscale.so.10; do
+# Copy flat .so files to the Android project jniLibs directory
+echo "=== Copying and stripping final .so files to jniLibs/$ABI ==="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JNILIBS_DIR="$SCRIPT_DIR/app/src/main/jniLibs/$ABI"
+mkdir -p "$JNILIBS_DIR"
+
+cp libavutil/libavutil.so "$JNILIBS_DIR/"
+cp libavcodec/libavcodec.so "$JNILIBS_DIR/"
+cp libavformat/libavformat.so "$JNILIBS_DIR/"
+cp libswscale/libswscale.so "$JNILIBS_DIR/"
+
+for f in "$JNILIBS_DIR"/libavutil.so "$JNILIBS_DIR"/libavcodec.so "$JNILIBS_DIR"/libavformat.so "$JNILIBS_DIR"/libswscale.so; do
   if [ -f "$f" ]; then
     "$TC_REAL/llvm-strip" --strip-all "$f" 2>&1 && echo "  stripped $f" || true
   fi
 done
+echo "=== Done copying ==="

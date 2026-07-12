@@ -22,3 +22,4 @@
 local.properties
 .kotlin/
 *.log
+app/src/main/jniLibs/

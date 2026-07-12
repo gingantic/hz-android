@@ -9,13 +9,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.rhnxdev.hzplayer.presentation.settings.components.UpdateDialog
+import com.rhnxdev.hzplayer.presentation.settings.components.GithubTokenDialog
+import kotlinx.coroutines.launch
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
@@ -61,9 +66,17 @@ fun SettingsScreen(
     var showResumeDialog by remember { mutableStateOf(false) }
     var showDecoderDialog by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isCheckingUpdates by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<com.rhnxdev.hzplayer.core.util.UpdateChecker.UpdateInfo?>(null) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showGithubTokenDialog by remember { mutableStateOf(false) }
+
 
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
     val appColorArgb by settingsViewModel.appColorArgb.collectAsStateWithLifecycle()
+    val githubToken by settingsViewModel.githubToken.collectAsStateWithLifecycle()
     val dynamicColors by settingsViewModel.useDynamicColors.collectAsStateWithLifecycle()
 
     val currentApiKey by settingsViewModel.openSubtitlesApiKey.collectAsStateWithLifecycle()
@@ -114,6 +127,25 @@ fun SettingsScreen(
 
     if (showAboutDialog) {
         AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    if (showUpdateDialog && updateInfo != null) {
+        UpdateDialog(
+            updateInfo = updateInfo!!,
+            githubToken = githubToken,
+            onDismiss = { showUpdateDialog = false }
+        )
+    }
+
+    if (showGithubTokenDialog) {
+        GithubTokenDialog(
+            currentToken = githubToken,
+            onDismiss = { showGithubTokenDialog = false },
+            onSave = { token ->
+                settingsViewModel.saveGithubToken(token)
+                showGithubTokenDialog = false
+            }
+        )
     }
 
     if (showOrientationDialog) {
@@ -380,6 +412,33 @@ fun SettingsScreen(
                                 subtitle = stringResource(R.string.settings_stats_nerds_sub),
                                 checked = debugMode,
                                 onCheckedChange = { settingsViewModel.saveDebugMode(it) },
+                            )
+                            SettingsItem(
+                                title = stringResource(R.string.settings_github_token),
+                                subtitle = if (githubToken.isEmpty()) stringResource(R.string.settings_github_token_sub) else "••••••••••••••••",
+                                onClick = { showGithubTokenDialog = true }
+                            )
+                            SettingsItem(
+                                title = stringResource(R.string.settings_check_updates),
+                                subtitle = if (isCheckingUpdates) stringResource(R.string.update_checking) else stringResource(R.string.settings_check_updates_sub),
+                                enabled = !isCheckingUpdates,
+                                onClick = {
+                                    isCheckingUpdates = true
+                                    coroutineScope.launch {
+                                        val info = com.rhnxdev.hzplayer.core.util.UpdateChecker.checkForUpdates(githubToken)
+                                        isCheckingUpdates = false
+                                        if (info != null) {
+                                            updateInfo = info
+                                            showUpdateDialog = true
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.update_no_updates),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                }
                             )
                             SettingsItem(
                                 title = stringResource(R.string.settings_about),

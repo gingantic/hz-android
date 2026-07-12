@@ -502,6 +502,76 @@ class ExoPlayerEngine @Inject constructor(
      * across brief app switches) is chosen from [useSurfaceView] and fixed at
      * construction via the XML layout â€” there is no programmatic setter.
      */
+    private var activePlayerViewRef: java.lang.ref.WeakReference<PlayerView>? = null
+    private var currentAspectRatioMode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode = com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO
+    private var listenerRegisteredPlayer: Player? = null
+
+    private val videoSizeListener = object : Player.Listener {
+        override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+            activePlayerViewRef?.get()?.let { playerView ->
+                playerView.post {
+                    applyAspectRatioMode(playerView, currentAspectRatioMode)
+                }
+            }
+        }
+    }
+
+    private fun applyAspectRatioMode(playerView: PlayerView, mode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode) {
+        currentAspectRatioMode = mode
+        
+        // Ensure our video size listener is attached to the current active player instance
+        val currentPlayer = player
+        if (listenerRegisteredPlayer !== currentPlayer) {
+            listenerRegisteredPlayer?.removeListener(videoSizeListener)
+            currentPlayer.addListener(videoSizeListener)
+            listenerRegisteredPlayer = currentPlayer
+        }
+
+        val contentFrame = playerView.findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
+        when (mode) {
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO -> {
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                val videoSize = currentPlayer.videoSize
+                val videoAspectRatio = if (videoSize.height == 0 || videoSize.width == 0) {
+                    0f
+                } else {
+                    (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio) / videoSize.height.toFloat()
+                }
+                contentFrame?.setAspectRatio(videoAspectRatio)
+            }
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_16_9 -> {
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                contentFrame?.setAspectRatio(16f / 9f)
+            }
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_4_3 -> {
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                contentFrame?.setAspectRatio(4f / 3f)
+            }
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_21_9 -> {
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                contentFrame?.setAspectRatio(21f / 9f)
+            }
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_18_9 -> {
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                contentFrame?.setAspectRatio(18f / 9f)
+            }
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.ZOOM -> {
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                val videoSize = currentPlayer.videoSize
+                val videoAspectRatio = if (videoSize.height == 0 || videoSize.width == 0) {
+                    0f
+                } else {
+                    (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio) / videoSize.height.toFloat()
+                }
+                contentFrame?.setAspectRatio(videoAspectRatio)
+            }
+            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.STRETCH -> {
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+                contentFrame?.setAspectRatio(0f)
+            }
+        }
+    }
+
     override fun createRenderView(context: Context, useSurfaceView: Boolean): View {
         val layoutRes = if (useSurfaceView) {
             com.rhnxdev.hzplayer.R.layout.view_exo_player_surface
@@ -512,6 +582,7 @@ class ExoPlayerEngine @Inject constructor(
             .inflate(layoutRes, null, false) as PlayerView
         playerView.player = player
         playerView.useController = false
+        activePlayerViewRef = java.lang.ref.WeakReference(playerView)
         val subtitleView = playerView.subtitleView
         if (subtitleView != null) {
             // Render subtitles with a semi-transparent black background + thick outline
@@ -533,11 +604,8 @@ class ExoPlayerEngine @Inject constructor(
     /** Apply aspect-ratio + subtitle style to an existing [PlayerView]. */
     override fun updateRenderView(view: View, config: RenderViewConfig) {
         val playerView = view as PlayerView
-        playerView.resizeMode = when (config.aspectRatioMode) {
-            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_16_9 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_4_3 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-        }
+        activePlayerViewRef = java.lang.ref.WeakReference(playerView)
+        applyAspectRatioMode(playerView, config.aspectRatioMode)
     }
 
     /** Surface lifecycle â€” mirrors PlayerView.onPause/onResume. */

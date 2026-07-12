@@ -18,6 +18,7 @@ interface UserPreferencesRepository {
     val activeEngine: Flow<EngineType>
     val subtitleStyle: Flow<SubtitleStyle>
     val openSubtitlesApiKey: Flow<String>
+    val githubToken: Flow<String>
     val seekSensitivity: Flow<Float>
     val showHiddenFiles: Flow<Boolean>
     val useSurfaceView: Flow<Boolean>
@@ -39,6 +40,7 @@ interface UserPreferencesRepository {
     suspend fun setActiveEngine(engine: EngineType)
     suspend fun setSubtitleStyle(style: SubtitleStyle)
     suspend fun setOpenSubtitlesApiKey(key: String)
+    suspend fun setGithubToken(token: String)
     suspend fun setSeekSensitivity(sensitivity: Float)
     suspend fun setShowHiddenFiles(enabled: Boolean)
     suspend fun setUseSurfaceView(enabled: Boolean)

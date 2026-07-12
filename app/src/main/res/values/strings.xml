@@ -381,4 +381,22 @@
     <string name="speed_mbps">%1$.1f MB/s</string>
     <string name="size_bytes">%1$d B</string>
     <string name="network_speed_format">↓ %1$s</string>
+
+    <!-- OTA Updates -->
+    <string name="update_available_title">Update Available</string>
+    <string name="update_version_label">Version: %1$s</string>
+    <string name="update_changelog_title">Changelog:</string>
+    <string name="update_download_progress">Downloading... %1$d%%</string>
+    <string name="update_download_failed">Download failed. Please try again.</string>
+    <string name="update_button_downloading">Downloading...</string>
+    <string name="update_button_download">Download &amp; Install</string>
+    <string name="update_no_updates">No updates available. You are on the latest version.</string>
+    <string name="update_checking">Checking for updates...</string>
+    <string name="settings_check_updates">Check for Updates</string>
+    <string name="settings_check_updates_sub">Get the latest builds from GitHub</string>
+    <string name="settings_github_token">GitHub Access Token</string>
+    <string name="settings_github_token_sub">Required for private repo updates</string>
+    <string name="github_token_title">GitHub Access Token</string>
+    <string name="github_token_desc">Enter a Personal Access Token (PAT) with \"repo\" permissions to fetch releases and download APK files from this private repository.</string>
+    <string name="github_token_placeholder">ghp_...</string>
 </resources>
