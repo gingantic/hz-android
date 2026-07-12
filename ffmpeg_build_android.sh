@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# Store the script's root directory immediately before changing directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # FFmpeg Android cross-build. Default ABI arm64-v8a; pass --abi x86_64 for the emulator.
 # NDK is resolved from --ndk-path, $ANDROID_NDK_ROOT, $ANDROID_HOME/ndk, then a
 # Windows/WSL fallback. Toolchain host is detected (windows-x86_64 under WSL).
@@ -135,7 +138,6 @@ make -j4 libavformat/libavformat.so.63 2>&1 | tail -5
 
 # Copy flat .so files to the Android project jniLibs directory
 echo "=== Copying and stripping final .so files to jniLibs/$ABI ==="
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JNILIBS_DIR="$SCRIPT_DIR/app/src/main/jniLibs/$ABI"
 mkdir -p "$JNILIBS_DIR"
 
