@@ -449,3 +449,13 @@ VLC source is in `vlc-android-master/`. **UX reference only — do not copy code
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | High-level roadmap |
 | [`docs/CLEANUP_PLAN.md`](docs/CLEANUP_PLAN.md) | Tech debt and cleanup tasks |
 | [`TODO.md`](TODO.md) | Current task tracking |
+
+---
+
+## 🚦 Guidelines for AI Development
+
+* **Minor Features & Bug Fixes**:
+  * The AI assistant is permitted to implement and verify minor features, bug fixes, refactoring, pipeline adjustments, and styling alignments.
+  * **Versioning Increment**: The AI must always ask for the developer's opinion and confirmation before bumping or increasing the versioning numbers. Any version changes (for example, bumping from `X.Y.Z` to `X.Y.Z+1` for patches, or `X.Y.0` to `X.Y+1.0` for minor features) should be proposed as examples for developer approval.
+* **Major Features & Core Architecture**:
+  * **Only the human developer can make major architecture modifications, structural design changes, or major features.** The AI is restricted from executing major updates autonomously.

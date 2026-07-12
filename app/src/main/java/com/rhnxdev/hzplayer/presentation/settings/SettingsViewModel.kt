@@ -50,7 +50,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     val themeMode: StateFlow<ThemeMode> = prefs.themeMode
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.DARK)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
 
     val useDynamicColors: StateFlow<Boolean> = prefs.useDynamicColors
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -59,9 +59,6 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0xFFE85E00.toInt())
 
     val openSubtitlesApiKey: StateFlow<String> = prefs.openSubtitlesApiKey
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
-
-    val githubToken: StateFlow<String> = prefs.githubToken
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     val seekSensitivity: StateFlow<Float> = prefs.seekSensitivity
@@ -117,10 +114,6 @@ class SettingsViewModel @Inject constructor(
 
     fun saveOpenSubtitlesApiKey(key: String) {
         viewModelScope.launch { prefs.setOpenSubtitlesApiKey(key) }
-    }
-
-    fun saveGithubToken(token: String) {
-        viewModelScope.launch { prefs.setGithubToken(token) }
     }
 
     fun saveSeekSensitivity(value: Float) {

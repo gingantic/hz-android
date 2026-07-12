@@ -21,6 +21,7 @@ fun ThemeSelectionDialog(
             ThemeMode.LIGHT -> stringResource(R.string.theme_light)
             ThemeMode.DARK -> stringResource(R.string.theme_dark)
             ThemeMode.VOID -> stringResource(R.string.theme_void)
+            ThemeMode.SYSTEM -> stringResource(R.string.theme_system)
         }
     },
     onDismiss = onDismiss,

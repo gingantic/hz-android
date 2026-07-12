@@ -35,12 +35,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
             try {
                 ThemeMode.valueOf(themeName)
             } catch (_: IllegalArgumentException) {
-                ThemeMode.DARK
+                ThemeMode.SYSTEM
             }
         } else {
-            // Check legacy boolean key
-            val isDark = prefs[PrefKey.DarkTheme.key] ?: false
-            if (isDark) ThemeMode.DARK else ThemeMode.LIGHT
+            ThemeMode.SYSTEM
         }
     }.distinctUntilChanged()
 
@@ -67,10 +65,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     // androidx.security EncryptedSharedPreferences (AES via AndroidKeyStore).
     override val openSubtitlesApiKey: Flow<String> = dataStore.data.map { prefs ->
         prefs[PrefKey.OpenSubtitlesApiKey.key] ?: ""
-    }.distinctUntilChanged()
-
-    override val githubToken: Flow<String> = dataStore.data.map { prefs ->
-        prefs[PrefKey.GithubToken.key] ?: ""
     }.distinctUntilChanged()
 
     override val seekSensitivity: Flow<Float> = dataStore.data.map { prefs ->
@@ -215,12 +209,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun setGithubToken(token: String) {
-        dataStore.edit { prefs ->
-            prefs[PrefKey.GithubToken.key] = token
-        }
-    }
-
     override suspend fun setSeekSensitivity(sensitivity: Float) {
         dataStore.edit { prefs ->
             prefs[PrefKey.SeekSensitivity.key] = sensitivity
@@ -283,7 +271,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object SubEdgeStyle : PrefKey<Int>(intPreferencesKey("subtitle_edge_style"))
         object SubEnabled : PrefKey<Boolean>(booleanPreferencesKey("subtitle_enabled"))
         object OpenSubtitlesApiKey : PrefKey<String>(stringPreferencesKey("opensubtitles_api_key"))
-        object GithubToken : PrefKey<String>(stringPreferencesKey("github_token"))
         object SeekSensitivity : PrefKey<Float>(floatPreferencesKey("seek_sensitivity"))
         object ShowHiddenFiles : PrefKey<Boolean>(booleanPreferencesKey("show_hidden_files"))
         object UseSurfaceView : PrefKey<Boolean>(booleanPreferencesKey("use_surface_view"))

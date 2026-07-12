@@ -44,7 +44,7 @@ android {
         val commitCount = getGitCommitCount()
         val commitHash = getGitCommitHash()
         versionCode = commitCount
-        versionName = "0.9.0-build.$commitCount+$commitHash"
+        versionName = "0.9.1-build.$commitCount+$commitHash"
 
         val ghUpdateToken = (project.findProperty("GITHUB_UPDATE_TOKEN") as? String)
             ?: System.getenv("GITHUB_UPDATE_TOKEN")
