@@ -406,17 +406,19 @@ fun SettingsScreen(
                                 onClick = {
                                     isCheckingUpdates = true
                                     coroutineScope.launch {
-                                        val info = com.rhnxdev.hzplayer.core.util.UpdateChecker.checkForUpdates()
+                                        val result = com.rhnxdev.hzplayer.core.util.UpdateChecker.checkForUpdates()
                                         isCheckingUpdates = false
-                                        if (info != null) {
-                                            updateInfo = info
-                                            showUpdateDialog = true
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.update_no_updates),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                        when (result) {
+                                            is com.rhnxdev.hzplayer.core.util.UpdateChecker.CheckResult.Available -> {
+                                                updateInfo = result.info
+                                                showUpdateDialog = true
+                                            }
+                                            is com.rhnxdev.hzplayer.core.util.UpdateChecker.CheckResult.UpToDate -> {
+                                                Toast.makeText(context, R.string.update_no_updates, Toast.LENGTH_SHORT).show()
+                                            }
+                                            is com.rhnxdev.hzplayer.core.util.UpdateChecker.CheckResult.Error -> {
+                                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     }
                                 }

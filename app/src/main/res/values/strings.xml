@@ -395,10 +395,7 @@
     <string name="update_checking">Checking for updates...</string>
     <string name="settings_check_updates">Check for Updates</string>
     <string name="settings_check_updates_sub">Get the latest builds from GitHub</string>
-    <string name="settings_github_token">GitHub Access Token</string>
-    <string name="settings_github_token_sub">Required for private repo updates</string>
-    <string name="github_token_title">GitHub Access Token</string>
-    <string name="github_token_desc">Enter a Personal Access Token (PAT) with \"repo\" permissions to fetch releases and download APK files from this private repository.</string>
+
     <string name="github_token_placeholder">ghp_...</string>
     <string name="permission_required_title">Storage Permission Required</string>
     <string name="permission_required_desc">Hz Player requires access to your device storage to scan and show your local audio and video files.</string>
