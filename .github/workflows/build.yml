@@ -44,6 +44,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Decode signing keystore
+        if: ${{ secrets.RELEASE_KEYSTORE_B64 != '' }}
+        run: echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > "${{ github.workspace }}/release.keystore.jks"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -51,6 +55,10 @@ jobs:
         run: ./gradlew assembleRelease
         env:
           R2_UPDATE_BASE_URL: ${{ secrets.R2_PUBLIC_URL }}
+          KEYSTORE_PATH: ${{ github.workspace }}/release.keystore.jks
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
 
       - name: Get Version Name
         id: version
