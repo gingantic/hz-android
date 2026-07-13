@@ -22,6 +22,22 @@ fun getGitCommitHash(): String {
     }
 }
 
+// Shared signing config for the `release` variant so local builds and CI-published
+// OTA APKs carry the same certificate (otherwise INSTALL_FAILED_UPDATE_INCOMPATIBLE).
+// CI passes values via env vars; local dev reads them from gitignored local.properties.
+fun readLocalProp(key: String): String? {
+    val f = rootProject.file("local.properties")
+    if (!f.exists()) return null
+    return f.readLines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+        .map { it.split("=", limit = 2) }
+        .firstOrNull { it[0].trim() == key }
+        ?.get(1)?.trim()
+}
+fun signingValue(propKey: String, envKey: String): String? =
+    System.getenv(envKey) ?: readLocalProp(propKey)
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -63,11 +79,23 @@ android {
 
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(
+                signingValue("SIGNING_STORE_PATH", "KEYSTORE_PATH")
+                    ?: ".signing/release.keystore.jks"
+            )
+            storePassword = signingValue("SIGNING_STORE_PASSWORD", "KEYSTORE_PASS") ?: ""
+            keyAlias = signingValue("SIGNING_KEY_ALIAS", "KEY_ALIAS") ?: "hzplayer"
+            keyPassword = signingValue("SIGNING_KEY_PASSWORD", "KEY_PASS") ?: ""
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
