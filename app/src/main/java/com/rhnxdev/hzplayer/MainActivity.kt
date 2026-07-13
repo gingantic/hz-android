@@ -567,6 +567,7 @@ fun HzPlayerApp(
                 val context = androidx.compose.ui.platform.LocalContext.current
                 VideoPlayerScreen(
                     viewModel = playerViewModel,
+                    assHandler = playerViewModel.assHandler,
                     onBack = {
                         val activity = context as? android.app.Activity
                         activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED

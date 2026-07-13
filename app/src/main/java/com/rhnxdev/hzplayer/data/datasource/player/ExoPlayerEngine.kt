@@ -20,6 +20,7 @@ import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ import javax.inject.Singleton
 class ExoPlayerEngine @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val playerHolder: MediaPlayerHolder,
+    private val assHandler: AssHandler,
 ) : IPlayerEngine {
 
     override val engineType: EngineType = EngineType.EXO_PLAYER
@@ -367,6 +369,27 @@ class ExoPlayerEngine @Inject constructor(
         return getExoTextTracks().map { it.displayName }
     }
 
+    override fun getSubtitleTrackMimeTypes(): List<String?> {
+        // Since Media3 1.4, subtitles are parsed during extraction: the track's
+        // sampleMimeType becomes "application/x-media3-cues" and the original
+        // codec (e.g. text/x-ssa) is moved to Format.codecs. Prefer the original.
+        return getExoTextTracks().map {
+            val format = it.group.getTrackFormat(it.trackIndex)
+            if (format.sampleMimeType == androidx.media3.common.MimeTypes.APPLICATION_MEDIA3_CUES) {
+                format.codecs ?: format.sampleMimeType
+            } else {
+                format.sampleMimeType
+            }
+        }
+    }
+
+    override fun getVideoWidth(): Int = player.videoSize.width
+
+    override fun getVideoHeight(): Int = player.videoSize.height
+
+    override fun getVideoPixelWidthHeightRatio(): Float =
+        player.videoSize.pixelWidthHeightRatio.takeIf { it > 0f } ?: 1f
+
     override fun getSelectedSubtitleTrack(): Int {
         val tracks = getExoTextTracks()
         for (index in tracks.indices) {
@@ -382,6 +405,15 @@ class ExoPlayerEngine @Inject constructor(
         val tracks = getExoTextTracks()
         if (index in tracks.indices) {
             val selectedTrack = tracks[index]
+            val format = selectedTrack.group.getTrackFormat(selectedTrack.trackIndex)
+            val isAss = format.sampleMimeType?.let { it == MimeTypes.TEXT_SSA || it == "text/x-ssa" || it == "text/x-ass" }
+                ?: (format.codecs?.lowercase()?.let { "ass" in it || "ssa" in it } ?: false)
+            if (isAss) {
+                // Route embedded ASS/SSA through libass for full styling; the built-in
+                // text renderer is fed a no-op parser so it won't draw duplicates.
+                assHandler.selectTrackByFormat(format)
+                return
+            }
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -394,12 +426,28 @@ class ExoPlayerEngine @Inject constructor(
                 )
                 .build()
         } else {
+            assHandler.clearOverlay()
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .build()
         }
+    }
+
+    /** Resolve the [Format] of a subtitle track (used to detect/route ASS). */
+    fun getSubtitleTrackFormat(index: Int): androidx.media3.common.Format? {
+        val tracks = getExoTextTracks()
+        if (index !in tracks.indices) return null
+        return tracks[index].group.getTrackFormat(tracks[index].trackIndex)
+    }
+
+    /** Load an external `.ass`/`.ssa` file into libass (bypasses ExoPlayer parsing). */
+    override fun loadExternalAss(uri: Uri) {
+        val data = runCatching {
+            appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }.getOrNull() ?: return
+        assHandler.loadExternalTrack(data)
     }
 
     // â”€â”€ Audio track selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -505,6 +553,8 @@ class ExoPlayerEngine @Inject constructor(
     private var activePlayerViewRef: java.lang.ref.WeakReference<PlayerView>? = null
     private var currentAspectRatioMode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode = com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO
     private var listenerRegisteredPlayer: Player? = null
+    /** True once ASS renderer is active — keeps SubtitleView hidden across PlayerView recreations. */
+    private var assSubtitlesActive = false
 
     private val videoSizeListener = object : Player.Listener {
         override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -585,8 +635,6 @@ class ExoPlayerEngine @Inject constructor(
         activePlayerViewRef = java.lang.ref.WeakReference(playerView)
         val subtitleView = playerView.subtitleView
         if (subtitleView != null) {
-            // Render subtitles with a semi-transparent black background + thick outline
-            // so white text stays legible over bright video frames.
             subtitleView.setStyle(
                 CaptionStyleCompat(
                     0xFFFFFFFF.toInt(),
@@ -597,8 +645,21 @@ class ExoPlayerEngine @Inject constructor(
                     null,
                 )
             )
+            // Hide ExoPlayer's built-in subtitle view if ASS rendering is already active
+            // (e.g. engine re-created while handler is initialized).
+            if (assSubtitlesActive) {
+                subtitleView.visibility = android.view.View.GONE
+            }
         }
         return playerView
+    }
+
+    /** Hide / show ExoPlayer's built-in SubtitleView. Call when ASS renderer takes over. */
+    fun setExoSubtitleViewVisible(visible: Boolean) {
+        assSubtitlesActive = !visible
+        val playerView = activePlayerViewRef?.get() ?: return
+        val sv = playerView.subtitleView ?: return
+        sv.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     /** Apply aspect-ratio + subtitle style to an existing [PlayerView]. */

@@ -89,6 +89,15 @@ interface IPlayerEngine {
     /** Currently buffered position in ms, or 0 if unknown. */
     fun getBufferedPosition(): Long
 
+    /** Video coded width in px, or 0 if unknown. Used to size the libass overlay. */
+    fun getVideoWidth(): Int = 0
+
+    /** Video coded height in px, or 0 if unknown. */
+    fun getVideoHeight(): Int = 0
+
+    /** Pixel width/height ratio of the video (1.0 = square pixels). */
+    fun getVideoPixelWidthHeightRatio(): Float = 1f
+
     // ── Configuration ───────────────────────────────────────────
 
     /** Set playback speed (1.0 = normal). */
@@ -120,6 +129,16 @@ interface IPlayerEngine {
 
     /** Select a subtitle track by its index in [getSubtitleTracks], or -1 to disable. */
     fun selectSubtitleTrack(index: Int)
+
+    /** Load an external `.ass`/`.ssa` file into libass (bypasses ExoPlayer parsing). */
+    fun loadExternalAss(uri: android.net.Uri)
+
+    /**
+     * Per-track sample MIME type, aligned 1:1 with [getSubtitleTracks] indices.
+     * Used to detect embedded ASS/SSA tracks that should route to libass instead
+     * of the built-in text renderer. Default empty (engine opts out).
+     */
+    fun getSubtitleTrackMimeTypes(): List<String?> = emptyList()
 
     /**
      * Add an external subtitle file (e.g. .srt, .vtt, .ass) to the current playback.

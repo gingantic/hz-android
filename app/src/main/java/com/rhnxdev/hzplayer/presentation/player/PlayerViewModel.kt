@@ -45,6 +45,7 @@ class PlayerViewModel @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
     private val resumeProgress: ResumeRepository,
     private val mediaDao: MediaDao,
+    val assHandler: com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -200,12 +201,47 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun selectSubtitleTrack(index: Int) = trackCache.selectSubtitleTrack(index)
+    fun selectSubtitleTrack(index: Int) {
+        val mimes = runCatching { getActiveEngine().getSubtitleTrackMimeTypes() }
+            .getOrDefault(emptyList())
+        val mime = mimes.getOrNull(index)?.lowercase()
+        val isAss = mime != null && ("ass" in mime || "ssa" in mime)
+        android.util.Log.i(
+            "HzAss",
+            "selectSubtitleTrack idx=$index mime=$mime isAss=$isAss " +
+                "allMimes=$mimes",
+        )
+
+        if (isAss) {
+            // Engine routes embedded ASS/SSA through libass for full styling.
+            getActiveEngine().selectSubtitleTrack(index)
+            _uiState.update {
+                it.copy(assEmbeddedOrdinal = null, assSubtitleUri = null, selectedSubtitleTrack = index)
+            }
+        } else {
+            _uiState.update { it.copy(assEmbeddedOrdinal = null, assSubtitleUri = null) }
+            trackCache.selectSubtitleTrack(index)
+        }
+    }
 
     fun selectAudioTrack(index: Int) = trackCache.selectAudioTrack(index)
 
     fun addExternalSubtitle(uri: Uri, displayName: String? = null) {
         val name = displayName ?: uri.lastPathSegment ?: uri.toString()
+        val isAss = name.substringAfterLast('.', "").lowercase() in setOf("ass", "ssa")
+        if (isAss) {
+            // Render ASS/SSA through libass for full styling/animation; bypass
+            // ExoPlayer's built-in text renderer to avoid double subtitles.
+            getActiveEngine().loadExternalAss(uri)
+            _uiState.update { state ->
+                state.copy(
+                    assSubtitleUri = uri,
+                    assEmbeddedOrdinal = null,
+                    externalSubtitles = state.externalSubtitles + (name to uri),
+                )
+            }
+            return
+        }
         val success = playerRepository.addExternalSubtitle(uri)
         if (success) {
             trackCache.refresh()

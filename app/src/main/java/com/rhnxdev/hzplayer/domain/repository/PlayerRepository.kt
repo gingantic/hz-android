@@ -39,6 +39,7 @@ interface PlayerRepository {
     fun getSubtitleTracks(): List<String>
     fun getSelectedSubtitleTrack(): Int
     fun selectSubtitleTrack(index: Int)
+    fun loadExternalAss(uri: Uri)
     fun addExternalSubtitle(uri: Uri): Boolean
     fun setSubtitleDelay(delayMs: Long)
     fun getSubtitleDelay(): Long
