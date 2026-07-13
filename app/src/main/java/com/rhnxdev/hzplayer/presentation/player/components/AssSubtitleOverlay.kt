@@ -17,7 +17,11 @@ fun AssSubtitleOverlay(
     modifier: Modifier = Modifier,
 ) {
     AndroidView(
-        factory = { assHandler.view },
+        factory = {
+            val view = assHandler.view
+            (view.parent as? ViewGroup)?.removeView(view)
+            view
+        },
         modifier = modifier,
         onRelease = { (it.parent as? ViewGroup)?.removeView(it) },
     )

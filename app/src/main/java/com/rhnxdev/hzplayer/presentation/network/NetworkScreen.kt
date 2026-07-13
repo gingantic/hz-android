@@ -202,7 +202,7 @@ fun NetworkScreen(
                 onClearHistory = viewModel::onClearHistory,
             )
 
-            NetworkScreenMode.SERVER_BROWSE -> ServerBrowseStackContent(
+             NetworkScreenMode.SERVER_BROWSE -> ServerBrowseStackContent(
                 uiState = uiState,
                 searchQuery = searchQuery,
                 isSearchActive = isSearchActive,
@@ -218,6 +218,9 @@ fun NetworkScreen(
                 onRetry = viewModel::onRetryBrowse,
                 onRefresh = viewModel::onRefreshBrowse,
                 buildPlaybackUri = { path -> viewModel.buildPlaybackUri(path) },
+                getScrollState = viewModel::getScrollState,
+                getScrollStateIsAtEnd = viewModel::getScrollStateIsAtEnd,
+                saveScrollState = viewModel::saveScrollState,
             )
         }
     }

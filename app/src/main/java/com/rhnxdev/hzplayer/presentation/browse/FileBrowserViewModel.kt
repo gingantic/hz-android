@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.presentation.browse
 
+import android.content.res.Configuration
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,6 +28,24 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
+
+/**
+ * Persisted scroll position for a browsed directory.
+ *
+ * @param index        first visible item index — stable across orientation changes.
+ * @param offset       pixel offset of that item — only meaningful in the same orientation.
+ * @param orientation  orientation when saved; lets restore decide between an exact
+ *                     (same orientation) or top-aligned (after rotation) restore.
+ * @param isAtEnd      true when the last item of the list was visible; restored by
+ *                     scrolling to the absolute end so LazyColumn's end-clamping places
+ *                     it correctly instead of bouncing back ~N items.
+ */
+data class SavedScrollPosition(
+    val index: Int,
+    val offset: Int,
+    val orientation: Int,
+    val isAtEnd: Boolean = false,
+)
 
 @HiltViewModel
 class FileBrowserViewModel @Inject constructor(
@@ -332,5 +351,31 @@ class FileBrowserViewModel @Inject constructor(
             ))
         }
         _uiState.update { it.copy(layers = sortedLayers) }
+    }
+
+    private val _scrollStates = mutableMapOf<String, SavedScrollPosition>()
+
+    private fun scrollKey(path: String, orientation: Int) = "$path#$orientation"
+
+    private fun otherOrientation(orientation: Int): Int =
+        if (orientation == Configuration.ORIENTATION_LANDSCAPE)
+            Configuration.ORIENTATION_PORTRAIT
+        else Configuration.ORIENTATION_LANDSCAPE
+
+    fun getScrollState(path: String, orientation: Int): SavedScrollPosition {
+        _scrollStates[scrollKey(path, orientation)]?.let { return it }
+        // No save for this orientation yet. Convert from the other orientation by
+        // reusing the same first-visible item + offset (row heights are
+        // orientation-independent in this single-column list), so the visual
+        // position stays consistent across rotation instead of jumping to the top.
+        // isAtEnd is orientation-independent (list length doesn't change on rotation).
+        _scrollStates[scrollKey(path, otherOrientation(orientation))]?.let {
+            return SavedScrollPosition(it.index, 0, orientation, it.isAtEnd)
+        }
+        return SavedScrollPosition(0, 0, orientation)
+    }
+
+    fun saveScrollState(path: String, index: Int, offset: Int, orientation: Int, isAtEnd: Boolean = false) {
+        _scrollStates[scrollKey(path, orientation)] = SavedScrollPosition(index, offset, orientation, isAtEnd)
     }
 }
