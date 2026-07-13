@@ -465,6 +465,23 @@ class NetworkViewModel @Inject constructor(
     fun onDeleteHistoryItem(id: Long) { viewModelScope.launch { networkRepository.deleteHistoryItem(id) } }
     fun onClearHistory() { viewModelScope.launch { networkRepository.clearHistory() } }
 
+    // Triple: (firstVisibleIndex, pixelOffset, isAtEnd)
+    // isAtEnd = true when the last list item was visible at save time; restored by
+    // scrolling to totalItemsCount-1 so LazyColumn's end-clamping works naturally.
+    private val _scrollStates = mutableMapOf<String, Triple<Int, Int, Boolean>>()
+
+    fun getScrollState(path: String): Pair<Int, Int> {
+        val s = _scrollStates[path] ?: return Pair(0, 0)
+        return Pair(s.first, s.second)
+    }
+
+    fun getScrollStateIsAtEnd(path: String): Boolean =
+        _scrollStates[path]?.third ?: false
+
+    fun saveScrollState(path: String, index: Int, offset: Int, isAtEnd: Boolean = false) {
+        _scrollStates[path] = Triple(index, offset, isAtEnd)
+    }
+
     override fun onCleared() {
         super.onCleared()
         serverDiscoverer.cleanup()

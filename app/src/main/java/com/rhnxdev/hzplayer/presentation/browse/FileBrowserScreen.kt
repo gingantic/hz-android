@@ -43,6 +43,11 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalConfiguration
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import androidx.compose.ui.res.stringResource
 import com.rhnxdev.hzplayer.R
 import androidx.compose.runtime.setValue
@@ -190,6 +195,9 @@ fun FileBrowserScreen(
                         onBreadcrumbClicked = viewModel::onBreadcrumbClicked,
                         onRetry = viewModel::onRetry,
                         onRefresh = viewModel::onRefresh,
+                        getScrollState = viewModel::getScrollState,
+                        saveScrollState = viewModel::saveScrollState,
+                        fullScreenOverlay = fullScreenOverlay,
                         onFileClicked = onFileClicked,
                     )
 
@@ -436,6 +444,9 @@ private fun DirectoryStackContent(
     onBreadcrumbClicked: (String) -> Unit,
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
+    getScrollState: (String, Int) -> SavedScrollPosition,
+    saveScrollState: (String, Int, Int, Int, Boolean) -> Unit,
+    fullScreenOverlay: Boolean = false,
     onFileClicked: (FolderItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -466,6 +477,10 @@ private fun DirectoryStackContent(
                     onBreadcrumbClicked = if (isTop) onBreadcrumbClicked else noopBreadcrumb,
                     onRetry = if (isTop) onRetry else noopAction,
                     onRefresh = if (isTop) onRefresh else noopAction,
+                    getScrollState = getScrollState,
+                    saveScrollState = saveScrollState,
+                    fullScreenOverlay = fullScreenOverlay,
+                    isTopLayer = isTop,
                     onFileClicked = if (isTop) onFileClicked else noopFolder,
                     modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
@@ -484,10 +499,87 @@ private fun DirectoryLayerView(
     onBreadcrumbClicked: (String) -> Unit,
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
+    getScrollState: (String, Int) -> SavedScrollPosition,
+    saveScrollState: (String, Int, Int, Int, Boolean) -> Unit,
+    fullScreenOverlay: Boolean = false,
+    isTopLayer: Boolean = false,
     onFileClicked: (FolderItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val currentOrientation = LocalConfiguration.current.orientation
+
+    // The saved position is keyed per (path, orientation). getScrollState returns the
+    // entry for the current orientation, or converts from the other orientation by
+    // reusing the same first-visible item + offset — so a rotation lands on the same
+    // visual spot, and each orientation keeps its own scroll position (no clobbering).
+    val saved = remember(layer.path, currentOrientation) { getScrollState(layer.path, currentOrientation) }
+    val initialIndex = saved.index
+    val initialOffset = saved.offset
+    val listState = remember<LazyListState>(layer.path) {
+        LazyListState(
+            firstVisibleItemIndex = initialIndex,
+            firstVisibleItemScrollOffset = initialOffset,
+        )
+    }
+
+    // On rotation the LazyListState is reused (keyed only on layer.path), so the
+    // constructor values don't apply again. LazyColumn re-lays out with the new
+    // viewport height and may auto-scroll backward when the saved index is near the
+    // end — it pulls back to fill the taller/shorter screen (end-clamping).
+    // Fix: if "isAtEnd" was saved, jump to the absolute last item so LazyColumn
+    // applies its natural end-anchor. Otherwise restore the exact saved index.
+    androidx.compose.runtime.LaunchedEffect(currentOrientation, layer.path) {
+        val s = getScrollState(layer.path, currentOrientation)
+        val total = listState.layoutInfo.totalItemsCount
+        if (s.isAtEnd && total > 0) {
+            listState.scrollToItem(total - 1, 0)
+        } else {
+            listState.scrollToItem(s.index, s.offset)
+        }
+    }
+
+    // Save the scroll position ONLY when a real user scroll gesture ends.
+    // A layout-driven re-anchor (e.g. the nav bar/rail hiding when the video
+    // overlay opens, or a forced rotation) changes firstVisibleItemIndex too,
+    // but does NOT set isScrollInProgress — so it must never be persisted, or
+    // the stored index drifts by however many extra rows become visible.
+    // We keep the *real* offset + orientation so the same-orientation restore is exact.
+    // drop(1): skip the spurious initial emission when listState is (re)created on a
+    // rotation — otherwise it would overwrite the good portrait save with a
+    // landscape (index, 0) entry and lose the portrait offset on the way back.
+    androidx.compose.runtime.LaunchedEffect(listState, layer.path) {
+        androidx.compose.runtime.snapshotFlow { listState.isScrollInProgress }
+            .distinctUntilChanged()
+            .drop(1)
+            .filter { !it }
+            .collect {
+                val info = listState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                val isAtEnd = info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - 1
+                saveScrollState(
+                    layer.path,
+                    listState.firstVisibleItemIndex,
+                    listState.firstVisibleItemScrollOffset,
+                    currentOrientation,
+                    isAtEnd,
+                )
+            }
+    }
+
+    // When the full-screen overlay (video/audio player) closes, the underlying
+    // list may have been re-anchored by the viewport resize while it was hidden.
+    // Snap the top layer back using the same end-aware logic as the rotation effect.
+    androidx.compose.runtime.LaunchedEffect(fullScreenOverlay) {
+        if (!fullScreenOverlay && isTopLayer) {
+            val s = getScrollState(layer.path, currentOrientation)
+            val total = listState.layoutInfo.totalItemsCount
+            if (s.isAtEnd && total > 0) {
+                listState.scrollToItem(total - 1, 0)
+            } else {
+                listState.scrollToItem(s.index, s.offset)
+            }
+        }
+    }
 
     // Filter items: media mode shows only videos; normal mode hides documents.
     // ponytail: remember keyed on inputs — this runs for every one of the up to
@@ -531,6 +623,20 @@ private fun DirectoryLayerView(
             isSearchActive = isSearchActive,
             mediaMode = mediaMode,
             onItemClick = { data ->
+                // Snapshot scroll position NOW — before navigation fires isFullScreen=true,
+                // which hides the nav bar/rail, resizes the viewport, and causes the
+                // LazyColumn to re-anchor. Keep the real offset + orientation so the
+                // same-orientation restore returns to the exact position.
+                val info = listState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                val isAtEnd = info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - 1
+                saveScrollState(
+                    layer.path,
+                    listState.firstVisibleItemIndex,
+                    listState.firstVisibleItemScrollOffset,
+                    currentOrientation,
+                    isAtEnd,
+                )
                 val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
                 if (data.isDirectory) onFolderClicked(item)
                 else onFileClicked(item)

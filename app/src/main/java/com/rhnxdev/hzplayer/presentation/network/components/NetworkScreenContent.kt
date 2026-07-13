@@ -23,10 +23,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -400,6 +403,9 @@ internal fun ServerBrowseStackContent(
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
     buildPlaybackUri: (String) -> String?,
+    getScrollState: (String) -> Pair<Int, Int>,
+    getScrollStateIsAtEnd: (String) -> Boolean,
+    saveScrollState: (String, Int, Int, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -408,7 +414,6 @@ internal fun ServerBrowseStackContent(
         val noopFolder: (RemoteFileItem) -> Unit = {}
         val noopBreadcrumb: (String) -> Unit = {}
 
-        val topLayer = uiState.remoteLayers.getOrNull(topIndex)
         uiState.remoteLayers.forEachIndexed { index, layer ->
             val isTop = index == topIndex
             key(layer.path) {
@@ -423,6 +428,9 @@ internal fun ServerBrowseStackContent(
                     onRetry = if (isTop) onRetry else noopAction,
                     onRefresh = if (isTop) onRefresh else noopAction,
                     buildPlaybackUri = buildPlaybackUri,
+                    getScrollState = getScrollState,
+                    getScrollStateIsAtEnd = getScrollStateIsAtEnd,
+                    saveScrollState = saveScrollState,
                     modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
             }
@@ -442,9 +450,54 @@ private fun RemoteDirectoryLayerView(
     onRetry: () -> Unit,
     onRefresh: () -> Unit,
     buildPlaybackUri: (String) -> String?,
+    getScrollState: (String) -> Pair<Int, Int>,
+    getScrollStateIsAtEnd: (String) -> Boolean,
+    saveScrollState: (String, Int, Int, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberLazyListState()
+    // Only store the item *index* — pixel offsets are orientation-dependent and cause
+    // jumps when the device rotates or the layout changes. Index-only restore always
+    // lands cleanly at the right item with zero extra offset.
+    val initialIndex = remember<Int>(layer.path) { getScrollState(layer.path).first }
+    val listState = remember<LazyListState>(layer.path) {
+        LazyListState(
+            firstVisibleItemIndex = initialIndex,
+            firstVisibleItemScrollOffset = 0,
+        )
+    }
+
+    // On rotation the LazyListState is reused (keyed only on layer.path), so the
+    // constructor values don't apply again. LazyColumn re-lays out with the new
+    // viewport height and may auto-scroll backward when the saved index is near the
+    // end — it pulls back to fill the taller/shorter screen (end-clamping).
+    // Fix: if "isAtEnd" was saved, jump to the absolute last item so LazyColumn
+    // applies its natural end-anchor. Otherwise restore the exact saved index.
+    val currentOrientation = LocalConfiguration.current.orientation
+    androidx.compose.runtime.LaunchedEffect(currentOrientation, layer.path) {
+        val total = listState.layoutInfo.totalItemsCount
+        if (getScrollStateIsAtEnd(layer.path) && total > 0) {
+            listState.scrollToItem(total - 1, 0)
+        } else {
+            val savedIndex = getScrollState(layer.path).first
+            listState.scrollToItem(savedIndex, 0)
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(listState, layer.path) {
+        var wasScrolling = false
+        androidx.compose.runtime.snapshotFlow {
+            listState.isScrollInProgress to listState.firstVisibleItemIndex
+        }
+        .collect { (isScrolling, index) ->
+            if (isScrolling || wasScrolling) {
+                val info = listState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                val isAtEnd = info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - 1
+                saveScrollState(layer.path, index, 0, isAtEnd)
+            }
+            wasScrolling = isScrolling
+        }
+    }
 
     val visibleItems = remember(layer.items, mediaMode) {
         when {
@@ -491,6 +544,13 @@ private fun RemoteDirectoryLayerView(
             isSearchActive = isSearchActive,
             mediaMode = mediaMode,
             onItemClick = { data ->
+                // Snapshot scroll position NOW — before navigation fires isFullScreen=true,
+                // which hides the nav bar/rail, resizes the viewport, and causes the
+                // LazyColumn to scroll backward to fill the new empty space at the bottom/side.
+                val info = listState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                val isAtEnd = info.totalItemsCount > 0 && lastVisible >= info.totalItemsCount - 1
+                saveScrollState(layer.path, listState.firstVisibleItemIndex, 0, isAtEnd)
                 val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
                 if (data.isDirectory) onFolderClicked(item)
                 else onFileClicked(item)

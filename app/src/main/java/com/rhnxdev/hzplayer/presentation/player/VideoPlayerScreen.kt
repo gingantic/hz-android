@@ -133,11 +133,26 @@ fun VideoPlayerScreen(
         activity?.let { viewModel.applyOrientationMode(it, orientationMode) }
     }
 
-    BackHandler { onBack() }
+    var isExiting by remember { mutableStateOf(false) }
+    val handleBack = remember { { isExiting = true } }
+
+    BackHandler {
+        handleBack()
+    }
+
+    // When exiting, let one frame render the black overlay then navigate back.
+    LaunchedEffect(isExiting) {
+        if (isExiting) {
+            // yield to let the black overlay paint over the video frame
+            kotlinx.coroutines.yield()
+            onBack()
+        }
+    }
 
     // Seek + slide + hold-speed cue state, written by the gesture loop and read by
     // the indicators / LaunchedEffects below.
     val gestureState = remember { PlayerGestureState() }
+
     var showSubtitleDialog by remember { mutableStateOf(false) }
     var showSubtitleBrowser by remember { mutableStateOf(false) }
     var showSubtitleStyleDialog by remember { mutableStateOf(false) }
@@ -358,7 +373,7 @@ fun VideoPlayerScreen(
                         positionFlow = viewModel.position,
                         networkTrafficFlow = viewModel.networkTraffic,
                         title = uiState.currentTitle,
-                        onBack = onBack,
+                        onBack = handleBack,
                         onPlayPause = viewModel::onPlayPause,
                         onSeekTo = viewModel::onSeekTo,
                         onSkipForward = viewModel::onSkipForward,
@@ -520,7 +535,7 @@ fun VideoPlayerScreen(
                 PlaybackErrorOverlay(
                     errorMessage = uiState.errorMessage,
                     errorKind = uiState.errorKind,
-                    onBack = onBack,
+                    onBack = handleBack,
                     onRetry = viewModel::retry,
                     onDismiss = viewModel::clearError,
                 )
@@ -553,6 +568,14 @@ fun VideoPlayerScreen(
                     )
                 }
             }
+        }
+
+        if (isExiting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            )
         }
     }
 }

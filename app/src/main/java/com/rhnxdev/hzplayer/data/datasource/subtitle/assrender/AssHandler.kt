@@ -33,10 +33,10 @@ class AssHandler @Inject constructor(
 
     private val overlayView = SubtitleOverlayView(context)
 
-    /** The overlay view the UI should host above the video surface. */
     val view: SubtitleOverlayView get() = overlayView
 
     private var nativeHandle: Long = 0L
+    private val nativeLock = Any()
     private var renderBitmap: Bitmap? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -64,6 +64,9 @@ class AssHandler @Inject constructor(
 
     @Volatile
     private var needsFontReload = false
+
+    @Volatile
+    private var hasLoadedFirstTime = false
 
     fun updatePosition(positionUs: Long, elapsedRealtimeUs: Long) {
         // Sanity-check: reject obviously corrupted values.
@@ -98,17 +101,23 @@ class AssHandler @Inject constructor(
         trackFormats[trackId] = format
         trackHeaders[trackId] = headerData
 
-        if (!initialized) {
-            Log.i(TAG, "[INIT] first ASS track — initializing native context ($videoWidth x $videoHeight)")
-            nativeHandle = AssDirectBridge.nativeInit(videoWidth, videoHeight, 1.0f)
-            if (nativeHandle == 0L) {
-                Log.e(TAG, "[INIT] nativeInit returned 0 — FATAL")
-                return
+        var shouldInvokeCallback = false
+        synchronized(nativeLock) {
+            if (!initialized) {
+                Log.i(TAG, "[INIT] first ASS track — initializing native context ($videoWidth x $videoHeight)")
+                nativeHandle = AssDirectBridge.nativeInit(videoWidth, videoHeight, 1.0f)
+                if (nativeHandle == 0L) {
+                    Log.e(TAG, "[INIT] nativeInit returned 0 — FATAL")
+                    return
+                }
+                Log.i(TAG, "[INIT] nativeInit OK handle=$nativeHandle")
+                renderBitmap = Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
+                initialized = true
+                flushPendingFonts()
+                shouldInvokeCallback = true
             }
-            Log.i(TAG, "[INIT] nativeInit OK handle=$nativeHandle")
-            renderBitmap = Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
-            initialized = true
-            flushPendingFonts()
+        }
+        if (shouldInvokeCallback) {
             onAssTrackSelected?.invoke()
         }
 
@@ -181,7 +190,11 @@ class AssHandler @Inject constructor(
             .add(Triple(startMs, durationMs, chunkBytes))
 
         if (trackId == activeTrackId) {
-            AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
+            synchronized(nativeLock) {
+                if (nativeHandle != 0L) {
+                    AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
+                }
+            }
         }
     }
 
@@ -192,36 +205,46 @@ class AssHandler @Inject constructor(
         else "(too short)"
         Log.d(TAG, "[FONT] onFontAttachment: name='$name' size=${data.size}B magic=[$magic] initialized=$initialized")
 
-        if (!initialized || nativeHandle == 0L) {
-            pendingFonts.add(Pair(name, data))
-            Log.d(TAG, "[FONT] buffered (not yet initialized) — pendingFonts.size=${pendingFonts.size}")
-            return
+        synchronized(nativeLock) {
+            if (!initialized || nativeHandle == 0L) {
+                pendingFonts.add(Pair(name, data))
+                Log.d(TAG, "[FONT] buffered (not yet initialized) — pendingFonts.size=${pendingFonts.size}")
+                return
+            }
+            AssDirectBridge.nativeAddFont(nativeHandle, name, data)
+            needsFontReload = true
+            Log.d(TAG, "[FONT] nativeAddFont done, needsFontReload=true")
         }
-        AssDirectBridge.nativeAddFont(nativeHandle, name, data)
-        needsFontReload = true
-        Log.d(TAG, "[FONT] nativeAddFont done, needsFontReload=true")
     }
 
     /** Load an external `.ass`/`.ssa` file into libass (bypasses ExoPlayer parsing). */
     fun loadExternalTrack(data: ByteArray) {
-        if (nativeHandle == 0L) {
-            nativeHandle = AssDirectBridge.nativeInit(videoWidth, videoHeight, 1.0f)
+        var shouldInvokeCallback = false
+        synchronized(nativeLock) {
             if (nativeHandle == 0L) {
-                Log.e(TAG, "Failed to init native context for external ASS")
-                return
+                nativeHandle = AssDirectBridge.nativeInit(videoWidth, videoHeight, 1.0f)
+                if (nativeHandle == 0L) {
+                    Log.e(TAG, "Failed to init native context for external ASS")
+                    return
+                }
+                renderBitmap = Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
+                initialized = true
+                flushPendingFonts()
+                shouldInvokeCallback = true
             }
-            renderBitmap = Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
-            initialized = true
-            flushPendingFonts()
-            onAssTrackSelected?.invoke()
+            activeTrackId = -1
+            pendingFonts.clear()
+            if (nativeHandle != 0L) {
+                AssDirectBridge.nativeFlush(nativeHandle)
+                val ok = AssDirectBridge.nativeLoadHeader(nativeHandle, data)
+                if (ok != 0) {
+                    Log.e(TAG, "Failed to load external ASS (${data.size} bytes)")
+                    return
+                }
+            }
         }
-        activeTrackId = -1
-        pendingFonts.clear()
-        AssDirectBridge.nativeFlush(nativeHandle)
-        val ok = AssDirectBridge.nativeLoadHeader(nativeHandle, data)
-        if (ok != 0) {
-            Log.e(TAG, "Failed to load external ASS (${data.size} bytes)")
-            return
+        if (shouldInvokeCallback) {
+            onAssTrackSelected?.invoke()
         }
         overlayView.clear()
         Log.i(TAG, "Loaded external ASS: ${data.size} bytes")
@@ -234,13 +257,17 @@ class AssHandler @Inject constructor(
             Log.d(TAG, "[FONT] no pending fonts to flush")
             return
         }
-        pendingFonts.forEachIndexed { idx, (name, data) ->
-            Log.d(TAG, "[FONT]   flushing[$idx]: '$name' ${data.size}B")
-            AssDirectBridge.nativeAddFont(nativeHandle, name, data)
+        synchronized(nativeLock) {
+            if (nativeHandle != 0L) {
+                pendingFonts.forEachIndexed { idx, (name, data) ->
+                    Log.d(TAG, "[FONT]   flushing[$idx]: '$name' ${data.size}B")
+                    AssDirectBridge.nativeAddFont(nativeHandle, name, data)
+                }
+                Log.d(TAG, "[FONT] flushed ${pendingFonts.size} fonts → scheduling reload")
+                pendingFonts.clear()
+                needsFontReload = true
+            }
         }
-        Log.d(TAG, "[FONT] flushed ${pendingFonts.size} fonts → scheduling reload")
-        pendingFonts.clear()
-        needsFontReload = true
     }
 
     fun selectTrack(trackId: Int) {
@@ -255,24 +282,27 @@ class AssHandler @Inject constructor(
         }
 
         mainHandler.post {
-            activeTrackId = trackId
-            overlayView.clear()
-            pendingFormatToSelect = null
+            synchronized(nativeLock) {
+                if (nativeHandle == 0L) return@synchronized
+                activeTrackId = trackId
+                overlayView.clear()
+                pendingFormatToSelect = null
 
-            AssDirectBridge.nativeFlush(nativeHandle)
+                AssDirectBridge.nativeFlush(nativeHandle)
 
-            AssDirectBridge.nativeLoadHeader(nativeHandle, header)
+                AssDirectBridge.nativeLoadHeader(nativeHandle, header)
 
-            // Font reload must happen AFTER header is loaded
-            if (needsFontReload) {
-                needsFontReload = false
-                AssDirectBridge.nativeReloadFonts(nativeHandle)
-            }
+                // Font reload must happen AFTER header is loaded
+                if (needsFontReload) {
+                    needsFontReload = false
+                    AssDirectBridge.nativeReloadFonts(nativeHandle)
+                }
 
-            val events = trackEvents[trackId]
-            if (events != null) {
-                for ((startMs, durationMs, chunkBytes) in events) {
-                    AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
+                val events = trackEvents[trackId]
+                if (events != null) {
+                    for ((startMs, durationMs, chunkBytes) in events) {
+                        AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
+                    }
                 }
             }
 
@@ -356,16 +386,20 @@ class AssHandler @Inject constructor(
         if (!initialized || nativeHandle == 0L) return
         val bitmap = renderBitmap ?: return
 
-        if (needsFontReload) {
-            Log.d(TAG, "[FONT] renderFrame: triggering deferred font reload")
-            needsFontReload = false
-            AssDirectBridge.nativeReloadFonts(nativeHandle)
-            Log.d(TAG, "[FONT] font reload complete")
+        val p = player
+        val playbackState = p?.playbackState ?: androidx.media3.common.Player.STATE_IDLE
+        if (playbackState == androidx.media3.common.Player.STATE_READY) {
+            hasLoadedFirstTime = true
         }
 
-        val isPlaying       = player?.isPlaying == true
-        val speed           = player?.playbackParameters?.speed ?: 1.0f
-        val mediaDurationMs = player?.duration?.takeIf { it > 0 } ?: Long.MAX_VALUE
+        if (!hasLoadedFirstTime) {
+            overlayView.clear()
+            return
+        }
+
+        val isPlaying       = p?.isPlaying == true
+        val speed           = p?.playbackParameters?.speed ?: 1.0f
+        val mediaDurationMs = p?.duration?.takeIf { it > 0 } ?: Long.MAX_VALUE
 
         val positionMs: Long
 
@@ -377,10 +411,21 @@ class AssHandler @Inject constructor(
             positionMs = interpolated.coerceAtLeast(0L)
                 .let { v -> if (mediaDurationMs < Long.MAX_VALUE) v.coerceAtMost(mediaDurationMs) else v }
         } else {
-            positionMs = player?.currentPosition ?: (lastPositionUs / 1000L).coerceAtLeast(0L)
+            positionMs = p?.currentPosition ?: (lastPositionUs / 1000L).coerceAtLeast(0L)
         }
 
-        val hasContent = AssDirectBridge.nativeRender(nativeHandle, positionMs, bitmap)
+        var hasContent = false
+        synchronized(nativeLock) {
+            if (nativeHandle != 0L) {
+                if (needsFontReload) {
+                    Log.d(TAG, "[FONT] renderFrame: triggering deferred font reload")
+                    needsFontReload = false
+                    AssDirectBridge.nativeReloadFonts(nativeHandle)
+                    Log.d(TAG, "[FONT] font reload complete")
+                }
+                hasContent = AssDirectBridge.nativeRender(nativeHandle, positionMs, bitmap)
+            }
+        }
 
         if (hasContent) {
             overlayView.updateBitmap(bitmap)
@@ -459,8 +504,11 @@ class AssHandler @Inject constructor(
         lastPositionRealtimeUs = 0L
         currentTimeUs = 0L
         pendingFormatToSelect = null
-        if (nativeHandle != 0L) {
-            AssDirectBridge.nativeFlush(nativeHandle)
+        hasLoadedFirstTime = false
+        synchronized(nativeLock) {
+            if (nativeHandle != 0L) {
+                AssDirectBridge.nativeFlush(nativeHandle)
+            }
         }
         stopRenderLoop()
         mainHandler.post { overlayView.clear() }
@@ -468,17 +516,20 @@ class AssHandler @Inject constructor(
 
     /** Reset subtitle state when loading a new media item. */
     fun reset() {
-        trackFormats.clear()
-        trackHeaders.clear()
-        trackEvents.clear()
-        activeTrackId = -1
-        pendingFonts.clear()
-        lastPositionUs = 0L
-        lastPositionRealtimeUs = 0L
-        currentTimeUs = 0L
-        pendingFormatToSelect = null
-        if (nativeHandle != 0L) {
-            AssDirectBridge.nativeFlush(nativeHandle)
+        synchronized(nativeLock) {
+            trackFormats.clear()
+            trackHeaders.clear()
+            trackEvents.clear()
+            activeTrackId = -1
+            pendingFonts.clear()
+            lastPositionUs = 0L
+            lastPositionRealtimeUs = 0L
+            currentTimeUs = 0L
+            pendingFormatToSelect = null
+            hasLoadedFirstTime = false
+            if (nativeHandle != 0L) {
+                AssDirectBridge.nativeFlush(nativeHandle)
+            }
         }
         stopRenderLoop()
         mainHandler.post { overlayView.clear() }
@@ -489,11 +540,13 @@ class AssHandler @Inject constructor(
         if (width == videoWidth && height == videoHeight && initialized) return
         videoWidth = width
         videoHeight = height
-        if (nativeHandle != 0L) {
-            AssDirectBridge.nativeSetFrameSize(nativeHandle, videoWidth, videoHeight)
-            renderBitmap?.recycle()
-            renderBitmap =
-                Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
+        synchronized(nativeLock) {
+            if (nativeHandle != 0L) {
+                AssDirectBridge.nativeSetFrameSize(nativeHandle, videoWidth, videoHeight)
+                renderBitmap?.recycle()
+                renderBitmap =
+                    Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
+            }
         }
     }
 
@@ -535,14 +588,17 @@ class AssHandler @Inject constructor(
 
     fun release() {
         stopRenderLoop()
-        if (nativeHandle != 0L) {
-            AssDirectBridge.nativeDestroy(nativeHandle)
-            nativeHandle = 0L
+        synchronized(nativeLock) {
+            if (nativeHandle != 0L) {
+                AssDirectBridge.nativeDestroy(nativeHandle)
+                nativeHandle = 0L
+            }
+            renderBitmap?.recycle()
+            renderBitmap = null
+            initialized = false
+            hasLoadedFirstTime = false
+            trackFormats.clear()
         }
-        renderBitmap?.recycle()
-        renderBitmap = null
-        initialized = false
-        trackFormats.clear()
         mainHandler.post { overlayView.clear() }
         Log.d(TAG, "Released")
     }
