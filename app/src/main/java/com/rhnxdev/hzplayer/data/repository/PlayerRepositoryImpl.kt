@@ -188,6 +188,8 @@ class PlayerRepositoryImpl @Inject constructor(
     override fun getSubtitleTracks(): List<String> = engine().getSubtitleTracks()
     override fun getSelectedSubtitleTrack(): Int = engine().getSelectedSubtitleTrack()
     override fun selectSubtitleTrack(index: Int) = engine().selectSubtitleTrack(index)
+
+    override fun loadExternalAss(uri: Uri) = engine().loadExternalAss(uri)
     override fun addExternalSubtitle(uri: Uri): Boolean = engine().addExternalSubtitle(uri)
     override fun setSubtitleDelay(delayMs: Long) = engine().setSubtitleDelay(delayMs)
     override fun getSubtitleDelay(): Long = engine().getSubtitleDelay()

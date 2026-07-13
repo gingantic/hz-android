@@ -83,6 +83,7 @@ import com.rhnxdev.hzplayer.presentation.player.components.PlaybackErrorOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.GestureCueIndicators
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerGestureState
 import com.rhnxdev.hzplayer.presentation.player.components.UnlockPill
+import com.rhnxdev.hzplayer.presentation.player.components.AssSubtitleOverlay
 import com.rhnxdev.hzplayer.presentation.player.components.pauseRenderView
 import com.rhnxdev.hzplayer.presentation.player.components.resumeRenderView
 import com.rhnxdev.hzplayer.data.datasource.player.ExoPlayerEngine
@@ -102,6 +103,8 @@ import com.rhnxdev.hzplayer.presentation.player.components.PlaylistDrawer
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSearchDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleStylingDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleFileBrowserBottomSheet
+import com.rhnxdev.hzplayer.presentation.player.components.AssSubtitleOverlay
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
@@ -112,6 +115,7 @@ import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 @Composable
 fun VideoPlayerScreen(
     viewModel: PlayerViewModel = hiltViewModel(),
+    assHandler: AssHandler,
     onBack: () -> Unit,
     onMinimize: () -> Unit = {},
 ) {
@@ -304,6 +308,30 @@ fun VideoPlayerScreen(
             uiState = uiState,
             modifier = Modifier.fillMaxSize(),
             onRenderView = { renderViewRef.value = it },
+        )
+
+        // Hide ExoPlayer's built-in SubtitleView when ASS renderer takes over.
+        // Without this, both layers render simultaneously → double subtitle.
+        val exoEngine = viewModel.getActiveEngine() as? com.rhnxdev.hzplayer.data.datasource.player.ExoPlayerEngine
+        DisposableEffect(assHandler, exoEngine) {
+            val handler = assHandler
+            handler.onAssTrackSelected = {
+                exoEngine?.setExoSubtitleViewVisible(false)
+            }
+            // If already initialized (e.g. screen rotation), hide immediately
+            if (handler.initialized) {
+                exoEngine?.setExoSubtitleViewVisible(false)
+            }
+            onDispose {
+                handler.onAssTrackSelected = null
+                exoEngine?.setExoSubtitleViewVisible(true)
+            }
+        }
+
+        // libass ASS/SSA overlay — drawn above the video, below the controls.
+        AssSubtitleOverlay(
+            assHandler = assHandler,
+            modifier = Modifier.fillMaxSize(),
         )
 
         // Gesture overlay

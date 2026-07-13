@@ -8,16 +8,22 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.SeekParameters
-import androidx.media3.exoplayer.analytics.AnalyticsListener
-import androidx.media3.common.Tracks
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssExtractorsFactory
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssRenderersFactory
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssSubtitleParserFactory
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.player.PlaybackErrorMapper
@@ -35,6 +41,7 @@ import javax.inject.Singleton
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MediaPlayerHolder @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val assHandler: AssHandler,
 ) {
     /** Current decoder preference. Drives the [MediaCodecSelector] used when
      *  the player is (re)built. Changing it mid-playback defers the rebuild
@@ -49,6 +56,7 @@ class MediaPlayerHolder @Inject constructor(
 
     /** Set when a [decoderMode] change arrived during active playback. */
     private var pendingRebuild = false
+    private var isCurrentTrackAss = false
 
     /**
      * Build a TrackSelector with tunneling disabled. Tunneling on 4K HDR HEVC
@@ -105,20 +113,29 @@ class MediaPlayerHolder @Inject constructor(
             .setTrackSelector(buildTrackSelector())
             .setLoadControl(loadControl)
             .setRenderersFactory(
-                DefaultRenderersFactory(context)
+                AssRenderersFactory(context, assHandler)
                     .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
                     .setEnableDecoderFallback(true)
                     .setMediaCodecSelector(buildCodecSelector())
             )
             .setMediaSourceFactory(
-                DefaultMediaSourceFactory(context)
+                DefaultMediaSourceFactory(context, AssExtractorsFactory(assHandler))
                     .setDataSourceFactory(buildCompositeDataSourceFactory(context))
+                    .setSubtitleParserFactory(AssSubtitleParserFactory())
             )
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
             .build().also { exo ->
                 exo.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+                assHandler.player = exo
                 exo.addAnalyticsListener(object : AnalyticsListener {
+                    override fun onVideoSizeChanged(
+                        eventTime: AnalyticsListener.EventTime,
+                        videoSize: VideoSize,
+                    ) {
+                        assHandler.setVideoSize(videoSize.width, videoSize.height)
+                    }
+
                     override fun onVideoDecoderInitialized(
                         eventTime: AnalyticsListener.EventTime,
                         decoderName: String,
@@ -205,6 +222,8 @@ class MediaPlayerHolder @Inject constructor(
         // Notify observers (MediaPlaybackService) so a live MediaSession can be
         // re-pointed at the new player instead of the now-released one.
         onPlayerReplacedListener?.invoke(newPlayer)
+        assHandler.player = newPlayer
+        assHandler.reset()
         android.util.Log.d(TAG, "ExoPlayer rebuilt for decoderMode=$decoderMode")
     }
 
@@ -251,6 +270,7 @@ class MediaPlayerHolder @Inject constructor(
         target.addListener(
             object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    assHandler.reset()
                     val metadata = mediaItem?.mediaMetadata
                     val uri = mediaItem?.localConfiguration?.uri?.toString()
                     val drmActive = mediaItem?.localConfiguration?.drmConfiguration != null
@@ -337,8 +357,46 @@ class MediaPlayerHolder @Inject constructor(
         )
 
         target.addListener(object : Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                var selectedAssFormat: androidx.media3.common.Format? = null
+                for (group in tracks.groups) {
+                    if (group.type == androidx.media3.common.C.TRACK_TYPE_TEXT && group.isSelected) {
+                        for (i in 0 until group.length) {
+                            if (group.isTrackSelected(i)) {
+                                val format = group.getTrackFormat(i)
+                                val mime = format.sampleMimeType ?: ""
+                                val codecs = format.codecs?.lowercase() ?: ""
+                                val isAss = mime == "text/x-ssa" || 
+                                            mime == "text/x-ass" || 
+                                            mime == "application/x-subtitle-ssa" ||
+                                            mime.contains("ssa") ||
+                                            mime.contains("ass") ||
+                                            codecs.contains("ass") || 
+                                            codecs.contains("ssa")
+                                if (isAss) {
+                                    selectedAssFormat = format
+                                }
+                                break
+                            }
+                        }
+                    }
+                }
+
+                isCurrentTrackAss = selectedAssFormat != null
+
+                if (selectedAssFormat != null) {
+                    assHandler.selectTrackByFormat(selectedAssFormat)
+                } else {
+                    assHandler.clearOverlay()
+                }
+            }
+
             override fun onCues(cues: MutableList<Cue>) {
-                _subtitleCues.value = cues.toList()
+                if (isCurrentTrackAss) {
+                    _subtitleCues.value = emptyList()
+                } else {
+                    _subtitleCues.value = cues.toList()
+                }
             }
         })
     }

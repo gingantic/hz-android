@@ -528,3 +528,249 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
 
     return resultBitmap;
 }
+
+// ─── Embedded ASS/SSA subtitle extraction ───────────────────────────
+// Demuxes the container and reassembles a complete .ass document (header from
+// the stream's extradata + all Dialogue events) so libass can render it with
+// full styling. ExoPlayer's built-in parser drops override tags, so we go to
+// ffmpeg directly.
+// ponytail: full-file demux scan — subtitle packets are interleaved throughout
+// the container, so there's no cheaper way to collect them all. Upgrade path:
+// incremental/progressive feeding into libass if load latency matters.
+
+static void formatAssTime(char* buf, size_t bufSize, int64_t cs) {
+    if (cs < 0) cs = 0;
+    int h = static_cast<int>(cs / 360000);
+    int m = static_cast<int>((cs / 6000) % 60);
+    int s = static_cast<int>((cs / 100) % 60);
+    int c = static_cast<int>(cs % 100);
+    snprintf(buf, bufSize, "%d:%02d:%02d.%02d", h, m, s, c);
+}
+
+static void appendDialogue(std::string& out, AVStream* st, AVPacket* pkt) {
+    std::string data(reinterpret_cast<const char*>(pkt->data),
+                     static_cast<size_t>(pkt->size));
+    while (!data.empty() && (data.back() == '\n' || data.back() == '\r'))
+        data.pop_back();
+
+    int64_t pts = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts
+                : (pkt->dts != AV_NOPTS_VALUE ? pkt->dts : 0);
+    int64_t startCs = av_rescale_q(pts, st->time_base, AVRational{1, 100});
+    int64_t durCs = pkt->duration > 0
+        ? av_rescale_q(pkt->duration, st->time_base, AVRational{1, 100}) : 0;
+    char startBuf[32], endBuf[32];
+    formatAssTime(startBuf, sizeof(startBuf), startCs);
+    formatAssTime(endBuf, sizeof(endBuf), startCs + durCs);
+
+    // libavcodec ass packet format:
+    //   ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+    // Text (field 9) may contain commas, so split only the first 8.
+    std::vector<std::string> f;
+    size_t pos = 0;
+    for (int i = 0; i < 8 && pos != std::string::npos; i++) {
+        size_t comma = data.find(',', pos);
+        if (comma == std::string::npos) { f.push_back(data.substr(pos)); pos = std::string::npos; }
+        else { f.push_back(data.substr(pos, comma - pos)); pos = comma + 1; }
+    }
+    std::string text = (pos == std::string::npos) ? std::string() : data.substr(pos);
+
+    out += "Dialogue: ";
+    if (f.size() >= 8) {
+        // f[0]=ReadOrder (dropped), f[1]=Layer, f[2]=Style, f[3]=Name,
+        // f[4]=MarginL, f[5]=MarginR, f[6]=MarginV, f[7]=Effect
+        out += f[1]; out += ',';
+        out += startBuf; out += ',';
+        out += endBuf; out += ',';
+        out += f[2]; out += ','; out += f[3]; out += ',';
+        out += f[4]; out += ','; out += f[5]; out += ','; out += f[6]; out += ',';
+        out += f[7]; out += ',';
+        out += text;
+    } else {
+        // Unknown layout — emit with default fields so libass still shows the line.
+        out += "0,"; out += startBuf; out += ','; out += endBuf;
+        out += ",Default,,0,0,0,,";
+        out += data;
+    }
+    out += '\n';
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtractAss(
+    JNIEnv* env, jclass /*clazz*/, jobject bridge, jint assOrdinal) {
+
+    if (!bridge) { LOGE("ass: bridge is null"); return nullptr; }
+
+    JniFile file(env, bridge);
+    if (!file.ok()) { LOGE("ass: JniFile init failed"); return nullptr; }
+
+    IOStats stats;
+    IOBridge ioBridge{&file, &stats};
+
+    uint8_t* ioBuf = static_cast<uint8_t*>(av_malloc(g_avioBufSize));
+    if (!ioBuf) { LOGE("ass: av_malloc failed"); return nullptr; }
+    AVIOContext* avio = avio_alloc_context(ioBuf, g_avioBufSize, 0,
+                                           &ioBridge, io_read, nullptr, io_seek);
+
+    AVFormatContext* fmtCtx = avformat_alloc_context();
+    fmtCtx->pb = avio;
+    fmtCtx->probesize = 5 * 1024 * 1024;
+    fmtCtx->max_analyze_duration = 5000000;
+
+    if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
+        LOGE("ass: avformat_open_input failed");
+        av_freep(&avio->buffer);
+        avio_context_free(&avio);
+        avformat_free_context(fmtCtx);
+        return nullptr;
+    }
+    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
+        LOGE("ass: find_stream_info failed");
+        avformat_close_input(&fmtCtx);
+        return nullptr;
+    }
+
+    // Find the assOrdinal-th ASS/SSA subtitle stream (container order).
+    int target = -1, seen = 0;
+    for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
+        AVCodecID id = fmtCtx->streams[i]->codecpar->codec_id;
+        if (id == AV_CODEC_ID_ASS || id == AV_CODEC_ID_SSA) {
+            if (seen == assOrdinal) { target = static_cast<int>(i); break; }
+            seen++;
+        }
+    }
+    if (target < 0) {
+        LOGD("ass: no ASS stream at ordinal %d", assOrdinal);
+        avformat_close_input(&fmtCtx);
+        return nullptr;
+    }
+
+    AVStream* st = fmtCtx->streams[target];
+    for (unsigned i = 0; i < fmtCtx->nb_streams; i++)
+        fmtCtx->streams[i]->discard =
+            (static_cast<int>(i) == target) ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
+
+    std::string out;
+    if (st->codecpar->extradata && st->codecpar->extradata_size > 0) {
+        out.append(reinterpret_cast<const char*>(st->codecpar->extradata),
+                   static_cast<size_t>(st->codecpar->extradata_size));
+        if (out.empty() || out.back() != '\n') out.push_back('\n');
+    } else {
+        out += "[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\n"
+               "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+               "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, "
+               "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
+               "MarginL, MarginR, MarginV, Encoding\n"
+               "Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,"
+               "0,0,0,0,100,100,0,0,1,2,1,2,10,10,10,1\n\n[Events]\n"
+               "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
+               "Effect, Text\n";
+    }
+
+    AVPacket* pkt = av_packet_alloc();
+    while (av_read_frame(fmtCtx, pkt) >= 0) {
+        if (pkt->stream_index == target && pkt->data && pkt->size > 0)
+            appendDialogue(out, st, pkt);
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt);
+    avformat_close_input(&fmtCtx);
+
+    LOGD("ass: extracted %zu bytes for ordinal %d", out.size(), assOrdinal);
+    return env->NewStringUTF(out.c_str());
+}
+
+// ─── Embedded attachment font extraction ────────────────────────────
+// Pulls muxed font files (MKV attachments) so libass can render styles with
+// their intended typefaces instead of a fallback. Returns a flat Object[] of
+// [String name, byte[] data, ...] pairs, or null if none/failure.
+
+static bool hasFontExtension(const char* name) {
+    if (!name) return false;
+    size_t n = strlen(name);
+    static const char* exts[] = {".ttf", ".otf", ".ttc", ".otc", ".pfb"};
+    for (const char* e : exts) {
+        size_t el = strlen(e);
+        if (n >= el) {
+            bool match = true;
+            for (size_t i = 0; i < el; i++) {
+                char a = name[n - el + i];
+                if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+                if (a != e[i]) { match = false; break; }
+            }
+            if (match) return true;
+        }
+    }
+    return false;
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtractFonts(
+    JNIEnv* env, jclass /*clazz*/, jobject bridge) {
+
+    if (!bridge) return nullptr;
+    JniFile file(env, bridge);
+    if (!file.ok()) return nullptr;
+
+    IOStats stats;
+    IOBridge ioBridge{&file, &stats};
+    uint8_t* ioBuf = static_cast<uint8_t*>(av_malloc(g_avioBufSize));
+    if (!ioBuf) return nullptr;
+    AVIOContext* avio = avio_alloc_context(ioBuf, g_avioBufSize, 0,
+                                           &ioBridge, io_read, nullptr, io_seek);
+    AVFormatContext* fmtCtx = avformat_alloc_context();
+    fmtCtx->pb = avio;
+    fmtCtx->probesize = 5 * 1024 * 1024;
+    fmtCtx->max_analyze_duration = 5000000;
+
+    if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
+        av_freep(&avio->buffer);
+        avio_context_free(&avio);
+        avformat_free_context(fmtCtx);
+        return nullptr;
+    }
+    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
+        avformat_close_input(&fmtCtx);
+        return nullptr;
+    }
+
+    std::vector<int> fontStreams;
+    for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
+        AVStream* st = fmtCtx->streams[i];
+        if (st->codecpar->codec_type != AVMEDIA_TYPE_ATTACHMENT) continue;
+        if (!st->codecpar->extradata || st->codecpar->extradata_size <= 0) continue;
+        AVDictionaryEntry* mt = av_dict_get(st->metadata, "mimetype", nullptr, 0);
+        AVDictionaryEntry* fn = av_dict_get(st->metadata, "filename", nullptr, 0);
+        bool isFont = (fn && hasFontExtension(fn->value)) ||
+                      (mt && (strstr(mt->value, "font") || strstr(mt->value, "truetype") ||
+                              strstr(mt->value, "opentype") || strstr(mt->value, "sfnt")));
+        if (isFont) fontStreams.push_back(static_cast<int>(i));
+    }
+
+    if (fontStreams.empty()) { avformat_close_input(&fmtCtx); return nullptr; }
+
+    jclass objCls = env->FindClass("java/lang/Object");
+    jobjectArray arr = env->NewObjectArray(
+        static_cast<jsize>(fontStreams.size() * 2), objCls, nullptr);
+    if (!arr) { avformat_close_input(&fmtCtx); return nullptr; }
+
+    for (size_t k = 0; k < fontStreams.size(); k++) {
+        AVStream* st = fmtCtx->streams[fontStreams[k]];
+        AVDictionaryEntry* fn = av_dict_get(st->metadata, "filename", nullptr, 0);
+        const char* name = fn ? fn->value : "font";
+
+        jstring jn = env->NewStringUTF(name);
+        env->SetObjectArrayElement(arr, static_cast<jsize>(k * 2), jn);
+        env->DeleteLocalRef(jn);
+
+        jsize sz = static_cast<jsize>(st->codecpar->extradata_size);
+        jbyteArray jb = env->NewByteArray(sz);
+        env->SetByteArrayRegion(jb, 0, sz,
+                                reinterpret_cast<const jbyte*>(st->codecpar->extradata));
+        env->SetObjectArrayElement(arr, static_cast<jsize>(k * 2 + 1), jb);
+        env->DeleteLocalRef(jb);
+    }
+
+    LOGD("ass: extracted %zu embedded fonts", fontStreams.size());
+    avformat_close_input(&fmtCtx);
+    return arr;
+}
