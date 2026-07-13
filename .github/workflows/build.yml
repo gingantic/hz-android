@@ -53,17 +53,24 @@ jobs:
         env:
           GITHUB_UPDATE_TOKEN: ${{ secrets.GITHUB_UPDATE_TOKEN }}
 
+      - name: Get Version Name
+        id: version
+        run: |
+          # Use --quiet and tail to strip any stray Gradle log lines, keeping only the last line (the version)
+          VERSION_NAME=$(./gradlew -q :app:printVersionName 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "Resolved version name: $VERSION_NAME"
+
+      - name: Rename APK with version
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk \
+             "app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk"
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: HzPlayer-${{ github.sha }}-release
-          path: app/build/outputs/apk/release/app-release.apk
-
-      - name: Get Version Name
-        id: version
-        run: |
-          VERSION_NAME=$(./gradlew -q :app:printVersionName)
-          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          path: app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk
 
       - name: Create or Update GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -74,10 +81,11 @@ jobs:
           body: |
             ## Automated OTA Pre-release Build
             This release contains the latest automated build of Hz Player.
-            
+
             **Version**: `v${{ steps.version.outputs.version_name }}`
             **Commit**: ${{ github.sha }}
           prerelease: true
-          files: app/build/outputs/apk/release/app-release.apk
+          make_latest: false
+          files: app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
