@@ -40,11 +40,6 @@ void ass_direct_process_chunk(AssDirectContext *ctx, const char *data, int size,
 int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixels);
 
 /**
- * Process raw ASS data (full dialogue lines with embedded timing).
- */
-void ass_direct_process_data(AssDirectContext *ctx, const char *data, int size);
-
-/**
  * Flush all events (e.g. on seek or track change).
  */
 void ass_direct_flush(AssDirectContext *ctx);

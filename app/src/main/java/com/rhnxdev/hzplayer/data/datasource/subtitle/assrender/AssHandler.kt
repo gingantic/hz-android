@@ -95,9 +95,6 @@ class AssHandler @Inject constructor(
     }
 
     fun onTrackHeader(trackId: Int, headerData: ByteArray, format: Format) {
-        Log.i(TAG, "[TRACK] onTrackHeader: trackId=$trackId mime=${format.sampleMimeType} " +
-                "label=${format.label} lang=${format.language} " +
-                "headerBytes=${headerData.size} initialized=$initialized")
         trackFormats[trackId] = format
         trackHeaders[trackId] = headerData
 
@@ -108,16 +105,14 @@ class AssHandler @Inject constructor(
                 Log.e(TAG, "[INIT] nativeInit returned 0 — FATAL")
                 return
             }
-            Log.i(TAG, "[INIT] nativeInit OK  handle=$nativeHandle")
+            Log.i(TAG, "[INIT] nativeInit OK handle=$nativeHandle")
             renderBitmap = Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
             initialized = true
-            Log.i(TAG, "[INIT] pendingFonts in queue: ${pendingFonts.size}")
             flushPendingFonts()
             onAssTrackSelected?.invoke()
         }
 
         pendingFormatToSelect?.let { pending ->
-            Log.i(TAG, "[TRACK] applying pending format selection")
             selectTrackByFormat(pending)
         }
     }
@@ -166,7 +161,6 @@ class AssHandler @Inject constructor(
             // Synthesise MKV body: use 0 as ReadOrder (libass only uses it for ordering)
             chunkBody = "0,${f[0].trim()},${f[3].trim()},${f[4].trim()}," +
                         "${f[5].trim()},${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9]}"
-            Log.d(TAG, "[TRACK] stdASS → body='${chunkBody.take(80)}'  start=${startMs}ms dur=${durationMs}ms")
         } else {
             // MKV block: Start(0),Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text (11 fields)
             val f = content.split(",", limit = 11)
@@ -179,7 +173,6 @@ class AssHandler @Inject constructor(
             // Body is fields[2..10]: ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text
             chunkBody = "${f[2].trim()},${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
                         "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9].trim()},${f[10]}"
-            Log.d(TAG, "[TRACK] MKV → body='${chunkBody.take(80)}'  start=${startMs}ms dur=${durationMs}ms")
         }
 
         val chunkBytes = chunkBody.toByteArray(Charsets.UTF_8)
@@ -197,18 +190,16 @@ class AssHandler @Inject constructor(
         val magic = if (data.size >= 4)
             data.take(4).joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
         else "(too short)"
-        Log.i(TAG, "[FONT] onFontAttachment: name='$name' size=${data.size}B " +
-                "magic=[$magic]  initialized=$initialized  handle=$nativeHandle")
+        Log.d(TAG, "[FONT] onFontAttachment: name='$name' size=${data.size}B magic=[$magic] initialized=$initialized")
 
         if (!initialized || nativeHandle == 0L) {
             pendingFonts.add(Pair(name, data))
-            Log.i(TAG, "[FONT] buffered (not yet initialized) — pendingFonts.size=${pendingFonts.size}")
+            Log.d(TAG, "[FONT] buffered (not yet initialized) — pendingFonts.size=${pendingFonts.size}")
             return
         }
-        Log.i(TAG, "[FONT] calling nativeAddFont immediately")
         AssDirectBridge.nativeAddFont(nativeHandle, name, data)
         needsFontReload = true
-        Log.i(TAG, "[FONT] nativeAddFont done, needsFontReload=true")
+        Log.d(TAG, "[FONT] nativeAddFont done, needsFontReload=true")
     }
 
     /** Load an external `.ass`/`.ssa` file into libass (bypasses ExoPlayer parsing). */
@@ -238,22 +229,21 @@ class AssHandler @Inject constructor(
     }
 
     private fun flushPendingFonts() {
-        Log.i(TAG, "[FONT] flushPendingFonts: count=${pendingFonts.size}")
+        Log.d(TAG, "[FONT] flushPendingFonts: count=${pendingFonts.size}")
         if (pendingFonts.isEmpty()) {
-            Log.i(TAG, "[FONT] no pending fonts to flush")
+            Log.d(TAG, "[FONT] no pending fonts to flush")
             return
         }
         pendingFonts.forEachIndexed { idx, (name, data) ->
-            Log.i(TAG, "[FONT]   flushing[$idx]: '$name' ${data.size}B")
+            Log.d(TAG, "[FONT]   flushing[$idx]: '$name' ${data.size}B")
             AssDirectBridge.nativeAddFont(nativeHandle, name, data)
         }
-        Log.i(TAG, "[FONT] flushed ${pendingFonts.size} fonts → scheduling reload")
+        Log.d(TAG, "[FONT] flushed ${pendingFonts.size} fonts → scheduling reload")
         pendingFonts.clear()
         needsFontReload = true
     }
 
     fun selectTrack(trackId: Int) {
-        Log.i(TAG, "[TRACK] selectTrack: id=$trackId initialized=$initialized handle=$nativeHandle")
         if (!initialized || nativeHandle == 0L) {
             Log.w(TAG, "[TRACK] selectTrack skipped — not initialized")
             return
@@ -263,8 +253,6 @@ class AssHandler @Inject constructor(
             Log.e(TAG, "[TRACK] selectTrack: no header for trackId=$trackId  knownTracks=${trackHeaders.keys}")
             return
         }
-        Log.i(TAG, "[TRACK] selecting trackId=$trackId  headerBytes=${header.size}  " +
-                "pendingFonts=${pendingFonts.size}  needsFontReload=$needsFontReload")
 
         mainHandler.post {
             activeTrackId = trackId
@@ -272,33 +260,22 @@ class AssHandler @Inject constructor(
             pendingFormatToSelect = null
 
             AssDirectBridge.nativeFlush(nativeHandle)
-            Log.i(TAG, "[TRACK] flushed old events")
 
             AssDirectBridge.nativeLoadHeader(nativeHandle, header)
-            Log.i(TAG, "[TRACK] header loaded")
 
             // Font reload must happen AFTER header is loaded
             if (needsFontReload) {
-                Log.i(TAG, "[FONT] selectTrack triggering font reload now")
                 needsFontReload = false
                 AssDirectBridge.nativeReloadFonts(nativeHandle)
-                Log.i(TAG, "[FONT] font reload complete")
-            } else {
-                Log.i(TAG, "[FONT] no font reload needed at selectTrack")
             }
 
             val events = trackEvents[trackId]
             if (events != null) {
-                Log.i(TAG, "[TRACK] replaying ${events.size} buffered events for track $trackId")
                 for ((startMs, durationMs, chunkBytes) in events) {
                     AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
                 }
-                Log.i(TAG, "[TRACK] replay done")
-            } else {
-                Log.i(TAG, "[TRACK] no buffered events for track $trackId")
             }
 
-            logDiagnostics()
             startRenderLoop()
         }
     }
@@ -375,18 +352,15 @@ class AssHandler @Inject constructor(
         choreographerCallback = null
     }
 
-    /* throttle render-frame log to once per second */
-    private var renderLogCounter = 0L
-
     private fun renderFrame() {
         if (!initialized || nativeHandle == 0L) return
         val bitmap = renderBitmap ?: return
 
         if (needsFontReload) {
-            Log.i(TAG, "[FONT] renderFrame: triggering deferred font reload")
+            Log.d(TAG, "[FONT] renderFrame: triggering deferred font reload")
             needsFontReload = false
             AssDirectBridge.nativeReloadFonts(nativeHandle)
-            Log.i(TAG, "[FONT] font reload complete")
+            Log.d(TAG, "[FONT] font reload complete")
         }
 
         val isPlaying       = player?.isPlaying == true
@@ -394,7 +368,6 @@ class AssHandler @Inject constructor(
         val mediaDurationMs = player?.duration?.takeIf { it > 0 } ?: Long.MAX_VALUE
 
         val positionMs: Long
-        val posSource: String
 
         if (isPlaying && lastPositionRealtimeUs != 0L && lastPositionUs > 0L) {
             val currentRealtimeUs = android.os.SystemClock.elapsedRealtime() * 1000L
@@ -403,17 +376,8 @@ class AssHandler @Inject constructor(
             // Safe clamp: always [0, mediaDuration], no invalid range possible
             positionMs = interpolated.coerceAtLeast(0L)
                 .let { v -> if (mediaDurationMs < Long.MAX_VALUE) v.coerceAtMost(mediaDurationMs) else v }
-            posSource  = "interpolated"
         } else {
             positionMs = player?.currentPosition ?: (lastPositionUs / 1000L).coerceAtLeast(0L)
-            posSource  = if (player != null) "player.currentPosition" else "lastPositionUs"
-        }
-
-        renderLogCounter++
-        if (renderLogCounter == 1L || renderLogCounter % 60 == 0L) {
-            Log.d(TAG, "[RENDER] frame #$renderLogCounter  positionMs=$positionMs " +
-                    "src=$posSource  isPlaying=$isPlaying  speed=$speed  " +
-                    "lastPositionUs=$lastPositionUs  lastRealtimeUs=$lastPositionRealtimeUs")
         }
 
         val hasContent = AssDirectBridge.nativeRender(nativeHandle, positionMs, bitmap)
@@ -430,20 +394,20 @@ class AssHandler @Inject constructor(
      * Call this after track selection to see the full pipeline state.
      */
     fun logDiagnostics() {
-        Log.i(TAG, "━━━━━━━━━━━ ASS DIAGNOSTIC DUMP ━━━━━━━━━━━")
-        Log.i(TAG, "[DIAG] initialized=$initialized  handle=$nativeHandle")
-        Log.i(TAG, "[DIAG] activeTrackId=$activeTrackId  needsFontReload=$needsFontReload")
-        Log.i(TAG, "[DIAG] videoSize=${videoWidth}x${videoHeight}")
-        Log.i(TAG, "[DIAG] pendingFonts.size=${pendingFonts.size}")
-        Log.i(TAG, "[DIAG] trackFormats.keys=${trackFormats.keys.toList()}")
-        Log.i(TAG, "[DIAG] trackHeaders.keys=${trackHeaders.keys.toList()}")
+        Log.d(TAG, "━━━━━━━━━━━ ASS DIAGNOSTIC DUMP ━━━━━━━━━━━")
+        Log.d(TAG, "[DIAG] initialized=$initialized  handle=$nativeHandle")
+        Log.d(TAG, "[DIAG] activeTrackId=$activeTrackId  needsFontReload=$needsFontReload")
+        Log.d(TAG, "[DIAG] videoSize=${videoWidth}x${videoHeight}")
+        Log.d(TAG, "[DIAG] pendingFonts.size=${pendingFonts.size}")
+        Log.d(TAG, "[DIAG] trackFormats.keys=${trackFormats.keys.toList()}")
+        Log.d(TAG, "[DIAG] trackHeaders.keys=${trackHeaders.keys.toList()}")
         trackHeaders.forEach { (id, hdr) ->
-            Log.i(TAG, "[DIAG] header[$id]: ${hdr.size}B  preview=${String(hdr, 0, minOf(120, hdr.size), Charsets.UTF_8).replace('\n','|')}")
+            Log.d(TAG, "[DIAG] header[$id]: ${hdr.size}B  preview=${String(hdr, 0, minOf(120, hdr.size), Charsets.UTF_8).replace('\n','|')}")
         }
         trackEvents.forEach { (id, evts) ->
-            Log.i(TAG, "[DIAG] events[$id]: ${evts.size} items")
+            Log.d(TAG, "[DIAG] events[$id]: ${evts.size} items")
         }
-        Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     }
 
     /**
@@ -484,53 +448,6 @@ class AssHandler @Inject constructor(
         val s  = parts[2].toLongOrNull() ?: 0L
         val cs = parts[3].toLongOrNull() ?: 0L
         return h * 3_600_000L + m * 60_000L + s * 1_000L + cs * 10L
-    }
-
-    /**
-     * Convert MKV ASS dialogue format to standard ASS format.
-     * MKV:      "Dialogue: 0:00:00:00,Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text"
-     *           Start is always 0, Duration is relative. Real start comes from timeUs.
-     * Standard: "Dialogue: Layer,Start,End,Style,Name,ML,MR,MV,Effect,Text"
-     */
-    private fun convertMkvDialogue(line: String, timeUs: Long): String? {
-        if (!line.startsWith("Dialogue:")) return null
-
-        val content = line.removePrefix("Dialogue:").trimStart()
-        val parts = content.split(",", limit = 11)
-        if (parts.size < 11) return null
-
-        // MKV layout: [0]=start(0), [1]=duration, [2]=readOrder, [3]=layer, [4]=style, [5]=name,
-        //             [6]=marginL, [7]=marginR, [8]=marginV, [9]=effect, [10]=text
-        val durationStr = parts[1].trim()
-        val layer = parts[3].trim()
-        val style = parts[4].trim()
-        val name = parts[5].trim()
-        val marginL = parts[6].trim()
-        val marginR = parts[7].trim()
-        val marginV = parts[8].trim()
-        val effect = parts[9].trim()
-        val text = parts[10]
-
-        val durationMs = parseMkvAssTimeMs(durationStr)
-        val startMs = timeUs / 1000
-        val endMs = startMs + durationMs
-
-        val startStr = formatAssTime(startMs)
-        val endStr = formatAssTime(endMs)
-
-        return "Dialogue: $layer,$startStr,$endStr,$style,$name,$marginL,$marginR,$marginV,$effect,$text"
-    }
-
-    /** Format milliseconds to standard ASS time "H:MM:SS.CC" */
-    private fun formatAssTime(ms: Long): String {
-        val totalCs = ms / 10
-        val cs = totalCs % 100
-        val totalS = totalCs / 100
-        val s = totalS % 60
-        val totalM = totalS / 60
-        val m = totalM % 60
-        val h = totalM / 60
-        return "%d:%02d:%02d.%02d".format(h, m, s, cs)
     }
 
     /**
@@ -585,32 +502,32 @@ class AssHandler @Inject constructor(
      * and setting FONTCONFIG_PATH environment variable.
      */
     private fun setupFontconfig() {
-        Log.i(TAG, "[INIT] setupFontconfig — filesDir=${context.filesDir}")
+        Log.d(TAG, "[INIT] setupFontconfig — filesDir=${context.filesDir}")
         try {
             val fontconfigDir = File(context.filesDir, "fontconfig")
             fontconfigDir.mkdirs()
             val cacheDir = File(context.cacheDir, "fontconfig")
             cacheDir.mkdirs()
-            Log.i(TAG, "[INIT] fontconfig dir: ${fontconfigDir.absolutePath}  exists=${fontconfigDir.exists()}")
-            Log.i(TAG, "[INIT] fontconfig cache: ${cacheDir.absolutePath}  exists=${cacheDir.exists()}")
+            Log.d(TAG, "[INIT] fontconfig dir: ${fontconfigDir.absolutePath}  exists=${fontconfigDir.exists()}")
+            Log.d(TAG, "[INIT] fontconfig cache: ${cacheDir.absolutePath}  exists=${cacheDir.exists()}")
 
             val confFile = File(fontconfigDir, "fonts.conf")
             confFile.writeText(
                 """<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
-<fontconfig>
-    <dir>/system/fonts</dir>
-    <cachedir>${cacheDir.absolutePath}</cachedir>
-    <match target="pattern">
-        <edit name="antialias" mode="assign"><bool>true</bool></edit>
-        <edit name="hinting" mode="assign"><bool>true</bool></edit>
-    </match>
-</fontconfig>""",
+ <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+ <fontconfig>
+     <dir>/system/fonts</dir>
+     <cachedir>${cacheDir.absolutePath}</cachedir>
+     <match target="pattern">
+         <edit name="antialias" mode="assign"><bool>true</bool></edit>
+         <edit name="hinting" mode="assign"><bool>true</bool></edit>
+     </match>
+ </fontconfig>""",
             )
-            Log.i(TAG, "[INIT] fonts.conf written: ${confFile.absolutePath} (${confFile.length()}B)")
+            Log.d(TAG, "[INIT] fonts.conf written: ${confFile.absolutePath} (${confFile.length()}B)")
 
             Os.setenv("FONTCONFIG_PATH", fontconfigDir.absolutePath, true)
-            Log.i(TAG, "[INIT] FONTCONFIG_PATH set to ${fontconfigDir.absolutePath}")
+            Log.d(TAG, "[INIT] FONTCONFIG_PATH set to ${fontconfigDir.absolutePath}")
         } catch (e: Exception) {
             Log.e(TAG, "[INIT] setupFontconfig FAILED", e)
         }

@@ -36,18 +36,6 @@ data class PlayerUiState(
     val selectedAudioTrack: Int = -1,
     val showControls: Boolean = true,
     val externalSubtitles: List<Pair<String, Uri>> = emptyList(),
-    /**
-     * When an external ASS/SSA subtitle is active, this holds its URI so the
-     * libass overlay can render it with full styling/animation (bypassing
-     * ExoPlayer's built-in text renderer).
-     */
-    val assSubtitleUri: Uri? = null,
-    /**
-     * Reserved for embedded ASS/SSA tracks. Rendering is handled by the libass
-     * overlay fed directly from ExoPlayer's extraction pipeline; this field is no
-     * longer used for routing.
-     */
-    val assEmbeddedOrdinal: Int? = null,
     val subtitleDelayMs: Long = 0,
     val subtitleStyle: SubtitleStyle = SubtitleStyle.DEFAULT,
     val playerLocked: Boolean = false,

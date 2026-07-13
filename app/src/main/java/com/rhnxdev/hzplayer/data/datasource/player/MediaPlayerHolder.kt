@@ -24,6 +24,7 @@ import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssExtractorsFact
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssRenderersFactory
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssSubtitleParserFactory
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isAssFormat
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.player.PlaybackErrorMapper
@@ -362,22 +363,14 @@ class MediaPlayerHolder @Inject constructor(
                 for (group in tracks.groups) {
                     if (group.type == androidx.media3.common.C.TRACK_TYPE_TEXT && group.isSelected) {
                         for (i in 0 until group.length) {
-                            if (group.isTrackSelected(i)) {
-                                val format = group.getTrackFormat(i)
-                                val mime = format.sampleMimeType ?: ""
-                                val codecs = format.codecs?.lowercase() ?: ""
-                                val isAss = mime == "text/x-ssa" || 
-                                            mime == "text/x-ass" || 
-                                            mime == "application/x-subtitle-ssa" ||
-                                            mime.contains("ssa") ||
-                                            mime.contains("ass") ||
-                                            codecs.contains("ass") || 
-                                            codecs.contains("ssa")
-                                if (isAss) {
-                                    selectedAssFormat = format
-                                }
-                                break
-                            }
+                    if (group.isTrackSelected(i)) {
+                        val format = group.getTrackFormat(i)
+                        val isAss = isAssFormat(format)
+                        if (isAss) {
+                            selectedAssFormat = format
+                        }
+                        break
+                    }
                         }
                     }
                 }
@@ -423,6 +416,27 @@ class MediaPlayerHolder @Inject constructor(
     fun release() {
         _audioSessionId.value = 0
         player.release()
+    }
+
+    /**
+     * Read the full bytes of [uri] via the same scheme-routing [DataSource] the
+     * player uses, so custom `smb`/`ftp`/`sftp`/`webdav` subtitle URIs load too —
+     * [android.content.ContentResolver.openInputStream] only knows `content:`/
+     * `file:`. Returns null on failure.
+     */
+    fun readUriBytes(uri: Uri): ByteArray? {
+        return runCatching {
+            val ds = buildCompositeDataSourceFactory(context).createDataSource()
+            ds.open(androidx.media3.datasource.DataSpec.Builder().setUri(uri).build())
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            var read: Int
+            while (ds.read(buf, 0, buf.size).also { read = it } != androidx.media3.common.C.RESULT_END_OF_INPUT) {
+                out.write(buf, 0, read)
+            }
+            ds.close()
+            out.toByteArray()
+        }.getOrNull()
     }
 
     companion object {

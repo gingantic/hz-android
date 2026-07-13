@@ -3,10 +3,10 @@ package com.rhnxdev.hzplayer.data.datasource.subtitle.assrender
 import android.util.Log
 import androidx.media3.common.DataReader
 import androidx.media3.common.Format
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.ParsableByteArray
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.TrackOutput
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isAssFormat
 import java.io.ByteArrayOutputStream
 
 /**
@@ -30,17 +30,7 @@ internal class AssTrackOutput(
     override fun format(format: Format) {
         val mimeType = format.sampleMimeType
 
-        isAssTrack = mimeType == MimeTypes.TEXT_SSA || mimeType == "text/x-ssa" || mimeType == "text/x-ass"
-
-        if (!isAssTrack && format.initializationData.isNotEmpty()) {
-            for (data in format.initializationData) {
-                val preview = String(data, 0, minOf(50, data.size), Charsets.UTF_8)
-                if (preview.contains("[Script Info]") || preview.contains("ScriptType:")) {
-                    isAssTrack = true
-                    break
-                }
-            }
-        }
+        isAssTrack = isAssFormat(format)
 
         if (isAssTrack && format.initializationData.isNotEmpty()) {
             for (data in format.initializationData) {

@@ -1,12 +1,12 @@
 package com.rhnxdev.hzplayer.data.datasource.subtitle.assrender
 
 import androidx.media3.common.Format
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.Consumer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isAssFormat
 
 /**
  * A [SubtitleParser.Factory] that returns a no-op parser for ASS/SSA tracks,
@@ -20,7 +20,7 @@ class AssSubtitleParserFactory : SubtitleParser.Factory {
 
     override fun supportsFormat(format: Format): Boolean {
         val mime = format.sampleMimeType ?: return defaultFactory.supportsFormat(format)
-        if (mime == MimeTypes.TEXT_SSA || mime == "text/x-ssa" || mime == "text/x-ass") {
+        if (isAssFormat(format)) {
             return true
         }
         return defaultFactory.supportsFormat(format)
@@ -28,7 +28,7 @@ class AssSubtitleParserFactory : SubtitleParser.Factory {
 
     override fun getCueReplacementBehavior(format: Format): Int {
         val mime = format.sampleMimeType
-        if (mime == MimeTypes.TEXT_SSA || mime == "text/x-ssa" || mime == "text/x-ass") {
+        if (isAssFormat(format)) {
             return Format.CUE_REPLACEMENT_BEHAVIOR_REPLACE
         }
         return defaultFactory.getCueReplacementBehavior(format)
@@ -36,7 +36,7 @@ class AssSubtitleParserFactory : SubtitleParser.Factory {
 
     override fun create(format: Format): SubtitleParser {
         val mime = format.sampleMimeType
-        if (mime == MimeTypes.TEXT_SSA || mime == "text/x-ssa" || mime == "text/x-ass") {
+        if (isAssFormat(format)) {
             return AssNoOpSubtitleParser()
         }
         return defaultFactory.create(format)

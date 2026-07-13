@@ -32,9 +32,6 @@ object AssDirectBridge {
     /** Process a subtitle chunk (dialogue line with timing). */
     external fun nativeProcessChunk(handle: Long, data: ByteArray, startMs: Long, durationMs: Long)
 
-    /** Process raw ASS data (full dialogue lines with embedded timing). */
-    external fun nativeProcessData(handle: Long, data: ByteArray)
-
     /** Render subtitle frame at given time. Returns true if content rendered. */
     external fun nativeRender(handle: Long, timeMs: Long, bitmap: Bitmap): Boolean
 

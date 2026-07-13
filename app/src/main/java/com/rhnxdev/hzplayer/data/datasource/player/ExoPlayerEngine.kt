@@ -9,6 +9,7 @@ import androidx.media3.common.C
 import androidx.media3.common.ColorInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isAssFormat
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -383,13 +384,6 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    override fun getVideoWidth(): Int = player.videoSize.width
-
-    override fun getVideoHeight(): Int = player.videoSize.height
-
-    override fun getVideoPixelWidthHeightRatio(): Float =
-        player.videoSize.pixelWidthHeightRatio.takeIf { it > 0f } ?: 1f
-
     override fun getSelectedSubtitleTrack(): Int {
         val tracks = getExoTextTracks()
         for (index in tracks.indices) {
@@ -406,8 +400,7 @@ class ExoPlayerEngine @Inject constructor(
         if (index in tracks.indices) {
             val selectedTrack = tracks[index]
             val format = selectedTrack.group.getTrackFormat(selectedTrack.trackIndex)
-            val isAss = format.sampleMimeType?.let { it == MimeTypes.TEXT_SSA || it == "text/x-ssa" || it == "text/x-ass" }
-                ?: (format.codecs?.lowercase()?.let { "ass" in it || "ssa" in it } ?: false)
+            val isAss = isAssFormat(format)
             if (isAss) {
                 // Route embedded ASS/SSA through libass for full styling; the built-in
                 // text renderer is fed a no-op parser so it won't draw duplicates.
@@ -435,17 +428,15 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    /** Resolve the [Format] of a subtitle track (used to detect/route ASS). */
-    fun getSubtitleTrackFormat(index: Int): androidx.media3.common.Format? {
-        val tracks = getExoTextTracks()
-        if (index !in tracks.indices) return null
-        return tracks[index].group.getTrackFormat(tracks[index].trackIndex)
-    }
-
-    /** Load an external `.ass`/`.ssa` file into libass (bypasses ExoPlayer parsing). */
+    /** Load an external `.ass`/`.ssa` file into libass (bypasses ExoPlayer parsing).
+     *  Remote `smb`/`ftp`/`sftp`/`webdav` URIs are read via the player's routing
+     *  data source; only `content:`/`file:` go through [contentResolver]. */
     override fun loadExternalAss(uri: Uri) {
         val data = runCatching {
-            appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            when (uri.scheme?.lowercase()) {
+                "content", "file" -> appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                else -> playerHolder.readUriBytes(uri)
+            }
         }.getOrNull() ?: return
         assHandler.loadExternalTrack(data)
     }
