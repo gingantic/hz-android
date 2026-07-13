@@ -144,6 +144,10 @@ c     = '$CC'
 cpp   = '$CXX'
 ar    = '$TC/llvm-ar'
 strip = '$TC/llvm-strip'
+pkgconfig = 'pkg-config'
+
+[properties]
+pkg_config_libdir = '$PREFIX/lib/pkgconfig'
 
 [host_machine]
 system     = 'android'
