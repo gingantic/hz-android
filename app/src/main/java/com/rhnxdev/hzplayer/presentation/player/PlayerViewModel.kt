@@ -14,6 +14,7 @@ import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isAssMimeType
 import com.rhnxdev.hzplayer.core.util.bitsToHuman
 import com.rhnxdev.hzplayer.core.util.formatBitsPerSecond
 import com.rhnxdev.hzplayer.core.util.formatDebugBytes
@@ -205,7 +206,7 @@ class PlayerViewModel @Inject constructor(
         val mimes = runCatching { getActiveEngine().getSubtitleTrackMimeTypes() }
             .getOrDefault(emptyList())
         val mime = mimes.getOrNull(index)?.lowercase()
-        val isAss = mime != null && ("ass" in mime || "ssa" in mime)
+        val isAss = isAssMimeType(mime)
         android.util.Log.i(
             "HzAss",
             "selectSubtitleTrack idx=$index mime=$mime isAss=$isAss " +
@@ -216,10 +217,9 @@ class PlayerViewModel @Inject constructor(
             // Engine routes embedded ASS/SSA through libass for full styling.
             getActiveEngine().selectSubtitleTrack(index)
             _uiState.update {
-                it.copy(assEmbeddedOrdinal = null, assSubtitleUri = null, selectedSubtitleTrack = index)
+                it.copy(selectedSubtitleTrack = index)
             }
         } else {
-            _uiState.update { it.copy(assEmbeddedOrdinal = null, assSubtitleUri = null) }
             trackCache.selectSubtitleTrack(index)
         }
     }
@@ -235,8 +235,6 @@ class PlayerViewModel @Inject constructor(
             getActiveEngine().loadExternalAss(uri)
             _uiState.update { state ->
                 state.copy(
-                    assSubtitleUri = uri,
-                    assEmbeddedOrdinal = null,
                     externalSubtitles = state.externalSubtitles + (name to uri),
                 )
             }

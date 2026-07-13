@@ -93,22 +93,6 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_assrender_AssDirectBridge_nat
     (*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
 }
 
-JNIEXPORT void JNICALL
-Java_com_rhnxdev_hzplayer_data_datasource_subtitle_assrender_AssDirectBridge_nativeProcessData(
-        JNIEnv *env, jobject thiz,
-        jlong handle, jbyteArray data) {
-    (void)thiz;
-    AssDirectContext *ctx = (AssDirectContext *)(intptr_t)handle;
-    if (!ctx || !data) return;
-
-    jsize size = (*env)->GetArrayLength(env, data);
-    jbyte *bytes = (*env)->GetByteArrayElements(env, data, NULL);
-    if (!bytes) return;
-
-    ass_direct_process_data(ctx, (const char *)bytes, size);
-    (*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
-}
-
 JNIEXPORT jboolean JNICALL
 Java_com_rhnxdev_hzplayer_data_datasource_subtitle_assrender_AssDirectBridge_nativeRender(
         JNIEnv *env, jobject thiz,

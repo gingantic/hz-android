@@ -6,11 +6,11 @@
 #include <ass/ass.h>
 
 #define LOG_TAG "assrender"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,    LOG_TAG, __VA_ARGS__)
+#define LOGI(...) ((void)0)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,    LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,   LOG_TAG, __VA_ARGS__)
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG,   LOG_TAG, __VA_ARGS__)
-#define LOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__)
+#define LOGD(...) ((void)0)
+#define LOGV(...) ((void)0)
 
 struct AssDirectContext {
     int width;
@@ -34,15 +34,21 @@ struct AssDirectContext {
 /* Forward every libass message to Android logcat with the same level mapping.
  * Known benign/noisy warnings are demoted to VERBOSE to avoid log spam. */
 static void ass_message_cb(int level, const char *fmt, va_list args, void *data) {
+    if (level > 2) return;
     /* Format the message first so we can inspect its content */
     char buf[512];
     vsnprintf(buf, sizeof(buf), fmt, args);
 
-    /* Demote well-known benign spam to VERBOSE */
+    /* Fully suppress known benign per-event spam — fires for every line that
+     * uses an unsupported effect (e.g. \t(fx)), i.e. every frame at worst. */
     if (strstr(buf, "Unknown transition effect") ||
         strstr(buf, "unknown transition") ||
-        strstr(buf, "Unknown ScriptType") ||
-        strstr(buf, "Event: [") ||            /* raw ASS section dumps */
+        strstr(buf, "Unknown ScriptType")) {
+        return;
+    }
+
+    /* Demote raw ASS section dumps to VERBOSE (rare, only at parse time). */
+    if (strstr(buf, "Event: [") ||            /* raw ASS section dumps */
         strstr(buf, "Style: ["))              /* raw ASS section dumps */
     {
         __android_log_print(ANDROID_LOG_VERBOSE, "libass", "%s", buf);
@@ -285,22 +291,7 @@ void ass_direct_process_chunk(AssDirectContext *ctx, const char *data, int size,
     ass_process_chunk(ctx->ass_track, (char *)data, size, start_ms, duration_ms);
 }
 
-void ass_direct_process_data(AssDirectContext *ctx, const char *data, int size) {
-    if (!ctx || !ctx->ass_track || !data || size <= 0) return;
-    LOGD("[TRACK] process_data: %d bytes", size);
-    ass_process_data(ctx->ass_track, (char *)data, size);
-}
-
 /* ─────────────────────────────── RENDER ───────────────────────────────── */
-
-/*
- * To avoid spamming logcat on every frame we only log:
- *   - the first render call ever
- *   - every time 'changed' is non-zero (image list updated)
- *   - every 5 seconds of render calls
- */
-static int64_t s_render_call_count  = 0;
-static int64_t s_last_log_count     = -999;
 
 int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixels) {
     if (!ctx || !ctx->ass_track || !ctx->ass_renderer || !out_pixels) {
@@ -312,29 +303,9 @@ int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixel
         return 0;
     }
 
-    s_render_call_count++;
-
     int changed = 0;
     ASS_Image *img = ass_render_frame(ctx->ass_renderer, ctx->ass_track,
                                       time_ms, &changed);
-
-    /* Only log when something interesting happens */
-    int should_log = (s_render_call_count == 1)
-                  || (changed != 0)
-                  || (s_render_call_count - s_last_log_count >= 300); /* ~5 s at 60 fps */
-
-    if (should_log) {
-        s_last_log_count = s_render_call_count;
-        int layer_count = 0;
-        for (ASS_Image *i = img; i; i = i->next) layer_count++;
-        LOGI("[RENDER] frame #%lld  time=%lldms  changed=%d  layers=%d  "
-             "track_events=%d  fonts_set=%d",
-             (long long)s_render_call_count,
-             (long long)time_ms,
-             changed, layer_count,
-             ctx->ass_track ? ctx->ass_track->n_events : -1,
-             ctx->fonts_set_count);
-    }
 
     /* Clear output */
     memset(out_pixels, 0, (size_t)ctx->width * ctx->height * 4);

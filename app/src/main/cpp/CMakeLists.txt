@@ -43,12 +43,10 @@ target_link_libraries(thumbnail-extractor
 )
 
 # Direct libass pipeline (no FFmpeg) — intercepts ASS from ExoPlayer's extractor.
-# Libass headers come from the assrender prebuilt bundle (ass/ass.h, etc.).
-set(ASSRENDER_PREBUILT_INCLUDE "C:/Users/reihan/AppData/Local/Temp/opencode/assrender/prebuilt/${CMAKE_ANDROID_ARCH_ABI}/include")
+# Libass headers come from the ass/ass.h, etc. checked into target include directory.
 add_library(assrender SHARED ass_direct.c ass_direct_jni.c)
 target_include_directories(assrender PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${ASSRENDER_PREBUILT_INCLUDE}
 )
 target_link_libraries(assrender
     ass fontconfig expat freetype fribidi harfbuzz

@@ -89,15 +89,6 @@ interface IPlayerEngine {
     /** Currently buffered position in ms, or 0 if unknown. */
     fun getBufferedPosition(): Long
 
-    /** Video coded width in px, or 0 if unknown. Used to size the libass overlay. */
-    fun getVideoWidth(): Int = 0
-
-    /** Video coded height in px, or 0 if unknown. */
-    fun getVideoHeight(): Int = 0
-
-    /** Pixel width/height ratio of the video (1.0 = square pixels). */
-    fun getVideoPixelWidthHeightRatio(): Float = 1f
-
     // ── Configuration ───────────────────────────────────────────
 
     /** Set playback speed (1.0 = normal). */
