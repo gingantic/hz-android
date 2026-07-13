@@ -8,6 +8,7 @@ import com.rhnxdev.hzplayer.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
@@ -16,7 +17,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object UpdateChecker {
-    private const val RELEASES_API_URL = "https://api.github.com/repos/gingantic/hz-android/releases"
+    // Fetch all releases (newest first). Works for both public and private repos.
+    private const val RELEASES_API_URL =
+        "https://api.github.com/repos/gingantic/hz-android/releases"
 
     data class UpdateInfo(
         val latestVersionName: String,
@@ -26,91 +29,115 @@ object UpdateChecker {
     )
 
     /**
-     * Checks if a new release exists on GitHub.
-     * Compares the version code parsed from the release title with local BuildConfig.VERSION_CODE.
-     */
-    /**
-     * Checks if a new release exists on GitHub.
-     * Compares the version code parsed from the release title with local BuildConfig.VERSION_CODE.
+     * Fetches the releases list and returns an [UpdateInfo] if a newer build is available,
+     * or null if already up-to-date / an error occurred.
+     *
+     * Version comparison uses the "build.<N>" number embedded in the release name
+     * (e.g. "HzPlayer v0.9.1-build.145+abc1234") vs [BuildConfig.VERSION_CODE].
      */
     suspend fun checkForUpdates(token: String = ""): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
             val activeToken = token.ifEmpty { BuildConfig.GITHUB_UPDATE_TOKEN }
-            val url = URL(RELEASES_API_URL)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", "HzPlayer-UpdateChecker")
-                connectTimeout = 10000
-                readTimeout = 10000
-                if (activeToken.isNotEmpty()) {
-                    setRequestProperty("Authorization", "Bearer $activeToken")
-                }
-            }
-            
-            val responseCode = conn.responseCode
-            if (responseCode != 200) {
-                return@withContext null
-            }
-            
-            val reader = BufferedReader(InputStreamReader(conn.inputStream))
-            val responseText = reader.readText()
-            reader.close()
-            conn.disconnect()
 
-            val jsonArray = JSONArray(responseText)
+            val jsonArray = fetchReleasesList(activeToken) ?: return@withContext null
             if (jsonArray.length() == 0) return@withContext null
 
-            // The first item is the most recent release
+            // GitHub returns releases newest-first; pick the first one.
             val latestRelease = jsonArray.getJSONObject(0)
-            val releaseName = latestRelease.optString("name", "") // e.g. "HzPlayer v1.0.0-rc1-build.145+hash"
-            val body = latestRelease.optString("body", "")
-            
-            // Extract the APK download URL from release assets
-            val assetsArray = latestRelease.optJSONArray("assets") ?: return@withContext null
-            var downloadUrl: String? = null
-            for (i in 0 until assetsArray.length()) {
-                val asset = assetsArray.getJSONObject(i)
-                val assetName = asset.optString("name", "")
-                if (assetName.endsWith(".apk")) {
-                    // For private repositories, download via the API URL instead of the public browser_download_url
-                    downloadUrl = if (activeToken.isNotEmpty()) {
-                        asset.optString("url", "")
-                    } else {
-                        asset.optString("browser_download_url", "")
-                    }
-                    break
-                }
-            }
-
-            if (downloadUrl.isNullOrEmpty()) return@withContext null
-
-            // Extract build number from release name (e.g. "build.145" -> 145)
-            val buildRegex = Regex("""build\.(\d+)""")
-            val matchResult = buildRegex.find(releaseName)
-            val latestVersionCode = matchResult?.groupValues?.get(1)?.toIntOrNull() ?: 1
-
-            // Format release name nicely (remove "HzPlayer" prefix)
-            val cleanVersionName = releaseName.replace("HzPlayer", "").trim()
-
-            if (latestVersionCode > BuildConfig.VERSION_CODE) {
-                UpdateInfo(
-                    latestVersionName = cleanVersionName,
-                    latestVersionCode = latestVersionCode,
-                    downloadUrl = downloadUrl,
-                    releaseNotes = body
-                )
-            } else {
-                null
-            }
+            return@withContext parseRelease(latestRelease, activeToken)
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    private fun fetchReleasesList(token: String): JSONArray? {
+        val url = URL(RELEASES_API_URL)
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "HzPlayer-UpdateChecker")
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            if (token.isNotEmpty()) {
+                setRequestProperty("Authorization", "Bearer $token")
+            }
+        }
+
+        return try {
+            if (conn.responseCode != 200) return null
+            val text = BufferedReader(InputStreamReader(conn.inputStream)).readText()
+            conn.disconnect()
+            JSONArray(text)
+        } catch (e: Exception) {
+            conn.disconnect()
+            null
+        }
+    }
+
+    private fun parseRelease(release: JSONObject, token: String): UpdateInfo? {
+        val releaseName = release.optString("name", "")     // e.g. "HzPlayer v0.9.1-build.145+abc1234"
+        val body        = release.optString("body", "")
+
+        // --- Find the APK asset ---
+        val assetsArray = release.optJSONArray("assets") ?: return null
+        var downloadUrl: String? = null
+        var assetName: String = ""
+        for (i in 0 until assetsArray.length()) {
+            val asset = assetsArray.getJSONObject(i)
+            val name = asset.optString("name", "")
+            if (name.endsWith(".apk")) {
+                assetName = name
+                // For private repos: use the API URL with auth.
+                // For public repos: use the plain browser URL.
+                downloadUrl = if (token.isNotEmpty()) {
+                    asset.optString("url", "")
+                } else {
+                    asset.optString("browser_download_url", "")
+                }
+                break
+            }
+        }
+        if (downloadUrl.isNullOrEmpty()) return null
+
+        // --- Extract build number ---
+        // Try the release name first ("build.145"), then the APK filename as fallback.
+        val buildRegex = Regex("""build\.(\d+)""")
+        val latestVersionCode =
+            buildRegex.find(releaseName)?.groupValues?.get(1)?.toIntOrNull()
+                ?: buildRegex.find(assetName)?.groupValues?.get(1)?.toIntOrNull()
+                ?: return null   // Can't determine version → skip
+
+        // Clean display name: strip "HzPlayer" prefix
+        val cleanVersionName = releaseName
+            .replace("HzPlayer", "", ignoreCase = true)
+            .trim()
+            .trimStart('v', ' ')
+            .let { "v$it" }
+
+        if (latestVersionCode <= BuildConfig.VERSION_CODE) return null
+
+        return UpdateInfo(
+            latestVersionName = cleanVersionName,
+            latestVersionCode = latestVersionCode,
+            downloadUrl = downloadUrl,
+            releaseNotes = body.takeIf { it.isNotBlank() }
+        )
+    }
+
+    // -------------------------------------------------------------------------
+    // Download
+    // -------------------------------------------------------------------------
+
     /**
      * Download the APK file from GitHub and report progress back to the UI.
-     * Manually follows redirects and removes the Authorization header to prevent S3 auth errors.
+     * Manually follows redirects and removes the Authorization header when
+     * redirected away from github.com (e.g. to S3) to prevent auth errors.
      */
     suspend fun downloadApk(
         downloadUrl: String,
@@ -119,10 +146,8 @@ object UpdateChecker {
         onProgress: (Float) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            if (destinationFile.exists()) {
-                destinationFile.delete()
-            }
-            
+            if (destinationFile.exists()) destinationFile.delete()
+
             val activeToken = token.ifEmpty { BuildConfig.GITHUB_UPDATE_TOKEN }
             var currentUrl = downloadUrl
             var conn: HttpURLConnection? = null
@@ -133,39 +158,37 @@ object UpdateChecker {
             while (redirectCount < maxRedirects) {
                 val url = URL(currentUrl)
                 conn = (url.openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = false // Handle redirect manually to strip Auth header for S3
-                    connectTimeout = 15000
-                    readTimeout = 30000
-                    if (activeToken.isNotEmpty()) {
-                        // Only send authentication to GitHub hosts
-                        if (url.host.contains("github.com")) {
-                            setRequestProperty("Authorization", "Bearer $activeToken")
-                            setRequestProperty("Accept", "application/octet-stream")
-                        }
+                    instanceFollowRedirects = false   // Handle manually to strip auth on redirect
+                    connectTimeout = 15_000
+                    readTimeout   = 30_000
+                    if (activeToken.isNotEmpty() && url.host.contains("github.com")) {
+                        setRequestProperty("Authorization", "Bearer $activeToken")
+                        setRequestProperty("Accept", "application/octet-stream")
                     }
                 }
-                
+
                 responseCode = conn.responseCode
-                if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP || 
-                    responseCode == HttpURLConnection.HTTP_MOVED_PERM || 
-                    responseCode == 307 || responseCode == 308) {
+                val isRedirect = responseCode == HttpURLConnection.HTTP_MOVED_TEMP
+                        || responseCode == HttpURLConnection.HTTP_MOVED_PERM
+                        || responseCode == 307
+                        || responseCode == 308
+
+                if (isRedirect) {
                     val newUrl = conn.getHeaderField("Location")
                     conn.disconnect()
-                    if (newUrl.isNullOrEmpty()) {
-                        return@withContext false
-                    }
+                    if (newUrl.isNullOrEmpty()) return@withContext false
                     currentUrl = newUrl
                     redirectCount++
                 } else {
                     break
                 }
             }
-            
+
             if (conn == null || responseCode != 200) {
                 conn?.disconnect()
                 return@withContext false
             }
-            
+
             val totalBytes = conn.contentLength
             val inputStream = conn.inputStream
             val outputStream = FileOutputStream(destinationFile)
@@ -192,8 +215,12 @@ object UpdateChecker {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Install
+    // -------------------------------------------------------------------------
+
     /**
-     * Launch intent to prompt user to install the downloaded APK.
+     * Launch an install intent for the downloaded APK via FileProvider.
      */
     fun installApk(context: Context, apkFile: File) {
         try {
