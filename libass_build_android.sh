@@ -112,11 +112,11 @@ popd
 
 # ------------------------------------------------------------------------------
 echo "=== [3/6] Building fribidi $FRIBIDI_VER ==="
-if [ ! -f "fribidi-${FRIBIDI_VER}.tar.gz" ]; then
-  curl -fLo "fribidi-${FRIBIDI_VER}.tar.gz" \
-    "https://github.com/fribidi/fribidi/releases/download/v${FRIBIDI_VER}/fribidi-${FRIBIDI_VER}.tar.gz"
+if [ ! -f "fribidi-${FRIBIDI_VER}.tar.xz" ]; then
+  curl -fLo "fribidi-${FRIBIDI_VER}.tar.xz" \
+    "https://github.com/fribidi/fribidi/releases/download/v${FRIBIDI_VER}/fribidi-${FRIBIDI_VER}.tar.xz"
 fi
-tar -xzf "fribidi-${FRIBIDI_VER}.tar.gz"
+tar -xf "fribidi-${FRIBIDI_VER}.tar.xz"
 pushd "fribidi-${FRIBIDI_VER}"
 ./configure --host="$TRIPLE" --prefix="$PREFIX" \
   --enable-shared --disable-static \
