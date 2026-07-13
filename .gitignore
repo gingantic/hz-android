@@ -23,9 +23,8 @@
 local.properties
 .kotlin/
 *.log
-app/src/main/jniLibs/*
-!app/src/main/jniLibs/arm64-v8a/
-app/src/main/jniLibs/arm64-v8a/libavcodec.so
-app/src/main/jniLibs/arm64-v8a/libavformat.so
-app/src/main/jniLibs/arm64-v8a/libavutil.so
-app/src/main/jniLibs/arm64-v8a/libswscale.so
+
+# Compiled native binaries and headers (built by CI or locally)
+app/src/main/jniLibs/
+app/src/main/cpp/include/
+libass_build_tmp/
