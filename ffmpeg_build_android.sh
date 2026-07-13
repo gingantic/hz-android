@@ -22,6 +22,12 @@ if [[ -z "$NDK_PATH" ]]; then
   [[ -n "${ANDROID_NDK_ROOT:-}" ]] && NDK_PATH="$ANDROID_NDK_ROOT"
 fi
 if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then
+  # Fallback: find highest NDK under ANDROID_HOME (GitHub runner)
+  if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME/ndk" ]]; then
+    NDK_PATH=$(ls -d "$ANDROID_HOME/ndk"/* 2>/dev/null | head -1)
+  fi
+fi
+if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then
   echo "ERROR: NDK not found. Set ANDROID_NDK_ROOT or pass --ndk-path." >&2
   exit 1
 fi
