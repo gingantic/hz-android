@@ -385,6 +385,9 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun getSelectedSubtitleTrack(): Int {
+        if (player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
+            return -1
+        }
         val tracks = getExoTextTracks()
         for (index in tracks.indices) {
             val trackInfo = tracks[index]
@@ -405,7 +408,6 @@ class ExoPlayerEngine @Inject constructor(
                 // Route embedded ASS/SSA through libass for full styling; the built-in
                 // text renderer is fed a no-op parser so it won't draw duplicates.
                 assHandler.selectTrackByFormat(format)
-                return
             }
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()

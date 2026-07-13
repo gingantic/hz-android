@@ -504,7 +504,6 @@ class AssHandler @Inject constructor(
         lastPositionRealtimeUs = 0L
         currentTimeUs = 0L
         pendingFormatToSelect = null
-        hasLoadedFirstTime = false
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 AssDirectBridge.nativeFlush(nativeHandle)
