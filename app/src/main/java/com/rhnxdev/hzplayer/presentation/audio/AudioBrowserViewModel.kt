@@ -62,14 +62,14 @@ class AudioBrowserViewModel @Inject constructor(
             // Launch parallel collection for songs, albums, and artists
             val songJob = launch {
                 audioRepository.getAllSongs(forceRefresh)
-                    .catch { /* fallback handled below */ }
+                    .catch {
+                        _uiState.update { it.copy(isLoadingSongs = false) }
+                    }
                     .collect { songs ->
-                        if (songs.isNotEmpty()) {
-                            val minSecs = userPrefs.minSongDurationSecs.first()
-                            val filtered = Companion.filterSongs(songs, "", minSecs)
-                            _uiState.update {
-                                it.copy(songs = songs, filteredSongs = filtered, isLoadingSongs = false)
-                            }
+                        val minSecs = userPrefs.minSongDurationSecs.first()
+                        val filtered = Companion.filterSongs(songs, "", minSecs)
+                        _uiState.update {
+                            it.copy(songs = songs, filteredSongs = filtered, isLoadingSongs = false)
                         }
                     }
             }

@@ -35,14 +35,17 @@ class AudioRepositoryImpl @Inject constructor(
             emit(memCache)
             return@flow
         }
+        var emitted = false
         val cached = mediaDao.getAllAudio().first()
         if (cached.isNotEmpty()) {
             val list = cached.map { it.toAudioItem() }
             cachedSongs = list
             emit(list)
+            emitted = true
         } else if (BuildConfig.DEBUG) {
             // Show preview instantly — debug only
             emit(PreviewMedia.songs)
+            emitted = true
         }
 
         try {
@@ -53,8 +56,16 @@ class AudioRepositoryImpl @Inject constructor(
                 val list = scanned.map { it.toAudioItem() }
                 cachedSongs = list
                 emit(list)
+                emitted = true
+            } else if (!emitted) {
+                emit(emptyList())
+                emitted = true
             }
-        } catch (_: Exception) { /* preview already emitted */ }
+        } catch (e: Exception) {
+            if (!emitted) {
+                throw e
+            }
+        }
     }.flowOn(Dispatchers.IO)
 
     override fun getAlbums(forceRefresh: Boolean, minDurationSecs: Int): Flow<List<Album>> = flow {
@@ -86,13 +97,13 @@ class AudioRepositoryImpl @Inject constructor(
                 .sortedBy { it.title.lowercase() }
             cachedAlbums = albums
             emit(albums)
-            return@flow
-        }
-        // Preview fallback — debug only; will be replaced when songs are scanned
-        if (BuildConfig.DEBUG) {
+        } else if (BuildConfig.DEBUG) {
+            // Preview fallback — debug only; will be replaced when songs are scanned
             val albums = PreviewMedia.albums
             cachedAlbums = albums
             emit(albums)
+        } else {
+            emit(emptyList())
         }
     }.flowOn(Dispatchers.IO)
 
@@ -123,13 +134,13 @@ class AudioRepositoryImpl @Inject constructor(
                 .sortedBy { it.name.lowercase() }
             cachedArtists = artists
             emit(artists)
-            return@flow
-        }
-        // Preview fallback — debug only
-        if (BuildConfig.DEBUG) {
+        } else if (BuildConfig.DEBUG) {
+            // Preview fallback — debug only
             val artists = PreviewMedia.artists
             cachedArtists = artists
             emit(artists)
+        } else {
+            emit(emptyList())
         }
     }.flowOn(Dispatchers.IO)
 

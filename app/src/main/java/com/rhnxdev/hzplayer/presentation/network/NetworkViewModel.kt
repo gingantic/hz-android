@@ -319,7 +319,6 @@ class NetworkViewModel @Inject constructor(
 
     private fun loadRemoteDirectory(server: ServerConfig, path: String, layerIndex: Int) {
         viewModelScope.launch {
-            val minDelayJob = launch { kotlinx.coroutines.delay(300) }
             try {
                 updateRemoteLayer(layerIndex) { it.copy(isLoading = true, error = null) }
 
@@ -333,7 +332,6 @@ class NetworkViewModel @Inject constructor(
                         dateModified = { it.dateModified },
                         size = { it.fileSize },
                     )
-                    minDelayJob.join()
                     updateRemoteLayer(layerIndex) {
                         it.copy(items = sorted, isLoading = false)
                     }
@@ -352,7 +350,6 @@ class NetworkViewModel @Inject constructor(
                             dateModified = { it.dateModified },
                             size = { it.fileSize },
                         )
-                        minDelayJob.join()
                         updateRemoteLayer(layerIndex) {
                             it.copy(items = sorted, isEmpty = items.isEmpty(), isLoading = false)
                         }
@@ -387,7 +384,6 @@ class NetworkViewModel @Inject constructor(
                         }
                     },
                     onFailure = { e ->
-                        minDelayJob.join()
                         if (e is RemoteAuthException) {
                             // Wrong credentials — re-prompt instead of showing a dead-end error.
                             promptCredentials(server, "Wrong username or password. Try again.")
@@ -402,7 +398,6 @@ class NetworkViewModel @Inject constructor(
             } finally {
                 // Guarantee the refresh indicator can never get stuck, even if the
                 // coroutine is cancelled mid-flight.
-                minDelayJob.join()
                 updateRemoteLayer(layerIndex) { it.copy(isLoading = false) }
             }
         }

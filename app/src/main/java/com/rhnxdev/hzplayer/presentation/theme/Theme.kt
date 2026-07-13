@@ -109,10 +109,10 @@ private val LightColorScheme = lightColorScheme(
     errorContainer = Color(0xFFFFDAD6),
     onErrorContainer = Color(0xFF410002),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFAF4EE),
-    surfaceContainer = Color(0xFFEFE9E3),
-    surfaceContainerHigh = Color(0xFFE5DDD5),
-    surfaceContainerHighest = Color(0xFFDCD4CB),
+    surfaceContainerLow = LightSurface,
+    surfaceContainer = LightBackground,
+    surfaceContainerHigh = LightSurfaceVariant,
+    surfaceContainerHighest = Color(0xFFDAD6CF),
 )
 
 @Composable

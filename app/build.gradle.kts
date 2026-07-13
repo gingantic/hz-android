@@ -46,6 +46,11 @@ android {
         versionCode = commitCount
         versionName = "0.9.1-build.$commitCount+$commitHash"
 
+        val r2BaseUrl = (project.findProperty("R2_UPDATE_BASE_URL") as? String)
+            ?: System.getenv("R2_UPDATE_BASE_URL")
+            ?: "http://localhost"
+        buildConfigField("String", "R2_UPDATE_BASE_URL", "\"$r2BaseUrl\"")
+
         buildConfigField("String", "BUILD_DATE", "\"${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())}\"")
         buildConfigField("String", "BUILD_TIME", "\"${SimpleDateFormat("HH:mm", Locale.US).format(Date())}\"")
 

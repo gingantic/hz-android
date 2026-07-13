@@ -35,31 +35,35 @@ val DarkOnError = Color(0xFF690005)
 
 // ── Light theme palette ─────────────────────────────────────────
 
-val LightPrimary = Color(0xFFE85E00) // VLC Spanish Orange
-val LightOnPrimary = Color.White
-val LightPrimaryContainer = Color(0xFFFFDBC6)
-val LightOnPrimaryContainer = Color(0xFF421500)
+val LightPrimary = Color(0xFF1515F2)
+val LightOnPrimary = Color(0xFFFFFFFF)
+val LightPrimaryDark = Color(0xFF0A0AB8)
+val LightPrimaryLight = Color(0xFF5A5AFF)
 
-val LightSecondary = Color(0xFF008080)
+val LightPrimaryContainer = LightPrimaryLight
+val LightOnPrimaryContainer = LightPrimaryDark
+
+val LightSecondary = Color(0xFF7078FF)
 val LightOnSecondary = Color.White
-val LightSecondaryContainer = Color(0xFFB3F0F0)
-val LightOnSecondaryContainer = Color(0xFF002424)
+val LightSecondaryContainer = Color(0xFFE0E2FF)
+val LightOnSecondaryContainer = Color(0xFF000666)
 
-val LightTertiary = Color(0xFF1B8A4A)
-val LightOnTertiary = Color.White
-val LightTertiaryContainer = Color(0xFFA8F5C8)
-val LightOnTertiaryContainer = Color(0xFF002B12)
+val LightTertiary = Color(0xFFA3A8FF) // Accent
+val LightOnTertiary = Color(0xFF000666)
+val LightTertiaryContainer = Color(0xFFE0E2FF)
+val LightOnTertiaryContainer = Color(0xFF000666)
 
-val LightBackground = Color(0xFFF9F8F6)
-val LightOnBackground = Color(0xFF1C1B19)
+val LightBackground = Color(0xFFF7F6F2)
+val LightOnBackground = Color(0xFF1B1B21)
 
-val LightSurface = Color(0xFFEFE9E3)
-val LightOnSurface = Color(0xFF1C1B19)
-val LightSurfaceVariant = Color(0xFFF5F0EB)
-val LightOnSurfaceVariant = Color(0xFF4E4B47)
+val LightSurface = Color(0xFFFCFBF8)
+val LightOnSurface = Color(0xFF1B1B21)
+val LightSurfaceVariant = Color(0xFFE6E3DD)
+val LightOnSurfaceVariant = Color(0xFF494640)
 
 val LightOutline = Color(0xFF7F7B76)
 val LightOutlineVariant = Color(0xFFD0CBC4)
 
 val LightError = Color(0xFFBA1A1A)
 val LightOnError = Color.White
+
