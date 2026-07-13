@@ -103,6 +103,34 @@ class PlayerViewModel @Inject constructor(
      */
     var isMinimizing = false
 
+    private var subtitlePreferenceAppliedForUri: String? = null
+
+    private fun applySubtitlePreference() {
+        val currentUri = _uiState.value.currentPlaybackUri ?: return
+        if (subtitlePreferenceAppliedForUri == currentUri) return
+
+        val tracks = _uiState.value.subtitleTracks
+        if (tracks.isEmpty()) return
+
+        subtitlePreferenceAppliedForUri = currentUri
+        val enabledPref = _uiState.value.subtitleStyle.enabled
+        val currentSelected = _uiState.value.selectedSubtitleTrack
+
+        android.util.Log.i("HzSubPref", "Applying subtitle preference: enabledPref=$enabledPref currentSelected=$currentSelected tracks=$tracks")
+
+        if (enabledPref) {
+            if (currentSelected == -1) {
+                // Auto-enable by selecting the first track
+                selectSubtitleTrack(0)
+            }
+        } else {
+            if (currentSelected >= 0) {
+                // Auto-disable
+                selectSubtitleTrack(-1)
+            }
+        }
+    }
+
     // Cached track lists — updated only after explicit track selection or READY state
     private val trackCache = PlayerTrackCache(
         playerRepository = playerRepository,
@@ -150,6 +178,10 @@ class PlayerViewModel @Inject constructor(
                 val isIdle = info.state == PlayerState.IDLE
 
                 _uiState.update { state ->
+                    val oldUri = state.currentPlaybackUri
+                    if (info.currentUri != null && info.currentUri != oldUri) {
+                        subtitlePreferenceAppliedForUri = null
+                    }
                     state.copy(
                         isPlaying = info.isPlaying,
                         isLoading = newIsLoading,
@@ -174,6 +206,7 @@ class PlayerViewModel @Inject constructor(
                 // populated asynchronously by the media pipeline.
                 if (info.state == PlayerState.READY) {
                     trackCache.refreshIfNeeded()
+                    applySubtitlePreference()
                 }
                 positionController.onPlaybackState(info.state)
             }
@@ -222,6 +255,15 @@ class PlayerViewModel @Inject constructor(
         } else {
             trackCache.selectSubtitleTrack(index)
         }
+
+        // Save preference!
+        viewModelScope.launch {
+            val currentStyle = _uiState.value.subtitleStyle
+            val newEnabled = index >= 0
+            if (currentStyle.enabled != newEnabled) {
+                userPreferencesRepository.setSubtitleStyle(currentStyle.copy(enabled = newEnabled))
+            }
+        }
     }
 
     fun selectAudioTrack(index: Int) = trackCache.selectAudioTrack(index)
@@ -247,6 +289,13 @@ class PlayerViewModel @Inject constructor(
                 state.copy(
                     externalSubtitles = state.externalSubtitles + (name to uri)
                 )
+            }
+        }
+        // Save preference as enabled when an external subtitle is added!
+        viewModelScope.launch {
+            val currentStyle = _uiState.value.subtitleStyle
+            if (!currentStyle.enabled) {
+                userPreferencesRepository.setSubtitleStyle(currentStyle.copy(enabled = true))
             }
         }
     }
