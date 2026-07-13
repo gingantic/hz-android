@@ -170,7 +170,6 @@ EOF
 ninja -j$(nproc)
 ninja install
 popd
-popd
 
 # ------------------------------------------------------------------------------
 echo "=== [5/6] Building fontconfig $FONTCONFIG_VER ==="
