@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -417,7 +418,7 @@ fun SettingsScreen(
                                                 Toast.makeText(context, R.string.update_no_updates, Toast.LENGTH_SHORT).show()
                                             }
                                             is com.rhnxdev.hzplayer.core.util.UpdateChecker.CheckResult.Error -> {
-                                                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                                Log.w("UpdateCheck", result.message)
                                             }
                                         }
                                     }

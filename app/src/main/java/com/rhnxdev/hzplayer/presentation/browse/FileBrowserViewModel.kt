@@ -118,11 +118,9 @@ class FileBrowserViewModel @Inject constructor(
             )
         }
         viewModelScope.launch {
-            val minDelayJob = launch { kotlinx.coroutines.delay(300) }
             fileRepository.getStorageRoots()
                 .catch { emit(emptyList()) }
                 .collect { roots ->
-                    minDelayJob.join()
                     _uiState.update {
                         it.copy(roots = roots, isLoading = false)
                     }
@@ -287,7 +285,6 @@ class FileBrowserViewModel @Inject constructor(
             }
 
             try {
-                val minDelayJob = launch { kotlinx.coroutines.delay(300) }
                 fileRepository.listDirectory(path, showHidden).collect { items ->
                     cache.put(path, items)
                     val enriched = enrichItemsWithPlaybackMetadata(items)
@@ -299,7 +296,6 @@ class FileBrowserViewModel @Inject constructor(
                         dateModified = { it.dateModified },
                         size = { it.fileSize },
                     )
-                    minDelayJob.join()
                     updateLayer(layerIndex) {
                         it.copy(items = sorted, isEmpty = items.isEmpty(), error = null, isLoading = false)
                     }

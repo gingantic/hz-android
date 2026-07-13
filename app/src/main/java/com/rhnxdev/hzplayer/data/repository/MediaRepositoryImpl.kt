@@ -47,16 +47,19 @@ class MediaRepositoryImpl @Inject constructor(
             return@flow
         }
 
+        var emitted = false
         // Phase 1: Try Room cache (instant — emitted immediately if populated)
         val cached = mediaDao.getAllVideos().first()
         if (cached.isNotEmpty()) {
             val list = cached.map { it.toVideoItem() }
             cachedVideos = list
             emit(applySort(list, sortType))
+            emitted = true
         } else if (BuildConfig.DEBUG) {
             // Phase 2: No cache — emit preview data immediately so UI never shows a blank shimmer.
             // Debug only: release builds get empty list until scan completes.
             emit(applySort(previewVideos, sortType))
+            emitted = true
         }
 
         try {
@@ -67,10 +70,15 @@ class MediaRepositoryImpl @Inject constructor(
                 val list = scanned.map { it.toVideoItem() }
                 cachedVideos = list
                 emit(applySort(list, sortType))
+                emitted = true
+            } else if (!emitted) {
+                emit(emptyList())
+                emitted = true
             }
-            // If scan is also empty, preview already emitted — no-op.
-        } catch (_: Exception) {
-            // Preview already emitted — silent fallback.
+        } catch (e: Exception) {
+            if (!emitted) {
+                throw e
+            }
         }
     }.flowOn(Dispatchers.IO)
 

@@ -19,8 +19,7 @@ import java.net.URL
 import java.net.UnknownHostException
 
 object UpdateChecker {
-    // Public R2 bucket base URL — set this to your Cloudflare R2 public endpoint
-    private const val R2_BASE_URL = "CHANGEME" // e.g. "https://pub-xxxxx.r2.dev"
+    private val R2_BASE_URL: String get() = BuildConfig.R2_UPDATE_BASE_URL
 
     data class UpdateInfo(
         val latestVersionName: String,

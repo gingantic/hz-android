@@ -49,6 +49,8 @@ jobs:
 
       - name: Build release APK
         run: ./gradlew assembleRelease
+        env:
+          R2_UPDATE_BASE_URL: ${{ secrets.R2_PUBLIC_URL }}
 
       - name: Get Version Name
         id: version
