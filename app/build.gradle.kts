@@ -46,11 +46,6 @@ android {
         versionCode = commitCount
         versionName = "0.9.1-build.$commitCount+$commitHash"
 
-        val ghUpdateToken = (project.findProperty("GITHUB_UPDATE_TOKEN") as? String)
-            ?: System.getenv("GITHUB_UPDATE_TOKEN")
-            ?: ""
-        buildConfigField("String", "GITHUB_UPDATE_TOKEN", "\"$ghUpdateToken\"")
-
         buildConfigField("String", "BUILD_DATE", "\"${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())}\"")
         buildConfigField("String", "BUILD_TIME", "\"${SimpleDateFormat("HH:mm", Locale.US).format(Date())}\"")
 
@@ -173,5 +168,11 @@ ksp {
 tasks.register("printVersionName") {
     doLast {
         println(android.defaultConfig.versionName)
+    }
+}
+
+tasks.register("printVersionCode") {
+    doLast {
+        println(android.defaultConfig.versionCode)
     }
 }

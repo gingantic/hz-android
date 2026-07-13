@@ -11,9 +11,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,15 +48,12 @@ jobs:
 
       - name: Build release APK
         run: ./gradlew assembleRelease
-        env:
-          GITHUB_UPDATE_TOKEN: ${{ secrets.GITHUB_UPDATE_TOKEN }}
 
       - name: Get Version Name
         id: version
         run: |
-          # Use --quiet and tail to strip any stray Gradle log lines, keeping only the last line (the version)
           VERSION_NAME=$(./gradlew -q :app:printVersionName 2>/dev/null | tail -n 1 | tr -d '[:space:]')
-          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "Resolved version name: $VERSION_NAME"
 
       - name: Rename APK with version
@@ -73,20 +67,43 @@ jobs:
           name: HzPlayer-${{ github.sha }}-release
           path: app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk
 
-      - name: Create or Update GitHub Release
+      - name: Push release to R2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: HzPlayer v${{ steps.version.outputs.version_name }}
-          body: |
-            ## Automated OTA Pre-release Build
-            This release contains the latest automated build of Hz Player.
+        run: |
+          # Install aws CLI for S3-compatible R2 access
+          pip3 install --quiet awscli
 
-            **Version**: `v${{ steps.version.outputs.version_name }}`
-            **Commit**: ${{ github.sha }}
-          prerelease: true
-          make_latest: false
-          files: app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APK="app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk"
+
+          # Configure R2 endpoint
+          aws configure set aws_access_key_id "${{ secrets.R2_ACCESS_KEY_ID }}"
+          aws configure set aws_secret_access_key "${{ secrets.R2_SECRET_ACCESS_KEY }}"
+          aws configure set default.region auto
+
+          ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+
+          # Upload APK
+          aws s3 cp "$APK" "s3://${{ secrets.R2_BUCKET }}/HzPlayer-v${{ steps.version.outputs.version_name }}.apk" \
+            --endpoint-url "$ENDPOINT"
+
+          # Generate and upload latest.json manifest
+          VNAME="${{ steps.version.outputs.version_name }}"
+          VCODE=$(./gradlew -q :app:printVersionCode 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+          DL_URL="${{ secrets.R2_PUBLIC_URL }}/HzPlayer-v${VNAME}.apk"
+
+          cat > /tmp/latest.json << EOF
+          {
+            "versionName": "${VNAME}",
+            "versionCode": ${VCODE},
+            "downloadUrl": "${DL_URL}",
+            "releaseNotes": "Automated OTA build from commit ${GITHUB_SHA}"
+          }
+          EOF
+
+          aws s3 cp /tmp/latest.json "s3://${{ secrets.R2_BUCKET }}/latest.json" \
+            --endpoint-url "$ENDPOINT" \
+            --cache-control "no-cache"
+
+          echo "=== Published to R2 ==="
+          echo "APK: HzPlayer-v${VNAME}.apk"
+          echo "Manifest: latest.json"
