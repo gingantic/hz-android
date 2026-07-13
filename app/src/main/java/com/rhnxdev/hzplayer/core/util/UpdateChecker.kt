@@ -12,8 +12,11 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.UnknownHostException
 
 object UpdateChecker {
     // Public R2 bucket base URL — set this to your Cloudflare R2 public endpoint
@@ -26,10 +29,16 @@ object UpdateChecker {
         val releaseNotes: String?
     )
 
-    suspend fun checkForUpdates(): UpdateInfo? = withContext(Dispatchers.IO) {
+    sealed interface CheckResult {
+        data class Available(val info: UpdateInfo) : CheckResult
+        data object UpToDate : CheckResult
+        data class Error(val message: String) : CheckResult
+    }
+
+    suspend fun checkForUpdates(): CheckResult = withContext(Dispatchers.IO) {
         try {
             val manifestUrl = "$R2_BASE_URL/latest.json"
-            val json = fetchText(manifestUrl) ?: return@withContext null
+            val json = fetchText(manifestUrl) ?: return@withContext CheckResult.Error("Failed to fetch update manifest")
             val obj = JSONObject(json)
 
             val versionName = obj.optString("versionName", "")
@@ -37,18 +46,29 @@ object UpdateChecker {
             val downloadUrl = obj.optString("downloadUrl", "")
             val releaseNotes = obj.optString("releaseNotes", null)
 
-            if (versionName.isBlank() || downloadUrl.isBlank()) return@withContext null
-            if (versionCode <= BuildConfig.VERSION_CODE) return@withContext null
+            if (versionName.isBlank() || downloadUrl.isBlank()) {
+                return@withContext CheckResult.Error("Invalid update manifest")
+            }
+            if (versionCode <= BuildConfig.VERSION_CODE) {
+                return@withContext CheckResult.UpToDate
+            }
 
-            UpdateInfo(
-                latestVersionName = "v$versionName",
-                latestVersionCode = versionCode,
-                downloadUrl = downloadUrl,
-                releaseNotes = releaseNotes?.takeIf { it.isNotBlank() }
+            CheckResult.Available(
+                UpdateInfo(
+                    latestVersionName = "v$versionName",
+                    latestVersionCode = versionCode,
+                    downloadUrl = downloadUrl,
+                    releaseNotes = releaseNotes?.takeIf { it.isNotBlank() }
+                )
             )
+        } catch (e: UnknownHostException) {
+            CheckResult.Error("No internet connection")
+        } catch (e: SocketTimeoutException) {
+            CheckResult.Error("Connection timed out")
+        } catch (e: ConnectException) {
+            CheckResult.Error("Update server unreachable")
         } catch (e: Exception) {
-            e.printStackTrace()
-            null
+            CheckResult.Error("Update check failed: ${e.localizedMessage ?: "Unknown error"}")
         }
     }
 
@@ -58,13 +78,17 @@ object UpdateChecker {
             readTimeout = 10_000
         }
         return try {
-            if (conn.responseCode != 200) return null
+            val code = conn.responseCode
+            if (code != 200) {
+                conn.disconnect()
+                return null
+            }
             val text = BufferedReader(InputStreamReader(conn.inputStream)).readText()
             conn.disconnect()
             text
         } catch (e: Exception) {
             conn.disconnect()
-            null
+            throw e
         }
     }
 
