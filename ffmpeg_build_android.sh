@@ -90,7 +90,7 @@ fi
 # ----- FFmpeg source -----------------------------------------------------------
 # CI sets FFMPEG_SRC_DIR (git clone); local fallback downloads tarball.
 if [[ -n "${FFMPEG_SRC_DIR:-}" && -d "$FFMPEG_SRC_DIR" ]]; then
-  FFMPEG_DIR="$FFMPEG_SRC_DIR"
+  FFMPEG_DIR="$(cd "$FFMPEG_SRC_DIR" && pwd)"
   echo "=== Using FFmpeg source from $FFMPEG_DIR ==="
 else
   FFMPEG_VER="7.1"
