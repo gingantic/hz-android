@@ -50,10 +50,25 @@ case "$ABI" in
 esac
 
 # ccache wrapper (guarded so local builds without ccache still work).
+# Meson does NOT shell-split "ccache /path/clang", so we point CC/CXX at a
+# wrapper script that execs `ccache <real-compiler>`. Autotools shell-split
+# and work with the wrapper too.
 CCACHE_BIN="$(command -v ccache || true)"
 if [ -n "$CCACHE_BIN" ]; then
-  export CC="ccache $TC/${TRIPLE}${API}-clang"
-  export CXX="ccache $TC/${TRIPLE}${API}-clang++"
+  CCACHE_WRAP_DIR="$(mktemp -d)"
+  REAL_CC="$TC/${TRIPLE}${API}-clang"
+  REAL_CXX="$TC/${TRIPLE}${API}-clang++"
+  for pair in "$REAL_CC" "$REAL_CXX"; do
+    b="$(basename "$pair")"
+    cat > "$CCACHE_WRAP_DIR/$b" <<WRAPEOF
+#!/bin/bash
+exec ccache "$pair" "\$@"
+WRAPEOF
+    chmod +x "$CCACHE_WRAP_DIR/$b"
+  done
+  export PATH="$CCACHE_WRAP_DIR:$PATH"
+  export CC="$(basename "$REAL_CC")"
+  export CXX="$(basename "$REAL_CXX")"
 else
   export CC="$TC/${TRIPLE}${API}-clang"
   export CXX="$TC/${TRIPLE}${API}-clang++"
