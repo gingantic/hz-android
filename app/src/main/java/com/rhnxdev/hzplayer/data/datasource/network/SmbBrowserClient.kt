@@ -18,15 +18,26 @@ class SmbBrowserClient(
     private val password: String,
 ) : RemoteBrowserClient {
 
+    companion object {
+        private const val TAG = "SmbBrowserClient"
+    }
+
     override suspend fun connect() = withContext(Dispatchers.IO) {
         val ctx = ConnectionPool.borrowSmbBrowser(host, port, username, password)
         // Pre-flight: try to list the share root. If auth fails, evict from pool so
         // next attempt gets a fresh context instead of a cached bad one.
+        val url = "smb://$host:${if (port > 0) port else 445}/"
+        android.util.Log.d(TAG, "connect: pre-flight check listing shares at $url")
         try {
-            SmbFile("smb://$host:${if (port > 0) port else 445}/", ctx).listFiles()
-        } catch (_: SmbAuthException) {
+            val list = SmbFile(url, ctx).listFiles()
+            android.util.Log.d(TAG, "connect: pre-flight check successful, listed ${list?.size ?: 0} shares")
+        } catch (e: SmbAuthException) {
+            android.util.Log.e(TAG, "connect: authentication failure to $url", e)
             ConnectionPool.returnSmbBrowser(host, port, username, password)
             throw com.rhnxdev.hzplayer.domain.model.RemoteAuthException()
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "connect: failed to connect to $url", e)
+            throw e
         }
         Unit
     }
@@ -34,34 +45,56 @@ class SmbBrowserClient(
     override suspend fun listDirectory(path: String): List<RemoteFileItem> =
         withContext(Dispatchers.IO) {
             val normalized = normalizeRemotePath(path)
-            if (normalized == null) return@withContext emptyList()
+            if (normalized == null) {
+                android.util.Log.w(TAG, "listDirectory: path normalization failed for '$path'")
+                return@withContext emptyList()
+            }
+            android.util.Log.d(TAG, "listDirectory: listing files for normalized path '$normalized'")
             val ctx = ConnectionPool.borrowSmbBrowser(host, port, username, password)
             val isRoot = normalized.replace("/", "").isEmpty()
-            val smbDir = resolveDir(ctx, normalized) ?: return@withContext emptyList()
-            smbDir.listFiles()
-                .filter { file ->
-                    val cleanName = file.name.trimEnd('/')
-                    val isHiddenShare = isRoot && cleanName.endsWith("$")
-                    file.name != "." && file.name != ".." && !isHiddenShare
+            try {
+                val smbDir = resolveDir(ctx, normalized)
+                if (smbDir == null) {
+                    android.util.Log.w(TAG, "listDirectory: failed to resolve directory for normalized='$normalized'")
+                    return@withContext emptyList()
                 }
-                .map { file ->
-                    val name = file.name.trimEnd('/')
-                    val isDir = file.isDirectory
-                    val filePath = if (path.endsWith("/")) "$path$name" else "$path/$name"
-                    RemoteFileItem(
-                        name = name,
-                        path = filePath,
-                        isDirectory = isDir,
-                        fileSize = if (!isDir) file.length() else 0,
-                        childCount = -1,
-                        dateModified = file.lastModified(),
-                        mimeType = if (!isDir) guessMimeType(name) else null,
-                    )
-                }
-                .sortedRemote()
+                android.util.Log.d(TAG, "listDirectory: resolved directory url: ${smbDir.url}")
+                val files = smbDir.listFiles()
+                android.util.Log.d(TAG, "listDirectory: listed ${files?.size ?: 0} files")
+                val items = files
+                    .filter { file ->
+                        val cleanName = file.name.trimEnd('/')
+                        val isHiddenShare = isRoot && cleanName.endsWith("$")
+                        file.name != "." && file.name != ".." && !isHiddenShare
+                    }
+                    .map { file ->
+                        val name = file.name.trimEnd('/')
+                        val isDir = file.isDirectory
+                        val filePath = if (path.endsWith("/")) "$path$name" else "$path/$name"
+                        RemoteFileItem(
+                            name = name,
+                            path = filePath,
+                            isDirectory = isDir,
+                            fileSize = if (!isDir) file.length() else 0,
+                            childCount = -1,
+                            dateModified = file.lastModified(),
+                            mimeType = if (!isDir) guessMimeType(name) else null,
+                        )
+                    }
+                    .sortedRemote()
+                android.util.Log.d(TAG, "listDirectory: mapping completed, returning ${items.size} items")
+                items
+            } catch (e: SmbAuthException) {
+                android.util.Log.w(TAG, "listDirectory: Access denied browsing directory '$normalized' (SmbAuthException: ${e.message})")
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "listDirectory: error browsing directory '$normalized'", e)
+                throw e
+            }
         }
 
     override suspend fun disconnect() = withContext(Dispatchers.IO) {
+        android.util.Log.d(TAG, "disconnect: returning smb browser connection for $host:$port")
         ConnectionPool.returnSmbBrowser(host, port, username, password)
     }
 

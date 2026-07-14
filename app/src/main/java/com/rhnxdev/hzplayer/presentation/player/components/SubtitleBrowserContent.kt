@@ -229,7 +229,15 @@ internal fun RemoteBrowseContent(
             items(items, key = { it.path }) { item ->
                 FileBrowserItem(
                     name = item.name,
-                    subtitle = if (item.isDirectory) stringResource(R.string.folder_label) else formatFileSize(item.fileSize),
+                    subtitle = if (item.isDirectory) {
+                        if (item.subfolderCount >= 0 && item.fileCount >= 0) {
+                            stringResource(R.string.folder_badge, item.subfolderCount, item.fileCount)
+                        } else if (item.childCount >= 0) {
+                            stringResource(R.string.items_count, item.childCount)
+                        } else {
+                            stringResource(R.string.folder_label)
+                        }
+                    } else formatFileSize(item.fileSize),
                     isDirectory = item.isDirectory,
                     onClick = {
                         if (item.isDirectory) onFolderClicked(item)

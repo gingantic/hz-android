@@ -19,6 +19,7 @@ import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ViewMode
+import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
 import com.rhnxdev.hzplayer.domain.repository.RemoteBrowseRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
@@ -464,6 +465,25 @@ class NetworkViewModel @Inject constructor(
     fun onToggleFavorite(id: Long) { viewModelScope.launch { networkRepository.toggleFavorite(id) } }
     fun onDeleteHistoryItem(id: Long) { viewModelScope.launch { networkRepository.deleteHistoryItem(id) } }
     fun onClearHistory() { viewModelScope.launch { networkRepository.clearHistory() } }
+
+    fun collectVideoPlaylist(): List<VideoItem> {
+        val currentLayer = _uiState.value.remoteLayers.lastOrNull() ?: return emptyList()
+        var idCounter = 0L
+        return currentLayer.items
+            .filter { !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name)) }
+            .map { item ->
+                idCounter++
+                val playbackUri = buildPlaybackUri(item.path) ?: item.path
+                VideoItem(
+                    id = item.path.hashCode().toLong(),
+                    title = item.name.substringBeforeLast('.'),
+                    uri = playbackUri,
+                    durationMs = 0L,
+                    fileSize = item.fileSize,
+                    mimeType = item.mimeType,
+                )
+            }
+    }
 
     // Triple: (firstVisibleIndex, pixelOffset, isAtEnd)
     // isAtEnd = true when the last list item was visible at save time; restored by

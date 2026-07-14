@@ -346,7 +346,7 @@ internal object ConnectionPool {
             setProperty("jcifs.smb.client.responseTimeout", responseTimeout.toString())
             setProperty("jcifs.smb.client.soTimeout", soTimeout.toString())
             setProperty("jcifs.smb.client.dfs.disabled", "true")
-            setProperty("jcifs.smb.client.signingEnforced", "true")
+            setProperty("jcifs.smb.client.signingEnforced", "false")
             setProperty("jcifs.resolveOrder", "DNS")
             setProperty("jcifs.encoding", "UTF-8")
         }
@@ -356,7 +356,7 @@ internal object ConnectionPool {
         } else {
             base.withGuestCrendentials()
         }
-        android.util.Log.d("ConnectionPool", "SMB new context $k")
+        android.util.Log.d("ConnectionPool", "SMB new context built for key=$k: host=$host, user=$user, minVersion=SMB202, maxVersion=SMB311, responseTimeout=$responseTimeout, soTimeout=$soTimeout, signingEnforced=false")
         return ctx
     }
 
