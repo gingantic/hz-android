@@ -49,8 +49,15 @@ case "$ABI" in
     echo "ERROR: unsupported ABI '$ABI'" >&2; exit 1 ;;
 esac
 
-export CC="$TC/${TRIPLE}${API}-clang"
-export CXX="$TC/${TRIPLE}${API}-clang++"
+# ccache wrapper (guarded so local builds without ccache still work).
+CCACHE_BIN="$(command -v ccache || true)"
+if [ -n "$CCACHE_BIN" ]; then
+  export CC="ccache $TC/${TRIPLE}${API}-clang"
+  export CXX="ccache $TC/${TRIPLE}${API}-clang++"
+else
+  export CC="$TC/${TRIPLE}${API}-clang"
+  export CXX="$TC/${TRIPLE}${API}-clang++"
+fi
 export AR="$TC/llvm-ar"
 export RANLIB="$TC/llvm-ranlib"
 export STRIP="$TC/llvm-strip"

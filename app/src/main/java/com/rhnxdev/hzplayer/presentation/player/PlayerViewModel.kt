@@ -181,6 +181,7 @@ class PlayerViewModel @Inject constructor(
                     val oldUri = state.currentPlaybackUri
                     if (info.currentUri != null && info.currentUri != oldUri) {
                         subtitlePreferenceAppliedForUri = null
+                        trackCache.markNeedsRefresh()
                     }
                     state.copy(
                         isPlaying = info.isPlaying,

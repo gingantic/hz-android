@@ -47,6 +47,8 @@ plugins {
 }
 
 android {
+    ndkVersion = "27.0.12077973"   // PIN. Keep in sync with NDK_VER in build.yml; changing invalidates .cxx + native caches.
+
     namespace = "com.rhnxdev.hzplayer"
     compileSdk {
         version = release(36)
@@ -76,6 +78,14 @@ android {
             abiFilters += listOf("arm64-v8a")
         }
 
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+                    "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+                )
+            }
+        }
 
     }
 

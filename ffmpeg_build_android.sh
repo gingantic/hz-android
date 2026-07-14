@@ -93,6 +93,10 @@ else
   export PATH="$TC:$PATH"
 fi
 
+# ccache wrapper (guarded so local builds without ccache still work).
+CCACHE_BIN="$(command -v ccache || true)"
+CC_LAUNCHER="${CCACHE_BIN:+ccache }"
+
 # ----- FFmpeg source -----------------------------------------------------------
 # CI sets FFMPEG_SRC_DIR (git clone); local fallback downloads tarball.
 if [[ -n "${FFMPEG_SRC_DIR:-}" && -d "$FFMPEG_SRC_DIR" ]]; then
@@ -115,7 +119,9 @@ fi
 
 cd "$FFMPEG_DIR"
 export TMPDIR=/tmp
-make clean 2>/dev/null || true
+# Only clean on explicit force; otherwise keep prior .o files so `make` is
+# incremental across CI runs (ffmpeg-src is cached with its build objects).
+[ -n "${FFMPEG_FORCE_REBUILD:-}" ] && make clean 2>/dev/null || true
 
 echo "=== Configuring FFmpeg for $ABI ==="
 ./configure \
@@ -129,8 +135,8 @@ echo "=== Configuring FFmpeg for $ABI ==="
   --enable-demuxer=matroska,mov,avi,mp4,mpegts,flv \
   --enable-protocol=file --enable-swscale \
   --cross-prefix=$CROSS \
-  --cc=$CLANG \
-  --cxx=$CLANGPP \
+  --cc="${CC_LAUNCHER}${CLANG}" \
+  --cxx="${CC_LAUNCHER}${CLANGPP}" \
   --ar=llvm-ar --nm=llvm-nm \
   --strip=llvm-strip --ranlib=llvm-ranlib \
   --sysroot="$SYSROOT" \
