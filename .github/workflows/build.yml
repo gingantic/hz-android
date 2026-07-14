@@ -45,7 +45,7 @@ jobs:
           java-version: 17
 
       - name: Decode signing keystore
-        if: ${{ secrets.RELEASE_KEYSTORE_B64 != '' }}
+        if: secrets.RELEASE_KEYSTORE_B64 != ''
         run: echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > "${{ github.workspace }}/release.keystore.jks"
 
       - name: Setup Gradle
