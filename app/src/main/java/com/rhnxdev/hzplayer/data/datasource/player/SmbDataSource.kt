@@ -43,48 +43,53 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         transferInitializing(dataSpec)
         android.util.Log.d(TAG, "open: uri=${safeUri(dataSpec.uri)} pos=${dataSpec.position} len=${dataSpec.length}")
 
-        val uriStr = dataSpec.uri
-        val userInfo = uriStr.userInfo ?: ""
-        val username = Uri.decode(userInfo.substringBefore(':'))
-        val password = Uri.decode(userInfo.substringAfter(':', ""))
-        val host = uriStr.host ?: throw IOException("No host in URI: ${safeUri(dataSpec.uri)}")
-        val port = uriStr.port.takeIf { it > 0 } ?: 445
+        try {
+            val uriStr = dataSpec.uri
+            val userInfo = uriStr.userInfo ?: ""
+            val username = Uri.decode(userInfo.substringBefore(':'))
+            val password = Uri.decode(userInfo.substringAfter(':', ""))
+            val host = uriStr.host ?: throw IOException("No host in URI: ${safeUri(dataSpec.uri)}")
+            val port = uriStr.port.takeIf { it > 0 } ?: 445
 
-        val cifsCtx = ConnectionPool.borrowSmbContext(host, port, username, password)
+            val cifsCtx = ConnectionPool.borrowSmbContext(host, port, username, password)
 
-        // Resolve the target by walking the directory tree via listFiles() rather
-        // than constructing an SmbFile from a URL containing the path. jcifs
-        // mis-handles %-encoded segments (spaces → "file not found", emoji /
-        // fullwidth CJK → STATUS_OBJECT_NAME_INVALID). See [SmbPathResolver].
-        //
-        // Cache the resolved SmbFile per-URI: ExoPlayer seeks via close()+open()
-        // with the same URI, and re-walking on every seek is wasteful. SmbFile is
-        // bound to the pooled (long-lived) CIFSContext, so reuse across opens is safe.
-        val cacheKey = dataSpec.uri.toString()
-        val segments = SmbPathResolver.decodedSegmentsOf(uriStr.encodedPath)
-        if (segments.isEmpty()) throw IOException("No path in URI: ${safeUri(dataSpec.uri)}")
+            // Resolve the target by walking the directory tree via listFiles() rather
+            // than constructing an SmbFile from a URL containing the path. jcifs
+            // mis-handles %-encoded segments (spaces → "file not found", emoji /
+            // fullwidth CJK → STATUS_OBJECT_NAME_INVALID). See [SmbPathResolver].
+            //
+            // Cache the resolved SmbFile per-URI: ExoPlayer seeks via close()+open()
+            // with the same URI, and re-walking on every seek is wasteful. SmbFile is
+            // bound to the pooled (long-lived) CIFSContext, so reuse across opens is safe.
+            val cacheKey = dataSpec.uri.toString()
+            val segments = SmbPathResolver.decodedSegmentsOf(uriStr.encodedPath)
+            if (segments.isEmpty()) throw IOException("No path in URI: ${safeUri(dataSpec.uri)}")
 
-        // Open with brief retry/backoff for transient network drops (e.g. Wi-Fi
-        // handoff). Connection-stage only — mid-read errors are not retried.
-        val (_, fileLength, rawStream) = openWithRetry(
-            cifsCtx, host, port, username, password, segments, cacheKey, dataSpec
-        )
+            // Open with brief retry/backoff for transient network drops (e.g. Wi-Fi
+            // handoff). Connection-stage only — mid-read errors are not retried.
+            val (_, fileLength, rawStream) = openWithRetry(
+                cifsCtx, host, port, username, password, segments, cacheKey, dataSpec
+            )
 
-        // BufferedInputStream does large SMB reads (512 KB at a time),
-        // serving small ExoPlayer reads from memory. This is the main
-        // throughput enabler — without it each ExoPlayer read is a SMB
-        // round-trip, capping at ~45 KB/s regardless of server speed.
-        inputStream = BufferedInputStream(rawStream, 512 * 1024)
+            // BufferedInputStream does large SMB reads (512 KB at a time),
+            // serving small ExoPlayer reads from memory. This is the main
+            // throughput enabler — without it each ExoPlayer read is a SMB
+            // round-trip, capping at ~45 KB/s regardless of server speed.
+            inputStream = BufferedInputStream(rawStream, 512 * 1024)
 
-        bytesRemaining = when {
-            dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
-            else -> fileLength - dataSpec.position
+            bytesRemaining = when {
+                dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
+                else -> fileLength - dataSpec.position
+            }
+
+            val elapsed = SystemClock.elapsedRealtime() - openStart
+            android.util.Log.d(TAG, "open OK: fileLength=$fileLength remaining=$bytesRemaining in ${elapsed}ms")
+            transferStarted(dataSpec)
+            return bytesRemaining
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "open failed for uri=${safeUri(dataSpec.uri)}: ${e.message}", e)
+            throw e
         }
-
-        val elapsed = SystemClock.elapsedRealtime() - openStart
-        android.util.Log.d(TAG, "open OK: fileLength=$fileLength remaining=$bytesRemaining in ${elapsed}ms")
-        transferStarted(dataSpec)
-        return bytesRemaining
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {

@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.SystemClock
 import jcifs.CIFSContext
 import jcifs.smb.SmbFile
+import jcifs.smb.SmbAuthException
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -38,6 +39,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal object SmbPathResolver {
 
+    private const val TAG = "SmbPathResolver"
     private const val TTL_MS = 30_000L
 
     private class CachedListing(val timestamp: Long, val byName: Map<String, SmbFile>)
@@ -65,16 +67,42 @@ internal object SmbPathResolver {
         port: Int,
         decodedSegments: List<String>,
     ): SmbFile? {
+        android.util.Log.d(TAG, "resolve: host=$host, port=$port, segments=$decodedSegments")
         // Reject path-traversal segments: ".." would climb out of the share root and
         // could expose admin shares ($ shares); "." is a no-op that must never reach here.
-        if (decodedSegments.any { it == ".." || it == "." }) return null
-        if (decodedSegments.isEmpty()) return SmbFile("smb://$host:$port/", ctx)
+        if (decodedSegments.any { it == ".." || it == "." }) {
+            android.util.Log.w(TAG, "resolve: rejected path containing traversal segments (.. or .)")
+            return null
+        }
+        if (decodedSegments.isEmpty()) {
+            android.util.Log.d(TAG, "resolve: empty segments, returning host root smb://$host:$port/")
+            return SmbFile("smb://$host:$port/", ctx)
+        }
 
         val shareUrl = "smb://$host:$port/${Uri.encode(decodedSegments.first())}/"
+        android.util.Log.d(TAG, "resolve: shareUrl=$shareUrl")
         var current = SmbFile(shareUrl, ctx)
         for (segment in decodedSegments.drop(1)) {
-            current = listChildren(current)[segment.lowercase()] ?: return null
+            val children = try {
+                listChildren(current)
+            } catch (e: SmbAuthException) {
+                android.util.Log.w(TAG, "resolve: Access denied listing children of ${current.url} (SmbAuthException: ${e.message})")
+                return null
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "resolve: failed to list children of ${current.url}", e)
+                return null
+            }
+            val match = children[segment.lowercase()]
+            if (match == null) {
+                android.util.Log.w(
+                    TAG,
+                    "resolve failed: segment '$segment' not found in directory '${current.url}'. Available children: ${children.keys}"
+                )
+                return null
+            }
+            current = match
         }
+        android.util.Log.d(TAG, "resolve success: ${current.url}")
         return current
     }
 
@@ -103,12 +131,26 @@ internal object SmbPathResolver {
         val url = dir.url.toString()
         val ctxCache = listingCache.getOrPut(ctx) { java.util.concurrent.ConcurrentHashMap() }
         ctxCache[url]?.let {
-            if (SystemClock.elapsedRealtime() - it.timestamp < TTL_MS) return it.byName
+            if (SystemClock.elapsedRealtime() - it.timestamp < TTL_MS) {
+                android.util.Log.d(TAG, "listChildren: cache hit for $url")
+                return it.byName
+            }
         }
-        val map = dir.listFiles()
-            ?.associateBy { it.name.trimEnd('/').lowercase() }
-            ?: emptyMap()
-        ctxCache[url] = CachedListing(SystemClock.elapsedRealtime(), map)
-        return map
+        android.util.Log.d(TAG, "listChildren: cache miss, fetching listFiles for $url")
+        try {
+            val files = dir.listFiles()
+            val map = files
+                ?.associateBy { it.name.trimEnd('/').lowercase() }
+                ?: emptyMap()
+            ctxCache[url] = CachedListing(SystemClock.elapsedRealtime(), map)
+            android.util.Log.d(TAG, "listChildren: successfully fetched ${map.size} items for $url")
+            return map
+        } catch (e: SmbAuthException) {
+            android.util.Log.w(TAG, "listChildren: Access denied listing children for $url (SmbAuthException: ${e.message})")
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "listChildren: failed listing children for $url", e)
+            throw e
+        }
     }
 }

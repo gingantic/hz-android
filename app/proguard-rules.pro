@@ -23,8 +23,24 @@
 # Ignore missing JDK/system classes referenced by EdDSA / SSHJ (SFTP library)
 -dontwarn net.i2p.crypto.eddsa.**
 -dontwarn sun.security.**
+# Bouncy Castle rules (required for SFTP/SSHJ security algorithms and SMB/jcifs-ng crypto MD4)
+-keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
 -dontwarn com.jcraft.jsch.**
 -dontwarn okhttp3.internal.platform.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
+
+# jcifs-ng (SMB) rules to prevent obfuscation/shrinking of class files and reflection paths
+-keep class jcifs.** { *; }
+-dontwarn jcifs.**
+
+# SSHJ (SFTP) rules to prevent dynamic algorithm loading failure
+-keep class net.schmizz.sshj.** { *; }
+-keep class com.hierynomus.** { *; }
+-dontwarn net.schmizz.sshj.**
+-dontwarn com.hierynomus.**
+
+# Apache Commons Net (FTP) rules
+-keep class org.apache.commons.net.** { *; }
+-dontwarn org.apache.commons.net.**

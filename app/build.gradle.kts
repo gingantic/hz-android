@@ -38,6 +38,29 @@ fun readLocalProp(key: String): String? {
 fun signingValue(propKey: String, envKey: String): String? =
     System.getenv(envKey) ?: readLocalProp(propKey)
 
+fun hasCcache(): Boolean {
+    val path = System.getenv("PATH") ?: return false
+    val isWindows = System.getProperty("os.name").lowercase(Locale.US).contains("win")
+    val separator = if (isWindows) ";" else ":"
+    val exts = if (isWindows) listOf(".exe", ".bat", ".cmd", "") else listOf("")
+    for (dir in path.split(separator)) {
+        val cleanDir = dir.trim()
+        if (cleanDir.isEmpty()) continue
+        try {
+            val folder = File(cleanDir)
+            if (folder.isDirectory) {
+                for (ext in exts) {
+                    val ccacheFile = File(folder, "ccache$ext")
+                    if (ccacheFile.isFile && ccacheFile.canExecute()) {
+                        return true
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+    return false
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -80,10 +103,12 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments += listOf(
-                    "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
-                    "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
-                )
+                if (hasCcache()) {
+                    arguments += listOf(
+                        "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+                        "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+                    )
+                }
             }
         }
 
@@ -91,10 +116,12 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file(
-                signingValue("SIGNING_STORE_PATH", "KEYSTORE_PATH")
-                    ?: ".signing/release.keystore.jks"
-            )
+            val keystorePath = signingValue("SIGNING_STORE_PATH", "KEYSTORE_PATH")
+            storeFile = if (keystorePath != null) {
+                file(keystorePath)
+            } else {
+                rootProject.file(".signing/release.keystore.jks")
+            }
             storePassword = signingValue("SIGNING_STORE_PASSWORD", "KEYSTORE_PASS") ?: ""
             keyAlias = signingValue("SIGNING_KEY_ALIAS", "KEY_ALIAS") ?: "hzplayer"
             keyPassword = signingValue("SIGNING_KEY_PASSWORD", "KEY_PASS") ?: ""
@@ -105,7 +132,12 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile?.exists() == true) {
+                signingConfig = releaseSigning
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

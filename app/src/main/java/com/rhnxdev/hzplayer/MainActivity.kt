@@ -502,6 +502,10 @@ fun HzPlayerApp(
                                             navController.navigate(NavRoutes.AUDIO_PLAYER)
                                         }
                                     },
+                                    onPlayAllVideos = { playlist ->
+                                        playerViewModel.playVideoPlaylist(playlist)
+                                        navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+                                    },
                                 )
                                 4 -> SettingsScreen(
                                     onRequestPermissions = onRequestPermissions,

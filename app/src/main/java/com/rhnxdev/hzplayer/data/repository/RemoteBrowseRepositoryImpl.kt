@@ -7,6 +7,7 @@ import com.rhnxdev.hzplayer.data.datasource.network.RemoteBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.SftpBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.SmbBrowserClient
 import com.rhnxdev.hzplayer.data.datasource.network.WebDavBrowserClient
+import jcifs.smb.SmbAuthException
 import com.rhnxdev.hzplayer.domain.model.FolderCounts
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
@@ -33,16 +34,23 @@ class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository 
         path: String,
     ): Result<List<RemoteFileItem>> = withContext(Dispatchers.IO) {
         val client = createClient(server)
-        runCatching {
+        val result = runCatching {
             withTimeout(REMOTE_OP_TIMEOUT_MS) {
                 client.connect()
                 client.listDirectory(path)
             }
-        }.also {
-            // Always release the pooled connection so credentialed contexts don't
-            // linger for the process lifetime.
-            runCatching { client.disconnect() }
         }
+        result.onFailure { e ->
+            if (e is SmbAuthException) {
+                android.util.Log.w("RemoteBrowseRepo", "listDirectory failed (Access Denied) for protocol=${server.protocol} host=${server.host} path=$path: ${e.message}")
+            } else {
+                android.util.Log.e("RemoteBrowseRepo", "listDirectory failed for protocol=${server.protocol} host=${server.host} path=$path", e)
+            }
+        }
+        // Always release the pooled connection so credentialed contexts don't
+        // linger for the process lifetime.
+        runCatching { client.disconnect() }
+        result
     }
 
     override suspend fun enrichDirectory(

@@ -30,9 +30,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
+import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.util.isVideoOrStreamDefault
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.network.components.CredentialDialog
 import com.rhnxdev.hzplayer.presentation.network.components.NetworkHomeContent
 import com.rhnxdev.hzplayer.presentation.network.components.ServerBrowseStackContent
@@ -43,6 +45,7 @@ import com.rhnxdev.hzplayer.presentation.network.components.ServerConfigDialog
 fun NetworkScreen(
     onPlayStream: (url: String, title: String, isVideo: Boolean, mimeType: String?) -> Unit = { _, _, _, _ -> },
     onPlayRemoteFile: (uri: String, title: String, isVideo: Boolean, mimeType: String?) -> Unit = { _, _, _, _ -> },
+    onPlayAllVideos: (List<VideoItem>) -> Unit = {},
     fullScreenOverlay: Boolean = false,
     isActive: Boolean = true,
     modifier: Modifier = Modifier,
@@ -52,13 +55,6 @@ fun NetworkScreen(
     val scope = rememberCoroutineScope()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
-
-    // Intercept back button when browsing a remote server
-    BackHandler(
-        enabled = isActive && uiState.mode == NetworkScreenMode.SERVER_BROWSE && !fullScreenOverlay,
-    ) {
-        viewModel.onRemoteNavigateUp()
-    }
 
     if (uiState.showServerDialog) {
         ServerConfigDialog(
@@ -77,101 +73,103 @@ fun NetworkScreen(
         )
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        HzPlayerTopBar(
-            title = when (uiState.mode) {
-                NetworkScreenMode.HOME -> "Network"
-                NetworkScreenMode.SERVER_BROWSE -> uiState.browsingServer?.name ?: "Server"
-            },
-            showBack = uiState.mode == NetworkScreenMode.SERVER_BROWSE,
-            onBack = { viewModel.onRemoteNavigateUp() },
-            marqueeTitle = uiState.mode == NetworkScreenMode.SERVER_BROWSE,
-            actions = {
-                if (uiState.mode == NetworkScreenMode.HOME) {
-                    IconButton(onClick = viewModel::onToggleHomeView) {
-                        Icon(
-                            imageVector = if (uiState.isHomeListView) Icons.Filled.ViewModule
-                            else Icons.AutoMirrored.Filled.ViewList,
-                            contentDescription = if (uiState.isHomeListView) "Card view" else "List view",
-                        )
-                    }
-                }
-                if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) {
-                    if (!isSearchActive) {
-                        // Media mode toggle
-                        androidx.compose.material3.IconButton(onClick = viewModel::onToggleMediaMode) {
-                            androidx.compose.material3.Icon(
-                                imageVector = if (uiState.isMediaMode) Icons.AutoMirrored.Filled.ViewList
-                                else Icons.Filled.PhotoLibrary,
-                                contentDescription = if (uiState.isMediaMode) stringResource(R.string.list_view) else stringResource(R.string.media_view),
-                            )
-                        }
-                        // Search toggle
-                        androidx.compose.material3.IconButton(onClick = viewModel::onSearchToggle) {
-                            androidx.compose.material3.Icon(
-                                imageVector = Icons.Filled.Search,
-                                contentDescription = stringResource(R.string.network_search_cd),
-                            )
-                        }
-                    }
-                    var showSortMenu by remember { mutableStateOf(false) }
-                    androidx.compose.material3.IconButton(onClick = { showSortMenu = true }) {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Sort,
-                            contentDescription = stringResource(R.string.network_sort_cd),
-                        )
-                    }
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = showSortMenu,
-                        onDismissRequest = { showSortMenu = false },
-                    ) {
-                        listOf(
-                            SortType.TITLE to stringResource(R.string.sort_by_name),
-                            SortType.DATE_MODIFIED to stringResource(R.string.sort_by_date),
-                            SortType.FILE_SIZE to stringResource(R.string.sort_by_size),
-                        ).forEach { (type, label) ->
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { androidx.compose.material3.Text(label) },
-                                onClick = {
-                                    viewModel.onSortChanged(type, uiState.sortDirection)
-                                    showSortMenu = false
-                                },
-                                leadingIcon = if (uiState.sortType == type) {
-                                    {
-                                        androidx.compose.material3.Icon(
-                                            imageVector = Icons.Filled.Check,
-                                            contentDescription = null,
-                                        )
-                                    }
-                                } else null,
-                            )
-                        }
-                        HorizontalDivider()
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { androidx.compose.material3.Text(stringResource(R.string.sort_ascending)) },
-                            onClick = {
-                                viewModel.onSortChanged(uiState.sortType, SortDirection.ASCENDING)
-                                showSortMenu = false
-                            },
-                            leadingIcon = if (uiState.sortDirection == SortDirection.ASCENDING) {
-                                { androidx.compose.material3.Icon(Icons.Filled.Check, null) }
-                            } else null,
-                        )
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { androidx.compose.material3.Text(stringResource(R.string.sort_descending)) },
-                            onClick = {
-                                viewModel.onSortChanged(uiState.sortType, SortDirection.DESCENDING)
-                                showSortMenu = false
-                            },
-                            leadingIcon = if (uiState.sortDirection == SortDirection.DESCENDING) {
-                                { androidx.compose.material3.Icon(Icons.Filled.Check, null) }
-                            } else null,
-                        )
-                    }
-                }
-            },
-        )
+    val onNavigateUp: (() -> Unit)? =
+        if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) {
+            { viewModel.onRemoteNavigateUp() }
+        } else null
 
+    HzPlayerSearchableScaffold(
+        title = when (uiState.mode) {
+            NetworkScreenMode.HOME -> "Network"
+            NetworkScreenMode.SERVER_BROWSE -> uiState.browsingServer?.name ?: "Server"
+        },
+        isSearchActive = isSearchActive,
+        searchQuery = searchQuery,
+        onSearchToggle = viewModel::onSearchToggle,
+        onSearchQueryChanged = viewModel::onSearchQueryChanged,
+        onClearSearch = viewModel::onClearSearch,
+        onNavigateUp = onNavigateUp,
+        searchPlaceholder = "Search remote files...",
+        fullScreenOverlay = fullScreenOverlay,
+        isActive = isActive,
+        actions = {
+            if (uiState.mode == NetworkScreenMode.HOME) {
+                IconButton(onClick = viewModel::onToggleHomeView) {
+                    Icon(
+                        imageVector = if (uiState.isHomeListView) Icons.Filled.ViewModule
+                        else Icons.AutoMirrored.Filled.ViewList,
+                        contentDescription = if (uiState.isHomeListView) "Card view" else "List view",
+                    )
+                }
+            }
+            if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) {
+                if (!isSearchActive) {
+                    // Media mode toggle
+                    androidx.compose.material3.IconButton(onClick = viewModel::onToggleMediaMode) {
+                        androidx.compose.material3.Icon(
+                            imageVector = if (uiState.isMediaMode) Icons.AutoMirrored.Filled.ViewList
+                            else Icons.Filled.PhotoLibrary,
+                            contentDescription = if (uiState.isMediaMode) stringResource(R.string.list_view) else stringResource(R.string.media_view),
+                        )
+                    }
+                }
+                var showSortMenu by remember { mutableStateOf(false) }
+                androidx.compose.material3.IconButton(onClick = { showSortMenu = true }) {
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Sort,
+                        contentDescription = stringResource(R.string.network_sort_cd),
+                    )
+                }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = showSortMenu,
+                    onDismissRequest = { showSortMenu = false },
+                ) {
+                    listOf(
+                        SortType.TITLE to stringResource(R.string.sort_by_name),
+                        SortType.DATE_MODIFIED to stringResource(R.string.sort_by_date),
+                        SortType.FILE_SIZE to stringResource(R.string.sort_by_size),
+                    ).forEach { (type, label) ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { androidx.compose.material3.Text(label) },
+                            onClick = {
+                                viewModel.onSortChanged(type, uiState.sortDirection)
+                                showSortMenu = false
+                            },
+                            leadingIcon = if (uiState.sortType == type) {
+                                {
+                                    androidx.compose.material3.Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = null,
+                                    )
+                                }
+                            } else null,
+                        )
+                    }
+                    HorizontalDivider()
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { androidx.compose.material3.Text(stringResource(R.string.sort_ascending)) },
+                        onClick = {
+                            viewModel.onSortChanged(uiState.sortType, SortDirection.ASCENDING)
+                            showSortMenu = false
+                        },
+                        leadingIcon = if (uiState.sortDirection == SortDirection.ASCENDING) {
+                            { androidx.compose.material3.Icon(Icons.Filled.Check, null) }
+                        } else null,
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { androidx.compose.material3.Text(stringResource(R.string.sort_descending)) },
+                        onClick = {
+                            viewModel.onSortChanged(uiState.sortType, SortDirection.DESCENDING)
+                            showSortMenu = false
+                        },
+                        leadingIcon = if (uiState.sortDirection == SortDirection.DESCENDING) {
+                            { androidx.compose.material3.Icon(Icons.Filled.Check, null) }
+                        } else null,
+                    )
+                }
+            }
+        },
+    ) {
         when (uiState.mode) {
             NetworkScreenMode.HOME -> NetworkHomeContent(
                 uiState = uiState,
@@ -221,6 +219,11 @@ fun NetworkScreen(
                 getScrollState = viewModel::getScrollState,
                 getScrollStateIsAtEnd = viewModel::getScrollStateIsAtEnd,
                 saveScrollState = viewModel::saveScrollState,
+                fullScreenOverlay = fullScreenOverlay,
+                onPlayAllVideos = {
+                    val playlist = viewModel.collectVideoPlaylist()
+                    if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
+                },
             )
         }
     }

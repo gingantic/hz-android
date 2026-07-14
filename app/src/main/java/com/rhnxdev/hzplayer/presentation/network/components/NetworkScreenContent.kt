@@ -69,6 +69,8 @@ import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
@@ -406,6 +408,8 @@ internal fun ServerBrowseStackContent(
     getScrollState: (String) -> Pair<Int, Int>,
     getScrollStateIsAtEnd: (String) -> Boolean,
     saveScrollState: (String, Int, Int, Boolean) -> Unit,
+    fullScreenOverlay: Boolean = false,
+    onPlayAllVideos: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -431,7 +435,33 @@ internal fun ServerBrowseStackContent(
                     getScrollState = getScrollState,
                     getScrollStateIsAtEnd = getScrollStateIsAtEnd,
                     saveScrollState = saveScrollState,
+                    fullScreenOverlay = fullScreenOverlay,
+                    isTopLayer = isTop,
                     modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
+                )
+            }
+        }
+
+        // Play All FAB
+        val hasVideos = uiState.remoteLayers.lastOrNull()?.items?.any {
+            !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name))
+        } == true
+        if (hasVideos && !isSearchActive) {
+            FloatingActionButton(
+                onClick = onPlayAllVideos,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                elevation = FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 6.dp,
+                    pressedElevation = 12.dp
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = stringResource(R.string.play_all_cd),
                 )
             }
         }
@@ -453,6 +483,8 @@ private fun RemoteDirectoryLayerView(
     getScrollState: (String) -> Pair<Int, Int>,
     getScrollStateIsAtEnd: (String) -> Boolean,
     saveScrollState: (String, Int, Int, Boolean) -> Unit,
+    fullScreenOverlay: Boolean = false,
+    isTopLayer: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // Only store the item *index* — pixel offsets are orientation-dependent and cause
@@ -499,9 +531,24 @@ private fun RemoteDirectoryLayerView(
         }
     }
 
+    // When the full-screen overlay (video/audio player) closes, the underlying
+    // list may have been re-anchored by the viewport resize while it was hidden.
+    // Snap the top layer back using the same end-aware logic as the rotation effect.
+    androidx.compose.runtime.LaunchedEffect(fullScreenOverlay) {
+        if (!fullScreenOverlay && isTopLayer) {
+            val total = listState.layoutInfo.totalItemsCount
+            if (getScrollStateIsAtEnd(layer.path) && total > 0) {
+                listState.scrollToItem(total - 1, 0)
+            } else {
+                val savedIndex = getScrollState(layer.path).first
+                listState.scrollToItem(savedIndex, 0)
+            }
+        }
+    }
+
     val visibleItems = remember(layer.items, mediaMode) {
         when {
-            mediaMode -> layer.items.filter { it.isDirectory || isVideoExtension(it.name) }
+            mediaMode -> layer.items.filter { it.isDirectory || (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name)) }
             else -> layer.items.filter { it.isDirectory || (!isDocumentExtension(it.name) && !isBinaryExtension(it.name)) }
         }
     }
@@ -512,27 +559,21 @@ private fun RemoteDirectoryLayerView(
             onBreadcrumbClicked = onBreadcrumbClicked,
         )
 
-        // Reserve the summary's space at all times so it appearing/disappearing on
-        // refresh doesn't shift the list and disrupt the scroll position.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(36.dp)
-                .padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
-        ) {
-            if (!layer.isLoading) {
-                val folders = visibleItems.count { it.isDirectory }
-                val others = visibleItems.count { !it.isDirectory }
-                Text(
-                    text = if (mediaMode) {
-                        stringResource(R.string.dir_summary_media, folders, others)
-                    } else {
-                        stringResource(R.string.dir_summary, folders, others)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        // Show whenever items exist. They persist across refresh (not cleared while
+        // isLoading), so the count stays put instead of vanishing and reappearing.
+        if (visibleItems.isNotEmpty()) {
+            val folders = visibleItems.count { it.isDirectory }
+            val others = visibleItems.count { !it.isDirectory }
+            Text(
+                text = if (mediaMode) {
+                    stringResource(R.string.dir_summary_media, folders, others)
+                } else {
+                    stringResource(R.string.dir_summary, folders, others)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
+            )
         }
 
         DirectoryBrowsePane(
