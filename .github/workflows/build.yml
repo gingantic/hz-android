@@ -7,9 +7,18 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# contents:read is enough. Fork-PR cache writes are denied by GitHub (expected).
+permissions:
+  contents: read
+
+env:
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: "2G"
+  NDK_VER: "27.0.12077973"   # keep in sync with ndkVersion in app/build.gradle.kts
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # PINNED. ubuntu-latest can roll images and move NDK paths baked into CMake cache.
     environment: R2
 
     steps:
@@ -17,32 +26,107 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Build Dependencies
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install build deps (incl. ccache + Ninja)
         run: |
           sudo apt-get update
           sudo apt-get install -y yasm nasm meson ninja-build pkg-config \
-            cmake python3-pip gperf gettext autoconf automake libtool
+            cmake python3-pip gperf gettext autoconf automake libtool ccache
 
-      - name: Clone FFmpeg Source
-        run: git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+      # --- Restore ccache BEFORE the native build (so FFmpeg/libass get hits) ---
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
 
-      - name: Build FFmpeg Shared Libraries
+      - name: Configure ccache
+        run: |
+          ccache --set-config max_size=${{ env.CCACHE_MAXSIZE }}
+          # content, not mtime: a fresh git checkout rewrites mtime and would
+          # otherwise cause false cache misses.
+          ccache --set-config compiler_check=content
+          ccache --set-config sloppiness=time_macros,include_file_mtime,include_file_ctime
+          # direct_mode (default) + depend_mode raise hit rate via -MD deps.
+          ccache --set-config direct_mode=true
+          ccache --set-config depend_mode=true
+          ccache --zero-stats
+
+      # Pinned, installed NDK so the shell scripts AND AGP use the SAME one.
+      - name: Set up Android SDK + pinned NDK
+        uses: android-actions/setup-android@v3
+      - name: Install pinned NDK
+        run: |
+          echo "y" | sdkmanager "ndk;${{ env.NDK_VER }}"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${{ env.NDK_VER }}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VER }}" >> "$GITHUB_ENV"
+
+      # --- Cache the prebuilt native artifacts -------------------------------
+      # Exact-only key (no restore-keys): a script/NDK change means binaries
+      # differ, so a partial restore would be wrong. If hit, we SKIP the
+      # FFmpeg/libass build entirely (the biggest time saver).
+      # NOTE: CMakeLists.txt is intentionally NOT in this key — editing your own
+      # cpp must not force a full FFmpeg/libass rebuild; the prebuilts it produces
+      # are independent of CMakeLists.txt.
+      - name: Cache prebuilt native libs (jniLibs + headers)
+        id: native-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/src/main/jniLibs
+            app/src/main/cpp/include
+          key: native-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh') }}
+
+      # Cache the FFmpeg source tree WITH its in-tree .o files so `make` is
+      # incremental across runs (the script no longer `make clean`s).
+      - name: Cache FFmpeg source tree
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-src
+          key: ffmpeg-src-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh') }}
+          restore-keys: |
+            ffmpeg-src-${{ runner.os }}-${{ env.NDK_VER }}-
+
+      # Only build when the prebuilt cache missed.
+      - name: Clone FFmpeg source (cached)
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        run: |
+          if [ ! -d ffmpeg-src ]; then
+            git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+          fi
+
+      - name: Build FFmpeg
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
           chmod +x ffmpeg_build_android.sh
           ./ffmpeg_build_android.sh --abi arm64-v8a
         env:
           FFMPEG_SRC_DIR: ffmpeg-src
 
-      - name: Build libass and Dependencies
+      - name: Build libass + deps
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
           chmod +x libass_build_android.sh
           ./libass_build_android.sh --abi arm64-v8a
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      # Incremental CMake/Ninja tree for YOUR cpp (thumbnail-extractor/assrender).
+      # Keyed only on OS + NDK: let Ninja decide which files to recompile. AGP
+      # wipes/reconfigures .cxx itself when the native config actually changes,
+      # so an unrelated build.gradle edit must not discard this tree.
+      - name: Cache CMake build dir (.cxx)
+        uses: actions/cache@v4
         with:
-          distribution: temurin
-          java-version: 17
+          path: app/.cxx
+          key: cxx-${{ runner.os }}-${{ env.NDK_VER }}
+          restore-keys: |
+            cxx-${{ runner.os }}-
 
       - name: Decode signing keystore
         run: |
@@ -52,6 +136,7 @@ jobs:
             echo "No release keystore secret set; skipping decode."
           fi
 
+      # Handles Gradle wrapper + dependency downloads + build cache.
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -85,27 +170,17 @@ jobs:
       - name: Push release to R2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          # Install aws CLI for S3-compatible R2 access
           pip3 install --quiet awscli
-
           APK="app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk"
-
-          # Configure R2 endpoint
           aws configure set aws_access_key_id "${{ secrets.R2_ACCESS_KEY_ID }}"
           aws configure set aws_secret_access_key "${{ secrets.R2_SECRET_ACCESS_KEY }}"
           aws configure set default.region auto
-
           ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-
-          # Upload APK
           aws s3 cp "$APK" "s3://${{ secrets.R2_BUCKET }}/HzPlayer-v${{ steps.version.outputs.version_name }}.apk" \
             --endpoint-url "$ENDPOINT"
-
-          # Generate and upload latest.json manifest
           VNAME="${{ steps.version.outputs.version_name }}"
           VCODE=$(./gradlew -q :app:printVersionCode 2>/dev/null | tail -n 1 | tr -d '[:space:]')
           DL_URL="${{ secrets.R2_PUBLIC_URL }}/HzPlayer-v${VNAME}.apk"
-
           cat > /tmp/latest.json << EOF
           {
             "versionName": "${VNAME}",
@@ -114,11 +189,13 @@ jobs:
             "releaseNotes": "Automated OTA build from commit ${GITHUB_SHA}"
           }
           EOF
-
           aws s3 cp /tmp/latest.json "s3://${{ secrets.R2_BUCKET }}/latest.json" \
-            --endpoint-url "$ENDPOINT" \
-            --cache-control "no-cache"
-
+            --endpoint-url "$ENDPOINT" --cache-control "no-cache"
           echo "=== Published to R2 ==="
           echo "APK: HzPlayer-v${VNAME}.apk"
           echo "Manifest: latest.json"
+
+      - name: ccache stats
+        run: |
+          echo "Native prebuilt cache hit: ${{ steps.native-cache.outputs.cache-hit }}"
+          ccache --show-stats

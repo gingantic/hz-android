@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("thumbnail-extractor")
 
+# ccache for direct CLI/cmake builds; AGP's -DCMAKE_*_COMPILER_LAUNCHER args
+# take precedence over this set(), so no double-wrapping in CI.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER   ${CCACHE_PROGRAM})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+endif()
+
 # Prebuilt FFmpeg shared libs from jniLibs/<abi>/
 macro(add_ffmpeg_lib NAME)
     add_library(${NAME} SHARED IMPORTED)

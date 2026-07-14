@@ -28,5 +28,6 @@ local.properties
 app/src/main/jniLibs/
 app/src/main/cpp/include/
 libass_build_tmp/
+.ccache/
 # OTA signing keystore (keep local only)
 .signing/
