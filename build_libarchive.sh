@@ -198,6 +198,11 @@ cmake -S libarchive -B libarchive-build -G Ninja \
   -DENABLE_TEST=OFF -DENABLE_DOCS=OFF -DBUILD_SHARED_LIBS=OFF
 cmake --build libarchive-build -j"$JOBS"
 
+# Copy public headers to the project's include directory
+mkdir -p "$ROOT/app/src/main/cpp/include/libarchive"
+cp -f libarchive/libarchive/archive.h "$ROOT/app/src/main/cpp/include/libarchive/"
+cp -f libarchive/libarchive/archive_entry.h "$ROOT/app/src/main/cpp/include/libarchive/"
+
 echo "=== DIAG: mbedtls refs in libarchive.a ==="
 "$TOOLCHAIN/llvm-nm${EXE_SUFFIX}" libarchive-build/libarchive/libarchive.a 2>/dev/null | grep -i mbedtls | head
 echo "=== DIAG: mbedtls_aes present in libmbedcrypto.a ==="
