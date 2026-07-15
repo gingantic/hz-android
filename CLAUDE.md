@@ -44,6 +44,21 @@ gradlew.bat assembleDebug      # Windows ← use this
 
 ---
 
+## Native (C/C++) Cross-Compilation
+
+Native libs (e.g. `libarchive.so`) are built **outside Gradle** by standalone scripts (`build_libarchive.sh`, `ffmpeg_build_android.sh`, `libass_build_android.sh`). When editing or rebuilding them on this Windows host, obey these hard-won rules:
+
+- **Toolchain:** NDK r27 only ships the `windows-x86_64` prebuilt. Drive the Windows clang wrappers (`aarch64-linux-android<N>-clang` etc.) **from WSL** (`wsl bash -c '...'`). The wrappers set `--target` but NOT `--sysroot`; do NOT pass an explicit `--sysroot` (it breaks header resolution — the wrapper's baked-in default works).
+- **`/mnt/c` is NOT readable by Windows NDK tools.** `clang.exe`, `llvm-nm.exe`, `llvm-strings.exe`, `llvm-objdump.exe` cannot open `/mnt/c/...` paths. When invoking them from WSL, pass the *argument* as a native `C:/...` path (forward slashes OK); the tool's own *location* can stay `/mnt/c/...`. Any `nm`/`strings` result of "0 symbols / no such file" is this artifact, **not** a real empty lib — re-run with a `C:/` argument.
+- **`ar`/`ranlib`** are `llvm-ar.exe` / `llvm-ranlib.exe` (no extensionless wrapper exists).
+- **Hand-linking static → shared:** a `Generic` CMake system (never `Linux`, which leaks host `/usr/include` → `bits/wordsize.h` not found) refuses `BUILD_SHARED_LIBS`. Build static `.a`, then fuse into a `.so` with the clang wrapper: `-shared -Wl,--whole-archive … -Wl,--no-whole-archive`. **Every static dep that supplies symbols must sit INSIDE the `--whole-archive` group** (e.g. mbedTLS) or the linker silently drops it.
+- **Output path:** link to a temp file first, then `cp -f` into `app/src/main/jniLibs/<abi>/`. Writing directly into `jniLibs` fails with `Permission denied` on the existing locked file.
+- **`android_lf.h`:** libarchive's `android_lf.h` is a *static* header at `contrib/android/include` (not installed). Add `-I<src>/contrib/android/include` via `CMAKE_C_FLAGS` in the toolchain file (FORCE-set), not the per-project cmake call.
+- **mbedTLS version:** libarchive master uses the legacy `mbedtls_md_hmac_*` API removed in the mbedTLS dev branch — pin **`mbedtls-3.6.7`** (LTS). Build all three (`libmbedtls.a`, `libmbedx509.a`, `libmbedcrypto.a`).
+- **Verify a built `.so`:** `nm` on a *stripped* APK-packed `.so` is empty by design — confirm code presence with `llvm-strings.exe` on the `C:/...` path and grep for distinctive strings (e.g. `Mbed TLS 3.6.7`, `mbedtls_aes_crypt_ecb`).
+
+---
+
 ## Project Overview
 
 **Hz Player** is a full-featured Android video/audio media player inspired by VLC. It supports local storage, SMB, FTP, SFTP, and WebDAV sources with custom DataSources for each protocol.

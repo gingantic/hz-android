@@ -44,6 +44,8 @@ data class FileBrowserUiState(
     val sortDirection: SortDirection = SortDirection.ASCENDING,
     /** When true, browsing shows only video files (+ folders) as large thumbnails. */
     val isMediaMode: Boolean = false,
+    val passwordPromptContainer: String? = null,
+    val passwordError: String? = null,
 )
 
 enum class FileBrowserMode {
