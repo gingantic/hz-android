@@ -31,3 +31,7 @@ libass_build_tmp/
 .ccache/
 # OTA signing keystore (keep local only)
 .signing/
+
+# Native compiler build folders
+build_archive/
+.build_archive/

@@ -38,6 +38,14 @@ add_ass_dep(freetype)
 add_ass_dep(fribidi)
 add_ass_dep(harfbuzz)
 
+# libarchive (prebuilt: bz2+lzma fused statically; zlib from NDK sysroot).
+# Public headers are copied into include/libarchive so the build does not
+# depend on the build_archive scratch dir.
+add_library(archive SHARED IMPORTED)
+set_target_properties(archive PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${CMAKE_ANDROID_ARCH_ABI}/libarchive.so
+)
+
 find_library(JNIGRAPHICS jnigraphics)
 find_library(LOG log)
 
@@ -59,4 +67,15 @@ target_include_directories(assrender PRIVATE
 target_link_libraries(assrender
     ass fontconfig expat freetype fribidi harfbuzz
     ${JNIGRAPHICS} ${LOG}
+)
+
+# Archive entry reader: lists archive entries and serves a single entry's
+# bytes through libarchive for the "archive://" Media3 DataSource scheme.
+add_library(archive-extractor SHARED ArchiveExtractor.cpp)
+target_include_directories(archive-extractor PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/libarchive
+)
+target_link_libraries(archive-extractor
+    archive
+    ${LOG}
 )

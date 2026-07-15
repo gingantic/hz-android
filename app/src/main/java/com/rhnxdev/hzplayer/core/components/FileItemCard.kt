@@ -17,10 +17,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -33,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.formatDuration
@@ -67,12 +72,6 @@ fun FileItemCard(
     mediaCount: Int = -1,
     mediaMode: Boolean = false,
 ) {
-    val icon: ImageVector = when {
-        isDirectory -> Icons.Filled.Folder
-        mimeType?.startsWith("video") == true -> Icons.Filled.Movie
-        mimeType?.startsWith("audio") == true -> Icons.Filled.Audiotrack
-        else -> Icons.Filled.Description
-    }
 
     val subtitle = when {
         isDirectory && subfolderCount >= 0 && fileCount >= 0 -> if (mediaMode) {
@@ -122,21 +121,20 @@ fun FileItemCard(
                         .clip(RoundedCornerShape(Spacing.xs)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    FileItemIcon(
+                        name = name,
+                        isDirectory = isDirectory,
+                        mimeType = mimeType,
+                        size = 32.dp
                     )
                     leadingThumbnail()
                 }
             } else {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = if (isDirectory) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                FileItemIcon(
+                    name = name,
+                    isDirectory = isDirectory,
+                    mimeType = mimeType,
+                    size = 40.dp
                 )
             }
 
@@ -208,6 +206,75 @@ private fun FileItemCardDirectoryPreview() {
             fileSize = 0,
             childCount = 12,
             onClick = {},
+        )
+    }
+}
+
+@Composable
+private fun FileItemIcon(
+    name: String,
+    isDirectory: Boolean,
+    mimeType: String?,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+) {
+    if (isDirectory) {
+        val lowerName = name.lowercase()
+        val badgeIcon = when {
+            lowerName == "download" || lowerName == "downloads" -> Icons.Filled.Download
+            lowerName == "music" || lowerName == "audio" -> Icons.Filled.MusicNote
+            lowerName == "movie" || lowerName == "movies" || lowerName == "video" || lowerName == "videos" -> Icons.Filled.PlayArrow
+            lowerName == "android" -> Icons.Filled.Android
+            else -> null
+        }
+
+        if (badgeIcon != null) {
+            Box(
+                modifier = modifier.size(size),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                // Small badge overlapping the folder
+                Box(
+                    modifier = Modifier
+                        .size(size * 0.45f)
+                        .align(Alignment.BottomEnd)
+                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                        .padding((size.value * 0.05f).dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = badgeIcon,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+        } else {
+            Icon(
+                imageVector = Icons.Filled.Folder,
+                contentDescription = null,
+                modifier = modifier.size(size),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    } else {
+        val icon = when {
+            mimeType?.startsWith("video") == true -> Icons.Filled.Movie
+            mimeType?.startsWith("audio") == true -> Icons.Filled.Audiotrack
+            else -> Icons.Filled.Description
+        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = modifier.size(size),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

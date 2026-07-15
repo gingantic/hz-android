@@ -69,6 +69,8 @@ import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
+import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
@@ -77,6 +79,7 @@ import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import com.rhnxdev.hzplayer.presentation.browse.components.ArchivePasswordDialog
 
 @Composable
 fun FileBrowserScreen(
@@ -94,6 +97,16 @@ fun FileBrowserScreen(
         if (uiState.mode == FileBrowserMode.BROWSING) {
             { viewModel.onNavigateUp() }
         } else null
+
+    // A tapped real archive file opens as a virtual browsing layer (in-place);
+    // everything else (incl. media entries whose path is an archive:// URI) plays.
+    val handleFileClicked: (FolderItem) -> Unit = { item ->
+        if (isArchiveExtension(item.name) && ArchiveBrowsePath.isRealFilePath(item.path)) {
+            viewModel.onOpenArchive(item)
+        } else {
+            onFileClicked(item)
+        }
+    }
 
     HzPlayerSearchableScaffold(
         title = if (uiState.mode == FileBrowserMode.ROOTS) "Browse" else "Files",
@@ -198,7 +211,7 @@ fun FileBrowserScreen(
                         getScrollState = viewModel::getScrollState,
                         saveScrollState = viewModel::saveScrollState,
                         fullScreenOverlay = fullScreenOverlay,
-                        onFileClicked = onFileClicked,
+                        onFileClicked = handleFileClicked,
                     )
 
                     // Play All FAB
@@ -228,8 +241,16 @@ fun FileBrowserScreen(
                         }
                     }
                 }
-            }
         }
+    }
+    }
+    if (uiState.passwordPromptContainer != null) {
+        ArchivePasswordDialog(
+            archiveName = uiState.passwordPromptContainer!!.substringAfterLast('/'),
+            onProvided = viewModel::onProvidePassword,
+            onDismiss = viewModel::onCancelPasswordPrompt,
+            error = uiState.passwordError
+        )
     }
 }
 

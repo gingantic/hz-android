@@ -20,6 +20,7 @@ import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.SeekParameters
+import com.rhnxdev.hzplayer.data.datasource.archive.ArchiveDataSource
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssExtractorsFactory
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssRenderersFactory
@@ -458,6 +459,7 @@ class MediaPlayerHolder @Inject constructor(
  * - `ftp://` → [FtpDataSource] (Apache Commons Net)
  * - `sftp://` → [SftpDataSource] (SSHJ)
  * - `webdav://` / `webdavs://` → [WebDavDataSource] (OkHttp)
+ * - `archive://` → [ArchiveDataSource] (libarchive, in-place entry read)
  * - everything else → [DefaultDataSource] (native HTTP/file/content)
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
@@ -473,6 +475,7 @@ private class ProtocolRoutingDataSource(
             "ftp" -> FtpDataSource()
             "sftp" -> SftpDataSource()
             "webdav", "webdavs" -> WebDavDataSource()
+            "archive" -> ArchiveDataSource()
             else -> defaultFactory.createDataSource()
         }
         delegate = resolved

@@ -6,7 +6,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
+import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
+import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
+import com.rhnxdev.hzplayer.core.util.buildArchiveBreadcrumbs
+import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.sortFilesByType
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
@@ -14,6 +18,8 @@ import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
+import com.rhnxdev.hzplayer.domain.repository.ArchiveEntry
+import com.rhnxdev.hzplayer.domain.repository.ArchiveRepository
 import com.rhnxdev.hzplayer.domain.repository.FileRepository
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
@@ -53,6 +59,7 @@ class FileBrowserViewModel @Inject constructor(
     private val userPrefs: UserPreferencesRepository,
     private val resumeRepository: ResumeRepository,
     private val mediaRepository: MediaRepository,
+    private val archiveRepository: ArchiveRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FileBrowserUiState())
@@ -60,6 +67,7 @@ class FileBrowserViewModel @Inject constructor(
 
     private val cache = DirectoryLruCache<FolderItem>()
     private var showHidden = false
+    private val archivePasswords = mutableMapOf<String, String>()
 
     private val sortKey = "file_browser"
 
@@ -179,6 +187,34 @@ class FileBrowserViewModel @Inject constructor(
         if (item.isDirectory) pushLayer(item.path)
     }
 
+    /** Enter an archive container as a virtual browsing layer (in-place, no extraction). */
+    fun onOpenArchive(item: FolderItem) {
+        pushLayer(ArchiveBrowsePath.build(item.path, ""))
+    }
+
+    fun onCancelPasswordPrompt() {
+        _uiState.update { it.copy(passwordPromptContainer = null, passwordError = null) }
+        onNavigateUp()
+    }
+
+    fun onProvidePassword(password: String) {
+        val container = _uiState.value.passwordPromptContainer ?: return
+        _uiState.update { it.copy(passwordPromptContainer = null, passwordError = null) }
+        archivePasswords[container] = password
+
+        val layers = _uiState.value.layers
+        val idx = layers.indexOfLast {
+            if (ArchiveBrowsePath.isArchiveBrowsePath(it.path)) {
+                val (c, _) = ArchiveBrowsePath.parse(it.path)
+                c == container
+            } else false
+        }
+        if (idx >= 0) {
+            updateLayer(idx) { it.copy(isLoading = true, error = null) }
+            loadArchiveDirectory(layers[idx].path, idx)
+        }
+    }
+
     fun onBreadcrumbClicked(path: String) {
         val layers = _uiState.value.layers
         val idx = layers.indexOfFirst { it.path == path }
@@ -240,9 +276,15 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     private fun pushLayer(path: String) {
+        val breadcrumbs = if (ArchiveBrowsePath.isArchiveBrowsePath(path)) {
+            val (container, prefix) = ArchiveBrowsePath.parse(path)
+            buildArchiveBreadcrumbs(container, prefix)
+        } else {
+            buildBreadcrumbs(path)
+        }
         val layer = DirectoryLayer(
             path = path,
-            breadcrumbs = buildBreadcrumbs(path),
+            breadcrumbs = breadcrumbs,
             isLoading = true,
         )
         _uiState.update {
@@ -283,6 +325,10 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     private fun loadDirectory(path: String, layerIndex: Int) {
+        if (ArchiveBrowsePath.isArchiveBrowsePath(path)) {
+            loadArchiveDirectory(path, layerIndex)
+            return
+        }
         viewModelScope.launch {
             search.clear()
 
@@ -325,6 +371,112 @@ class FileBrowserViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** List one level inside an archive, mapping entries to navigable [FolderItem]s. */
+    private fun loadArchiveDirectory(path: String, layerIndex: Int) {
+        viewModelScope.launch {
+            search.clear()
+
+            cache.get(path)?.let { cached ->
+                updateLayer(layerIndex) {
+                    it.copy(items = sortArchive(cached), isEmpty = cached.isEmpty(), error = null, isLoading = false)
+                }
+                return@launch
+            }
+
+            val (container, prefix) = ArchiveBrowsePath.parse(path)
+            val savedPassword = archivePasswords[container]
+            archiveRepository.listEntries(container, savedPassword).fold(
+                onSuccess = { entries ->
+                    val children = archiveChildren(container, prefix, entries)
+                    cache.put(path, children)
+                    updateLayer(layerIndex) {
+                        it.copy(items = sortArchive(children), isEmpty = children.isEmpty(), error = null, isLoading = false)
+                    }
+                },
+                onFailure = { e ->
+                    val isEncrypted = e.message?.contains("passphrase", ignoreCase = true) == true ||
+                            e.message?.contains("password", ignoreCase = true) == true ||
+                            e.message?.contains("decrypt", ignoreCase = true) == true ||
+                            e.message?.contains("crypt", ignoreCase = true) == true
+
+                    if (isEncrypted) {
+                        _uiState.update {
+                            it.copy(
+                                passwordPromptContainer = container,
+                                passwordError = if (savedPassword != null) "Incorrect password" else null
+                            )
+                        }
+                        updateLayer(layerIndex) {
+                            it.copy(isLoading = false)
+                        }
+                    } else {
+                        updateLayer(layerIndex) {
+                            it.copy(error = e.message ?: "Cannot open archive", isLoading = false)
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    private fun sortArchive(items: List<FolderItem>): List<FolderItem> = sortFilesByType(
+        items,
+        _uiState.value.sortType,
+        isDirectory = { it.isDirectory },
+        name = { it.name },
+        dateModified = { it.dateModified },
+        size = { it.fileSize },
+        descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
+    )
+
+    /**
+     * Immediate children of [prefix] within [entries]. Directory levels are
+     * synthesized from entry path segments (archives may omit explicit dir
+     * entries). Files become [FolderItem]s whose path is an [ArchiveUri] the
+     * player can open directly.
+     */
+    private fun archiveChildren(
+        container: String,
+        prefix: String,
+        entries: List<ArchiveEntry>,
+    ): List<FolderItem> {
+        val dirNames = LinkedHashSet<String>()
+        val files = mutableListOf<FolderItem>()
+        for (entry in entries) {
+            val fullName = entry.name.trimEnd('/')
+            if (fullName.isEmpty() || !fullName.startsWith(prefix)) continue
+            val rest = fullName.substring(prefix.length)
+            if (rest.isEmpty()) continue
+            val slash = rest.indexOf('/')
+            if (slash >= 0) {
+                dirNames.add(rest.substring(0, slash))
+            } else if (entry.isDirectory) {
+                dirNames.add(rest)
+            } else {
+                val pwd = archivePasswords[container]
+                files.add(
+                    FolderItem(
+                        id = ArchiveUri.build(container, entry.name, pwd).hashCode().toLong(),
+                        name = rest,
+                        path = ArchiveUri.build(container, entry.name, pwd),
+                        isDirectory = false,
+                        fileSize = entry.size,
+                    ),
+                )
+            }
+        }
+        val dirs = dirNames.map { dir ->
+            val childPrefix = "$prefix$dir/"
+            FolderItem(
+                id = ArchiveBrowsePath.build(container, childPrefix).hashCode().toLong(),
+                name = dir,
+                path = ArchiveBrowsePath.build(container, childPrefix),
+                isDirectory = true,
+            )
+        }
+        return dirs + files
     }
 
     private fun updateLayer(index: Int, transform: (DirectoryLayer) -> DirectoryLayer) {
