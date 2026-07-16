@@ -18,6 +18,19 @@ fun isAssMimeType(mime: String?): Boolean {
         m.contains("ssa")
 }
 
+/** True for SRT/WebVTT MIME strings (the convertible, non-ASS formats). */
+fun isNonAssSubtitleMimeType(mime: String?): Boolean {
+    val m = mime?.lowercase() ?: return false
+    return m == MimeTypes.APPLICATION_SUBRIP ||
+        m == "text/x-subrip" ||
+        m == MimeTypes.TEXT_VTT ||
+        m.startsWith("text/vtt")
+}
+
+/** True if [mime] is a subtitle format we route through libass (ASS, SRT, VTT). */
+fun isLibassSubtitleMimeType(mime: String?): Boolean =
+    isAssMimeType(mime) || isNonAssSubtitleMimeType(mime)
+
 /**
  * True if [format] carries ASS/SSA subtitle data, by any signal ExoPlayer
  * exposes: MIME type, codec string, or codec-private [Format.initializationData]
@@ -32,4 +45,30 @@ fun isAssFormat(format: Format): Boolean {
         if (preview.contains("[Script Info]") || preview.contains("ScriptType:")) return true
     }
     return false
+}
+
+/** True if [format] is SRT (SubRip). Checks both sampleMimeType and the
+ *  original codec string — since Media3 1.4, extracted subtitle tracks report
+ *  sampleMimeType = application/x-media3-cues and move the real type to codecs. */
+fun isSrtFormat(format: Format): Boolean {
+    val m = format.sampleMimeType?.lowercase()
+    if (m == MimeTypes.APPLICATION_SUBRIP || m == "text/x-subrip") return true
+    val codecs = format.codecs?.lowercase() ?: return false
+    return codecs == "srt" || codecs == "subrip" || codecs == MimeTypes.APPLICATION_SUBRIP
+}
+
+/** True if [format] is WebVTT. Same codec-aware check as [isSrtFormat]. */
+fun isVttFormat(format: Format): Boolean {
+    val m = format.sampleMimeType?.lowercase()
+    if (m == MimeTypes.TEXT_VTT || m?.startsWith("text/vtt") == true) return true
+    val codecs = format.codecs?.lowercase() ?: return false
+    return codecs == "vtt" || codecs == "webvtt" || codecs == MimeTypes.TEXT_VTT
+}
+
+/**
+ * True if [format] carries subtitle data we render through libass: ASS/SSA
+ * directly, or SRT/WebVTT after conversion to ASS.
+ */
+fun isLibassSubtitleFormat(format: Format): Boolean {
+    return isAssFormat(format) || isSrtFormat(format) || isVttFormat(format)
 }

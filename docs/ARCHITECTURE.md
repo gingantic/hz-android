@@ -129,7 +129,7 @@ com.rhnxdev.hzplayer/
 │   │   │   ├── FtpDataSource.kt SftpDataSource.kt SmbDataSource.kt WebDavDataSource.kt
 │   │   │   ├── SmbPathResolver.kt
 │   │   │   └── MediaPlaybackService.kt  (Media3 MediaSessionService)
-│   │   └── remote/OpenSubtitlesApi.kt
+│   │   └── remote/SubdlApi.kt
 │   │
 │   ├── mapper/MediaMappers.kt NetworkMappers.kt
 │   └── security/PasswordCrypto.kt     (encrypted server credentials in Room)
@@ -168,7 +168,7 @@ com.rhnxdev.hzplayer/
 | `RemoteBrowseRepository` | `RemoteBrowseRepositoryImpl` | SMB/FTP/SFTP/WebDAV directory listing |
 | `PlayerRepository` | `PlayerRepositoryImpl` | Delegates to active `IPlayerEngine` |
 | `ResumeRepository` | `ResumeRepositoryImpl` | Persisted playback position resume |
-| `SubtitleRepository` | `SubtitleRepositoryImpl` | OpenSubtitles search + local subs |
+| `SubtitleRepository` | `SubtitleRepositoryImpl` | SubDL search + local subs |
 | `UserPreferencesRepository` | `UserPreferencesRepositoryImpl` | DataStore prefs + active engine |
 
 ---

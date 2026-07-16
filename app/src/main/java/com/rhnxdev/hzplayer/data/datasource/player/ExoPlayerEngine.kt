@@ -3,13 +3,15 @@ package com.rhnxdev.hzplayer.data.datasource.player
 import android.content.Context
 import android.net.Uri
 import android.annotation.SuppressLint
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import androidx.media3.common.C
 import androidx.media3.common.ColorInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
-import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isAssFormat
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleFormat
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.SubtitleConverters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -50,6 +52,17 @@ class ExoPlayerEngine @Inject constructor(
     override val engineType: EngineType = EngineType.EXO_PLAYER
 
     val player: Player get() = playerHolder.player
+
+    init {
+        // External subtitle tracks live outside ExoPlayer; surface their changes
+        // so the UI track list (which is otherwise ExoPlayer-driven) stays in sync.
+        assHandler.onExternalTrackListChanged = {
+            subtitleTrackChangeListener?.invoke()
+        }
+    }
+
+    /** Fired when subtitle tracks change (embedded via ExoPlayer, external via libass). */
+    override var subtitleTrackChangeListener: (() -> Unit)? = null
 
     /** Apply a decoder preference. Forwards to the holder, which rebuilds the
      *  underlying ExoPlayer so the choice takes effect on the next play. */
@@ -255,7 +268,12 @@ class ExoPlayerEngine @Inject constructor(
     private var subtitleDelayMs: Long = 0
 
     override fun setSubtitleDelay(delayMs: Long) {
+        // libass path (ASS/SSA/SRT/VTT) renders via AssHandler — push the offset
+        // there so nativeRender shifts the cue anchor. ExoPlayer's built-in text
+        // renderer reads the offset from track selection params (below) for any
+        // non-libass track; setSubtitleDelay is the single entry both reach.
         subtitleDelayMs = delayMs
+        assHandler.subtitleDelayMs = delayMs
     }
 
     override fun getSubtitleDelay(): Long = subtitleDelayMs
@@ -295,13 +313,47 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "ExoPlayerEngine"
         private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "sub")
         private val SUBTITLE_SCHEMES_WITH_DIR = setOf("file", "smb", "ftp", "sftp", "webdav", "webdavs")
     }
 
     override fun addExternalSubtitle(uri: Uri): Boolean {
+        val ext = (uri.path ?: "").substringAfterLast('.').lowercase()
+        val mimeType = inferSubtitleMimeType(uri)
+        val displayName = uri.lastPathSegment ?: uri.toString()
+
+        // ASS/SSA and convertible SRT/VTT go through libass (no ExoPlayer parse).
+        if (ext == "ass" || ext == "ssa" || SubtitleConverters.isConvertibleSubtitleFormat(mimeType)) {
+            // Read on IO (network/local), then load — ExoPlayer + assHandler are
+            // main-thread-only, so we hop back after the (possibly slow) read.
+            subtitleDiscoveryScope.launch {
+                val data = readSubtitleUriBytes(uri)
+                withContext(Dispatchers.Main) {
+                    if (data == null) {
+                        Log.w(TAG, "External subtitle read failed: $uri")
+                        return@withContext
+                    }
+                    val assBytes = if (ext == "ass" || ext == "ssa") {
+                        data
+                    } else {
+                        SubtitleConverters.convertToAss(
+                            data, mimeType,
+                            assHandler.getVideoWidth(), assHandler.getVideoHeight()
+                        )
+                    }
+                    if (assBytes == null) {
+                        Log.w(TAG, "External subtitle convert failed: $uri")
+                        return@withContext
+                    }
+                    assHandler.loadExternalTrack(assBytes, displayName)
+                }
+            }
+            return true
+        }
+
+        // Fallback: let ExoPlayer's built-in renderer handle any other format.
         return try {
-            val mimeType = inferSubtitleMimeType(uri)
             val config = MediaItem.SubtitleConfiguration.Builder(uri)
                 .setMimeType(mimeType)
                 .setLanguage("und")
@@ -367,14 +419,14 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun getSubtitleTracks(): List<String> {
-        return getExoTextTracks().map { it.displayName }
+        return getExoTextTracks().map { it.displayName } + assHandler.getExternalTrackNames()
     }
 
     override fun getSubtitleTrackMimeTypes(): List<String?> {
         // Since Media3 1.4, subtitles are parsed during extraction: the track's
         // sampleMimeType becomes "application/x-media3-cues" and the original
         // codec (e.g. text/x-ssa) is moved to Format.codecs. Prefer the original.
-        return getExoTextTracks().map {
+        val embedded = getExoTextTracks().map {
             val format = it.group.getTrackFormat(it.trackIndex)
             if (format.sampleMimeType == androidx.media3.common.MimeTypes.APPLICATION_MEDIA3_CUES) {
                 format.codecs ?: format.sampleMimeType
@@ -382,6 +434,9 @@ class ExoPlayerEngine @Inject constructor(
                 format.sampleMimeType
             }
         }
+        // External tracks are always libass-eligible (ass/ssa/converted SRT/VTT).
+        val external = assHandler.getExternalTrackIds().map { androidx.media3.common.MimeTypes.TEXT_SSA }
+        return embedded + external
     }
 
     override fun getSelectedSubtitleTrack(): Int {
@@ -395,19 +450,37 @@ class ExoPlayerEngine @Inject constructor(
                 return index
             }
         }
-        return -1
+        val extIdx = assHandler.getActiveExternalTrackIndex()
+        return if (extIdx >= 0) tracks.size + extIdx else -1
     }
 
     override fun selectSubtitleTrack(index: Int) {
+        val embeddedCount = getExoTextTracks().size
+        if (index >= embeddedCount) {
+            // External libass track — select without touching ExoPlayer, so the
+            // onTracksChanged → clearOverlay cascade (which would wipe libass)
+            // never fires. We only steer libass here.
+            val extIdx = index - embeddedCount
+            val extIds = assHandler.getExternalTrackIds()
+            if (extIdx in extIds.indices) {
+                assHandler.selectTrack(extIds[extIdx])
+                assHandler.onAssTrackSelected?.invoke()
+                return
+            }
+            return
+        }
         val tracks = getExoTextTracks()
         if (index in tracks.indices) {
             val selectedTrack = tracks[index]
             val format = selectedTrack.group.getTrackFormat(selectedTrack.trackIndex)
-            val isAss = isAssFormat(format)
+            val isAss = isLibassSubtitleFormat(format)
             if (isAss) {
                 // Route embedded ASS/SSA through libass for full styling; the built-in
                 // text renderer is fed a no-op parser so it won't draw duplicates.
                 assHandler.selectTrackByFormat(format)
+            } else {
+                // Switching to a non-libass embedded track: libass overlay must go.
+                assHandler.clearOverlay()
             }
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
@@ -434,14 +507,17 @@ class ExoPlayerEngine @Inject constructor(
      *  Remote `smb`/`ftp`/`sftp`/`webdav` URIs are read via the player's routing
      *  data source; only `content:`/`file:` go through [contentResolver]. */
     override fun loadExternalAss(uri: Uri) {
-        val data = runCatching {
-            when (uri.scheme?.lowercase()) {
-                "content", "file" -> appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                else -> playerHolder.readUriBytes(uri)
-            }
-        }.getOrNull() ?: return
+        val data = readSubtitleUriBytes(uri) ?: return
         assHandler.loadExternalTrack(data)
     }
+
+    /** Read a subtitle file's bytes, handling both local and remote URIs. */
+    private fun readSubtitleUriBytes(uri: Uri): ByteArray? = runCatching {
+        when (uri.scheme?.lowercase()) {
+            "content", "file" -> appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            else -> playerHolder.readUriBytes(uri)
+        }
+    }.getOrNull()
 
     // â”€â”€ Audio track selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

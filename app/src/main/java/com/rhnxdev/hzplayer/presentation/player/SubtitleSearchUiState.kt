@@ -8,13 +8,15 @@ data class SubtitleSearchUiState(
     val isSearching: Boolean = false,
     val results: List<SubtitleSearchResultItem> = emptyList(),
     val error: String? = null,
+    val searchType: String = "movie",
+    val season: String = "",
+    val episode: String = "",
 )
 
 @Immutable
 data class SubtitleSearchResultItem(
-    val id: String,
-    val fileId: Long,
+    val downloadUrl: String,
     val language: String,
     val releaseName: String,
-    val downloadCount: Long,
+    val fps: String,
 )

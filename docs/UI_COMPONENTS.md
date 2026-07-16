@@ -45,7 +45,7 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `PlaylistDrawer` | `PlaylistDrawer.kt` | Queue/playlist drawer |
 | `SpeedSelectionDialog` | `SpeedSelectionDialog.kt` | Playback speed picker |
 | `SubtitleSelectionDialog` | `SubtitleSelectionDialog.kt` | Subtitle-track picker |
-| `SubtitleSearchDialog` | `SubtitleSearchDialog.kt` | OpenSubtitles search |
+| `SubtitleSearchDialog` | `SubtitleSearchDialog.kt` | SubDL search |
 | `SubtitleFileBrowserBottomSheet` | `SubtitleFileBrowserBottomSheet.kt` | Pick local `.srt/.vtt/.ass` |
 | `SubtitleStylingDialog` | `SubtitleStylingDialog.kt` | `SubtitleStyle` editor (size/color/bg) |
 | `SubtitleOverlay` | `SubtitleOverlay.kt` | Optional custom subtitle overlay (native rendering default) |
@@ -65,7 +65,7 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `AlbumCard` | `presentation/audio/components/AlbumCard.kt` |
 | `AudioDetailHeader` | `presentation/audio/components/AudioDetailHeader.kt` |
 | `SettingsSection` / `SettingsItem` | `presentation/settings/components/` |
-| `ThemeSelectionDialog` / `ColorPickerDialog` / `OpenSubtitlesApiKeyDialog` | `presentation/settings/components/SettingsDialogs.kt` |
+| `ThemeSelectionDialog` / `ColorPickerDialog` / `SubdlApiKeyDialog` | `presentation/settings/components/` |
 | `ServerCard` | `presentation/network/components/ServerCard.kt` |
 | `ServerConfigDialog` | `presentation/network/components/ServerConfigDialog.kt` |
 | `StreamHistoryListItem` | `presentation/network/components/StreamHistoryListItem.kt` |

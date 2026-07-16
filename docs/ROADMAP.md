@@ -45,7 +45,7 @@ zoom/pip, lock pill. Rendering via `PlayerSurface` seam (no Media3 in the screen
 ## Phase 8: Settings ✅
 
 `SettingsScreen` with sections; `ThemeSelectionDialog`, `ColorPickerDialog`,
-`OpenSubtitlesApiKeyDialog`, engine selector. Fully localized (i18n done).
+`SubdlApiKeyDialog`, engine selector. Fully localized (i18n done).
 
 ## Phase 9: Search ✅
 

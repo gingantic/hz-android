@@ -6,11 +6,11 @@
 #include <ass/ass.h>
 
 #define LOG_TAG "assrender"
-#define LOGI(...) ((void)0)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,    LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,    LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,   LOG_TAG, __VA_ARGS__)
-#define LOGD(...) ((void)0)
-#define LOGV(...) ((void)0)
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG,   LOG_TAG, __VA_ARGS__)
+#define LOGV(...) __android_log_print(ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__)
 
 struct AssDirectContext {
     int width;
@@ -34,7 +34,7 @@ struct AssDirectContext {
 /* Forward every libass message to Android logcat with the same level mapping.
  * Known benign/noisy warnings are demoted to VERBOSE to avoid log spam. */
 static void ass_message_cb(int level, const char *fmt, va_list args, void *data) {
-    if (level > 2) return;
+    if (level > 4) return;
     /* Format the message first so we can inspect its content */
     char buf[512];
     vsnprintf(buf, sizeof(buf), fmt, args);
@@ -156,6 +156,53 @@ int ass_direct_load_header(AssDirectContext *ctx,
 
     LOGI("[TRACK] header loaded: %d styles, %d events",
          ctx->ass_track->n_styles, ctx->ass_track->n_events);
+    LOGI("[TRACK] event_format: '%s'",
+         ctx->ass_track->event_format ? ctx->ass_track->event_format : "(null)");
+
+    if (!ctx->ass_track->event_format) {
+        LOGW("[TRACK] event_format is NULL! Setting default MKV format.");
+        ctx->ass_track->event_format = strdup("ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text");
+    }
+
+    ASS_Style *hz_style = NULL;
+    for (int i = 0; i < ctx->ass_track->n_styles; i++) {
+        if (ctx->ass_track->styles[i].Name && strcmp(ctx->ass_track->styles[i].Name, "HzDefault") == 0) {
+            hz_style = &ctx->ass_track->styles[i];
+            break;
+        }
+    }
+ 
+    if (hz_style && ctx->ass_track->n_styles > 0) {
+        ASS_Style *default_style = &ctx->ass_track->styles[0];
+        if (default_style->Name && strcmp(default_style->Name, "Default") == 0) {
+            LOGI("[TRACK] Synthesized track detected. Copying HzDefault style properties to Default style...");
+            if (default_style->FontName) free(default_style->FontName);
+            default_style->FontName = strdup(hz_style->FontName ? hz_style->FontName : "sans-serif");
+            default_style->FontSize = hz_style->FontSize;
+            default_style->PrimaryColour = hz_style->PrimaryColour;
+            default_style->SecondaryColour = hz_style->SecondaryColour;
+            default_style->OutlineColour = hz_style->OutlineColour;
+            default_style->BackColour = hz_style->BackColour;
+            default_style->Bold = hz_style->Bold;
+            default_style->Italic = hz_style->Italic;
+            default_style->Underline = hz_style->Underline;
+            default_style->StrikeOut = hz_style->StrikeOut;
+            default_style->ScaleX = hz_style->ScaleX;
+            default_style->ScaleY = hz_style->ScaleY;
+            default_style->Spacing = hz_style->Spacing;
+            default_style->Angle = hz_style->Angle;
+            default_style->BorderStyle = hz_style->BorderStyle;
+            default_style->Outline = hz_style->Outline;
+            default_style->Shadow = hz_style->Shadow;
+            default_style->Alignment = hz_style->Alignment;
+            default_style->MarginL = hz_style->MarginL;
+            default_style->MarginR = hz_style->MarginR;
+            default_style->MarginV = hz_style->MarginV;
+            default_style->Encoding = hz_style->Encoding;
+            LOGI("[TRACK] Default style properties copied from HzDefault: font='%s' size=%.1f marginV=%d",
+                 default_style->FontName, default_style->FontSize, default_style->MarginV);
+        }
+    }
 
     /* Log each style name so we can verify font names */
     for (int i = 0; i < ctx->ass_track->n_styles; i++) {
@@ -329,6 +376,12 @@ int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixel
         uint8_t g = (img->color >> 16) & 0xFF;
         uint8_t b = (img->color >>  8) & 0xFF;
         uint8_t a = 255 - (img->color & 0xFF);   /* 0=transparent → flip to opacity */
+
+        static int log_count = 0;
+        if (log_count < 20) {
+            LOGI("[COLOR] img w=%d h=%d x=%d y=%d color=0x%08X -> r=%d g=%d b=%d a=%d", img->w, img->h, img->dst_x, img->dst_y, img->color, r, g, b, a);
+            log_count++;
+        }
 
         uint8_t *src = img->bitmap;
         for (int y = 0; y < img->h; y++) {

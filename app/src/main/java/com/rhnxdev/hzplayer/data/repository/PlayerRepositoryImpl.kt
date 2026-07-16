@@ -191,6 +191,9 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override fun loadExternalAss(uri: Uri) = engine().loadExternalAss(uri)
     override fun addExternalSubtitle(uri: Uri): Boolean = engine().addExternalSubtitle(uri)
+    var subtitleTrackChangeListener: (() -> Unit)?
+        get() = engine().subtitleTrackChangeListener
+        set(value) { engine().subtitleTrackChangeListener = value }
     override fun setSubtitleDelay(delayMs: Long) = engine().setSubtitleDelay(delayMs)
     override fun getSubtitleDelay(): Long = engine().getSubtitleDelay()
     override fun getAudioTracks(): List<String> = engine().getAudioTracks()

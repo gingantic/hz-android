@@ -5,7 +5,6 @@ import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
-import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
@@ -16,8 +15,7 @@ interface UserPreferencesRepository {
     val appColorArgb: Flow<Int>
     val useDynamicColors: Flow<Boolean>
     val activeEngine: Flow<EngineType>
-    val subtitleStyle: Flow<SubtitleStyle>
-    val openSubtitlesApiKey: Flow<String>
+    val subdlApiKey: Flow<String>
     val seekSensitivity: Flow<Float>
     val showHiddenFiles: Flow<Boolean>
     val useSurfaceView: Flow<Boolean>
@@ -37,8 +35,7 @@ interface UserPreferencesRepository {
     suspend fun setAppColorArgb(argb: Int)
     suspend fun setDynamicColors(enabled: Boolean)
     suspend fun setActiveEngine(engine: EngineType)
-    suspend fun setSubtitleStyle(style: SubtitleStyle)
-    suspend fun setOpenSubtitlesApiKey(key: String)
+    suspend fun setSubdlApiKey(key: String)
     suspend fun setSeekSensitivity(sensitivity: Float)
     suspend fun setShowHiddenFiles(enabled: Boolean)
     suspend fun setUseSurfaceView(enabled: Boolean)

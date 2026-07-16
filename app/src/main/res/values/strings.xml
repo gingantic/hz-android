@@ -67,6 +67,11 @@
 
     <!-- Subtitle search -->
     <string name="subtitle_search_placeholder">Movie or show name...</string>
+    <string name="subtitle_search_type">Type</string>
+    <string name="subtitle_search_movie">Movie</string>
+    <string name="subtitle_search_series">Series</string>
+    <string name="subtitle_search_season">Season</string>
+    <string name="subtitle_search_episode">Episode</string>
 
     <!-- Network screen -->
     <string name="network_search_cd">Search</string>
@@ -135,8 +140,8 @@
     <string name="minimize">Minimize to floating window</string>
     <string name="settings_gesture_sensitivity">Gesture seek sensitivity</string>
     <string name="settings_subtitles">Subtitles</string>
-    <string name="settings_opensubtitles_key">OpenSubtitles API Key</string>
-    <string name="settings_opensubtitles_not_configured">Not configured — get one at opensubtitles.com</string>
+    <string name="settings_subdl_key">SubDL API Key</string>
+    <string name="settings_subdl_not_configured">Not configured — get one at subdl.com</string>
     <string name="settings_audio">Audio</string>
     <string name="settings_audio_track_info">Audio track info</string>
     <string name="settings_audio_track_info_sub">Show technical details</string>
@@ -211,9 +216,9 @@
     <string name="color_blue">Blue</string>
     <string name="color_presets">Presets</string>
     <string name="color_custom_rgb">Custom RGB Colors</string>
-    <string name="opensubtitles_title">OpenSubtitles API Key</string>
-    <string name="opensubtitles_desc">Enter your API key from opensubtitles.com. Required for online subtitle search.</string>
-    <string name="opensubtitles_placeholder">e.g. abc123xyz…</string>
+    <string name="subdl_title">SubDL API Key</string>
+    <string name="subdl_desc">Enter your API key from subdl.com. Required for online subtitle search.</string>
+    <string name="subdl_placeholder">e.g. abc123xyz…</string>
 
     <!-- Debug overlay -->
     <string name="debug_stats_title">Stats for nerds</string>
@@ -280,7 +285,6 @@
     <string name="local_storage">Local Storage</string>
     <string name="folder_label">Folder</string>
     <string name="subtitles_cc">Subtitles &amp; CC</string>
-    <string name="style">Style</string>
     <string name="collapse">Collapse</string>
     <string name="expand">Expand</string>
     <string name="reset">Reset</string>
@@ -334,7 +338,6 @@
     <string name="search_subtitles_online">Search Subtitles Online</string>
     <string name="search">Search</string>
     <string name="unknown">Unknown</string>
-    <string name="downloads_count">• %1$d downloads</string>
     <string name="download">Download</string>
 
     <!-- Network sort menu -->

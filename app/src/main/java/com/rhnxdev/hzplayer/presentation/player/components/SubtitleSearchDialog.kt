@@ -12,9 +12,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
@@ -29,6 +33,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -60,6 +67,57 @@ fun SubtitleSearchDialog(
             .padding(horizontal = 24.dp)
             .padding(bottom = 24.dp),
     ) {
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Type toggle (Movie / Series)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.subtitle_search_type),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+            FilterChip(
+                selected = uiState.searchType == "movie",
+                onClick = { viewModel.onTypeChange("movie") },
+                label = { Text(stringResource(R.string.subtitle_search_movie)) },
+            )
+            FilterChip(
+                selected = uiState.searchType == "series",
+                onClick = { viewModel.onTypeChange("series") },
+                label = { Text(stringResource(R.string.subtitle_search_series)) },
+            )
+        }
+
+        AnimatedVisibility(visible = uiState.searchType == "series") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = uiState.season,
+                    onValueChange = viewModel::onSeasonChange,
+                    label = { Text(stringResource(R.string.subtitle_search_season)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = uiState.episode,
+                    onValueChange = viewModel::onEpisodeChange,
+                    label = { Text(stringResource(R.string.subtitle_search_episode)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
 
         // Search field with integrated trailing search icon
@@ -135,7 +193,7 @@ fun SubtitleSearchDialog(
                     result = result,
                     onDownload = {
                         viewModel.download(
-                            fileId = result.fileId,
+                            downloadUrl = result.downloadUrl,
                             fileName = result.releaseName,
                             onDownloaded = onSubtitleDownloaded,
                         )
@@ -179,10 +237,12 @@ private fun SearchResultRow(
                         fontWeight = FontWeight.Bold
                     ),
                 )
-                Text(
-                    text = stringResource(R.string.downloads_count, result.downloadCount),
-                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)),
-                )
+                if (result.fps.isNotBlank()) {
+                    Text(
+                        text = result.fps,
+                        style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)),
+                    )
+                }
             }
         }
         IconButton(

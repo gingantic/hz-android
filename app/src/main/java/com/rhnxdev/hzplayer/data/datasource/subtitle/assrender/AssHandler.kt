@@ -7,6 +7,7 @@ import android.os.Looper
 import android.system.Os
 import android.util.Log
 import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.exoplayer.ExoPlayer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -45,6 +46,19 @@ class AssHandler @Inject constructor(
     private val trackEvents =
         ConcurrentHashMap<Int, CopyOnWriteArrayList<Triple<Long, Long, ByteArray>>>()
     private var activeTrackId: Int = -1
+
+    /**
+     * External subtitle files (loaded outside ExoPlayer) are registered as
+     * synthetic libass tracks so they appear in the subtitle-selection dialog
+     * alongside embedded tracks. We use a high id range to avoid colliding with
+     * embedded track ids (which are small ints from ExoPlayer).
+     */
+    private val externalTrackNames = mutableListOf<String>()
+    private val externalTrackIds = mutableListOf<Int>()
+    private val externalTrackData = mutableListOf<ByteArray>()
+    private var nextExternalTrackId = 100_000
+    /** Fired when the external-track list changes, so the engine can refresh the UI. */
+    var onExternalTrackListChanged: (() -> Unit)? = null
     /** True after the first ASS track header is received and nativeInit succeeds. */
     var initialized = false
         private set
@@ -68,6 +82,12 @@ class AssHandler @Inject constructor(
     @Volatile
     private var hasLoadedFirstTime = false
 
+    /** Subtitle timing offset in ms (positive = subtitles appear later).
+     *  Applied as a render-position shift in [renderFrame] so libass draws the
+     *  cue that belongs to (playbackPos − delay). Reset on new media ([reset]). */
+    @Volatile
+    var subtitleDelayMs: Long = 0
+
     fun updatePosition(positionUs: Long, elapsedRealtimeUs: Long) {
         // Sanity-check: reject obviously corrupted values.
         // Valid video position must be < 24 h (86400 s = 86_400_000_000 µs).
@@ -85,6 +105,10 @@ class AssHandler @Inject constructor(
 
     private var videoWidth = 1920
     private var videoHeight = 1080
+
+    /** Current renderer frame size — used to stamp PlayResX/Y into synthesized ASS. */
+    fun getVideoWidth(): Int = videoWidth
+    fun getVideoHeight(): Int = videoHeight
 
     private var lastRenderedMs: Long = Long.MIN_VALUE
     private var choreographerCallback: android.view.Choreographer.FrameCallback? = null
@@ -167,9 +191,10 @@ class AssHandler @Inject constructor(
             }
             startMs    = parseStandardAssTimeMs(f[1].trim())
             durationMs = (parseStandardAssTimeMs(f[2].trim()) - startMs).coerceAtLeast(0L)
-            // Synthesise MKV body: use 0 as ReadOrder (libass only uses it for ordering)
-            chunkBody = "0,${f[0].trim()},${f[3].trim()},${f[4].trim()}," +
-                        "${f[5].trim()},${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9]}"
+            
+            val readOrder = trackEvents[trackId]?.size ?: 0
+            chunkBody = "$readOrder,${f[0].trim()},${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
+                        "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9]}"
         } else {
             // MKV block: Start(0),Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text (11 fields)
             val f = content.split(",", limit = 11)
@@ -179,12 +204,14 @@ class AssHandler @Inject constructor(
             }
             durationMs = parseMkvAssTimeMs(f[1].trim())
             startMs    = timeUs / 1000
-            // Body is fields[2..10]: ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text
-            chunkBody = "${f[2].trim()},${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
+            
+            val readOrder = trackEvents[trackId]?.size ?: 0
+            chunkBody = "$readOrder,${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
                         "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9].trim()},${f[10]}"
         }
 
         val chunkBytes = chunkBody.toByteArray(Charsets.UTF_8)
+
 
         trackEvents.getOrPut(trackId) { CopyOnWriteArrayList() }
             .add(Triple(startMs, durationMs, chunkBytes))
@@ -217,9 +244,18 @@ class AssHandler @Inject constructor(
         }
     }
 
-    /** Load an external `.ass`/`.ssa` file into libass (bypasses ExoPlayer parsing). */
-    fun loadExternalTrack(data: ByteArray) {
+    /**
+     * Load an external `.ass`/`.ssa`/converted file into libass and register it as
+     * a synthetic subtitle track so it appears in the selection dialog. Unlike
+     * embedded tracks (one codec-private header fed via [onTrackHeader]), external
+     * ASS files carry their own header so we load it directly into the native
+     * context without touching [trackHeaders]. Each call appends a new track; the
+     * previously active external track is cleared (libass renders one track at a
+     * time) but its registration stays so it can be re-selected later.
+     */
+    fun loadExternalTrack(data: ByteArray, displayName: String = "External subtitle") {
         var shouldInvokeCallback = false
+        val trackId: Int
         synchronized(nativeLock) {
             if (nativeHandle == 0L) {
                 nativeHandle = AssDirectBridge.nativeInit(videoWidth, videoHeight, 1.0f)
@@ -232,24 +268,45 @@ class AssHandler @Inject constructor(
                 flushPendingFonts()
                 shouldInvokeCallback = true
             }
-            activeTrackId = -1
+            trackId = nextExternalTrackId++
+            // Store the raw header bytes so re-selecting this track reloads it.
+            externalTrackIds.add(trackId)
+            externalTrackNames.add(displayName)
+            externalTrackData.add(data)
+
+            // Load as the active track immediately (renders at once).
+            activeTrackId = trackId
             pendingFonts.clear()
-            if (nativeHandle != 0L) {
-                AssDirectBridge.nativeFlush(nativeHandle)
-                val ok = AssDirectBridge.nativeLoadHeader(nativeHandle, data)
-                if (ok != 0) {
-                    Log.e(TAG, "Failed to load external ASS (${data.size} bytes)")
-                    return
-                }
+            AssDirectBridge.nativeFlush(nativeHandle)
+            val ok = AssDirectBridge.nativeLoadHeader(nativeHandle, data)
+            if (ok != 0) {
+                Log.e(TAG, "Failed to load external ASS (${data.size} bytes)")
+                return
             }
         }
         if (shouldInvokeCallback) {
             onAssTrackSelected?.invoke()
         }
         overlayView.clear()
-        Log.i(TAG, "Loaded external ASS: ${data.size} bytes")
+        onExternalTrackListChanged?.invoke()
+        Log.i(TAG, "Loaded external subtitle: '$displayName' ${data.size} bytes (trackId=$trackId)")
         startRenderLoop()
     }
+
+    /** Names of registered external subtitle tracks, aligned 1:1 with [getExternalTrackIds]. */
+    fun getExternalTrackNames(): List<String> = externalTrackNames.toList()
+
+    /** Ids of registered external subtitle tracks, aligned 1:1 with [getExternalTrackNames]. */
+    fun getExternalTrackIds(): List<Int> = externalTrackIds.toList()
+
+    /** Index of the currently active external track in [getExternalTrackIds], or -1. */
+    fun getActiveExternalTrackIndex(): Int {
+        if (!isExternalTrack(activeTrackId)) return -1
+        return externalTrackIds.indexOf(activeTrackId)
+    }
+
+    /** Whether [trackId] is a registered external subtitle track. */
+    fun isExternalTrack(trackId: Int): Boolean = trackId in externalTrackIds
 
     private fun flushPendingFonts() {
         Log.d(TAG, "[FONT] flushPendingFonts: count=${pendingFonts.size}")
@@ -276,8 +333,13 @@ class AssHandler @Inject constructor(
             return
         }
         val header = trackHeaders[trackId]
-        if (header == null) {
-            Log.e(TAG, "[TRACK] selectTrack: no header for trackId=$trackId  knownTracks=${trackHeaders.keys}")
+        val externalData = if (isExternalTrack(trackId)) {
+            val idx = externalTrackIds.indexOf(trackId)
+            if (idx >= 0) externalTrackData[idx] else null
+        } else null
+
+        if (header == null && externalData == null) {
+            Log.e(TAG, "[TRACK] selectTrack: no header for trackId=$trackId  knownTracks=${trackHeaders.keys} external=${externalTrackIds}")
             return
         }
 
@@ -290,14 +352,20 @@ class AssHandler @Inject constructor(
 
                 AssDirectBridge.nativeFlush(nativeHandle)
 
-                AssDirectBridge.nativeLoadHeader(nativeHandle, header)
+                // External tracks: the stored header IS the full document — reload it.
+                if (externalData != null) {
+                    AssDirectBridge.nativeLoadHeader(nativeHandle, externalData)
+                    startRenderLoop()
+                    return@synchronized
+                }
 
-                // Font reload must happen AFTER header is loaded
+                if (header == null) { startRenderLoop(); return@synchronized }
+
+                AssDirectBridge.nativeLoadHeader(nativeHandle, header)
                 if (needsFontReload) {
                     needsFontReload = false
                     AssDirectBridge.nativeReloadFonts(nativeHandle)
                 }
-
                 val events = trackEvents[trackId]
                 if (events != null) {
                     for ((startMs, durationMs, chunkBytes) in events) {
@@ -349,7 +417,31 @@ class AssHandler @Inject constructor(
             return
         }
 
-        // 4. Fallback: match by index/id if the format has a numeric ID
+        // 4. Match by MIME/codec signature. Embedded SRT/VTT formats carry no
+        //    language/label/id that matches our stored Format, but their
+        //    sampleMimeType (e.g. application/x-subrip) + codecs uniquely identify
+        //    the registered track. First exact codec, then mime-only.
+        val targetMime = format.sampleMimeType?.lowercase()
+        val targetCodecs = format.codecs?.lowercase() ?: ""
+        if (!targetMime.isNullOrBlank()) {
+            val byCodec = trackFormats.entries.firstOrNull { (_, fmt) ->
+                val c = fmt.codecs?.lowercase() ?: ""
+                targetCodecs.isNotBlank() && c == targetCodecs
+            }
+            if (byCodec != null) {
+                selectTrack(byCodec.key)
+                return
+            }
+            val byMime = trackFormats.entries.firstOrNull { (_, fmt) ->
+                fmt.sampleMimeType?.lowercase() == targetMime
+            }
+            if (byMime != null) {
+                selectTrack(byMime.key)
+                return
+            }
+        }
+
+        // 5. Fallback: match by index/id if the format has a numeric ID
         val numericId = format.id?.toIntOrNull()
         if (numericId != null && trackFormats.containsKey(numericId)) {
             selectTrack(numericId)
@@ -397,6 +489,8 @@ class AssHandler @Inject constructor(
             return
         }
 
+        // Converted cues are live-chunked via nativeProcessChunk, no full document reload needed.
+
         val isPlaying       = p?.isPlaying == true
         val speed           = p?.playbackParameters?.speed ?: 1.0f
         val mediaDurationMs = p?.duration?.takeIf { it > 0 } ?: Long.MAX_VALUE
@@ -415,6 +509,10 @@ class AssHandler @Inject constructor(
         }
 
         var hasContent = false
+        // Apply the timing offset: libass renders the cue anchored at (pos − delay).
+        // Positive delayMs ⇒ subtitles lag the audio; negative ⇒ lead. Coerce so we
+        // never pass a negative position to nativeRender (cue-times are ≥ 0).
+        val renderPosMs = (positionMs - subtitleDelayMs).coerceAtLeast(0L)
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 if (needsFontReload) {
@@ -423,13 +521,17 @@ class AssHandler @Inject constructor(
                     AssDirectBridge.nativeReloadFonts(nativeHandle)
                     Log.d(TAG, "[FONT] font reload complete")
                 }
-                hasContent = AssDirectBridge.nativeRender(nativeHandle, positionMs, bitmap)
+                hasContent = AssDirectBridge.nativeRender(nativeHandle, renderPosMs, bitmap)
             }
         }
 
         if (hasContent) {
+            Log.d(TAG, "[RENDER] content at posMs=$positionMs trackId=$activeTrackId nEvents=${trackEvents[activeTrackId]?.size}")
             overlayView.updateBitmap(bitmap)
         } else {
+            if (positionMs % 2000 < 100) { // ~every 2s
+                Log.d(TAG, "[RENDER] no content at posMs=$positionMs initialized=$initialized activeTrackId=$activeTrackId hasLoaded=$hasLoadedFirstTime nEvents=${trackEvents[activeTrackId]?.size}")
+            }
             overlayView.clear()
         }
     }
@@ -526,6 +628,11 @@ class AssHandler @Inject constructor(
             currentTimeUs = 0L
             pendingFormatToSelect = null
             hasLoadedFirstTime = false
+            subtitleDelayMs = 0
+            externalTrackNames.clear()
+            externalTrackIds.clear()
+            externalTrackData.clear()
+            nextExternalTrackId = 100_000
             if (nativeHandle != 0L) {
                 AssDirectBridge.nativeFlush(nativeHandle)
             }

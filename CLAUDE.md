@@ -76,7 +76,7 @@ Native libs (e.g. `libarchive.so`) are built **outside Gradle** by standalone sc
 | Images / Thumbnails | Coil 3 + custom `VideoThumbnailFetcher` (NDK-backed) |
 | Navigation | Navigation Compose + M3 Adaptive Navigation Suite |
 | Network protocols | SMB (jcifs-ng), FTP (Apache Commons Net), SFTP (JSch/SSHJ), WebDAV (OkHttp) |
-| Subtitle search | OpenSubtitles REST API v1 |
+| Subtitle search | SubDL Search & Download API |
 | Server discovery | NSD/mDNS + manual port-scan (`ServerDiscoverer`) |
 | Min SDK | 28 |
 | Target / Compile SDK | 36 |
@@ -104,7 +104,7 @@ com.rhnxdev.hzplayer
 │   │   ├── player/          — ExoPlayerEngine, MediaPlayerHolder, ConnectionPool,
 │   │   │                      FtpDataSource, SftpDataSource, SmbDataSource, WebDavDataSource,
 │   │   │                      SmbPathResolver, MediaPlaybackService
-│   │   └── remote/          — OpenSubtitlesApi
+│   │   └── remote/          — SubdlApi
 │   ├── mapper/              — Domain ↔ data mapping
 │   └── repository/          — 9 implementations (see Repositories section)
 │
@@ -203,7 +203,7 @@ fun XxxScreen(vm: XxxViewModel = hiltViewModel()) {
 | `FileRepository` | `FileRepositoryImpl` | Local file system browsing |
 | `NetworkRepository` | `NetworkRepositoryImpl` | Server CRUD, stream history |
 | `RemoteBrowseRepository` | `RemoteBrowseRepositoryImpl` | Browse SMB/FTP/SFTP/WebDAV directories |
-| `SubtitleRepository` | `SubtitleRepositoryImpl` | External subtitles, OpenSubtitles search |
+| `SubtitleRepository` | `SubtitleRepositoryImpl` | External subtitles, SubDL search |
 | `ResumeRepository` | `ResumeRepositoryImpl` | Save / restore playback positions |
 | `UserPreferencesRepository` | `UserPreferencesRepositoryImpl` | DataStore preferences |
 
@@ -328,7 +328,7 @@ Player (`VideoPlayerScreen`) is launched as a full-screen destination on top of 
 - **External subtitles:** Added via `IPlayerEngine.addExternalSubtitle(uri)` — supports `.srt`, `.vtt`, `.ass`.
 - **Subtitle delay:** `IPlayerEngine.setSubtitleDelay(delayMs)`.
 - **Subtitle styling:** `SubtitleStyle` model → `SubtitleStylingDialog` UI.
-- **Online search:** `OpenSubtitlesApi` (REST v1, plain `HttpURLConnection`) → `SubtitleSearchViewModel`.
+- **Online search:** `SubdlApi` (Search & Download API, plain `HttpURLConnection`) → `SubtitleSearchViewModel`.
 - **SMB auto-discovery:** `findSmbNeighborSubtitles()` uses jcifs-ng `SmbFile` to list sibling files.
 - **Built-in rendering is active** (`PlayerView` built-in). Custom `SubtitleOverlay` is parked pending refinement.
 

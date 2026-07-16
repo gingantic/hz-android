@@ -40,7 +40,7 @@ import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.presentation.settings.components.ColorPickerDialog
-import com.rhnxdev.hzplayer.presentation.settings.components.OpenSubtitlesApiKeyDialog
+import com.rhnxdev.hzplayer.presentation.settings.components.SubdlApiKeyDialog
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsItem
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsSection
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsSliderItem
@@ -77,7 +77,7 @@ fun SettingsScreen(
     val appColorArgb by settingsViewModel.appColorArgb.collectAsStateWithLifecycle()
     val dynamicColors by settingsViewModel.useDynamicColors.collectAsStateWithLifecycle()
 
-    val currentApiKey by settingsViewModel.openSubtitlesApiKey.collectAsStateWithLifecycle()
+    val currentApiKey by settingsViewModel.subdlApiKey.collectAsStateWithLifecycle()
     val seekSensitivity by settingsViewModel.seekSensitivity.collectAsStateWithLifecycle()
     val showHiddenFiles by settingsViewModel.showHiddenFiles.collectAsStateWithLifecycle()
     val useSurfaceView by settingsViewModel.useSurfaceView.collectAsStateWithLifecycle()
@@ -91,11 +91,11 @@ fun SettingsScreen(
     val availableEngines = settingsViewModel.availableEngines
 
     if (showApiKeyDialog) {
-        OpenSubtitlesApiKeyDialog(
+        SubdlApiKeyDialog(
             currentKey = currentApiKey,
             onDismiss = { showApiKeyDialog = false },
             onSave = { key ->
-                settingsViewModel.saveOpenSubtitlesApiKey(key)
+                settingsViewModel.saveSubdlApiKey(key)
                 showApiKeyDialog = false
             },
         )
@@ -291,8 +291,8 @@ fun SettingsScreen(
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
-                                title = stringResource(R.string.settings_opensubtitles_key),
-                                subtitle = if (currentApiKey.isBlank()) stringResource(R.string.settings_opensubtitles_not_configured)
+                                title = stringResource(R.string.settings_subdl_key),
+                                subtitle = if (currentApiKey.isBlank()) stringResource(R.string.settings_subdl_not_configured)
                                 else "••••••••",
                                 onClick = { showApiKeyDialog = true },
                             )
