@@ -4,7 +4,6 @@ import android.net.Uri
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
 import com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
-import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.player.EngineType
 
@@ -37,7 +36,6 @@ data class PlayerUiState(
     val showControls: Boolean = true,
     val externalSubtitles: List<Pair<String, Uri>> = emptyList(),
     val subtitleDelayMs: Long = 0,
-    val subtitleStyle: SubtitleStyle = SubtitleStyle.DEFAULT,
     val playerLocked: Boolean = false,
     val errorMessage: String? = null,
     val errorKind: PlaybackErrorKind? = null,

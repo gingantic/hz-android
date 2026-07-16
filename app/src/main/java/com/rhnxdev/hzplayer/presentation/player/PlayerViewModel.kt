@@ -10,11 +10,10 @@ import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
-import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
-import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isAssMimeType
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleMimeType
 import com.rhnxdev.hzplayer.core.util.bitsToHuman
 import com.rhnxdev.hzplayer.core.util.formatBitsPerSecond
 import com.rhnxdev.hzplayer.core.util.formatDebugBytes
@@ -113,21 +112,13 @@ class PlayerViewModel @Inject constructor(
         if (tracks.isEmpty()) return
 
         subtitlePreferenceAppliedForUri = currentUri
-        val enabledPref = _uiState.value.subtitleStyle.enabled
         val currentSelected = _uiState.value.selectedSubtitleTrack
 
-        android.util.Log.i("HzSubPref", "Applying subtitle preference: enabledPref=$enabledPref currentSelected=$currentSelected tracks=$tracks")
+        android.util.Log.i("HzSubPref", "Applying subtitle preference: currentSelected=$currentSelected tracks=$tracks")
 
-        if (enabledPref) {
-            if (currentSelected == -1) {
-                // Auto-enable by selecting the first track
-                selectSubtitleTrack(0)
-            }
-        } else {
-            if (currentSelected >= 0) {
-                // Auto-disable
-                selectSubtitleTrack(-1)
-            }
+        // Auto-enable by selecting the first track if none is already chosen.
+        if (currentSelected == -1) {
+            selectSubtitleTrack(0)
         }
     }
 
@@ -157,13 +148,17 @@ class PlayerViewModel @Inject constructor(
 
     init {
         observePlaybackState()
-        observeSubtitleStyle()
         observeSeekSensitivity()
         observeActiveEngine()
         observeResumeMode()
         debugController.observe()
         positionController.start()
         trackCache.refresh()
+        // External subtitles load off-thread; when their libass registration
+        // changes, refresh the merged track list so the dialog shows them.
+        playerRepository.activeEngine.subtitleTrackChangeListener = {
+            trackCache.refresh()
+        }
     }
 
     private fun observePlaybackState() {
@@ -228,27 +223,19 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private fun observeSubtitleStyle() {
-        viewModelScope.launch {
-            userPreferencesRepository.subtitleStyle.collect { style ->
-                _uiState.update { it.copy(subtitleStyle = style) }
-            }
-        }
-    }
-
     fun selectSubtitleTrack(index: Int) {
         val mimes = runCatching { getActiveEngine().getSubtitleTrackMimeTypes() }
             .getOrDefault(emptyList())
         val mime = mimes.getOrNull(index)?.lowercase()
-        val isAss = isAssMimeType(mime)
+        val isLibass = isLibassSubtitleMimeType(mime)
         android.util.Log.i(
             "HzAss",
-            "selectSubtitleTrack idx=$index mime=$mime isAss=$isAss " +
+            "selectSubtitleTrack idx=$index mime=$mime isLibass=$isLibass " +
                 "allMimes=$mimes",
         )
 
-        if (isAss) {
-            // Engine routes embedded ASS/SSA through libass for full styling.
+        if (isLibass) {
+            // Engine routes ASS/SSA/SRT/VTT through libass (SRT/VTT converted first).
             getActiveEngine().selectSubtitleTrack(index)
             _uiState.update {
                 it.copy(selectedSubtitleTrack = index)
@@ -256,33 +243,14 @@ class PlayerViewModel @Inject constructor(
         } else {
             trackCache.selectSubtitleTrack(index)
         }
-
-        // Save preference!
-        viewModelScope.launch {
-            val currentStyle = _uiState.value.subtitleStyle
-            val newEnabled = index >= 0
-            if (currentStyle.enabled != newEnabled) {
-                userPreferencesRepository.setSubtitleStyle(currentStyle.copy(enabled = newEnabled))
-            }
-        }
     }
 
     fun selectAudioTrack(index: Int) = trackCache.selectAudioTrack(index)
 
     fun addExternalSubtitle(uri: Uri, displayName: String? = null) {
         val name = displayName ?: uri.lastPathSegment ?: uri.toString()
-        val isAss = name.substringAfterLast('.', "").lowercase() in setOf("ass", "ssa")
-        if (isAss) {
-            // Render ASS/SSA through libass for full styling/animation; bypass
-            // ExoPlayer's built-in text renderer to avoid double subtitles.
-            getActiveEngine().loadExternalAss(uri)
-            _uiState.update { state ->
-                state.copy(
-                    externalSubtitles = state.externalSubtitles + (name to uri),
-                )
-            }
-            return
-        }
+        // Engine routes ASS/SSA + convertible SRT/VTT through libass (converting
+        // SRT/VTT to ASS first); anything else falls back to ExoPlayer's renderer.
         val success = playerRepository.addExternalSubtitle(uri)
         if (success) {
             trackCache.refresh()
@@ -292,25 +260,11 @@ class PlayerViewModel @Inject constructor(
                 )
             }
         }
-        // Save preference as enabled when an external subtitle is added!
-        viewModelScope.launch {
-            val currentStyle = _uiState.value.subtitleStyle
-            if (!currentStyle.enabled) {
-                userPreferencesRepository.setSubtitleStyle(currentStyle.copy(enabled = true))
-            }
-        }
     }
 
     fun onSubtitleDelayChange(delayMs: Long) {
         playerRepository.setSubtitleDelay(delayMs)
         _uiState.update { it.copy(subtitleDelayMs = delayMs) }
-    }
-
-    fun onSubtitleStyleChange(style: SubtitleStyle) {
-        _uiState.update { it.copy(subtitleStyle = style) }
-        viewModelScope.launch {
-            userPreferencesRepository.setSubtitleStyle(style)
-        }
     }
 
     fun onAspectRatioChange(mode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode) {

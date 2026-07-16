@@ -139,6 +139,13 @@ interface IPlayerEngine {
      */
     fun addExternalSubtitle(uri: Uri): Boolean
 
+    /**
+     * Fired when the subtitle track list changes (embedded tracks via ExoPlayer,
+     * external tracks via libass). The UI observes this to refresh its merged
+     * track list. Default no-op.
+     */
+    var subtitleTrackChangeListener: (() -> Unit)?
+
     /** Set subtitle timing offset in milliseconds (positive = later, negative = earlier). */
     fun setSubtitleDelay(delayMs: Long)
 

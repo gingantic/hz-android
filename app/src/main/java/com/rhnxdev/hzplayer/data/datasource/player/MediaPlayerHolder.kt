@@ -25,7 +25,7 @@ import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssExtractorsFact
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssRenderersFactory
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssSubtitleParserFactory
-import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isAssFormat
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleFormat
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.player.PlaybackErrorMapper
@@ -366,7 +366,7 @@ class MediaPlayerHolder @Inject constructor(
                         for (i in 0 until group.length) {
                     if (group.isTrackSelected(i)) {
                         val format = group.getTrackFormat(i)
-                        val isAss = isAssFormat(format)
+                        val isAss = isLibassSubtitleFormat(format)
                         if (isAss) {
                             selectedAssFormat = format
                         }

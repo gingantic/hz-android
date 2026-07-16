@@ -27,6 +27,18 @@ class SubtitleSearchViewModel @Inject constructor(
         _uiState.update { it.copy(query = query) }
     }
 
+    fun onTypeChange(type: String) {
+        _uiState.update { it.copy(searchType = type) }
+    }
+
+    fun onSeasonChange(season: String) {
+        _uiState.update { it.copy(season = season.filter { c -> c.isDigit() }) }
+    }
+
+    fun onEpisodeChange(episode: String) {
+        _uiState.update { it.copy(episode = episode.filter { c -> c.isDigit() }) }
+    }
+
     fun search() {
         val query = _uiState.value.query.trim()
         if (query.isBlank()) return
@@ -34,29 +46,31 @@ class SubtitleSearchViewModel @Inject constructor(
         _uiState.update { it.copy(isSearching = true, error = null, results = emptyList()) }
 
         viewModelScope.launch {
-            val apiKey = userPreferencesRepository.openSubtitlesApiKey.first()
+            val apiKey = userPreferencesRepository.subdlApiKey.first()
             if (apiKey.isBlank()) {
                 _uiState.update {
                     it.copy(
                         isSearching = false,
-                        error = "OpenSubtitles API key not set. Configure it in Settings."
+                        error = "SubDL API key not set. Configure it in Settings."
                     )
                 }
                 return@launch
             }
 
-            subtitleRepository.search(query, apiKey)
+            val type = _uiState.value.searchType
+            val season = _uiState.value.season.toIntOrNull()
+            val episode = _uiState.value.episode.toIntOrNull()
+            subtitleRepository.search(query, apiKey, null, type, season, episode)
                 .onSuccess { results ->
                     _uiState.update {
                         it.copy(
                             isSearching = false,
                             results = results.map { sr ->
                                 SubtitleSearchResultItem(
-                                    id = sr.id,
-                                    fileId = sr.fileId,
+                                    downloadUrl = sr.downloadUrl,
                                     language = sr.language,
                                     releaseName = sr.releaseName,
-                                    downloadCount = sr.downloadCount,
+                                    fps = sr.fps,
                                 )
                             },
                         )
@@ -73,10 +87,10 @@ class SubtitleSearchViewModel @Inject constructor(
         }
     }
 
-    fun download(fileId: Long, fileName: String, onDownloaded: (Uri) -> Unit) {
+    fun download(downloadUrl: String, fileName: String, onDownloaded: (Uri) -> Unit) {
         viewModelScope.launch {
-            val apiKey = userPreferencesRepository.openSubtitlesApiKey.first()
-            subtitleRepository.download(fileId, fileName, apiKey)
+            val apiKey = userPreferencesRepository.subdlApiKey.first()
+            subtitleRepository.download(downloadUrl, fileName, apiKey)
                 .onSuccess { uri -> onDownloaded(uri) }
                 .onFailure { error ->
                     _uiState.update {

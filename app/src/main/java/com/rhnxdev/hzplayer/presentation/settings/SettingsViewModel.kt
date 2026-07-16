@@ -58,7 +58,7 @@ class SettingsViewModel @Inject constructor(
     val appColorArgb: StateFlow<Int> = prefs.appColorArgb
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0xFFE85E00.toInt())
 
-    val openSubtitlesApiKey: StateFlow<String> = prefs.openSubtitlesApiKey
+    val subdlApiKey: StateFlow<String> = prefs.subdlApiKey
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     val seekSensitivity: StateFlow<Float> = prefs.seekSensitivity
@@ -112,8 +112,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setAppColorArgb(argb) }
     }
 
-    fun saveOpenSubtitlesApiKey(key: String) {
-        viewModelScope.launch { prefs.setOpenSubtitlesApiKey(key) }
+    fun saveSubdlApiKey(key: String) {
+        viewModelScope.launch { prefs.setSubdlApiKey(key) }
     }
 
     fun saveSeekSensitivity(value: Float) {

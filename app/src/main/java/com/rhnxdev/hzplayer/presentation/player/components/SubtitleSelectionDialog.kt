@@ -30,7 +30,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,7 +55,6 @@ fun SubtitleSelectionDialog(
     onAddExternalSubtitleClick: () -> Unit = {},
     subtitleDelayMs: Long = 0,
     onSubtitleDelayChange: (Long) -> Unit = {},
-    onStyleClick: () -> Unit = {},
     onSearchOnlineClick: () -> Unit = {},
 ) {
     var tracksExpanded by remember { mutableStateOf(true) }
@@ -206,19 +204,6 @@ fun SubtitleSelectionDialog(
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             Spacer(modifier = Modifier.height(4.dp))
 
-            // ═══ Bottom actions ═══
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
-            ) {
-                TextButton(onClick = onStyleClick) {
-                    Text(
-                        text = stringResource(R.string.style),
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
         }
     }
 }

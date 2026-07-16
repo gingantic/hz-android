@@ -101,7 +101,6 @@ import com.rhnxdev.hzplayer.presentation.player.components.SpeedSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.PlaylistDrawer
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSearchDialog
-import com.rhnxdev.hzplayer.presentation.player.components.SubtitleStylingDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleFileBrowserBottomSheet
 import com.rhnxdev.hzplayer.presentation.player.components.AssSubtitleOverlay
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
@@ -155,7 +154,6 @@ fun VideoPlayerScreen(
 
     var showSubtitleDialog by remember { mutableStateOf(false) }
     var showSubtitleBrowser by remember { mutableStateOf(false) }
-    var showSubtitleStyleDialog by remember { mutableStateOf(false) }
     var showSubtitleSearchDialog by remember { mutableStateOf(false) }
     var showAudioDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
@@ -435,10 +433,6 @@ fun VideoPlayerScreen(
                         },
                         subtitleDelayMs = uiState.subtitleDelayMs,
                         onSubtitleDelayChange = viewModel::onSubtitleDelayChange,
-                        onStyleClick = {
-                            showSubtitleDialog = false
-                            showSubtitleStyleDialog = true
-                        },
                         onSearchOnlineClick = {
                             showSubtitleDialog = false
                             showSubtitleSearchDialog = true
@@ -463,16 +457,6 @@ fun VideoPlayerScreen(
                             showSubtitleBrowser = false
                             viewModel.addExternalSubtitle(uri, name)
                         }
-                    )
-                }
-
-                if (showSubtitleStyleDialog) {
-                    SubtitleStylingDialog(
-                        currentStyle = uiState.subtitleStyle,
-                        onStyleChange = { style ->
-                            viewModel.onSubtitleStyleChange(style)
-                        },
-                        onDismiss = { showSubtitleStyleDialog = false },
                     )
                 }
 

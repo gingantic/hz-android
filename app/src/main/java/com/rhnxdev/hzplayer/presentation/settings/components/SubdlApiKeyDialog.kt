@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
 
 @Composable
-fun OpenSubtitlesApiKeyDialog(
+fun SubdlApiKeyDialog(
     currentKey: String,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
@@ -29,11 +29,11 @@ fun OpenSubtitlesApiKeyDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.opensubtitles_title)) },
+        title = { Text(stringResource(R.string.subdl_title)) },
         text = {
             Column {
                 Text(
-                    text = stringResource(R.string.opensubtitles_desc),
+                    text = stringResource(R.string.subdl_desc),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
@@ -41,7 +41,7 @@ fun OpenSubtitlesApiKeyDialog(
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    placeholder = { Text(stringResource(R.string.opensubtitles_placeholder)) },
+                    placeholder = { Text(stringResource(R.string.subdl_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,

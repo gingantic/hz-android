@@ -5,7 +5,6 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
@@ -13,7 +12,6 @@ import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
-import com.rhnxdev.hzplayer.domain.model.SubtitleStyle
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
@@ -59,12 +57,12 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }.distinctUntilChanged()
 
-    // ponytail: OpenSubtitles API key is stored in PLAINTEXT in this DataStore.
+    // ponytail: SubDL API key is stored in PLAINTEXT in this DataStore.
     // The store is app-private (mode 0600, same-UID only), so risk is limited to
     // a rooted device. Upgrade path if this becomes sensitive: migrate to
     // androidx.security EncryptedSharedPreferences (AES via AndroidKeyStore).
-    override val openSubtitlesApiKey: Flow<String> = dataStore.data.map { prefs ->
-        prefs[PrefKey.OpenSubtitlesApiKey.key] ?: ""
+    override val subdlApiKey: Flow<String> = dataStore.data.map { prefs ->
+        prefs[PrefKey.SubdlApiKey.key] ?: ""
     }.distinctUntilChanged()
 
     override val seekSensitivity: Flow<Float> = dataStore.data.map { prefs ->
@@ -120,16 +118,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override val backgroundPlay: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[PrefKey.BackgroundPlay.key] ?: false
-    }.distinctUntilChanged()
-
-    override val subtitleStyle: Flow<SubtitleStyle> = dataStore.data.map { prefs ->
-        SubtitleStyle(
-            fontSizeSp = prefs[PrefKey.SubFontSize.key] ?: SubtitleStyle.DEFAULT.fontSizeSp,
-            textColorArgb = (prefs[PrefKey.SubTextColor.key] ?: SubtitleStyle.DEFAULT.textColorArgb.toLong()).toInt(),
-            backgroundColorArgb = (prefs[PrefKey.SubBgColor.key] ?: SubtitleStyle.DEFAULT.backgroundColorArgb.toLong()).toInt(),
-            edgeStyle = prefs[PrefKey.SubEdgeStyle.key] ?: SubtitleStyle.DEFAULT.edgeStyle,
-            enabled = prefs[PrefKey.SubEnabled.key] ?: SubtitleStyle.DEFAULT.enabled,
-        )
     }.distinctUntilChanged()
 
     override fun getViewMode(key: String): Flow<ViewMode> = dataStore.data.map { prefs ->
@@ -193,19 +181,9 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun setSubtitleStyle(style: SubtitleStyle) {
+    override suspend fun setSubdlApiKey(key: String) {
         dataStore.edit { prefs ->
-            prefs[PrefKey.SubFontSize.key] = style.fontSizeSp
-            prefs[PrefKey.SubTextColor.key] = style.textColorArgb.toLong()
-            prefs[PrefKey.SubBgColor.key] = style.backgroundColorArgb.toLong()
-            prefs[PrefKey.SubEdgeStyle.key] = style.edgeStyle
-            prefs[PrefKey.SubEnabled.key] = style.enabled
-        }
-    }
-
-    override suspend fun setOpenSubtitlesApiKey(key: String) {
-        dataStore.edit { prefs ->
-            prefs[PrefKey.OpenSubtitlesApiKey.key] = key
+            prefs[PrefKey.SubdlApiKey.key] = key
         }
     }
 
@@ -265,12 +243,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object DarkTheme : PrefKey<Boolean>(booleanPreferencesKey("dark_theme"))
         object DynamicColors : PrefKey<Boolean>(booleanPreferencesKey("dynamic_colors"))
         object Engine : PrefKey<String>(stringPreferencesKey("active_engine"))
-        object SubFontSize : PrefKey<Int>(intPreferencesKey("subtitle_font_size"))
-        object SubTextColor : PrefKey<Long>(longPreferencesKey("subtitle_text_color"))
-        object SubBgColor : PrefKey<Long>(longPreferencesKey("subtitle_bg_color"))
-        object SubEdgeStyle : PrefKey<Int>(intPreferencesKey("subtitle_edge_style"))
-        object SubEnabled : PrefKey<Boolean>(booleanPreferencesKey("subtitle_enabled"))
-        object OpenSubtitlesApiKey : PrefKey<String>(stringPreferencesKey("opensubtitles_api_key"))
+        object SubdlApiKey : PrefKey<String>(stringPreferencesKey("opensubtitles_api_key"))
         object SeekSensitivity : PrefKey<Float>(floatPreferencesKey("seek_sensitivity"))
         object ShowHiddenFiles : PrefKey<Boolean>(booleanPreferencesKey("show_hidden_files"))
         object UseSurfaceView : PrefKey<Boolean>(booleanPreferencesKey("use_surface_view"))
