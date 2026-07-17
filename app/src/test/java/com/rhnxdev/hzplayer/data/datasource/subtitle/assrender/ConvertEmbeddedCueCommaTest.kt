@@ -69,4 +69,11 @@ class ConvertEmbeddedCueCommaTest {
         assertEquals("-Subject to change.\\N-What?", text)
         assertFalse(text.startsWith(","))
     }
+
+    @Test
+    fun cue_with_html_tags_maps_to_ass_overrides() {
+        val raw = "1\n00:00:00,000 --> 00:00:01,000\n<i>Italic</i> and <b>Bold</b> and <u>Underline</u>\n"
+        val text = textOf(raw)
+        assertEquals("{\\i1}Italic{\\i0} and {\\b1}Bold{\\b0} and {\\u1}Underline{\\u0}", text)
+    }
 }
