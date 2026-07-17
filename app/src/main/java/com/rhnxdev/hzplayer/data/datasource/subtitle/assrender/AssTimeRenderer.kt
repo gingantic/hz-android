@@ -21,9 +21,4 @@ class AssTimeRenderer(
     override fun isReady(): Boolean = true
 
     override fun isEnded(): Boolean = true
-
-    override fun onPositionReset(positionUs: Long, joining: Boolean) {
-        super.onPositionReset(positionUs, joining)
-        handler.onSeek()
-    }
 }

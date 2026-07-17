@@ -284,6 +284,16 @@ class MediaPlayerHolder @Inject constructor(
                     )
                 }
 
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int
+                ) {
+                    if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                        assHandler.onSeek()
+                    }
+                }
+
                 override fun onPlaybackStateChanged(state: Int) {
                     val isNewPlayback = state == Player.STATE_BUFFERING || state == Player.STATE_READY
                     _playbackStateInfo.value = _playbackStateInfo.value.copy(
