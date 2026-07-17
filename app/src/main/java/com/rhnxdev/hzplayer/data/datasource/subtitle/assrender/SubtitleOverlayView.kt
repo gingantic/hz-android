@@ -36,7 +36,6 @@ class SubtitleOverlayView @JvmOverloads constructor(
                 }
             }
         } catch (e: Exception) {}
-        android.util.Log.d("assrender", "[updateBitmap] nonZeroPixels=$nonZeroPixels")
 
         synchronized(lock) {
             if (displayBitmap == null ||
@@ -101,7 +100,6 @@ class SubtitleOverlayView @JvmOverloads constructor(
 
             srcRect.set(0, 0, bmp.width, bmp.height)
             dstRect.set(dstLeft, dstTop, dstRight, dstBottom)
-            android.util.Log.d("assrender", "[onDraw] drawing bmp=${bmp.width}x${bmp.height} onto view=${width}x${height} dst=$dstRect")
             canvas.drawBitmap(bmp, srcRect, dstRect, paint)
         }
     }

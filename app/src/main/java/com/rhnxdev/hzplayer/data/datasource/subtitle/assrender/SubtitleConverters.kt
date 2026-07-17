@@ -80,11 +80,11 @@ object SubtitleConverters {
         appendLine("ScaledBorderAndShadow: yes")
         appendLine()
         appendLine("[V4+ Styles]")
-        appendLine("Format:Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding")
+        appendLine("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")
         appendLine(defaultStyleLine(playResY))
         appendLine()
         appendLine("[Events]")
-        appendLine("Format:ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text")
+        appendLine("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
     }.toByteArray(Charsets.UTF_8)
 
     // ── Embedded cue → Dialogue line ──
@@ -110,8 +110,21 @@ object SubtitleConverters {
      */
     fun convertEmbeddedCue(rawCue: ByteArray, isVtt: Boolean): ByteArray? {
         val text = String(rawCue, Charsets.UTF_8)
+        // ExoPlayer's SubripParser sometimes strips the `-->` timing line before
+        // delivery, leaving only the bare text lines. parseSrtCues would then find
+        // no timing and return empty → we'd drop the cue and fall back to the
+        // built-in renderer (which can render artifacts). Treat a timing-less,
+        // non-empty block as a zero-duration cue so libass still draws it.
         val cue = (if (isVtt) parseVttCues(text) else parseSrtCues(text))
-            .firstOrNull { it.text.isNotEmpty() } ?: return null
+            .firstOrNull { it.text.isNotEmpty() }
+            ?: run {
+                val bare = text.lineSequence()
+                    .map { it.trimEnd('\r') }
+                    .filter { it.isNotBlank() }
+                    .joinToString("\\N")
+                if (bare.isEmpty()) return null
+                Cue(0L, 0L, bare)
+            }
         val durationMs = (cue.endMs - cue.startMs).coerceAtLeast(0L)
         // MKV Dialogue: Start,Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text
         // Duration is H:MM:SS:CC (colon form → onSubtitleSample takes MKV branch).
@@ -150,7 +163,9 @@ object SubtitleConverters {
         val m = SRT_TIMING.find(block[timingIdx]) ?: return
         val start = hmsToMs(m.groupValues[1], m.groupValues[2])
         val end = hmsToMs(m.groupValues[3], m.groupValues[4])
-        val text = block.drop(timingIdx + 1).joinToString("\\N")
+        val text = block.drop(timingIdx + 1)
+            .map { it.trimEnd('\r') }
+            .joinToString("\\N")
         if (text.isNotEmpty()) out.add(Cue(start, end, text))
     }
 
@@ -170,7 +185,8 @@ object SubtitleConverters {
                     if (next.isBlank()) break
                     buffer.add(next)
                 }
-                val text = buffer.joinToString("\\N").let { mapVttTags(it) }
+                val text = buffer.map { it.trimEnd('\r') }
+                    .joinToString("\\N").let { mapVttTags(it) }
                 if (text.isNotEmpty()) cues.add(Cue(start, end, text))
                 buffer.clear()
             }
