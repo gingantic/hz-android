@@ -26,7 +26,7 @@ class ArchiveRepositoryImpl @Inject constructor() : ArchiveRepository {
                 )
             }
         }.onSuccess {
-            Log.d(TAG, "listEntries: $containerPath -> ${it.size} entries")
+            Log.i(TAG, "listEntries: $containerPath -> ${it.size} entries")
         }.onFailure {
             Log.e(TAG, "listEntries failed: $containerPath", it)
         }

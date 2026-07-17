@@ -564,7 +564,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun stop() {
-        android.util.Log.d(TAG, "stop() called")
+        android.util.Log.i(TAG, "stop() called")
         positionController.saveProgressNow()
         playerRepository.stop()
         _uiState.update { it.copy(
@@ -602,7 +602,7 @@ class PlayerViewModel @Inject constructor(
     fun onSeekBy(deltaMs: Long) = positionController.onSeekBy(deltaMs)
 
     fun playNetworkUri(uri: String, title: String, isVideo: Boolean, mimeType: String? = null) {
-        android.util.Log.d(TAG, "playNetworkUri: scheme=${uri.substringBefore("://")} uri=$uri")
+        android.util.Log.i(TAG, "playNetworkUri: scheme=${uri.substringBefore("://")} uri=$uri")
         playUri(uri, title, isVideo, mimeType = mimeType)
     }
 
@@ -631,7 +631,7 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        android.util.Log.d(TAG, "onCleared() called")
+        android.util.Log.i(TAG, "onCleared() called")
         positionController.onCleared()
         playerRepository.stop()
     }

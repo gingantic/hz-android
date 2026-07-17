@@ -57,11 +57,7 @@ class NetworkViewModel @Inject constructor(
 
     val search = SearchDelegate()
 
-    init {
-        if (com.rhnxdev.hzplayer.BuildConfig.DEBUG) {
-            android.util.Log.d("NetworkViewModel", "NetworkViewModel initialized")
-        }
-        observeServers(); observeHistory(); observeDiscovery()
+    init {        observeServers(); observeHistory(); observeDiscovery()
         viewModelScope.launch {
             val savedSort = networkRepository.getSortType(sortKey).first()
             val savedDir = networkRepository.getSortDirection(sortKey).first()
@@ -111,8 +107,7 @@ class NetworkViewModel @Inject constructor(
     // ── Discovery ──────────────────────────────────────────────────────
 
     fun onScanNetwork() {
-        android.util.Log.d("NetworkViewModel", "onScanNetwork: triggering startScan()")
-        serverDiscoverer.startScan()
+                serverDiscoverer.startScan()
     }
 
     fun onStopScan() {
@@ -507,3 +502,6 @@ class NetworkViewModel @Inject constructor(
         serverDiscoverer.cleanup()
     }
 }
+
+
+

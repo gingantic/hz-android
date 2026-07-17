@@ -133,7 +133,7 @@ class AssMatroskaExtractor(
             if (currentOutput is AssExtractorOutput) return
             val wrapped = AssExtractorOutput(currentOutput, handler)
             field.set(this, wrapped)
-            Log.d(TAG, "Wrapped extractorOutput via reflection")
+            
         } catch (e: Exception) {
             Log.e(TAG, "Failed to wrap extractorOutput", e)
         }

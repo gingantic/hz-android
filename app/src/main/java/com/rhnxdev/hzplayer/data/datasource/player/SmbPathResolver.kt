@@ -67,7 +67,6 @@ internal object SmbPathResolver {
         port: Int,
         decodedSegments: List<String>,
     ): SmbFile? {
-        android.util.Log.d(TAG, "resolve: host=$host, port=$port, segments=$decodedSegments")
         // Reject path-traversal segments: ".." would climb out of the share root and
         // could expose admin shares ($ shares); "." is a no-op that must never reach here.
         if (decodedSegments.any { it == ".." || it == "." }) {
@@ -75,12 +74,10 @@ internal object SmbPathResolver {
             return null
         }
         if (decodedSegments.isEmpty()) {
-            android.util.Log.d(TAG, "resolve: empty segments, returning host root smb://$host:$port/")
             return SmbFile("smb://$host:$port/", ctx)
         }
 
         val shareUrl = "smb://$host:$port/${Uri.encode(decodedSegments.first())}/"
-        android.util.Log.d(TAG, "resolve: shareUrl=$shareUrl")
         var current = SmbFile(shareUrl, ctx)
         for (segment in decodedSegments.drop(1)) {
             val children = try {
@@ -102,7 +99,6 @@ internal object SmbPathResolver {
             }
             current = match
         }
-        android.util.Log.d(TAG, "resolve success: ${current.url}")
         return current
     }
 
@@ -132,18 +128,15 @@ internal object SmbPathResolver {
         val ctxCache = listingCache.getOrPut(ctx) { java.util.concurrent.ConcurrentHashMap() }
         ctxCache[url]?.let {
             if (SystemClock.elapsedRealtime() - it.timestamp < TTL_MS) {
-                android.util.Log.d(TAG, "listChildren: cache hit for $url")
                 return it.byName
             }
         }
-        android.util.Log.d(TAG, "listChildren: cache miss, fetching listFiles for $url")
         try {
             val files = dir.listFiles()
             val map = files
                 ?.associateBy { it.name.trimEnd('/').lowercase() }
                 ?: emptyMap()
             ctxCache[url] = CachedListing(SystemClock.elapsedRealtime(), map)
-            android.util.Log.d(TAG, "listChildren: successfully fetched ${map.size} items for $url")
             return map
         } catch (e: SmbAuthException) {
             android.util.Log.w(TAG, "listChildren: Access denied listing children for $url (SmbAuthException: ${e.message})")

@@ -29,7 +29,6 @@ class ArchiveDataSource : DataSource {
             throw IOException("archive: cannot open entry $entry in $container")
         }
         totalLength = ArchiveNative.nativeLength(handle)
-        android.util.Log.d(TAG, "open: $entry len=$totalLength pos=${dataSpec.position} in $container")
         if (dataSpec.position > 0) {
             if (!ArchiveNative.nativeSeek(handle, dataSpec.position)) {
                 throw IOException("archive: seek to ${dataSpec.position} failed")
@@ -46,7 +45,6 @@ class ArchiveDataSource : DataSource {
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
         val n = ArchiveNative.nativeRead(handle, buffer, offset, length)
-        android.util.Log.d(TAG, "read: off=$offset len=$length -> n=$n")
         if (n < 0) throw IOException("archive: read error")
         if (n == 0) return C.RESULT_END_OF_INPUT
         return n

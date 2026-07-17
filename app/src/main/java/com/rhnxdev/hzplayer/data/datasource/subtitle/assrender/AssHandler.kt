@@ -243,17 +243,17 @@ class AssHandler @Inject constructor(
         val magic = if (data.size >= 4)
             data.take(4).joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
         else "(too short)"
-        Log.d(TAG, "[FONT] onFontAttachment: name='$name' size=${data.size}B magic=[$magic] initialized=$initialized")
+        
 
         synchronized(nativeLock) {
             if (!initialized || nativeHandle == 0L) {
                 pendingFonts.add(Pair(name, data))
-                Log.d(TAG, "[FONT] buffered (not yet initialized) — pendingFonts.size=${pendingFonts.size}")
+                
                 return
             }
             AssDirectBridge.nativeAddFont(nativeHandle, name, data)
             needsFontReload = true
-            Log.d(TAG, "[FONT] nativeAddFont done, needsFontReload=true")
+            
         }
     }
 
@@ -322,18 +322,18 @@ class AssHandler @Inject constructor(
     fun isExternalTrack(trackId: Int): Boolean = trackId in externalTrackIds
 
     private fun flushPendingFonts() {
-        Log.d(TAG, "[FONT] flushPendingFonts: count=${pendingFonts.size}")
+        
         if (pendingFonts.isEmpty()) {
-            Log.d(TAG, "[FONT] no pending fonts to flush")
+            
             return
         }
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 pendingFonts.forEachIndexed { idx, (name, data) ->
-                    Log.d(TAG, "[FONT]   flushing[$idx]: '$name' ${data.size}B")
+                    
                     AssDirectBridge.nativeAddFont(nativeHandle, name, data)
                 }
-                Log.d(TAG, "[FONT] flushed ${pendingFonts.size} fonts → scheduling reload")
+                
                 pendingFonts.clear()
                 needsFontReload = true
             }
@@ -393,7 +393,7 @@ class AssHandler @Inject constructor(
     }
 
     fun selectTrackByFormat(format: Format) {
-        Log.d(TAG, "selectTrackByFormat: format=$format, initialized=$initialized")
+        
         if (!initialized) {
             pendingFormatToSelect = format
             return
@@ -463,7 +463,7 @@ class AssHandler @Inject constructor(
         }
 
         clearOverlay()
-        Log.d(TAG, "No matching ASS track for lang=$targetLang, label=$targetLabel")
+        
     }
 
     private fun startRenderLoop() {
@@ -543,10 +543,10 @@ class AssHandler @Inject constructor(
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 if (needsFontReload) {
-                    Log.d(TAG, "[FONT] renderFrame: triggering deferred font reload")
+                    
                     needsFontReload = false
                     AssDirectBridge.nativeReloadFonts(nativeHandle)
-                    Log.d(TAG, "[FONT] font reload complete")
+                    
                 }
                 hasContent = AssDirectBridge.nativeRender(nativeHandle, renderPosMs, bitmap)
             }
@@ -560,7 +560,7 @@ class AssHandler @Inject constructor(
             overlayView.updateBitmap(bitmap)
         } else {
             if (positionMs % 2000 < 100) { // ~every 2s
-                Log.d(TAG, "[RENDER] no content at posMs=$positionMs initialized=$initialized activeTrackId=$activeTrackId hasLoaded=$hasLoadedFirstTime nEvents=${trackEvents[activeTrackId]?.size}")
+                
             }
             overlayView.clear()
         }
@@ -731,8 +731,8 @@ class AssHandler @Inject constructor(
             fontconfigDir.mkdirs()
             val cacheDir = File(context.cacheDir, "fontconfig")
             cacheDir.mkdirs()
-            Log.d(TAG, "[INIT] fontconfig dir: ${fontconfigDir.absolutePath}  exists=${fontconfigDir.exists()}")
-            Log.d(TAG, "[INIT] fontconfig cache: ${cacheDir.absolutePath}  exists=${cacheDir.exists()}")
+            
+            
 
             val confFile = File(fontconfigDir, "fonts.conf")
             confFile.writeText(
@@ -747,10 +747,10 @@ class AssHandler @Inject constructor(
      </match>
  </fontconfig>""",
             )
-            Log.d(TAG, "[INIT] fonts.conf written: ${confFile.absolutePath} (${confFile.length()}B)")
+            
 
             Os.setenv("FONTCONFIG_PATH", fontconfigDir.absolutePath, true)
-            Log.d(TAG, "[INIT] FONTCONFIG_PATH set to ${fontconfigDir.absolutePath}")
+            
         } catch (e: Exception) {
             Log.e(TAG, "[INIT] setupFontconfig FAILED", e)
         }
@@ -770,6 +770,6 @@ class AssHandler @Inject constructor(
             trackFormats.clear()
         }
         mainHandler.post { overlayView.clear() }
-        Log.d(TAG, "Released")
+        
     }
 }

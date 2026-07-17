@@ -27,10 +27,8 @@ class SmbBrowserClient(
         // Pre-flight: try to list the share root. If auth fails, evict from pool so
         // next attempt gets a fresh context instead of a cached bad one.
         val url = "smb://$host:${if (port > 0) port else 445}/"
-        android.util.Log.d(TAG, "connect: pre-flight check listing shares at $url")
         try {
             val list = SmbFile(url, ctx).listFiles()
-            android.util.Log.d(TAG, "connect: pre-flight check successful, listed ${list?.size ?: 0} shares")
         } catch (e: SmbAuthException) {
             android.util.Log.e(TAG, "connect: authentication failure to $url", e)
             ConnectionPool.returnSmbBrowser(host, port, username, password)
@@ -49,7 +47,6 @@ class SmbBrowserClient(
                 android.util.Log.w(TAG, "listDirectory: path normalization failed for '$path'")
                 return@withContext emptyList()
             }
-            android.util.Log.d(TAG, "listDirectory: listing files for normalized path '$normalized'")
             val ctx = ConnectionPool.borrowSmbBrowser(host, port, username, password)
             val isRoot = normalized.replace("/", "").isEmpty()
             try {
@@ -58,9 +55,7 @@ class SmbBrowserClient(
                     android.util.Log.w(TAG, "listDirectory: failed to resolve directory for normalized='$normalized'")
                     return@withContext emptyList()
                 }
-                android.util.Log.d(TAG, "listDirectory: resolved directory url: ${smbDir.url}")
                 val files = smbDir.listFiles()
-                android.util.Log.d(TAG, "listDirectory: listed ${files?.size ?: 0} files")
                 val items = files
                     .filter { file ->
                         val cleanName = file.name.trimEnd('/')
@@ -82,7 +77,6 @@ class SmbBrowserClient(
                         )
                     }
                     .sortedRemote()
-                android.util.Log.d(TAG, "listDirectory: mapping completed, returning ${items.size} items")
                 items
             } catch (e: SmbAuthException) {
                 android.util.Log.w(TAG, "listDirectory: Access denied browsing directory '$normalized' (SmbAuthException: ${e.message})")
@@ -94,7 +88,6 @@ class SmbBrowserClient(
         }
 
     override suspend fun disconnect() = withContext(Dispatchers.IO) {
-        android.util.Log.d(TAG, "disconnect: returning smb browser connection for $host:$port")
         ConnectionPool.returnSmbBrowser(host, port, username, password)
     }
 

@@ -33,8 +33,6 @@ class WebDavDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
     override fun open(dataSpec: DataSpec): Long {
         uriValue = dataSpec.uri
         transferInitializing(dataSpec)
-        android.util.Log.d(TAG, "open: scheme=${dataSpec.uri.scheme} host=${dataSpec.uri.host} " +
-            "path=${dataSpec.uri.path} position=${dataSpec.position} length=${dataSpec.length}")
 
         val scheme = dataSpec.uri.scheme?.lowercase() ?: throw IOException("No scheme in URI")
         val isTls = scheme == "webdavs"
@@ -140,7 +138,6 @@ class WebDavDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         }
 
         transferStarted(dataSpec)
-        android.util.Log.d(TAG, "open OK: remaining=$bytesRemaining")
         return bytesRemaining
     }
 
