@@ -526,7 +526,6 @@ class AssHandler @Inject constructor(
         }
 
         if (hasContent) {
-            Log.d(TAG, "[RENDER] content at posMs=$positionMs trackId=$activeTrackId nEvents=${trackEvents[activeTrackId]?.size}")
             overlayView.updateBitmap(bitmap)
         } else {
             if (positionMs % 2000 < 100) { // ~every 2s

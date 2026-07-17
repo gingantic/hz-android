@@ -161,7 +161,7 @@ int ass_direct_load_header(AssDirectContext *ctx,
 
     if (!ctx->ass_track->event_format) {
         LOGW("[TRACK] event_format is NULL! Setting default MKV format.");
-        ctx->ass_track->event_format = strdup("ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text");
+        ctx->ass_track->event_format = strdup("Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text");
     }
 
     ASS_Style *hz_style = NULL;
