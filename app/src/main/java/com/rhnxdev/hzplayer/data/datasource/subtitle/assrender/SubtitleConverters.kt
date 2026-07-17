@@ -121,7 +121,7 @@ object SubtitleConverters {
                 val bare = text.lineSequence()
                     .map { it.trimEnd('\r') }
                     .filter { it.isNotBlank() }
-                    .joinToString("\\N")
+                    .joinToString("\\N").let { mapHtmlTags(it) }
                 if (bare.isEmpty()) return null
                 Cue(0L, 0L, bare)
             }
@@ -165,7 +165,7 @@ object SubtitleConverters {
         val end = hmsToMs(m.groupValues[3], m.groupValues[4])
         val text = block.drop(timingIdx + 1)
             .map { it.trimEnd('\r') }
-            .joinToString("\\N")
+            .joinToString("\\N").let { mapHtmlTags(it) }
         if (text.isNotEmpty()) out.add(Cue(start, end, text))
     }
 
@@ -186,7 +186,7 @@ object SubtitleConverters {
                     buffer.add(next)
                 }
                 val text = buffer.map { it.trimEnd('\r') }
-                    .joinToString("\\N").let { mapVttTags(it) }
+                    .joinToString("\\N").let { mapHtmlTags(it) }
                 if (text.isNotEmpty()) cues.add(Cue(start, end, text))
                 buffer.clear()
             }
@@ -251,7 +251,7 @@ object SubtitleConverters {
     }
 
     /** Map a handful of HTML-ish inline tags to ASS override codes. */
-    private fun mapVttTags(text: String): String = text
+    private fun mapHtmlTags(text: String): String = text
         .replace("<i>", "{\\i1}")
         .replace("</i>", "{\\i0}")
         .replace("<b>", "{\\b1}")

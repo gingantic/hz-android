@@ -638,6 +638,13 @@ class AssHandler @Inject constructor(
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 AssDirectBridge.nativeFlush(nativeHandle)
+                val events = trackEvents[activeTrackId]
+                if (events != null) {
+                    events.forEachIndexed { idx, (startMs, durationMs, bodyFields) ->
+                        val chunkBytes = "$idx,$bodyFields".toByteArray(Charsets.UTF_8)
+                        AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
+                    }
+                }
             }
         }
         mainHandler.post { overlayView.clear() }
