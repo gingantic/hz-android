@@ -1,7 +1,6 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.net.Uri
-import android.os.SystemClock
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
 import jcifs.smb.SmbException
@@ -37,11 +36,10 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
     }
 
     override fun open(dataSpec: DataSpec): Long {
-        val openStart = SystemClock.elapsedRealtime()
+        
         uriValue = dataSpec.uri
         closed = false
         transferInitializing(dataSpec)
-        android.util.Log.d(TAG, "open: uri=${safeUri(dataSpec.uri)} pos=${dataSpec.position} len=${dataSpec.length}")
 
         try {
             val uriStr = dataSpec.uri
@@ -82,8 +80,7 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
                 else -> fileLength - dataSpec.position
             }
 
-            val elapsed = SystemClock.elapsedRealtime() - openStart
-            android.util.Log.d(TAG, "open OK: fileLength=$fileLength remaining=$bytesRemaining in ${elapsed}ms")
+            
             transferStarted(dataSpec)
             return bytesRemaining
         } catch (e: Exception) {
@@ -203,3 +200,4 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         fun clearResolvedFileCache() = resolvedFileCache.clear()
     }
 }
+

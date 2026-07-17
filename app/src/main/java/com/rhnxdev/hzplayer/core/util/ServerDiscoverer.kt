@@ -439,18 +439,14 @@ class ServerDiscoverer @Inject constructor(
         }
 
         override fun onDiscoveryStarted(serviceType: String) {
-            Log.v(TAG, "onDiscoveryStarted: $serviceType")
         }
 
         override fun onDiscoveryStopped(serviceType: String) {
-            Log.v(TAG, "onDiscoveryStopped: $serviceType")
         }
 
         override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-            Log.v(TAG, "onServiceFound: name=${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
             val name = serviceInfo.serviceName
             if (name.isBlank() || discoveredNames.contains(name)) {
-                Log.d(TAG, "onServiceFound: already found or empty: $name, skip")
                 return
             }
             discoveredNames.add(name)
@@ -469,7 +465,6 @@ class ServerDiscoverer @Inject constructor(
 
         override fun onServiceLost(serviceInfo: NsdServiceInfo) {
             val name = serviceInfo.serviceName
-            Log.v(TAG, "onServiceLost: $name")
             discoveredNames.remove(name)
             
             // Remove from uiState
@@ -511,8 +506,6 @@ class ServerDiscoverer @Inject constructor(
         }
         val port = info.port
         val type = info.serviceType ?: ""
-
-        Log.d(TAG, "onServiceResolved: name=$name host=$hostAddress port=$port type=$type")
 
         if (hostAddress.isNullOrEmpty()) {
             Log.w(TAG, "onServiceResolved: no IP address for $name")

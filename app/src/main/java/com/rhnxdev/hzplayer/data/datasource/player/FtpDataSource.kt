@@ -25,7 +25,6 @@ class FtpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
     override fun open(dataSpec: DataSpec): Long {
         uriValue = dataSpec.uri
         transferInitializing(dataSpec)
-        android.util.Log.d(TAG, "open: uri=${dataSpec.uri} position=${dataSpec.position} length=${dataSpec.length}")
 
         val userInfo = dataSpec.uri.userInfo ?: ""
         val parts = userInfo.split(":", limit = 2)

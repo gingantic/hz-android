@@ -356,7 +356,7 @@ internal object ConnectionPool {
         } else {
             base.withGuestCrendentials()
         }
-        android.util.Log.d("ConnectionPool", "SMB new context built for key=$k: host=$host, user=$user, minVersion=SMB202, maxVersion=SMB311, responseTimeout=$responseTimeout, soTimeout=$soTimeout, signingEnforced=false")
+        android.util.Log.d("ConnectionPool", "SMB new context built for key=$k")
         return ctx
     }
 
@@ -381,7 +381,7 @@ internal object ConnectionPool {
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .build()
-                .also { android.util.Log.d("ConnectionPool", "WebDAV browser new $k") }
+                .also { }
         }
     }
 

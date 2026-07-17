@@ -505,7 +505,7 @@ private class ProtocolRoutingDataSource(
             else -> defaultFactory.createDataSource()
         }
         delegate = resolved
-        android.util.Log.d("ProtocolRoutingDataSource", "routing scheme=${dataSpec.uri.scheme} -> ${resolved::class.java.simpleName}")
+        
         return resolved.open(dataSpec)
     }
 
