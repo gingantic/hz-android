@@ -44,7 +44,7 @@ class AssHandler @Inject constructor(
     private val trackFormats = mutableMapOf<Int, Format>()
     private val trackHeaders = mutableMapOf<Int, ByteArray>()
     private val trackEvents =
-        ConcurrentHashMap<Int, CopyOnWriteArrayList<Triple<Long, Long, ByteArray>>>()
+        ConcurrentHashMap<Int, CopyOnWriteArrayList<Triple<Long, Long, String>>>()
     private var activeTrackId: Int = -1
 
     /**
@@ -180,7 +180,7 @@ class AssHandler @Inject constructor(
 
         val startMs: Long
         val durationMs: Long
-        val chunkBody: String // ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text
+        val bodyFields: String // Layer,Style,Name,ML,MR,MV,Effect,Text
 
         if (isStandardAss) {
             // Standard ASS: Layer,Start,End,Style,Name,ML,MR,MV,Effect,Text  (10 fields)
@@ -192,8 +192,7 @@ class AssHandler @Inject constructor(
             startMs    = parseStandardAssTimeMs(f[1].trim())
             durationMs = (parseStandardAssTimeMs(f[2].trim()) - startMs).coerceAtLeast(0L)
             
-            val readOrder = trackEvents[trackId]?.size ?: 0
-            chunkBody = "$readOrder,${f[0].trim()},${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
+            bodyFields = "${f[0].trim()},${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
                         "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9]}"
         } else {
             // MKV block: Start(0),Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text (11 fields)
@@ -205,16 +204,30 @@ class AssHandler @Inject constructor(
             durationMs = parseMkvAssTimeMs(f[1].trim())
             startMs    = timeUs / 1000
             
-            val readOrder = trackEvents[trackId]?.size ?: 0
-            chunkBody = "$readOrder,${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
+            bodyFields = "${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
                         "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9].trim()},${f[10]}"
         }
 
-        val chunkBytes = chunkBody.toByteArray(Charsets.UTF_8)
+        val events = trackEvents.getOrPut(trackId) { CopyOnWriteArrayList() }
+        var existingIdx = -1
+        // Scan backwards since seek-redelivered cues are likely near the end of the list
+        for (i in events.indices.reversed()) {
+            val evt = events[i]
+            if (evt.first == startMs && evt.second == durationMs && evt.third == bodyFields) {
+                existingIdx = i
+                break
+            }
+        }
 
+        val readOrder: Int
+        if (existingIdx != -1) {
+            readOrder = existingIdx
+        } else {
+            events.add(Triple(startMs, durationMs, bodyFields))
+            readOrder = events.size - 1
+        }
 
-        trackEvents.getOrPut(trackId) { CopyOnWriteArrayList() }
-            .add(Triple(startMs, durationMs, chunkBytes))
+        val chunkBytes = "$readOrder,$bodyFields".toByteArray(Charsets.UTF_8)
 
         if (trackId == activeTrackId) {
             synchronized(nativeLock) {
@@ -368,7 +381,8 @@ class AssHandler @Inject constructor(
                 }
                 val events = trackEvents[trackId]
                 if (events != null) {
-                    for ((startMs, durationMs, chunkBytes) in events) {
+                    events.forEachIndexed { idx, (startMs, durationMs, bodyFields) ->
+                        val chunkBytes = "$idx,$bodyFields".toByteArray(Charsets.UTF_8)
                         AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
                     }
                 }
@@ -611,6 +625,21 @@ class AssHandler @Inject constructor(
             }
         }
         stopRenderLoop()
+        mainHandler.post { overlayView.clear() }
+    }
+
+    /**
+     * Called by AssTimeRenderer when a seek occurs, ensuring rendering buffers
+     * are cleared and libass is flushed immediately.
+     */
+    fun onSeek() {
+        lastPositionUs = 0L
+        lastPositionRealtimeUs = 0L
+        synchronized(nativeLock) {
+            if (nativeHandle != 0L) {
+                AssDirectBridge.nativeFlush(nativeHandle)
+            }
+        }
         mainHandler.post { overlayView.clear() }
     }
 
