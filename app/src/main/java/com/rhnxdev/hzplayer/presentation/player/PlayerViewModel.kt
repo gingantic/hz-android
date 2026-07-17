@@ -112,13 +112,27 @@ class PlayerViewModel @Inject constructor(
         if (tracks.isEmpty()) return
 
         subtitlePreferenceAppliedForUri = currentUri
-        val currentSelected = _uiState.value.selectedSubtitleTrack
+        // Query the engine live: a neighbor subtitle auto-loaded off-thread may
+        // already be the active (libass) track before the UI state reflects it.
+        // Reading stale _uiState here would wrongly re-select index 0 (an empty
+        // embedded track), wiping the auto-detected subtitle.
+        val currentSelected = runCatching { getActiveEngine().getSelectedSubtitleTrack() }
+            .getOrDefault(_uiState.value.selectedSubtitleTrack)
 
         android.util.Log.i("HzSubPref", "Applying subtitle preference: currentSelected=$currentSelected tracks=$tracks")
 
-        // Auto-enable by selecting the first track if none is already chosen.
+        // Auto-enable when nothing is chosen. Prefer an auto-detected external
+        // (libass) track over an embedded one: neighbor subs sort last, so the
+        // external index is preferred so its content actually shows instead of an
+        // empty embedded track at index 0.
         if (currentSelected == -1) {
-            selectSubtitleTrack(0)
+            val mimes = runCatching { getActiveEngine().getSubtitleTrackMimeTypes() }
+                .getOrDefault(emptyList())
+            val externalIdx = mimes.indexOfLast { isLibassSubtitleMimeType(it?.lowercase()) }
+            selectSubtitleTrack(if (externalIdx >= 0) externalIdx else 0)
+        } else if (currentSelected != _uiState.value.selectedSubtitleTrack) {
+            // Sync UI to the already-active (auto-loaded) track.
+            _uiState.update { it.copy(selectedSubtitleTrack = currentSelected) }
         }
     }
 

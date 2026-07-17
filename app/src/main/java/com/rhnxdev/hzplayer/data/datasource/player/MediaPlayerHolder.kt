@@ -225,9 +225,17 @@ class MediaPlayerHolder @Inject constructor(
         // re-pointed at the new player instead of the now-released one.
         onPlayerReplacedListener?.invoke(newPlayer)
         assHandler.player = newPlayer
-        assHandler.reset()
         android.util.Log.d(TAG, "ExoPlayer rebuilt for decoderMode=$decoderMode")
     }
+
+    /** Reset the subtitle handler state and prepare for playing [uri]. */
+    fun prepareForUri(uri: String) {
+        lastTransitionUri = uri
+        assHandler.reset()
+    }
+
+    /** Last media item URI we reset [assHandler] for, to avoid redundant resets. */
+    private var lastTransitionUri: String? = null
 
     /** Set when the underlying [ExoPlayer] is swapped (decoder rebuild). */
     private var onPlayerReplacedListener: ((ExoPlayer) -> Unit)? = null
@@ -272,7 +280,14 @@ class MediaPlayerHolder @Inject constructor(
         target.addListener(
             object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    assHandler.reset()
+                    val newUri = mediaItem?.localConfiguration?.uri?.toString()
+                    // ExoPlayer fires this on initial prepare too; resetting then wipes an
+                    // external subtitle the engine just loaded. Only reset on a genuinely
+                    // different item.
+                    if (newUri != null && newUri != lastTransitionUri) {
+                        lastTransitionUri = newUri
+                        assHandler.reset()
+                    }
                     val metadata = mediaItem?.mediaMetadata
                     val uri = mediaItem?.localConfiguration?.uri?.toString()
                     val drmActive = mediaItem?.localConfiguration?.drmConfiguration != null
@@ -390,7 +405,7 @@ class MediaPlayerHolder @Inject constructor(
 
                 if (selectedAssFormat != null) {
                     assHandler.selectTrackByFormat(selectedAssFormat)
-                } else {
+                } else if (assHandler.getActiveExternalTrackIndex() < 0) {
                     assHandler.clearOverlay()
                 }
             }
@@ -427,6 +442,7 @@ class MediaPlayerHolder @Inject constructor(
     fun release() {
         _audioSessionId.value = 0
         player.release()
+        assHandler.reset()
     }
 
     /**

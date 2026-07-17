@@ -488,9 +488,18 @@ class AssHandler @Inject constructor(
         choreographerCallback = null
     }
 
+    private var renderDiagLogged = false
+
     private fun renderFrame() {
         if (!initialized || nativeHandle == 0L) return
-        val bitmap = renderBitmap ?: return
+        val bitmap = renderBitmap
+        if (bitmap == null) {
+            if (!renderDiagLogged) {
+                Log.w(TAG, "[RENDER] bitmap NULL — abort (initialized=$initialized handle=$nativeHandle video=${videoWidth}x$videoHeight)")
+                renderDiagLogged = true
+            }
+            return
+        }
 
         val p = player
         val playbackState = p?.playbackState ?: androidx.media3.common.Player.STATE_IDLE
@@ -499,6 +508,10 @@ class AssHandler @Inject constructor(
         }
 
         if (!hasLoadedFirstTime) {
+            if (!renderDiagLogged) {
+                Log.w(TAG, "[RENDER] not loaded-first-time — abort (playbackState=$playbackState playerNull=${p == null} activeTrackId=$activeTrackId)")
+                renderDiagLogged = true
+            }
             overlayView.clear()
             return
         }
@@ -540,6 +553,10 @@ class AssHandler @Inject constructor(
         }
 
         if (hasContent) {
+            if (!renderDiagLogged) {
+                Log.i(TAG, "[RENDER] FIRST content rendered at posMs=$positionMs (was waiting on READY)")
+                renderDiagLogged = true
+            }
             overlayView.updateBitmap(bitmap)
         } else {
             if (positionMs % 2000 < 100) { // ~every 2s
@@ -638,11 +655,23 @@ class AssHandler @Inject constructor(
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 AssDirectBridge.nativeFlush(nativeHandle)
-                val events = trackEvents[activeTrackId]
-                if (events != null) {
-                    events.forEachIndexed { idx, (startMs, durationMs, bodyFields) ->
-                        val chunkBytes = "$idx,$bodyFields".toByteArray(Charsets.UTF_8)
-                        AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
+                // External tracks carry the whole ASS document in their stored bytes
+                // (no per-event chunks in trackEvents). Reloading the header after a
+                // flush re-populates all cues; using the empty trackEvents map would
+                // wipe the subtitle after every seek.
+                val externalData = if (isExternalTrack(activeTrackId)) {
+                    val idx = externalTrackIds.indexOf(activeTrackId)
+                    if (idx >= 0) externalTrackData[idx] else null
+                } else null
+                if (externalData != null) {
+                    AssDirectBridge.nativeLoadHeader(nativeHandle, externalData)
+                } else {
+                    val events = trackEvents[activeTrackId]
+                    if (events != null) {
+                        events.forEachIndexed { idx, (startMs, durationMs, bodyFields) ->
+                            val chunkBytes = "$idx,$bodyFields".toByteArray(Charsets.UTF_8)
+                            AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
+                        }
                     }
                 }
             }

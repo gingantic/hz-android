@@ -24,6 +24,7 @@ import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
+import com.rhnxdev.hzplayer.core.util.isNeighborSubtitleName
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -103,6 +104,7 @@ class ExoPlayerEngine @Inject constructor(
     private val subtitleDiscoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?, resumePositionMs: Long) {
+        playerHolder.prepareForUri(uri)
         currentPlaylist = null
         // Set the current-uri fields up front: addExternalSubtitle reads them on
         // the main thread and would otherwise see null during the (async) discovery
@@ -129,9 +131,10 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
         if (items.isEmpty()) return
+        val startUri = items[startIndex].first
+        playerHolder.prepareForUri(startUri)
         currentPlaylist = null
         subtitleConfigs.clear()
-        val startUri = items[startIndex].first
         val startTitle = items[startIndex].second
         // Set before the async discovery window so addExternalSubtitle (main-thread)
         // never sees a null current uri.
@@ -161,9 +164,10 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
         if (items.isEmpty()) return
+        val startItem = items[startIndex]
+        playerHolder.prepareForUri(startItem.uri)
         currentPlaylist = null
         subtitleConfigs.clear()
-        val startItem = items[startIndex]
         // Set before the async discovery window so addExternalSubtitle (main-thread)
         // never sees a null current uri.
         currentMediaUri = startItem.uri
@@ -760,13 +764,40 @@ class ExoPlayerEngine @Inject constructor(
         } catch (_: Exception) {
             emptyList<Uri>()
         }
-        return subUris.map { subUri ->
-            MediaItem.SubtitleConfiguration.Builder(subUri)
-                .setMimeType(inferSubtitleMimeType(subUri))
-                .setLanguage("und")
-                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                .build()
+
+        val exoConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
+        for (subUri in subUris) {
+            val ext = (subUri.path ?: "").substringAfterLast('.').lowercase()
+            val mimeType = inferSubtitleMimeType(subUri)
+            val displayName = subUri.lastPathSegment ?: subUri.toString()
+
+            if (ext == "ass" || ext == "ssa" || SubtitleConverters.isConvertibleSubtitleFormat(mimeType)) {
+                val data = readSubtitleUriBytes(subUri)
+                if (data != null) {
+                    val assBytes = if (ext == "ass" || ext == "ssa") {
+                        data
+                    } else {
+                        SubtitleConverters.convertToAss(
+                            data, mimeType,
+                            assHandler.getVideoWidth(), assHandler.getVideoHeight()
+                        )
+                    }
+                    if (assBytes != null) {
+                        withContext(Dispatchers.Main) {
+                            assHandler.loadExternalTrack(assBytes, displayName)
+                        }
+                    }
+                }
+            } else {
+                val config = MediaItem.SubtitleConfiguration.Builder(subUri)
+                    .setMimeType(mimeType)
+                    .setLanguage("und")
+                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                    .build()
+                exoConfigs.add(config)
+            }
         }
+        return exoConfigs
     }
 
     // â”€â”€ Debug stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -903,12 +934,14 @@ class ExoPlayerEngine @Inject constructor(
     private fun findNeighborSubtitleFiles(videoUri: String): List<Uri> {
         val androidUri = Uri.parse(videoUri)
         val scheme = androidUri.scheme?.lowercase() ?: "file"
-        return when (scheme) {
+        val found = when (scheme) {
             "file" -> findLocalNeighborSubtitles(androidUri)
             "smb" -> findSmbNeighborSubtitles(androidUri)
             "ftp", "sftp", "webdav", "webdavs" -> findRemoteExtensionSwapSubtitles(androidUri)
             else -> emptyList()
         }
+        Log.i(TAG, "[SUBDISC] scheme=$scheme found=${found.size} subs=${found.map { it.lastPathSegment }}")
+        return found
     }
 
     private fun findLocalNeighborSubtitles(androidUri: Uri): List<Uri> {
@@ -916,14 +949,51 @@ class ExoPlayerEngine @Inject constructor(
         val videoFile = File(videoPath)
         val parentDir = videoFile.parentFile ?: return emptyList()
         val baseName = videoFile.nameWithoutExtension
-        return parentDir.listFiles()
-            ?.filter { file ->
-                val ext = file.extension.lowercase()
-                file.nameWithoutExtension.equals(baseName, ignoreCase = true) &&
-                    SUBTITLE_EXTENSIONS.contains(ext)
-            }
+
+        // Direct filesystem scan — works when the app has full storage access.
+        val direct = parentDir.listFiles()
+            ?.filter { file -> isNeighborSubtitleName(file.name, baseName) }
             ?.map { Uri.fromFile(it) }
-            ?: emptyList()
+            .orEmpty()
+        if (direct.isNotEmpty()) return direct
+
+        // Fallback: under scoped storage (Android 11+) File.listFiles() on shared
+        // storage returns null/empty without MANAGE_EXTERNAL_STORAGE. Query
+        // MediaStore Files by parent path instead.
+        return findLocalSubtitlesViaMediaStore(parentDir.absolutePath, baseName)
+    }
+
+    private fun findLocalSubtitlesViaMediaStore(parentPath: String, baseName: String): List<Uri> {
+        return try {
+            val collection = android.provider.MediaStore.Files.getContentUri("external")
+            val projection = arrayOf(
+                android.provider.MediaStore.Files.FileColumns._ID,
+                android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME,
+                android.provider.MediaStore.Files.FileColumns.DATA,
+            )
+            // Match rows whose path starts with the parent dir. Filter names in code
+            // so the language-tag matcher stays the single source of truth.
+            val selection = "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE ?"
+            val args = arrayOf("$parentPath/%")
+            val out = mutableListOf<Uri>()
+            appContext.contentResolver.query(collection, projection, selection, args, null)?.use { c ->
+                val idCol = c.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns._ID)
+                val dataCol = c.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATA)
+                while (c.moveToNext()) {
+                    val data = c.getString(dataCol) ?: continue
+                    val name = data.substringAfterLast('/')
+                    // Skip nested subdirectories: only direct children of parentPath.
+                    if (data.substringBeforeLast('/') != parentPath) continue
+                    if (isNeighborSubtitleName(name, baseName)) {
+                        out.add(Uri.fromFile(File(data)))
+                    }
+                }
+            }
+            out
+        } catch (e: Exception) {
+            Log.w(TAG, "MediaStore subtitle discovery failed for $parentPath", e)
+            emptyList()
+        }
     }
 
     private fun findSmbNeighborSubtitles(androidUri: Uri): List<Uri> {
@@ -954,12 +1024,7 @@ class ExoPlayerEngine @Inject constructor(
             val siblings = dir.listFiles()?.toList() ?: return emptyList()
 
             siblings
-                .filter { file ->
-                    val name = file.name.trimEnd('/')
-                    val ext = name.substringAfterLast('.', "").lowercase()
-                    name.substringBeforeLast('.').equals(baseName, ignoreCase = true) &&
-                        SUBTITLE_EXTENSIONS.contains(ext)
-                }
+                .filter { file -> isNeighborSubtitleName(file.name.trimEnd('/'), baseName) }
                 .map { file ->
                     // Rebuild the sibling URI from the *original* androidUri, swapping
                     // only the last path segment. This preserves the existing encoding

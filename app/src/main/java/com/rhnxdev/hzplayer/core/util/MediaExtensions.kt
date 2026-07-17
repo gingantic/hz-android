@@ -34,6 +34,19 @@ val BINARY_EXTENSIONS = setOf(
     "sh", "bash", "zsh",
 )
 
+/**
+ * True when [subtitleName] is a neighbor subtitle of the video whose base name is
+ * [videoBaseName]. Matches an exact base ("movie.srt" for "movie.mkv") AND
+ * language-tagged variants ("movie.en.srt", "movie.eng.forced.ass"). Case-insensitive.
+ */
+fun isNeighborSubtitleName(subtitleName: String, videoBaseName: String): Boolean {
+    val ext = subtitleName.substringAfterLast('.', "").lowercase()
+    if (ext !in SUBTITLE_EXTENSIONS) return false
+    val subBase = subtitleName.substringBeforeLast('.')
+    return subBase.equals(videoBaseName, ignoreCase = true) ||
+        subBase.startsWith("$videoBaseName.", ignoreCase = true)
+}
+
 fun isVideoExtension(name: String): Boolean {
     val ext = name.substringAfterLast('.', "").substringBefore('?').lowercase()
     return ext in VIDEO_EXTENSIONS
