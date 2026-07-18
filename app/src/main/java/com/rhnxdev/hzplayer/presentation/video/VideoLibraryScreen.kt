@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -47,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
+import com.rhnxdev.hzplayer.core.components.FileItemCard
 import com.rhnxdev.hzplayer.core.components.MediaCard
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaErrorState
@@ -77,6 +77,14 @@ fun VideoLibraryScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
+
+    val folderTitle = uiState.selectedFolder?.let { key ->
+        if (key == VideoLibraryViewModel.RECENT_KEY) {
+            stringResource(R.string.cat_recent)
+        } else {
+            key
+        }
+    }
 
     var hasPermission by remember {
         mutableStateOf(com.rhnxdev.hzplayer.MainActivity.isMediaPermissionGranted(context))
@@ -112,7 +120,8 @@ fun VideoLibraryScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         HzPlayerSearchableScaffold(
-            title = stringResource(R.string.app_name),
+            title = folderTitle ?: stringResource(R.string.app_name),
+            onNavigateUp = if (uiState.selectedFolder != null && !isSearchActive) ({ viewModel.onNavigateUp() }) else null,
             isSearchActive = isSearchActive,
             searchQuery = searchQuery,
             onSearchToggle = viewModel::onSearchToggle,
@@ -241,23 +250,35 @@ fun VideoLibraryScreen(
                                     searchQuery = searchQuery,
                                 )
                             }
-                            uiState.viewMode == ViewMode.GRID -> {
-                                GridContent(
-                                    categories = uiState.categories,
+                            uiState.selectedFolder != null -> {
+                                val drillVideos = remember(uiState.selectedFolder, uiState.categories, uiState.recentVideos) {
+                                    when (uiState.selectedFolder) {
+                                        VideoLibraryViewModel.RECENT_KEY -> uiState.recentVideos
+                                        else -> uiState.categories.firstOrNull { it.title == uiState.selectedFolder }?.videos ?: emptyList()
+                                    }
+                                }
+                                SearchResultsContent(
+                                    videos = drillVideos,
+                                    viewMode = uiState.viewMode,
                                     onVideoClicked = { v ->
                                         viewModel.onVideoClicked(v)
                                         onVideoClicked(v.id)
                                     },
+                                    searchQuery = "",
                                 )
                             }
                             else -> {
-                                ListContent(
-                                    videos = uiState.allVideos,
-                                    onVideoClicked = { v ->
-                                        viewModel.onVideoClicked(v)
-                                        onVideoClicked(v.id)
-                                    },
-                                )
+                                if (uiState.viewMode == ViewMode.GRID) {
+                                    FolderGridContent(
+                                        categories = uiState.categories,
+                                        onFolderClicked = viewModel::onFolderClicked,
+                                    )
+                                } else {
+                                    FolderListContent(
+                                        categories = uiState.categories,
+                                        onFolderClicked = viewModel::onFolderClicked,
+                                    )
+                                }
                             }
                         }
                     }
@@ -279,86 +300,83 @@ fun VideoLibraryScreen(
 }
 
 @Composable
-private fun GridContent(
+private fun FolderListContent(
     categories: List<VideoCategory>,
-    onVideoClicked: (VideoItem) -> Unit,
-) {
-    LazyColumn(
-        contentPadding = PaddingValues(vertical = Spacing.sm),
-    ) {
-        items(categories, key = { it.title }) { category ->
-            Column {
-                Text(
-                    text = if (category.isRecent) stringResource(R.string.cat_recent) else category.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = Spacing.lg),
-                )
-                Spacer(modifier = Modifier.height(Spacing.sm))
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = Spacing.lg),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                ) {
-                    items(category.videos, key = { it.id }) { video ->
-                        MediaCard(
-                            title = video.title,
-                            subtitle = remember(video) { buildSubtitle(video) },
-                            durationMs = video.durationMs,
-                            progress = video.watchedProgress.takeIf { it > 0f },
-                            thumbnailContent = {
-                                SubcomposeAsyncImage(
-                                    model = VideoFrame(video.uri, video.dateModified),
-                                    contentDescription = video.title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                    error = {
-                                        ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
-                                    },
-                                    loading = {
-                                        ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
-                                    }
-                                )
-                            },
-                            onClick = { onVideoClicked(video) },
-                            modifier = Modifier.width(200.dp),
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(Spacing.lg))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ListContent(
-    videos: List<VideoItem>,
-    onVideoClicked: (VideoItem) -> Unit,
+    onFolderClicked: (String) -> Unit,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        items(videos, key = { it.id }) { video ->
-            MediaListItem(
-                title = video.title,
-                subtitle = remember(video) { buildSubtitle(video) },
-                durationMs = video.durationMs,
-                thumbnailContent = {
-                    SubcomposeAsyncImage(
-                        model = VideoFrame(video.uri, video.dateModified),
-                        contentDescription = video.title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        error = {
-                            ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
-                        },
-                        loading = {
-                            ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
-                        }
-                    )
+        items(categories, key = { it.title }) { category ->
+            val firstVideo = category.videos.firstOrNull()
+            FileItemCard(
+                name = if (category.isRecent) stringResource(R.string.cat_recent) else category.title,
+                isDirectory = true,
+                fileSize = 0,
+                childCount = category.videos.size,
+                subfolderCount = 0,
+                fileCount = category.videos.size,
+                mediaCount = category.videos.size,
+                mediaMode = true,
+                leadingThumbnail = firstVideo?.let { v ->
+                    {
+                        SubcomposeAsyncImage(
+                            model = VideoFrame(v.uri, v.dateModified),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            error = {
+                                ThumbnailPlaceholder(mediaType = MediaType.FOLDER)
+                            },
+                            loading = {
+                                ThumbnailPlaceholder(mediaType = MediaType.FOLDER)
+                            }
+                        )
+                    }
                 },
-                onClick = { onVideoClicked(video) },
+                onClick = { onFolderClicked(if (category.isRecent) VideoLibraryViewModel.RECENT_KEY else category.title) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderGridContent(
+    categories: List<VideoCategory>,
+    onFolderClicked: (String) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        contentPadding = PaddingValues(Spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        items(categories, key = { it.title }) { category ->
+            val firstVideo = category.videos.firstOrNull()
+            MediaCard(
+                title = if (category.isRecent) stringResource(R.string.cat_recent) else category.title,
+                subtitle = stringResource(R.string.folder_videos_count, category.videos.size),
+                durationMs = 0,
+                thumbnailContent = {
+                    if (firstVideo != null) {
+                        SubcomposeAsyncImage(
+                            model = VideoFrame(firstVideo.uri, firstVideo.dateModified),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            error = {
+                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                            },
+                            loading = {
+                                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+                            }
+                        )
+                    } else {
+                        ThumbnailPlaceholder(mediaType = MediaType.FOLDER)
+                    }
+                },
+                onClick = { onFolderClicked(if (category.isRecent) VideoLibraryViewModel.RECENT_KEY else category.title) },
             )
         }
     }
@@ -416,7 +434,6 @@ private fun SearchResultsContent(
                 MediaListItem(
                     title = video.title,
                     subtitle = remember(video) { buildSubtitle(video) },
-                    durationMs = video.durationMs,
                     thumbnailContent = {
                         SubcomposeAsyncImage(
                             model = VideoFrame(video.uri, video.dateModified),

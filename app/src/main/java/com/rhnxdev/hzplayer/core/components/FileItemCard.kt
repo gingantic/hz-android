@@ -113,10 +113,10 @@ fun FileItemCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (leadingThumbnail != null) {
-                // Thumbnail occupies ~42% of the row width on the left (40% bigger than 30%).
+                // Thumbnail occupies ~40% of the row width on the left.
                 Box(
                     modifier = Modifier
-                        .weight(0.42f)
+                        .weight(0.4f)
                         .aspectRatio(16f / 9f)
                         .clip(RoundedCornerShape(Spacing.xs)),
                     contentAlignment = Alignment.Center,

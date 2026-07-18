@@ -19,6 +19,7 @@ data class VideoLibraryUiState(
     val sortType: SortType = SortType.TITLE,
     val sortDirection: SortDirection = SortDirection.ASCENDING,
     val isEmpty: Boolean = false,
+    val selectedFolder: String? = null, // null = folder list root; RECENT_KEY = Recent pseudo-folder
 )
 
 @Immutable

@@ -450,9 +450,9 @@ fun HzPlayerApp(
                             when (page) {
                                 0 -> VideoLibraryScreen(
                                     isActive = pagerState.currentPage == page,
-                                    onVideoClicked = { videoId ->
+                                    onVideoClicked = {
                                         playerViewModel.onVideoStarted()
-                                        navController.navigate("video_player/$videoId")
+                                        navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                     },
                                 )
                                 1 -> AudioBrowserScreen(

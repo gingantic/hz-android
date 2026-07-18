@@ -36,6 +36,9 @@ class VideoLibraryViewModel @Inject constructor(
     val search = SearchDelegate()
 
     companion object {
+        /** Pseudo-folder key for the Recent category, used in selectedFolder. */
+        const val RECENT_KEY = "__recent__"
+
         /** Cached preview lists — avoid re-allocation per VM init. */
         private val PREVIEW_VIDEOS: List<VideoItem> = PreviewMedia.videoMovies.mapIndexed { index, item ->
             VideoItem(
@@ -224,7 +227,28 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     fun onVideoClicked(video: VideoItem) {
-        playerRepository.playVideo(video)
+        val state = _uiState.value
+        val playlist: List<VideoItem> = when {
+            state.selectedFolder == RECENT_KEY -> state.recentVideos
+            state.selectedFolder != null ->
+                state.categories.firstOrNull { it.title == state.selectedFolder }?.videos ?: listOf(video)
+            else -> listOf(video)
+        }
+        val index = playlist.indexOfFirst { it.id == video.id }.coerceAtLeast(0)
+        playerRepository.playPlaylist(playlist.map { it.uri to it.title }, index)
+    }
+
+    fun onFolderClicked(folderTitle: String) {
+        _uiState.update { it.copy(selectedFolder = folderTitle) }
+    }
+
+    fun onNavigateUp(): Boolean {
+        return if (_uiState.value.selectedFolder != null) {
+            _uiState.update { it.copy(selectedFolder = null) }
+            true
+        } else {
+            false
+        }
     }
 
     private fun applySort(sort: SortType) {
