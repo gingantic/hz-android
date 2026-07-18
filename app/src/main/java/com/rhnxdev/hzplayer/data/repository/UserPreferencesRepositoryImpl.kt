@@ -202,6 +202,18 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[PrefKey.SelectedTabIndex.key] = index }
     }
 
+    override val subtitleSearchHistory: Flow<List<String>> = dataStore.data.map { prefs ->
+        val raw = prefs[PrefKey.SubtitleSearchHistory.key].orEmpty()
+        if (raw.isBlank()) emptyList()
+        else raw.split("|").filter { it.isNotBlank() }
+    }.distinctUntilChanged()
+
+    override suspend fun setSubtitleSearchHistory(history: List<String>) {
+        dataStore.edit { prefs ->
+            prefs[PrefKey.SubtitleSearchHistory.key] = history.joinToString("|")
+        }
+    }
+
     override suspend fun setShowHiddenFiles(enabled: Boolean) {
         dataStore.edit { prefs -> prefs[PrefKey.ShowHiddenFiles.key] = enabled }
     }
@@ -261,5 +273,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object MinSongDurationSecs : PrefKey<Int>(intPreferencesKey("min_song_duration_secs"))
         object DebugMode : PrefKey<Boolean>(booleanPreferencesKey("debug_mode"))
         object BackgroundPlay : PrefKey<Boolean>(booleanPreferencesKey("background_play"))
+        object SubtitleSearchHistory : PrefKey<String>(stringPreferencesKey("subtitle_search_history"))
     }
 }

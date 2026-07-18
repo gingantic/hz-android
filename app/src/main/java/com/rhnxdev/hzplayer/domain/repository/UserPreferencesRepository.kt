@@ -53,4 +53,8 @@ interface UserPreferencesRepository {
     val selectedTabIndex: Flow<Int>
 
     suspend fun setSelectedTabIndex(index: Int)
+
+    /** Ordered list of recent subtitle search queries (newest first, max 10). */
+    val subtitleSearchHistory: Flow<List<String>>
+    suspend fun setSubtitleSearchHistory(history: List<String>)
 }

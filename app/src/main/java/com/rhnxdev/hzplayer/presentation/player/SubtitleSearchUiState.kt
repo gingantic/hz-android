@@ -17,6 +17,13 @@ data class SubtitleSearchUiState(
     val episode: String = "",
     /** URLs currently being downloaded — each shows a spinner. */
     val downloadingUrls: Set<String> = emptySet(),
+    /**
+     * When true the dialog shows the subtitle-results layer (second screen).
+     * When false it shows the candidate-picker layer (first screen).
+     */
+    val showResultsLayer: Boolean = false,
+    /** Recent search queries, newest first. Loaded from DataStore on init. */
+    val searchHistory: List<String> = emptyList(),
 )
 
 @Immutable
