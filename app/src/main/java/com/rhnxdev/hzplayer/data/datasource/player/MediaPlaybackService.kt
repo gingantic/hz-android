@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -20,6 +21,7 @@ class MediaPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "onCreate")
 
         val engine = playerRepository.activeEngine
         val player = engine.getMedia3Player()
@@ -54,14 +56,21 @@ class MediaPlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = playerRepository.activeEngine.getMedia3Player()
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+        val shouldStop = player == null || !player.playWhenReady || player.mediaItemCount == 0
+        Log.i(TAG, "onTaskRemoved: stopSelf=$shouldStop")
+        if (shouldStop) {
             stopSelf()
         }
     }
 
     override fun onDestroy() {
+        Log.i(TAG, "onDestroy")
         mediaSession?.run { release(); mediaSession = null }
         playerRepository.release()
         super.onDestroy()
+    }
+
+    companion object {
+        private const val TAG = "MediaPlaybackService"
     }
 }

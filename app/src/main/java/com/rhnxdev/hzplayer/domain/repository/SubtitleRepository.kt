@@ -12,19 +12,45 @@ interface SubtitleRepository {
         val language: String,
         val releaseName: String,
         val fps: String,
+        val hearingImpaired: Boolean = false,
     )
 
     /**
-     * Search SubDL for subtitle files matching [query].
-     * Returns a list of search results with direct download URLs.
+     * A candidate title from SubDL's title search. Carries [posterUrl] and [year]
+     * so the picker can show thumbnails. Picking one re-queries by [imdbId]/[tmdbId]
+     * to load that exact title's subtitles.
      */
-    suspend fun search(
+    data class SearchCandidate(
+        val name: String,
+        val year: Int,
+        val type: String,
+        val imdbId: String?,
+        val tmdbId: Long?,
+        val posterUrl: String?,
+    )
+
+    /**
+     * Resolve candidate titles (with posters + years) for [query].
+     */
+    suspend fun searchTitles(
+        query: String,
+        apiKey: String,
+        type: String = "movie",
+    ): Result<List<SearchCandidate>>
+
+    /**
+     * Fetch subtitles for a title. Prefers an exact id ([imdbId]/[tmdbId]);
+     * falls back to [query] (film name) if no id is given.
+     */
+    suspend fun searchSubtitles(
         query: String,
         apiKey: String,
         language: String? = null,
         type: String = "movie",
         season: Int? = null,
         episode: Int? = null,
+        imdbId: String? = null,
+        tmdbId: Long? = null,
     ): Result<List<SearchResult>>
 
     /**

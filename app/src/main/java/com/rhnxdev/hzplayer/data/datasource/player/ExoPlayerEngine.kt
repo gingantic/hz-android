@@ -1,4 +1,4 @@
-package com.rhnxdev.hzplayer.data.datasource.player
+﻿package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.content.Context
 import android.net.Uri
@@ -24,7 +24,6 @@ import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
-import com.rhnxdev.hzplayer.core.util.isNeighborSubtitleName
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +32,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,6 +46,7 @@ class ExoPlayerEngine @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val playerHolder: MediaPlayerHolder,
     private val assHandler: AssHandler,
+    private val neighborSubtitleDiscoverer: NeighborSubtitleDiscoverer,
 ) : IPlayerEngine {
 
     override val engineType: EngineType = EngineType.EXO_PLAYER
@@ -115,7 +114,7 @@ class ExoPlayerEngine @Inject constructor(
         // player calls below must run on the main thread (Media3 requirement), so
         // we hop back to Dispatchers.Main after discovery completes.
         subtitleDiscoveryScope.launch {
-            val subs = discoverNeighborSubtitles(uri)
+            val subs = neighborSubtitleDiscoverer.discover(uri)
             withContext(Dispatchers.Main) {
                 subtitleConfigs.clear()
                 subtitleConfigs.addAll(subs)
@@ -142,7 +141,7 @@ class ExoPlayerEngine @Inject constructor(
         currentMediaTitle = startTitle
         // Neighbor-subtitle discovery only for the start item; others get plain items.
         subtitleDiscoveryScope.launch {
-            val subs = discoverNeighborSubtitles(startUri)
+            val subs = neighborSubtitleDiscoverer.discover(startUri)
             withContext(Dispatchers.Main) {
                 subtitleConfigs.clear()
                 subtitleConfigs.addAll(subs)
@@ -173,7 +172,7 @@ class ExoPlayerEngine @Inject constructor(
         currentMediaUri = startItem.uri
         currentMediaTitle = startItem.title
         subtitleDiscoveryScope.launch {
-            val subs = discoverNeighborSubtitles(startItem.uri)
+            val subs = neighborSubtitleDiscoverer.discover(startItem.uri)
             withContext(Dispatchers.Main) {
                 subtitleConfigs.clear()
                 subtitleConfigs.addAll(subs)
@@ -267,22 +266,21 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.updateSpeed(speed)
     }
 
-    // â”€â”€ Subtitle delay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Subtitle delay ─────────────────────────────────────────────────────
 
     private var subtitleDelayMs: Long = 0
 
     override fun setSubtitleDelay(delayMs: Long) {
-        // libass path (ASS/SSA/SRT/VTT) renders via AssHandler — push the offset
-        // there so nativeRender shifts the cue anchor. ExoPlayer's built-in text
-        // renderer reads the offset from track selection params (below) for any
-        // non-libass track; setSubtitleDelay is the single entry both reach.
+        // libass path renders via AssHandler - push the offset there.
+        // ponytail: ExoPlayer built-in text renderer has no public delay API.
+        // Non-libass embedded tracks are unaffected by this setter.
         subtitleDelayMs = delayMs
         assHandler.subtitleDelayMs = delayMs
     }
 
     override fun getSubtitleDelay(): Long = subtitleDelayMs
 
-    // â”€â”€ External subtitles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── External subtitles ─────────────────────────────────────────────────
 
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
 
@@ -318,8 +316,6 @@ class ExoPlayerEngine @Inject constructor(
 
     companion object {
         private const val TAG = "ExoPlayerEngine"
-        private val SUBTITLE_EXTENSIONS = setOf("srt", "vtt", "ass", "ssa", "sub")
-        private val SUBTITLE_SCHEMES_WITH_DIR = setOf("file", "smb", "ftp", "sftp", "webdav", "webdavs")
     }
 
     override fun addExternalSubtitle(uri: Uri): Boolean {
@@ -389,7 +385,7 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    // â”€â”€ Subtitle track selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Subtitle track selection ───────────────────────────────
 
     private data class ExoTrackInfo(
         val group: Tracks.Group,
@@ -462,7 +458,7 @@ class ExoPlayerEngine @Inject constructor(
         val embeddedCount = getExoTextTracks().size
         if (index >= embeddedCount) {
             // External libass track — select without touching ExoPlayer, so the
-            // onTracksChanged → clearOverlay cascade (which would wipe libass)
+            // onTracksChanged — clearOverlay cascade (which would wipe libass)
             // never fires. We only steer libass here.
             val extIdx = index - embeddedCount
             val extIds = assHandler.getExternalTrackIds()
@@ -522,8 +518,20 @@ class ExoPlayerEngine @Inject constructor(
             else -> playerHolder.readUriBytes(uri)
         }
     }.getOrNull()
+    /** Map subtitle file extension to MIME type. */
+    private fun inferSubtitleMimeType(uri: Uri): String {
+        val ext = uri.path?.substringAfterLast('.')?.lowercase() ?: return MimeTypes.APPLICATION_SUBRIP
+        return when (ext) {
+            "vtt" -> MimeTypes.TEXT_VTT
+            "srt" -> MimeTypes.APPLICATION_SUBRIP
+            "ass", "ssa" -> MimeTypes.TEXT_SSA
+            "sub" -> MimeTypes.APPLICATION_SUBRIP
+            else -> MimeTypes.APPLICATION_SUBRIP
+        }
+    }
 
-    // â”€â”€ Audio track selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    // ── Audio track selection ──────────────────────────────────
 
     private fun getExoAudioTracks(): List<ExoTrackInfo> {
         val list = mutableListOf<ExoTrackInfo>()
@@ -615,13 +623,12 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.release()
     }
 
-    // â”€â”€ Rendering seam (engine-private; surfaced via PlayerSurface) â”€â”€
+    // ── Rendering seam (engine-private; surfaced via PlayerSurface) ──
 
     /**
      * Build the Media3 [PlayerView] that renders this engine's video. The surface
      * type (SurfaceView vs TextureView) is chosen from [useSurfaceView] and fixed at
-     * across brief app switches) is chosen from [useSurfaceView] and fixed at
-     * construction via the XML layout â€” there is no programmatic setter.
+     * construction via the XML layout — there is no programmatic setter.
      */
     private var activePlayerViewRef: java.lang.ref.WeakReference<PlayerView>? = null
     private var currentAspectRatioMode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode = com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO
@@ -742,7 +749,7 @@ class ExoPlayerEngine @Inject constructor(
         applyAspectRatioMode(playerView, config.aspectRatioMode)
     }
 
-    /** Surface lifecycle â€” mirrors PlayerView.onPause/onResume. */
+    /** Surface lifecycle — mirrors PlayerView.onPause/onResume. */
     override fun onRenderViewPaused(view: View) = (view as PlayerView).onPause()
     override fun onRenderViewResumed(view: View) = (view as PlayerView).onResume()
 
@@ -753,54 +760,8 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.setOnPlayerReplacedListener(listener)
     }
 
-    // â”€â”€ Subtitle discovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    private suspend fun discoverNeighborSubtitles(uri: String): List<MediaItem.SubtitleConfiguration> {
-        playerHolder.setDiscovering()
-        // Runs inside subtitleDiscoveryScope (Dispatchers.IO) — no runBlocking, so
-        // the playback-start call never blocks the caller (usually main) thread.
-        val subUris = try {
-            findNeighborSubtitleFiles(uri)
-        } catch (_: Exception) {
-            emptyList<Uri>()
-        }
-
-        val exoConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
-        for (subUri in subUris) {
-            val ext = (subUri.path ?: "").substringAfterLast('.').lowercase()
-            val mimeType = inferSubtitleMimeType(subUri)
-            val displayName = subUri.lastPathSegment ?: subUri.toString()
-
-            if (ext == "ass" || ext == "ssa" || SubtitleConverters.isConvertibleSubtitleFormat(mimeType)) {
-                val data = readSubtitleUriBytes(subUri)
-                if (data != null) {
-                    val assBytes = if (ext == "ass" || ext == "ssa") {
-                        data
-                    } else {
-                        SubtitleConverters.convertToAss(
-                            data, mimeType,
-                            assHandler.getVideoWidth(), assHandler.getVideoHeight()
-                        )
-                    }
-                    if (assBytes != null) {
-                        withContext(Dispatchers.Main) {
-                            assHandler.loadExternalTrack(assBytes, displayName)
-                        }
-                    }
-                }
-            } else {
-                val config = MediaItem.SubtitleConfiguration.Builder(subUri)
-                    .setMimeType(mimeType)
-                    .setLanguage("und")
-                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                    .build()
-                exoConfigs.add(config)
-            }
-        }
-        return exoConfigs
-    }
-
-    // â”€â”€ Debug stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Debug stats ─────────────────────────────────────────────
 
     override fun getDebugStats(): com.rhnxdev.hzplayer.domain.model.DebugStats? {
         val currentTracks = player.currentTracks
@@ -919,9 +880,9 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     /** Tag decoder as HW or SW by its registration name.
-     *  OMX.google.* / c2.android.* â†’ SW (Android software).
-     *  OMX.* (not google) / c2.{qti,mediatek,exynos,ti}.* â†’ HW.
-     *  Anything else â†’ SW (conservative). */
+     *  OMX.google.* / c2.android.* → SW (Android software).
+     *  OMX.* (not google) / c2.{qti,mediatek,exynos,ti}.* → HW.
+     *  Anything else → SW (conservative). */
     private fun labelHwSw(decoderName: String): String = when {
         decoderName.startsWith("c2.android.") -> "SW"
         decoderName.startsWith("c2.") -> "HW"
@@ -929,136 +890,8 @@ class ExoPlayerEngine @Inject constructor(
         else -> "SW"
     }
 
-    // â”€â”€ External subtitle helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── External subtitle helpers ────────────────────────────────
 
-    private fun findNeighborSubtitleFiles(videoUri: String): List<Uri> {
-        val androidUri = Uri.parse(videoUri)
-        val scheme = androidUri.scheme?.lowercase() ?: "file"
-        val found = when (scheme) {
-            "file" -> findLocalNeighborSubtitles(androidUri)
-            "smb" -> findSmbNeighborSubtitles(androidUri)
-            "ftp", "sftp", "webdav", "webdavs" -> findRemoteExtensionSwapSubtitles(androidUri)
-            else -> emptyList()
-        }
-        Log.i(TAG, "[SUBDISC] scheme=$scheme found=${found.size} subs=${found.map { it.lastPathSegment }}")
-        return found
-    }
-
-    private fun findLocalNeighborSubtitles(androidUri: Uri): List<Uri> {
-        val videoPath = androidUri.path ?: return emptyList()
-        val videoFile = File(videoPath)
-        val parentDir = videoFile.parentFile ?: return emptyList()
-        val baseName = videoFile.nameWithoutExtension
-
-        // Direct filesystem scan — works when the app has full storage access.
-        val direct = parentDir.listFiles()
-            ?.filter { file -> isNeighborSubtitleName(file.name, baseName) }
-            ?.map { Uri.fromFile(it) }
-            .orEmpty()
-        if (direct.isNotEmpty()) return direct
-
-        // Fallback: under scoped storage (Android 11+) File.listFiles() on shared
-        // storage returns null/empty without MANAGE_EXTERNAL_STORAGE. Query
-        // MediaStore Files by parent path instead.
-        return findLocalSubtitlesViaMediaStore(parentDir.absolutePath, baseName)
-    }
-
-    private fun findLocalSubtitlesViaMediaStore(parentPath: String, baseName: String): List<Uri> {
-        return try {
-            val collection = android.provider.MediaStore.Files.getContentUri("external")
-            val projection = arrayOf(
-                android.provider.MediaStore.Files.FileColumns._ID,
-                android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME,
-                android.provider.MediaStore.Files.FileColumns.DATA,
-            )
-            // Match rows whose path starts with the parent dir. Filter names in code
-            // so the language-tag matcher stays the single source of truth.
-            val selection = "${android.provider.MediaStore.Files.FileColumns.DATA} LIKE ?"
-            val args = arrayOf("$parentPath/%")
-            val out = mutableListOf<Uri>()
-            appContext.contentResolver.query(collection, projection, selection, args, null)?.use { c ->
-                val idCol = c.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns._ID)
-                val dataCol = c.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DATA)
-                while (c.moveToNext()) {
-                    val data = c.getString(dataCol) ?: continue
-                    val name = data.substringAfterLast('/')
-                    // Skip nested subdirectories: only direct children of parentPath.
-                    if (data.substringBeforeLast('/') != parentPath) continue
-                    if (isNeighborSubtitleName(name, baseName)) {
-                        out.add(Uri.fromFile(File(data)))
-                    }
-                }
-            }
-            out
-        } catch (e: Exception) {
-            Log.w(TAG, "MediaStore subtitle discovery failed for $parentPath", e)
-            emptyList()
-        }
-    }
-
-    private fun findSmbNeighborSubtitles(androidUri: Uri): List<Uri> {
-        return try {
-            val userInfo = androidUri.userInfo ?: ""
-            val parts = userInfo.split(":", limit = 2)
-            val user = Uri.decode(parts.getOrNull(0) ?: "")
-            val pass = Uri.decode(parts.getOrNull(1) ?: "")
-            val host = androidUri.host ?: return emptyList()
-            val port = androidUri.port.takeIf { it > 0 } ?: 445
-            
-            // Decoded name for text comparison with file.name (jcifs-ng returns decoded names)
-            val path = androidUri.path ?: return emptyList()
-            val videoName = path.substringAfterLast('/')
-            val baseName = videoName.substringBeforeLast('.')
-
-            // Resolve the parent directory by walking via listFiles() rather than
-            // constructing an SmbFile from a URL, so a folder named with spaces,
-            // emoji, or fullwidth CJK punctuation still resolves. See [SmbPathResolver].
-            val encodedPath = androidUri.encodedPath ?: return emptyList()
-            val encodedParentPath = encodedPath.substringBeforeLast('/').ifEmpty { "/" }
-            val segments = SmbPathResolver.decodedSegmentsOf(encodedPath)
-
-            val ctx = ConnectionPool.borrowSmbContext(host, port, user, pass)
-            val dir = SmbPathResolver.resolveParent(ctx, host, port, segments)
-                ?: return emptyList()
-
-            val siblings = dir.listFiles()?.toList() ?: return emptyList()
-
-            siblings
-                .filter { file -> isNeighborSubtitleName(file.name.trimEnd('/'), baseName) }
-                .map { file ->
-                    // Rebuild the sibling URI from the *original* androidUri, swapping
-                    // only the last path segment. This preserves the existing encoding
-                    // (avoids double-encoding %20 â†’ %2520) and the userInfo/host/port,
-                    // instead of string-splicing "smb://$credPrefix$host:$port$path".
-                    val encodedName = Uri.encode(file.name.trimEnd('/'))
-                    androidUri.buildUpon()
-                        .encodedPath("$encodedParentPath/$encodedName")
-                        .build()
-                }
-        } catch (e: Exception) {
-            android.util.Log.w("ExoPlayerEngine", "SMB subtitle discovery failed for $androidUri", e)
-            emptyList()
-        }
-    }
-
-    private fun findRemoteExtensionSwapSubtitles(androidUri: Uri): List<Uri> {
-        val path = androidUri.path ?: return emptyList()
-        val basePath = path.substringBeforeLast('.')
-        return SUBTITLE_EXTENSIONS.map { ext ->
-            androidUri.buildUpon().path("$basePath.$ext").build()
-        }
-    }
-
-    private fun inferSubtitleMimeType(uri: Uri): String {
-        val ext = uri.path?.substringAfterLast('.')?.lowercase() ?: return MimeTypes.APPLICATION_SUBRIP
-        return when (ext) {
-            "vtt" -> MimeTypes.TEXT_VTT
-            "srt" -> MimeTypes.APPLICATION_SUBRIP
-            "ass", "ssa" -> MimeTypes.TEXT_SSA
-            "sub" -> MimeTypes.APPLICATION_SUBRIP
-            else -> MimeTypes.APPLICATION_SUBRIP
-        }
-    }
 }
 
 /** Result of [rebuildPlaylistForSubtitleSwap]: rebuilt items + replay index/position. */

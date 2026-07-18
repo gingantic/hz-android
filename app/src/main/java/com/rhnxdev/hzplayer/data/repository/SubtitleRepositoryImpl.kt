@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.data.repository
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.core.net.toUri
 import com.rhnxdev.hzplayer.data.datasource.remote.SubdlApi
 import com.rhnxdev.hzplayer.domain.repository.SubtitleRepository
@@ -16,28 +17,56 @@ class SubtitleRepositoryImpl @Inject constructor(
     private val subdlApi: SubdlApi,
 ) : SubtitleRepository {
 
-    override suspend fun search(
+    companion object {
+        private const val TAG = "SubtitleRepository"
+    }
+
+    override suspend fun searchTitles(
+        query: String,
+        apiKey: String,
+        type: String,
+    ): Result<List<SubtitleRepository.SearchCandidate>> {
+        return subdlApi.searchTitles(query, apiKey, type).map { list ->
+            list.map { c ->
+                SubtitleRepository.SearchCandidate(
+                    name = c.name,
+                    year = c.year,
+                    type = c.type,
+                    imdbId = c.imdbId,
+                    tmdbId = c.tmdbId,
+                    posterUrl = c.posterUrl,
+                )
+            }
+        }
+    }
+
+    override suspend fun searchSubtitles(
         query: String,
         apiKey: String,
         language: String?,
         type: String,
         season: Int?,
         episode: Int?,
+        imdbId: String?,
+        tmdbId: Long?,
     ): Result<List<SubtitleRepository.SearchResult>> {
-        return subdlApi.searchSubtitles(query, apiKey, language, type, season, episode).map { list ->
-            list.map { apiResult ->
-                SubtitleRepository.SearchResult(
-                    downloadUrl = apiResult.downloadUrl,
-                    language = apiResult.language,
-                    releaseName = apiResult.releaseName,
-                    fps = apiResult.fps,
-                )
+        return subdlApi.searchSubtitles(query, apiKey, language, type, season, episode, imdbId, tmdbId)
+            .map { list ->
+                list.map { apiResult ->
+                    SubtitleRepository.SearchResult(
+                        downloadUrl = apiResult.downloadUrl,
+                        language = apiResult.language,
+                        releaseName = apiResult.releaseName,
+                        fps = apiResult.fps,
+                        hearingImpaired = apiResult.hearingImpaired,
+                    )
+                }
             }
-        }
     }
 
     override suspend fun download(downloadUrl: String, fileName: String, apiKey: String): Result<Uri> {
         return try {
+            Log.i(TAG, "download: fileName=$fileName")
             var bytes = subdlApi.downloadSubtitleContent(downloadUrl, apiKey)
                 ?: return Result.failure(Exception("Failed to download subtitle content"))
 
@@ -69,9 +98,11 @@ class SubtitleRepositoryImpl @Inject constructor(
                 "Refusing subtitle write outside cacheDir: ${outputFile.path}"
             }
             outputFile.writeBytes(bytes)
+            Log.i(TAG, "download OK: ${outputFile.absolutePath} (${bytes.size} bytes)")
 
             Result.success(outputFile.toUri())
         } catch (e: Exception) {
+            Log.w(TAG, "download failed: ${e.message}")
             Result.failure(e)
         }
     }

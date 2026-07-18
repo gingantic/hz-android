@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
@@ -50,5 +51,9 @@ abstract class RemoteDataSourceBase(isNetwork: Boolean) : BaseDataSource(isNetwo
         uriValue = null
         inputStream = null
         bytesRemaining = C.LENGTH_UNSET.toLong()
+    }
+
+    companion object {
+        private const val TAG = "RemoteDataSource"
     }
 }

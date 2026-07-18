@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.presentation.player
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.util.SUBTITLE_EXTENSIONS
@@ -41,6 +42,7 @@ class SubtitleBrowserViewModel @Inject constructor(
     fun initVideoUri(videoUri: String?) {
         if (initialized) return
         initialized = true
+        Log.i(TAG, "initVideoUri: $videoUri")
 
         if (videoUri.isNullOrEmpty()) {
             loadLocalRoots()
@@ -74,7 +76,9 @@ class SubtitleBrowserViewModel @Inject constructor(
     }
 
     private fun parseNetworkUri(uriString: String): Pair<ServerConfig, String>? {
-        val uri = try { Uri.parse(uriString) } catch (e: Exception) { return null }
+        val uri = try { Uri.parse(uriString) } catch (e: Exception) {
+            Log.w(TAG, "parseNetworkUri: failed to parse $uriString", e); return null
+        }
         val scheme = uri.scheme?.lowercase() ?: return null
         val protocol = when (scheme) {
             "ftp" -> NetworkProtocol.FTP
@@ -171,6 +175,7 @@ class SubtitleBrowserViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
+                Log.w(TAG, "browseLocalDirectory failed path=$path: ${e.message}")
                 _uiState.update { it.copy(error = e.message ?: "Failed", isLoading = false) }
             }
         }
@@ -200,6 +205,7 @@ class SubtitleBrowserViewModel @Inject constructor(
                     isLoading = true,
                 )
             }
+            Log.d(TAG, "browseRemoteDirectory: server=${server.host} path=$path")
             val result = remoteBrowseRepository.listDirectory(server, path)
             result.fold(
                 onSuccess = { items ->
@@ -211,6 +217,7 @@ class SubtitleBrowserViewModel @Inject constructor(
                     }
                 },
                 onFailure = { e ->
+                    Log.w(TAG, "browseRemoteDirectory failed: ${e.message}")
                     _uiState.update { it.copy(error = e.message ?: "Connection failed", isLoading = false) }
                 }
             )
@@ -244,5 +251,9 @@ class SubtitleBrowserViewModel @Inject constructor(
     fun buildRemotePlaybackUri(remotePath: String): Uri? {
         val server = _uiState.value.remoteServer ?: return null
         return Uri.parse(remoteBrowseRepository.buildPlaybackUri(server, remotePath))
+    }
+
+    companion object {
+        private const val TAG = "SubtitleBrowserVM"
     }
 }

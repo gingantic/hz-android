@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.domain.player
 
+import android.util.Log
 import androidx.media3.common.PlaybackException
 import com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind
 
@@ -29,7 +30,10 @@ object PlaybackErrorMapper {
     )
 
     /** Convenience wrapper for the live Media3 exception. */
-    fun map(error: PlaybackException): MappedError = map(error.errorCode, error.cause)
+    fun map(error: PlaybackException): MappedError {
+        Log.w(TAG, "Playback error: code=${error.errorCode}(${error.errorCodeName})", error)
+        return map(error.errorCode, error.cause)
+    }
 
     /**
      * Core mapping. Decoupled from the [PlaybackException] constructor (which touches
@@ -137,4 +141,6 @@ object PlaybackErrorMapper {
     private val USERINFO_RE = Regex("""(smb|ftp|sftp|webdavs?)://[^/@]+@""", RegexOption.IGNORE_CASE)
     private val HOSTNAME_RE = Regex("""\b[\w-]+\.[\w-]+\.[a-z]{2,}\b""", RegexOption.IGNORE_CASE)
     private val IPV4_RE = Regex("""\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b""")
+
+    private const val TAG = "PlaybackErrorMapper"
 }

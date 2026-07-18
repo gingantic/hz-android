@@ -270,6 +270,12 @@ class AssHandler @Inject constructor(
         var shouldInvokeCallback = false
         val trackId: Int
         synchronized(nativeLock) {
+            // ponytail: deduplicate by data content — same bytes = same track already loaded.
+            // Catches both neighbor auto-discovery and manual addExternalSubtitle calls.
+            if (externalTrackData.any { it.contentEquals(data) }) {
+                Log.i(TAG, "loadExternalTrack: duplicate data, skipping '$displayName' (${data.size}B)")
+                return
+            }
             if (nativeHandle == 0L) {
                 nativeHandle = AssDirectBridge.nativeInit(videoWidth, videoHeight, 1.0f)
                 if (nativeHandle == 0L) {

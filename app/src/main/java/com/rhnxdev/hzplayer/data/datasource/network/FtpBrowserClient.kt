@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
+import android.util.Log
 import com.rhnxdev.hzplayer.core.util.guessMimeType
 import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
@@ -14,14 +15,17 @@ class FtpBrowserClient(
     private val username: String,
     private val password: String,
 ) : RemoteBrowserClient {
+    private companion object { const val TAG = "FtpBrowserClient" }
 
     override suspend fun connect() = withContext(Dispatchers.IO) {
+        Log.i(TAG, "connect: host=$host port=$port")
         ConnectionPool.borrowFtpBrowser(host, port, username, password)
         Unit
     }
 
     override suspend fun listDirectory(path: String): List<RemoteFileItem> =
         withContext(Dispatchers.IO) {
+            Log.d(TAG, "listDirectory: path=$path")
             val ftp = ConnectionPool.borrowFtpBrowser(host, port, username, password)
             ftp.listFiles(path)
                 .filter { it.name != "." && it.name != ".." }

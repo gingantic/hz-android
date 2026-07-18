@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
 import org.apache.commons.net.ftp.FTPClient
@@ -57,6 +58,7 @@ class FtpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             inputStream = BufferedInputStream(stream, 512 * 1024)
             client = ftp
         } catch (e: IOException) {
+            Log.w(TAG, "open failed for ${safeUri(dataSpec.uri)}: ${e.message}")
             // open() threw after borrow but before close() runs → return the
             // connection so it isn't pinned inUse=1 for the process lifetime.
             ConnectionPool.returnFtp(host, port, user, pass)
@@ -86,6 +88,11 @@ class FtpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             ConnectionPool.returnFtp(host, ftpPort, ftpUser ?: "", ftpPass ?: "")
         }
         transferEnded()
+    }
+
+    private fun safeUri(uri: android.net.Uri): String {
+        val s = uri.toString()
+        return s.substringBefore("@") + "@<redacted>"
     }
 
     companion object {
