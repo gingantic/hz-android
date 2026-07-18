@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.data.datasource.media
 
 import android.content.Context
 import android.provider.MediaStore
+import android.util.Log
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.MediaEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,9 @@ import javax.inject.Singleton
 class MediaScanner @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
+    companion object {
+        private const val TAG = "MediaScanner"
+    }
 
     fun scanVideos(): Flow<List<MediaEntity>> = flow {
         val videos = mutableListOf<MediaEntity>()
@@ -37,6 +41,10 @@ class MediaScanner @Inject constructor(
             null,
             "${MediaStore.Video.Media.DATE_ADDED} DESC",
         )
+
+        if (cursor == null) {
+            Log.w(TAG, "scanVideos: cursor=null (permission denied or empty MediaStore)")
+        }
 
         cursor?.use {
             val idCol = it.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
@@ -67,6 +75,7 @@ class MediaScanner @Inject constructor(
             }
         }
         emit(videos)
+        Log.i(TAG, "scanVideos: ${videos.size} items")
     }.flowOn(Dispatchers.IO)
 
     fun scanAudio(): Flow<List<MediaEntity>> = flow {
@@ -93,6 +102,10 @@ class MediaScanner @Inject constructor(
             null,
             "${MediaStore.Audio.Media.DATE_ADDED} DESC",
         )
+
+        if (cursor == null) {
+            Log.w(TAG, "scanAudio: cursor=null (permission denied or empty MediaStore)")
+        }
 
         cursor?.use {
             val idCol = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
@@ -131,6 +144,7 @@ class MediaScanner @Inject constructor(
             }
         }
         emit(audio)
+        Log.i(TAG, "scanAudio: ${audio.size} items")
     }.flowOn(Dispatchers.IO)
 
     fun getAlbumArtUri(albumId: Long): String? {

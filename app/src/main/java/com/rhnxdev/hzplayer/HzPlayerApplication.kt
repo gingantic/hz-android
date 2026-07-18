@@ -3,11 +3,13 @@ package com.rhnxdev.hzplayer
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import coil3.ImageLoader
 import java.io.File
 import coil3.PlatformContext
 import coil3.request.crossfade
 import coil3.SingletonImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrameFetcher
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrameKeyer
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
@@ -19,14 +21,19 @@ class HzPlayerApplication : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
-        // App-private store for the SFTP TOFU known-hosts verifier.
+        Log.i(TAG, "onCreate — app init")
         ConnectionPool.sftpKnownHostsFile = File(filesDir, "sftp_known_hosts")
     }
 
     override fun onTerminate() {
+        Log.i(TAG, "onTerminate — releasing resources")
         super.onTerminate()
         ConnectionPool.shutdown()
         ConnectionPool.releaseAll()
+    }
+
+    companion object {
+        private const val TAG = "HzPlayerApplication"
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
@@ -48,6 +55,8 @@ class HzPlayerApplication : Application(), SingletonImageLoader.Factory {
                     .build()
             }
             .components {
+                // Network fetcher for HTTP/HTTPS poster images (e.g. SubDL posters)
+                add(OkHttpNetworkFetcherFactory())
                 add(VideoFrameKeyer())
                 add(VideoFrameFetcher.Factory())
             }

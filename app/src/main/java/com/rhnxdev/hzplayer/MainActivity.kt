@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -116,6 +117,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.i(TAG, "onCreate")
         enableEdgeToEdge()
         requestMediaPermissions()
         window.setBackgroundDrawableResource(android.R.color.black)
@@ -210,11 +212,15 @@ class MainActivity : ComponentActivity() {
         }
 
         if (permissions.isNotEmpty()) {
+            Log.i(TAG, "requestMediaPermissions: requesting $permissions")
             requestPermissionsLauncher.launch(permissions.toTypedArray())
+        } else {
+            Log.d(TAG, "requestMediaPermissions: all permissions already granted")
         }
     }
 
     companion object {
+        private const val TAG = "MainActivity"
         /**
          * Check whether the app has [android.Manifest.permission.MANAGE_EXTERNAL_STORAGE]
          * (i.e. full file-system access).

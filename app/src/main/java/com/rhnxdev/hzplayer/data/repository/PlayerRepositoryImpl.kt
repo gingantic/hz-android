@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.data.repository
 
 import android.net.TrafficStats
 import android.net.Uri
+import android.util.Log
 import android.os.Process
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
@@ -47,6 +48,10 @@ class PlayerRepositoryImpl @Inject constructor(
     private val appUid = Process.myUid()
 
     private val _activeEngineType = MutableStateFlow(EngineType.EXO_PLAYER)
+
+    companion object {
+        private const val TAG = "PlayerRepository"
+    }
 
     init {
         scope.launch {
@@ -118,30 +123,35 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override fun playVideo(video: VideoItem, resumePositionMs: Long) {
+        Log.i(TAG, "playVideo: title=${video.title} resumeMs=$resumePositionMs")
         savedPlaybackUri = video.uri
         startTrafficPolling()
         engine().play(video.uri, video.title, isVideo = true, resumePositionMs = resumePositionMs)
     }
 
     override fun playAudio(audio: AudioItem, resumePositionMs: Long) {
+        Log.i(TAG, "playAudio: title=${audio.title} resumeMs=$resumePositionMs")
         savedPlaybackUri = audio.uri
         startTrafficPolling()
         engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false, resumePositionMs = resumePositionMs)
     }
 
     override fun playUri(uri: String, title: String, isVideo: Boolean, mimeType: String?, resumePositionMs: Long) {
+        Log.i(TAG, "playUri: title=$title isVideo=$isVideo mimeType=$mimeType resumeMs=$resumePositionMs")
         savedPlaybackUri = uri
         startTrafficPolling()
         engine().play(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = resumePositionMs)
     }
 
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
+        Log.i(TAG, "playPlaylist: items=${items.size} startIndex=$startIndex startPosMs=$startPositionMs")
         savedPlaybackUri = items.getOrNull(startIndex)?.first
         startTrafficPolling()
         engine().playPlaylist(items, startIndex, startPositionMs)
     }
 
     override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
+        Log.i(TAG, "playAudioPlaylist: items=${items.size} startIndex=$startIndex")
         savedPlaybackUri = items.getOrNull(startIndex)?.uri
         startTrafficPolling()
         engine().playAudioPlaylist(items, startIndex)
@@ -179,6 +189,7 @@ class PlayerRepositoryImpl @Inject constructor(
     override fun setActiveEngine(type: EngineType) {
         if (!engines.containsKey(type)) return
         if (type == _activeEngineType.value) return
+        Log.i(TAG, "setActiveEngine: ${_activeEngineType.value} -> $type")
         // Stop the outgoing engine but keep its instance alive for switch-back.
         engine().stop()
         _activeEngineType.value = type
@@ -203,6 +214,7 @@ class PlayerRepositoryImpl @Inject constructor(
     override fun getDebugStats(): DebugStats? = engine().getDebugStats()
 
     override fun stop() {
+        Log.i(TAG, "stop")
         savedPlaybackUri = null
         stopTrafficPolling()
         engine().stop()

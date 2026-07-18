@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
 import net.schmizz.sshj.sftp.SFTPClient
@@ -48,6 +49,7 @@ class SftpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
 
             sftpHandle = sftpClient!!.open(path)
         } catch (e: IOException) {
+            Log.w(TAG, "open failed for ${safeUri(dataSpec.uri)}: ${e.message}")
             // open() threw after borrow but before close() runs → return the
             // session so it isn't pinned inUse=1 for the process lifetime.
             ConnectionPool.returnSsh(host, port, user, pass)
@@ -100,6 +102,11 @@ class SftpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             ConnectionPool.returnSsh(host, sshPort, sshUser ?: "", sshPass ?: "")
         }
         transferEnded()
+    }
+
+    private fun safeUri(uri: android.net.Uri): String {
+        val s = uri.toString()
+        return s.substringBefore("@") + "@<redacted>"
     }
 
     companion object {

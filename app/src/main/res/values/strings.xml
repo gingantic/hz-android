@@ -266,6 +266,9 @@
 
     <!-- Subtitle search dialog -->
     <string name="subtitle_search_hint">Enter a name and tap search.</string>
+    <string name="subtitle_search_no_results">No subtitles found for \"%1$s\". Try a different title or language.</string>
+    <string name="subtitle_search_pick_title">Multiple titles matched. Pick one:</string>
+    <string name="subtitle_search_showing">Showing</string>
 
     <!-- Subtitle search/browser error strings (shown in composable, not ViewModel) -->
     <string name="search_failed">Search failed</string>

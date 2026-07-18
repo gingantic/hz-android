@@ -62,7 +62,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     // a rooted device. Upgrade path if this becomes sensitive: migrate to
     // androidx.security EncryptedSharedPreferences (AES via AndroidKeyStore).
     override val subdlApiKey: Flow<String> = dataStore.data.map { prefs ->
-        prefs[PrefKey.SubdlApiKey.key] ?: ""
+        prefs[PrefKey.SubdlApiKey.key].takeIf { !it.isNullOrBlank() }
+            ?: DEFAULT_SUBDL_API_KEY
     }.distinctUntilChanged()
 
     override val seekSensitivity: Flow<Float> = dataStore.data.map { prefs ->
@@ -235,6 +236,11 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override suspend fun setBackgroundPlay(enabled: Boolean) {
         dataStore.edit { prefs -> prefs[PrefKey.BackgroundPlay.key] = enabled }
+    }
+
+    companion object {
+        /** Built-in fallback key so subtitle search works without visiting Settings. */
+        const val DEFAULT_SUBDL_API_KEY = "subdl_2qIwIr9f3dEIKBEJKwQriXJUyeewcW132fFyPpQcWAg"
     }
 
     private sealed class PrefKey<T>(val key: Preferences.Key<T>) {

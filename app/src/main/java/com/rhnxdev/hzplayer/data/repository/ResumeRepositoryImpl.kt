@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.data.repository
 
+import android.util.Log
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlaybackPositionDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.PlaybackPositionEntity
 import com.rhnxdev.hzplayer.domain.model.PlaybackProgress
@@ -16,9 +17,11 @@ class ResumeRepositoryImpl @Inject constructor(
         if (uri.isBlank() || positionMs <= 0 || durationMs <= 0) return
         // Near the end -> finished; drop the row so the next play starts fresh.
         if (positionMs >= durationMs - END_THRESHOLD_MS) {
+            Log.i(TAG, "saveProgress: near-end, clearing posMs=$positionMs durMs=$durationMs")
             dao.deleteByUri(uri)
             return
         }
+        Log.d(TAG, "saveProgress: posMs=$positionMs durMs=$durationMs")
         dao.upsert(
             PlaybackPositionEntity(
                 uri = uri,
@@ -46,6 +49,7 @@ class ResumeRepositoryImpl @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "ResumeRepository"
         private const val START_THRESHOLD_MS = 5_000L
         private const val END_THRESHOLD_MS = 10_000L
     }
