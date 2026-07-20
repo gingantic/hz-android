@@ -14,9 +14,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import java.io.File
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class FileRepositoryImpl @Inject constructor(
     private val contentResolver: ContentResolver,
 ) : FileRepository {

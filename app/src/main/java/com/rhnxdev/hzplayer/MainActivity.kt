@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -106,7 +107,10 @@ class MainActivity : ComponentActivity() {
      * [HzPlayerApp] each recomposition so the Activity-level [onUserLeaveHint]
      * can read it without its own collector.
      */
-    private var pipEligible = false
+    private var pipEligible by mutableStateOf(false)
+
+    /** Media URI received from an external VIEW intent (file chooser / share). */
+    private var incomingMediaUri by mutableStateOf<String?>(null)
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -121,6 +125,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestMediaPermissions()
         window.setBackgroundDrawableResource(android.R.color.black)
+        handleViewIntent(intent)
         setContent {
             val mainViewModel: MainViewModel = hiltViewModel()
             val mainUiState by mainViewModel.uiState.collectAsStateWithLifecycle()
@@ -139,6 +144,8 @@ class MainActivity : ComponentActivity() {
                         permissionDenied = permissionDenied,
                         onRequestPermissions = { requestMediaPermissions() },
                         onPipEligibilityChange = { pipEligible = it },
+                        incomingMediaUri = incomingMediaUri,
+                        onIncomingMediaConsumed = { incomingMediaUri = null },
                     )
                 } else {
                     Box(
@@ -148,6 +155,26 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onDestroy() {
+        val playerViewModel: PlayerViewModel by viewModels()
+        playerViewModel.isShuttingDown = true
+        super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleViewIntent(intent)
+    }
+
+    /** Extract the media URI from a VIEW intent (external file open). */
+    private fun handleViewIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
+            incomingMediaUri = intent.data.toString()
+            Log.i(TAG, "Received VIEW intent: $incomingMediaUri")
         }
     }
 
@@ -287,6 +314,8 @@ fun HzPlayerApp(
     permissionDenied: Boolean = false,
     onRequestPermissions: () -> Unit = {},
     onPipEligibilityChange: (Boolean) -> Unit = {},
+    incomingMediaUri: String? = null,
+    onIncomingMediaConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -337,6 +366,22 @@ fun HzPlayerApp(
         playerState.currentTitle != null
     LaunchedEffect(pipEligibleNow) {
         onPipEligibilityChange(pipEligibleNow)
+    }
+
+    // Handle incoming media URI from external VIEW intents (file chooser / share).
+    LaunchedEffect(incomingMediaUri) {
+        val uri = incomingMediaUri ?: return@LaunchedEffect
+        val fileName = uri.substringAfterLast('/').substringBefore('?')
+        val isVideo = isVideoExtension(fileName) ||
+            uri.contains("video") // fallback for content:// URIs without clear extension
+        playerViewModel.playUri(uri, fileName, isVideo = isVideo)
+        if (isVideo) {
+            playerViewModel.onVideoStarted()
+            navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+        } else {
+            navController.navigate(NavRoutes.AUDIO_PLAYER)
+        }
+        onIncomingMediaConsumed()
     }
 
     Box(
@@ -581,6 +626,7 @@ fun HzPlayerApp(
                     onBack = {
                         val activity = context as? android.app.Activity
                         activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        playerViewModel.isShuttingDown = true
                         playerViewModel.stop()
                         navController.popBackStack("__main_tabs", inclusive = false)
                     },

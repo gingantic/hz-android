@@ -235,6 +235,34 @@ fun VideoPlayerScreen(
         }
     }
 
+    // ── HDR color-mode management ─────────────────────────────────────────
+    // When HDR content renders via SurfaceView the display compositor switches
+    // to HDR/wide-gamut mode automatically.  On some devices the display does
+    // NOT revert when the HDR surface stops presenting (video ended, player
+    // idle, or playlist transition to SDR).  The app's custom theme color then
+    // appears washed-out / wrong because the UI is still composited in HDR.
+    //
+    // Fix: explicitly reset window.colorMode to DEFAULT whenever the player is
+    // no longer actively rendering video (ENDED / IDLE / ERROR), and set
+    // COLOR_MODE_HDR when the video surface is active so the system knows to
+    // keep the HDR pipeline active (helps devices that need the explicit hint).
+    val videoSurfaceActive = uiState.isVideoSurfaceActive
+    LaunchedEffect(videoSurfaceActive) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return@LaunchedEffect
+        val w = activity?.window ?: return@LaunchedEffect
+        if (videoSurfaceActive) {
+            // Video surface is presenting frames — allow the system to use HDR
+            // if the SurfaceView content is HDR.  Setting COLOR_MODE_HDR here is
+            // a hint; the compositor still decides based on actual content.
+            w.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_HDR
+        } else {
+            // Video surface is no longer active (ended, idle, error, or audio
+            // playback) — revert to SDR so the app's custom accent color renders
+            // correctly.
+            w.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
+        }
+    }
+
     // ----- Immersive fullscreen -----
     DisposableEffect(Unit) {
         val window = (view.context as? android.app.Activity)?.window
@@ -378,7 +406,10 @@ fun VideoPlayerScreen(
                         onSkipBackward = viewModel::onSkipBackward,
                         onSpeedClick = { showSpeedDialog = true },
                         onAudioClick = { showAudioDialog = true },
-                        onSubtitleClick = { showSubtitleDialog = true },
+                        onSubtitleClick = {
+                            viewModel.refreshSubtitleTracks()
+                            showSubtitleDialog = true
+                        },
                         onLockClick = { viewModel.onToggleLock() },
                         onAspectRatioClick = { viewModel.onAspectRatioChange(uiState.aspectRatioMode.next()) },
                         onOrientationClick = {

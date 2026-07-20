@@ -9,9 +9,7 @@ import com.rhnxdev.hzplayer.domain.repository.SubtitleRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class SubtitleRepositoryImpl @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val subdlApi: SubdlApi,
@@ -77,7 +75,7 @@ class SubtitleRepositoryImpl @Inject constructor(
             if (bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
                 && bytes[2] == 0x03.toByte() && bytes[3] == 0x04.toByte()
             ) {
-                val (entryBytes, entryName) = extractFirstSubtitle(bytes)
+                val (entryBytes, entryName) = extractFirstSubtitle(bytes, fileName)
                 if (entryBytes != null) {
                     bytes = entryBytes
                     if (entryName != null) extractName = entryName
@@ -108,14 +106,21 @@ class SubtitleRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Pull the first subtitle-looking entry out of a ZIP archive. Returns the
-     * entry's bytes and its name, or (null, null) if nothing usable is found.
+     * Pull a subtitle entry out of a ZIP archive. When [preferredName] is given,
+     * the entry whose file name matches it (case-insensitive) is returned so the
+     * user gets the exact file they picked from a multi-file pack; otherwise (or
+     * when no match exists) the first subtitle-looking entry is used. Returns the
+     * entry's bytes and name, or (null, null) if nothing usable is found.
      */
-    private fun extractFirstSubtitle(zipBytes: ByteArray): Pair<ByteArray?, String?> {
+    private fun extractFirstSubtitle(
+        zipBytes: ByteArray,
+        preferredName: String? = null,
+    ): Pair<ByteArray?, String?> {
         val SUB_EXT = setOf("srt", "vtt", "ass", "ssa")
         return try {
             val buffer = ByteArray(8 * 1024)
             java.util.zip.ZipInputStream(zipBytes.inputStream()).use { zis ->
+                var fallback: Pair<ByteArray, String>? = null
                 var entry = zis.nextEntry
                 while (entry != null) {
                     if (!entry.isDirectory) {
@@ -124,14 +129,21 @@ class SubtitleRepositoryImpl @Inject constructor(
                             val out = java.io.ByteArrayOutputStream()
                             var n: Int
                             while (zis.read(buffer).also { n = it } >= 0) out.write(buffer, 0, n)
-                            return out.toByteArray() to entry.name
+                            val entryBase = entry.name.substringAfterLast('/')
+                            // Exact match on the user-picked file wins immediately.
+                            if (!preferredName.isNullOrBlank() &&
+                                entryBase.equals(preferredName, ignoreCase = true)
+                            ) {
+                                return out.toByteArray() to entry.name
+                            }
+                            if (fallback == null) fallback = out.toByteArray() to entry.name
                         }
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
                 }
+                fallback ?: (null to null)
             }
-            null to null
         } catch (e: Exception) {
             null to null
         }

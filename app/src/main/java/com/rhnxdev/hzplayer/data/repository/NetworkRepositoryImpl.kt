@@ -15,9 +15,7 @@ import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class NetworkRepositoryImpl @Inject constructor(
     private val serverConfigDao: ServerConfigDao,
     private val streamHistoryDao: StreamHistoryDao,

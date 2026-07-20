@@ -43,6 +43,7 @@ static Session* openPositioned(const std::string& path,
                                 const std::string& password,
                                 la_int64_t* outSize) {
     struct archive* a = archive_read_new();
+    if (!a) { LOGE("openPositioned: archive_read_new() returned NULL"); return nullptr; }
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
     if (!password.empty()) {
@@ -129,6 +130,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeList(
     std::string password = jstr(env, jPassword);
 
     struct archive* a = archive_read_new();
+    if (!a) { LOGE("nativeList: archive_read_new() returned NULL"); throwException(env, "java/io/IOException", "archive_read_new failed"); return nullptr; }
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
     if (!password.empty()) {
@@ -190,9 +192,11 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeList(
     jclass strCls = env->FindClass("java/lang/String");
     jobjectArray arr = env->NewObjectArray(static_cast<jsize>(entries.size()),
                                            strCls, nullptr);
+    env->DeleteLocalRef(strCls);
     for (size_t i = 0; i < entries.size(); i++) {
-        env->SetObjectArrayElement(arr, static_cast<jsize>(i),
-                                   env->NewStringUTF(entries[i].c_str()));
+        jstring js = env->NewStringUTF(entries[i].c_str());
+        env->SetObjectArrayElement(arr, static_cast<jsize>(i), js);
+        env->DeleteLocalRef(js);
     }
     return arr;
 }
@@ -275,6 +279,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeSeek(
         openPositioned(path, entry, password, &size));
     if (!ns) {
         s->ok = false;
+        s->totalSize = -1;
         return JNI_FALSE;
     }
     // Adopt the freshly opened session into the existing handle.
@@ -300,7 +305,12 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeSeek(
         }
         remaining -= rr;
     }
-    s->pos = target;
+    s->pos = target - remaining;
+    if (remaining > 0) {
+        LOGE("nativeSeek: could not reach target %lld, stopped at %lld",
+             static_cast<long long>(target), static_cast<long long>(s->pos));
+        return JNI_FALSE;
+    }
     return JNI_TRUE;
 }
 

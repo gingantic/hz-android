@@ -109,6 +109,7 @@ android {
                         "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
                     )
                 }
+
             }
         }
 
@@ -171,7 +172,8 @@ android {
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
-dependencies {
+
+dependencies {
     // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

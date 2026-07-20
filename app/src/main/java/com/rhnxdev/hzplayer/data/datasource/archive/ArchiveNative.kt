@@ -1,5 +1,8 @@
 package com.rhnxdev.hzplayer.data.datasource.archive
 
+import androidx.annotation.Keep
+
+@Keep
 object ArchiveNative {
     init {
         System.loadLibrary("archive-extractor")

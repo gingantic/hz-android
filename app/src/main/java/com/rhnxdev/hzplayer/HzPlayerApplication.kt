@@ -37,10 +37,12 @@ class HzPlayerApplication : Application(), SingletonImageLoader.Factory {
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
-        // ponytail: 20% of RAM held Bitmaps is the single biggest memory sink on
-        // low-end SoCs; scale down so a grid of thumbnails can't OOM the process.
+        // ponytail: decoded Bitmaps are the single biggest memory sink on low-end
+        // SoCs; but too-small a cache forces constant WebP re-decodes from disk
+        // which makes the file-browser thumbnail grid feel sluggish on revisit.
+        // 15% keeps ~80+ 720p thumbnails resident — enough for several folders.
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val memPercent = if (am.isLowRamDevice) 0.05 else 0.10
+        val memPercent = if (am.isLowRamDevice) 0.08 else 0.15
         return ImageLoader.Builder(context)
             .crossfade(true)
             .memoryCache {
@@ -51,7 +53,7 @@ class HzPlayerApplication : Application(), SingletonImageLoader.Factory {
             .diskCache {
                 coil3.disk.DiskCache.Builder()
                     .directory(context.cacheDir.resolve("image_cache").absolutePath.toPath())
-                    .maxSizePercent(0.02)
+                    .maxSizePercent(0.04)
                     .build()
             }
             .components {

@@ -7,9 +7,7 @@ import com.rhnxdev.hzplayer.domain.repository.ArchiveRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class ArchiveRepositoryImpl @Inject constructor() : ArchiveRepository {
 
     override suspend fun listEntries(

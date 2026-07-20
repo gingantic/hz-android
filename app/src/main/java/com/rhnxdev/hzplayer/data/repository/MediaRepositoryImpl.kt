@@ -15,9 +15,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class MediaRepositoryImpl @Inject constructor(
     private val mediaDao: MediaDao,
     private val mediaScanner: MediaScanner,
@@ -65,8 +63,7 @@ class MediaRepositoryImpl @Inject constructor(
         try {
             val scanned = mediaScanner.scanVideos().first()
             if (scanned.isNotEmpty()) {
-                mediaDao.deleteVideos()
-                mediaDao.insertAll(scanned)
+                mediaDao.replaceVideos(scanned)
                 val list = scanned.map { it.toVideoItem() }
                 cachedVideos = list
                 emit(applySort(list, sortType))

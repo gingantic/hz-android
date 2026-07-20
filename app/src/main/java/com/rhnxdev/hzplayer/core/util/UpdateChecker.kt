@@ -43,7 +43,7 @@ object UpdateChecker {
             val versionName = obj.optString("versionName", "")
             val versionCode = obj.optInt("versionCode", 0)
             val downloadUrl = obj.optString("downloadUrl", "")
-            val releaseNotes = obj.optString("releaseNotes", null)
+            val releaseNotes = obj.optString("releaseNotes", "")
 
             if (versionName.isBlank() || downloadUrl.isBlank()) {
                 return@withContext CheckResult.Error("Invalid update manifest")
@@ -82,7 +82,7 @@ object UpdateChecker {
                 conn.disconnect()
                 return null
             }
-            val text = BufferedReader(InputStreamReader(conn.inputStream)).readText()
+            val text = BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
             conn.disconnect()
             text
         } catch (e: Exception) {
@@ -112,23 +112,22 @@ object UpdateChecker {
             }
 
             val totalBytes = conn.contentLength
-            val inputStream = conn.inputStream
-            val outputStream = FileOutputStream(destinationFile)
             val buffer = ByteArray(8 * 1024)
             var bytesRead: Int
             var totalBytesRead = 0L
 
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
-                totalBytesRead += bytesRead
-                if (totalBytes > 0) {
-                    onProgress(totalBytesRead.toFloat() / totalBytes.toFloat())
+            conn.inputStream.use { input ->
+                FileOutputStream(destinationFile).use { output ->
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        totalBytesRead += bytesRead
+                        if (totalBytes > 0) {
+                            onProgress(totalBytesRead.toFloat() / totalBytes.toFloat())
+                        }
+                    }
+                    output.flush()
                 }
             }
-
-            outputStream.flush()
-            outputStream.close()
-            inputStream.close()
             conn.disconnect()
             true
         } catch (e: Exception) {

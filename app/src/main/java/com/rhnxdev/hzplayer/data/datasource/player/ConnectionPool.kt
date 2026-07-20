@@ -24,6 +24,7 @@ import java.io.File
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Singleton pool of persistent connections for FTP, SFTP, SMB, and WebDAV.
@@ -58,9 +59,10 @@ internal object ConnectionPool {
      */
     private class Timed<V>(val value: V) {
         @Volatile var lastUsed = System.currentTimeMillis()
-        @Volatile var inUse = 0
-        fun acquire() { inUse = inUse + 1; lastUsed = System.currentTimeMillis() }
-        fun release() { inUse = (inUse - 1).coerceAtLeast(0); lastUsed = System.currentTimeMillis() }
+        private val inUse = AtomicInteger(0)
+        fun acquire() { inUse.incrementAndGet(); lastUsed = System.currentTimeMillis() }
+        fun release() { inUse.updateAndGet { (it - 1).coerceAtLeast(0) }; lastUsed = System.currentTimeMillis() }
+        fun isInUse(): Boolean = inUse.get() > 0
     }
 
     private fun <V> ConcurrentHashMap<String, Timed<V>>.evictIdle(close: (V) -> Unit) {
@@ -68,7 +70,7 @@ internal object ConnectionPool {
         val it = entries.iterator()
         while (it.hasNext()) {
             val (_, timed) = it.next()
-            if (timed.inUse == 0 && now - timed.lastUsed > IDLE_TIMEOUT_MS) {
+            if (!timed.isInUse() && now - timed.lastUsed > IDLE_TIMEOUT_MS) {
                 try { close(timed.value) } catch (_: Exception) {}
                 it.remove()
             }
@@ -76,7 +78,7 @@ internal object ConnectionPool {
     }
 
     private val evictionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var sweeperStarted = false
+    @Volatile private var sweeperStarted = false
     private fun ensureSweeper() {
         if (sweeperStarted) return
         sweeperStarted = true
@@ -285,16 +287,8 @@ internal object ConnectionPool {
     }
 
     fun returnFtpBrowser(host: String, port: Int) {
-        val k = browserKey(host, port, "ftp")
-        ftpBrowserPool[k]?.let {
-            try {
-                if (it.isConnected) {
-                    it.logout()
-                    it.disconnect()
-                }
-            } catch (_: Exception) {}
-        }
-        ftpBrowserPool.remove(k)
+        // Keep the connection alive for reuse; the sweeper evicts when idle.
+        // No inUse tracking on browser pool — just leave it in the map.
     }
 
     fun borrowSftpBrowser(host: String, port: Int, user: String, pass: String): SSHClient {
@@ -424,7 +418,13 @@ internal object ConnectionPool {
         }
         sftpBrowserPool.clear()
 
+        smbPool.values.forEach {
+            try { it.value.close() } catch (_: Exception) {}
+        }
         smbPool.clear()
+        smbBrowserPool.values.forEach {
+            try { it.close() } catch (_: Exception) {}
+        }
         smbBrowserPool.clear()
         SmbPathResolver.clearCache()
 

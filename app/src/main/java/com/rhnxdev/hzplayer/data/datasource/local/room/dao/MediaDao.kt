@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.MediaEntity
 import kotlinx.coroutines.flow.Flow
@@ -67,4 +68,18 @@ interface MediaDao {
 
     @Query("DELETE FROM media WHERE mediaType = 'audio'")
     suspend fun deleteAudio()
+
+    /** Atomically replace all videos: delete existing + insert new in one transaction. */
+    @Transaction
+    suspend fun replaceVideos(entities: List<MediaEntity>) {
+        deleteVideos()
+        insertAll(entities)
+    }
+
+    /** Atomically replace all audio: delete existing + insert new in one transaction. */
+    @Transaction
+    suspend fun replaceAudio(entities: List<MediaEntity>) {
+        deleteAudio()
+        insertAll(entities)
+    }
 }

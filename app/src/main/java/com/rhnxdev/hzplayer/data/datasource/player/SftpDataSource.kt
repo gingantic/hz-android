@@ -47,7 +47,7 @@ class SftpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             sftpClient = ssh.newSFTPClient()
                 ?: throw IOException("Failed to create SFTP client for $host:$port")
 
-            sftpHandle = sftpClient!!.open(path)
+            sftpHandle = (sftpClient ?: throw IOException("SFTP client closed")).open(path)
         } catch (e: IOException) {
             Log.w(TAG, "open failed for ${safeUri(dataSpec.uri)}: ${e.message}")
             // open() threw after borrow but before close() runs → return the
@@ -55,7 +55,7 @@ class SftpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             ConnectionPool.returnSsh(host, port, user, pass)
             throw e
         }
-        val fileLength = try { sftpHandle!!.length() } catch (_: Exception) { C.LENGTH_UNSET.toLong() }
+        val fileLength = try { (sftpHandle ?: throw IOException("SFTP handle closed")).length() } catch (_: Exception) { C.LENGTH_UNSET.toLong() }
 
         // Read via SSHJ's RemoteFile.read(position, buffer, offset, len).
         // Pass the full requested length — SSHJ handles internal chunking.
@@ -68,7 +68,8 @@ class SftpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             }
             override fun read(b: ByteArray, off: Int, len: Int): Int {
                 if (pos >= fileLength && fileLength > 0) return -1
-                val count = sftpHandle!!.read(pos, b, off, len)
+                val handle = sftpHandle ?: throw IOException("SFTP handle closed")
+                val count = handle.read(pos, b, off, len)
                 if (count < 0) return -1
                 pos += count
                 return count

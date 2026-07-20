@@ -30,9 +30,7 @@ import kotlinx.coroutines.launch
 import kotlin.OptIn
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerRepositoryImpl @Inject constructor(
     private val engines: Map<EngineType, @JvmSuppressWildcards IPlayerEngine>,
