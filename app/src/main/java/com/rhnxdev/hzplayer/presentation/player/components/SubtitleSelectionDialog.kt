@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.SubtitlesOff
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +45,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.core.util.SubtitleLanguageResolver
+
+/**
+ * A subtitle track prepared for display: the engine index is preserved so the
+ * sorted UI list can still be mapped back onto the engine's track ordering.
+ */
+private data class DisplayTrack(
+    val engineIndex: Int,
+    val label: String,
+    val countryCode: String?,
+    val sortKey: String,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +72,22 @@ fun SubtitleSelectionDialog(
 ) {
     var tracksExpanded by remember { mutableStateOf(true) }
     var delayExpanded by remember { mutableStateOf(false) }
+
+    // Resolve each track's language, then sort alphabetically by language while
+    // keeping the original engine index for selection callbacks.
+    val displayTracks = remember(subtitleTracks) {
+        subtitleTracks
+            .mapIndexed { index, name ->
+                val lang = SubtitleLanguageResolver.resolve(name)
+                DisplayTrack(
+                    engineIndex = index,
+                    label = lang.displayName,
+                    countryCode = lang.countryCode,
+                    sortKey = lang.sortKey,
+                )
+            }
+            .sortedWith(compareBy({ it.sortKey }, { it.engineIndex }))
+    }
 
     SheetScaffold(
         title = stringResource(R.string.subtitles_cc),
@@ -86,17 +115,26 @@ fun SubtitleSelectionDialog(
             )
             if (tracksExpanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // Off
+                    // Off — pinned above the language-sorted tracks
                     TrackSelectionRow(
                         name = stringResource(R.string.subtitle_off),
                         isSelected = selectedTrackIndex == -1,
                         onClick = { onTrackSelected(-1); onDismiss() },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.SubtitlesOff,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
                     )
-                    subtitleTracks.forEachIndexed { index, name ->
+                    displayTracks.forEach { track ->
                         TrackSelectionRow(
-                            name = name,
-                            isSelected = selectedTrackIndex == index,
-                            onClick = { onTrackSelected(index); onDismiss() },
+                            name = track.label,
+                            isSelected = selectedTrackIndex == track.engineIndex,
+                            onClick = { onTrackSelected(track.engineIndex); onDismiss() },
+                            leadingIcon = { FlagIcon(countryCode = track.countryCode) },
                         )
                     }
 

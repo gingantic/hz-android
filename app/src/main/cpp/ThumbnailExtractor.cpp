@@ -139,11 +139,7 @@ struct IOStats {
     int64_t readCalls = 0;
     int64_t seekCalls = 0;
     int64_t totalBytes = 0;
-    int64_t largestRead = 0;
     int64_t currentPos = 0;
-
-    struct Chunk { int64_t start, end; };
-    std::vector<Chunk> chunks;
 };
 
 static int g_avioBufSize = 1024 * 1024; // 1 MB
@@ -180,15 +176,11 @@ static int io_read(void* opaque, uint8_t* buf, int bufSize) {
         (io->stats->totalBytes - io->probeBaseBytes) >= io->probeLimit) {
         return AVERROR_EOF;
     }
-    int64_t offset = io->stats->currentPos;
     int64_t n = io->file->read(buf, bufSize);
     if (n > 0) {
         io->stats->readCalls++;
         io->stats->totalBytes += n;
-        io->stats->largestRead = std::max(io->stats->largestRead, n);
-        io->stats->chunks.push_back({offset, offset + n - 1});
         io->stats->currentPos += n;
-        LOGD("READ  offset=%" PRId64 " size=%" PRId64, offset, n);
     }
     return static_cast<int>(n);
 }
@@ -199,7 +191,6 @@ static int64_t io_seek(void* opaque, int64_t offset, int whence) {
         return io->file->size();
     }
     io->stats->seekCalls++;
-    LOGD("SEEK  offset=%" PRId64 " whence=%d", offset, whence);
     int64_t newPos = io->file->seek(offset, whence);
     if (newPos >= 0) io->stats->currentPos = newPos;
     return newPos;
@@ -216,9 +207,6 @@ static std::vector<uint8_t> frameToRgba(AVFrame* frame, int dstW, int dstH, int&
         LOGE("frameToRgba: AV_PIX_FMT_NONE, can't convert");
         return {};
     }
-
-    LOGD("frameToRgba: %dx%d -> %dx%d fmt=%d(%s)", w, h, dstW, dstH, srcFmt,
-         av_get_pix_fmt_name(srcFmt));
 
     int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBA, dstW, dstH, 1);
     std::vector<uint8_t> rgba(numBytes);
@@ -303,13 +291,15 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeExtract(
 
     auto t0 = std::chrono::steady_clock::now();
 
-    // Hard deadline: in fastMode, abort I/O after 15 seconds so the thread
-    // returns gracefully (Coil would cancel the coroutine, but JNI calls
-    // can't be interrupted — the native code must self-terminate).
-    if (fastMode) {
-        ioBridge.deadline    = t0 + std::chrono::seconds(15);
-        ioBridge.hasDeadline = true;
-    }
+    // Hard deadline: abort I/O after this point so the thread returns
+    // gracefully (Coil would cancel the coroutine, but JNI calls can't be
+    // interrupted — the native code must self-terminate).  Applies to local
+    // extraction too: with a broken seek index or garbage timestamps the
+    // decode loop would otherwise chew through the entire file.  Hitting the
+    // deadline still yields a thumbnail — the loop exits with the best frame
+    // decoded so far (the keyframe just before the target).
+    ioBridge.deadline    = t0 + std::chrono::seconds(fastMode ? 15 : 20);
+    ioBridge.hasDeadline = true;
 
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "ignore_chapters", "1", 0);
@@ -408,8 +398,9 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeExtract(
     AVFrame*  frame = av_frame_alloc();
     AVFrame*  foundFrame = nullptr;
     int64_t   bestDelta = INT64_MAX;
+    bool      pastTarget = false;
 
-    while (av_read_frame(fmtCtx, pkt) >= 0) {
+    while (!pastTarget && av_read_frame(fmtCtx, pkt) >= 0) {
         if (pkt->stream_index != si) { av_packet_unref(pkt); continue; }
         int sendRet = avcodec_send_packet(dec, pkt);
         av_packet_unref(pkt);
@@ -443,8 +434,13 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeExtract(
                     foundFrame = av_frame_clone(frame);
                 }
                 // Frames are in presentation order; once we pass the target,
-                // every later frame is further away — stop decoding.
-                if (frame->pts > targetTs) break;
+                // every later frame is further away — stop decoding.  This
+                // must also terminate the OUTER av_read_frame loop (via
+                // pastTarget): breaking only the inner receive loop left the
+                // outer one demuxing + decoding the entire remainder of the
+                // file — minutes of CPU on long videos — while foundFrame
+                // was already final.
+                if (frame->pts > targetTs) { pastTarget = true; break; }
             } else if (!foundFrame) {
                 // No PTS available: fall back to the first decoded frame
                 // (supersedes the previous NOPTS-only branch).
@@ -558,54 +554,14 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeExtract(
         LOGD("no frame found at %.0f%%", positionPercent * 100.0);
     }
 
-    // ── I/O statistics ──
+    // ── Summary ──
     auto t1 = std::chrono::steady_clock::now();
     int elapsedMs = static_cast<int>(
         std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count());
-
-    std::sort(stats.chunks.begin(), stats.chunks.end(),
-              [](auto& a, auto& b) { return a.start < b.start; });
-    std::vector<IOStats::Chunk> merged;
-    for (auto& r : stats.chunks) {
-        if (merged.empty()) {
-            merged.push_back(r);
-        } else {
-            auto& last = merged.back();
-            if (r.start <= last.end + 1) {
-                last.end = std::max(last.end, r.end);
-            } else {
-                merged.push_back(r);
-            }
-        }
-    }
-    int64_t uniqueBytes = 0;
-    for (auto& r : merged) uniqueBytes += (r.end - r.start + 1);
-
-    LOGD("===== Thumbnail I/O Statistics =====");
-    LOGD("Duration: %d ms", elapsedMs);
-    LOGD("AVIO buffer: %d", avioBufSize);
-    LOGD("Read calls: %" PRId64, stats.readCalls);
-    LOGD("Seek calls: %" PRId64, stats.seekCalls);
-    LOGD("Total bytes read: %.2f MB", stats.totalBytes / (1024.0 * 1024.0));
-    LOGD("Unique bytes: %.2f MB", uniqueBytes / (1024.0 * 1024.0));
-    LOGD("Largest read: %" PRId64, stats.largestRead);
-    LOGD("Average read: %" PRId64 " bytes",
-         stats.readCalls > 0 ? stats.totalBytes / stats.readCalls : 0);
-
-    double overlap = stats.totalBytes > 0
-        ? (1.0 - static_cast<double>(uniqueBytes) / stats.totalBytes) * 100.0
-        : 0.0;
-    LOGD("Overlap: %.1f %%", overlap);
-    LOGD("Regions accessed:");
-    for (auto& r : merged) {
-        double mbStart = r.start / (1024.0 * 1024.0);
-        double mbEnd   = r.end   / (1024.0 * 1024.0);
-        double sizeMB  = (r.end - r.start + 1) / (1024.0 * 1024.0);
-        LOGD("  %.2f MB - %.2f MB (%.2f MB)", mbStart, mbEnd, sizeMB);
-    }
-    LOGD("Total unique regions: %zu", merged.size());
-    LOGD("====================================");
-    LOGD("Thumbnail generated: %s", resultBitmap ? "yes" : "no");
+    LOGD("Thumbnail %s in %d ms (%.1f MB read, %" PRId64 " reads, %" PRId64 " seeks)",
+         resultBitmap ? "ok" : "FAILED", elapsedMs,
+         stats.totalBytes / (1024.0 * 1024.0),
+         stats.readCalls, stats.seekCalls);
 
     avformat_close_input(&fmtCtx); // frees avio + ioBuf
 

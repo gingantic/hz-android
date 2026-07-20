@@ -215,6 +215,9 @@ dependencies {
     // Material Icons Extended (for media-player-specific icons)
     implementation("androidx.compose.material:material-icons-extended")
 
+    // Country flag ImageVectors (subtitle language rows)
+    implementation(libs.flagkit)
+
     // Coil
     implementation(libs.coil.core)
     implementation(libs.coil.compose)
