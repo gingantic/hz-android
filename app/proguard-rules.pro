@@ -44,3 +44,6 @@
 # Apache Commons Net (FTP) rules
 -keep class org.apache.commons.net.** { *; }
 -dontwarn org.apache.commons.net.**
+
+# FlagKit — country flag ImageVectors resolved at runtime via FlagKit.getFlag()
+-keep class dev.carlsen.flagkit.** { *; }

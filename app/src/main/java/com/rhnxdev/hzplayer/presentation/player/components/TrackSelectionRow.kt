@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.presentation.player.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +28,8 @@ fun TrackSelectionRow(
     name: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    leadingIcon: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -59,6 +61,15 @@ fun TrackSelectionRow(
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
+        if (leadingIcon != null) {
+            Box(
+                modifier = Modifier.width(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                leadingIcon()
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+        }
         Text(
             text = name,
             style = MaterialTheme.typography.bodyMedium.copy(

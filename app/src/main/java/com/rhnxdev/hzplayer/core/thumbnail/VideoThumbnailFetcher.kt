@@ -208,13 +208,27 @@ class VideoFrameFetcher(
     }
 
     private fun extractLocalFrame(path: String): Bitmap? {
+        // Native FFmpeg first: fast (100–700 ms), handles everything in the
+        // user's library (h264/hevc/mpeg4/vp9/av1…), and never hangs.
+        val frame = extractLocalFrameNative(path)
+        if (frame != null) return frame
+
+        // Fallback: MediaMetadataRetriever via Android's mediaserver.  Catches
+        // exotic formats the FFmpeg build might lack (e.g. hardware-only DRM
+        // content).  Bail early on *parse* failures (0x80000000) — retrying
+        // with a different access method can't help and each retry burns ~2 s.
+        return extractLocalFrameMmfr(path)
+    }
+
+    private fun extractLocalFrameMmfr(path: String): Bitmap? {
         val retriever = MediaMetadataRetriever()
-        val frame = try {
+        return try {
             // Try 1: Uri.fromFile → ContentResolver (works for FUSE mounts, SMB mounts)
             try {
                 val fileUri = Uri.fromFile(File(path))
                 retriever.setDataSource(options.context, fileUri)
             } catch (e1: Exception) {
+                if (e1.isMmfrParseFailure()) throw e1
                 // Try 2: FileInputStream with fd
                 try {
                     val file = File(path)
@@ -222,26 +236,21 @@ class VideoFrameFetcher(
                         retriever.setDataSource(fis.fd, 0L, file.length())
                     }
                 } catch (e2: Exception) {
+                    if (e2.isMmfrParseFailure()) throw e2
                     // Try 3: raw path string
                     retriever.setDataSource(path)
                 }
             }
-            val f = extractBestFrame(retriever)
-            f
+            extractBestFrame(retriever)
         } catch (e: Exception) {
-            Log.e(TAG, "extractLocalFrame: MediaMetadataRetriever failed", e)
+            Log.w(TAG, "extractLocalFrameMmfr: failed: ${e.message}")
             null
         } finally {
             runCatching { retriever.release() }
         }
-
-        // Last resort: MediaMetadataRetriever can't decode some containers/codecs
-        // (e.g. certain MPEG-TS streams) — it either throws or returns null. Fall
-        // through to the native FFmpeg extractor, which handles them.
-        return frame ?: extractLocalFrameNative(path)
     }
 
-    /** Native FFmpeg fallback for local files MediaMetadataRetriever can't handle. */
+    /** Native FFmpeg extractor — primary path for local files. */
     private fun extractLocalFrameNative(path: String): Bitmap? {
         return try {
             val bridge = LocalRandomAccessBridge(path)
@@ -386,8 +395,11 @@ class VideoFrameFetcher(
         return File(dir, "${hash}_${frame.dateModified}.webp")
     }
 
+    // Suffix is versioned ("f2"): bump it whenever the extraction pipeline
+    // changes materially so stale markers written by an older, buggier build
+    // stop blocking retries (a marker suppresses re-extraction for a day).
     private fun failMarkerFor(frame: VideoFrame): File =
-        File(cacheFileFor(frame).path + ".fail")
+        File(cacheFileFor(frame).path + ".f2.fail")
 
     private fun isFailMarkerFresh(marker: File): Boolean {
         val age = System.currentTimeMillis() - marker.lastModified()
@@ -399,6 +411,14 @@ class VideoFrameFetcher(
             VideoFrameFetcher(data, options)
     }
 }
+
+/**
+ * True when mediaserver opened the file but couldn't parse/decode it
+ * (`setDataSource failed: status = 0x...`).  Retrying with another access
+ * method can't help; access failures (IO/permission/path) are NOT this.
+ */
+private fun Exception.isMmfrParseFailure(): Boolean =
+    this is RuntimeException && message?.contains("setDataSource failed") == true
 
 /** Fit within [THUMB_MAX_WIDTH] preserving aspect; default 16:9 when source size is unknown. */
 private fun scaledDimensions(srcW: Int, srcH: Int): Pair<Int, Int> {

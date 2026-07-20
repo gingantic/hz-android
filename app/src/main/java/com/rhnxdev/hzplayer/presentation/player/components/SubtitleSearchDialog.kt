@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +66,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.core.util.SubtitleLanguageResolver
 import com.rhnxdev.hzplayer.presentation.player.SubtitleSearchCandidateItem
 import com.rhnxdev.hzplayer.presentation.player.SubtitleSearchResultItem
 import com.rhnxdev.hzplayer.presentation.player.SubtitleSearchViewModel
@@ -686,14 +688,25 @@ private fun ResultsLayer(
             )
         }
 
-        // Results list
+        // Results list — grouped alphabetically by language, original order kept
+        // stable within each language.
+        val sortedResults = remember(uiState.results) {
+            uiState.results.withIndex()
+                .sortedWith(
+                    compareBy(
+                        { SubtitleLanguageResolver.resolve(it.value.language).sortKey },
+                        { it.index },
+                    )
+                )
+                .map { it.value }
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(uiState.results) { result ->
+            items(sortedResults) { result ->
                 SearchResultRow(
                     result = result,
                     isDownloading = result.downloadUrl in uiState.downloadingUrls,
@@ -710,6 +723,7 @@ private fun SearchResultRow(
     isDownloading: Boolean,
     onDownload: () -> Unit,
 ) {
+    val lang = remember(result.language) { SubtitleLanguageResolver.resolve(result.language) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -730,7 +744,11 @@ private fun SearchResultRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FlagIcon(countryCode = lang.countryCode)
                 Text(
                     text = result.language.uppercase(),
                     style = MaterialTheme.typography.labelSmall.copy(
