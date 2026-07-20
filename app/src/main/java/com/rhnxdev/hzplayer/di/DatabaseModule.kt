@@ -30,6 +30,7 @@ object DatabaseModule {
         // Only wipe on a *downgrade* (illegal). An *upgrade* with no matching
         // Migration now fails loudly instead of silently destroying user data,
         // forcing a real Migration to be written. Schema files live in app/schemas.
+        .addMigrations(HzPlayerDatabase.MIGRATION_3_4)
         .fallbackToDestructiveMigrationOnDowngrade()
         // TODO: add Migration(1,2), Migration(2,3), … as the schema evolves.
         .build()

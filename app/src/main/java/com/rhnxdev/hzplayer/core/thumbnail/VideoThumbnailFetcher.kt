@@ -41,6 +41,9 @@ fun frameTimeUs(durationMs: Long): Long = durationMs * 1000L * 40 / 100
 /** Longest edge of the cached thumbnail; keeps WebP files small. */
 private const val THUMB_MAX_WIDTH = 720
 
+/** Smaller target for network (SMB) thumbnails — less decode/transfer work. */
+private const val THUMB_MAX_WIDTH_NETWORK = 480
+
 /** How many bytes to download from a remote video for thumbnail extraction. */
 private const val REMOTE_HEAD_BYTES = 512_000L // 512 KB — enough for the moov atom; smaller range = faster thumbnail fetch on slow links
 
@@ -62,6 +65,24 @@ class VideoFrameFetcher(
 
     override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
         val cacheFile = cacheFileFor(data)
+
+        // ── Fast path: thumbnail already on disk ──────────────────────────
+        // Skip the semaphore entirely for cache hits so scrolling through a
+        // folder of already-extracted videos isn't gated behind the 3-permit
+        // extraction concurrency cap.  A single file-existence check + ImageSource
+        // creation is ~0 ms compared to extraction.
+        if (cacheFile.exists()) {
+            return@withContext SourceFetchResult(
+                source = ImageSource(
+                    file = cacheFile.absolutePath.toPath(),
+                    fileSystem = FileSystem.SYSTEM,
+                ),
+                mimeType = "image/webp",
+                dataSource = DataSource.DISK,
+            )
+        }
+
+        // ── Slow path: extract a new frame ────────────────────────────────
         val failMarker = failMarkerFor(data)
 
         // Skip re-running the (often expensive SMB/remote) pipeline when a
@@ -71,23 +92,22 @@ class VideoFrameFetcher(
             return@withContext null
         }
 
-        if (!cacheFile.exists()) {
-            val bitmap = THUMBNAIL_SEMAPHORE.withPermit {
-                extractFrame()
-            }
-            if (bitmap == null) {
-                try { failMarker.createNewFile() } catch (_: Exception) {}
-                return@withContext null
-            }
-            try {
-                cacheFile.parentFile?.mkdirs()
-                cacheFile.outputStream().use { out ->
-                    bitmap.compress(webpFormat(), 75, out)
-                }
-            } finally {
-                bitmap.recycle()
-            }
+        val bitmap = THUMBNAIL_SEMAPHORE.withPermit {
+            extractFrame()
         }
+        if (bitmap == null) {
+            try { failMarker.createNewFile() } catch (_: Exception) {}
+            return@withContext null
+        }
+        try {
+            cacheFile.parentFile?.mkdirs()
+            cacheFile.outputStream().use { out ->
+                bitmap.compress(webpFormat(), 75, out)
+            }
+        } finally {
+            bitmap.recycle()
+        }
+
         if (!cacheFile.exists()) {
             return@withContext null
         }
@@ -141,9 +161,11 @@ class VideoFrameFetcher(
                     Log.w(TAG, "extractSmbFrame: file not found: $remoteUri"); return null
                 }
                 val size = file.length()
-                val bridge = RandomAccessBridge(file, size)
+                val bridge = RandomAccessBridge(file, size, lightweight = true)
                 try {
-                    NativeThumbnailExtractor.extractThumbnail(bridge, 0.40f, THUMB_MAX_WIDTH)
+                    NativeThumbnailExtractor.extractThumbnail(
+                        bridge, 0.40f, THUMB_MAX_WIDTH_NETWORK, fastMode = true
+                    )
                 } finally {
                     bridge.close()
                 }
@@ -302,14 +324,16 @@ class VideoFrameFetcher(
             try {
                 conn.connect()
                 val stream = conn.inputStream ?: return
-                FileOutputStream(dest).use { out ->
-                    val buf = ByteArray(8192)
-                    var total = 0L
-                    while (total < maxBytes) {
-                        val n = stream.read(buf, 0, buf.size.coerceAtMost((maxBytes - total).toInt()))
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        total += n
+                stream.use { s ->
+                    FileOutputStream(dest).use { out ->
+                        val buf = ByteArray(8192)
+                        var total = 0L
+                        while (total < maxBytes) {
+                            val n = s.read(buf, 0, buf.size.coerceAtMost((maxBytes - total).toInt()))
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            total += n
+                        }
                     }
                 }
             } finally {
@@ -332,23 +356,27 @@ class VideoFrameFetcher(
             .replaceFirst("webdav://", "http://", ignoreCase = true)
             .replaceFirst("webdavs://", "https://", ignoreCase = true)
         val client = ConnectionPool.borrowWebDavClient(host, port, scheme == "webdavs", user, pass)
-        val request = Request.Builder().url(httpUrl)
-            .header("Range", "bytes=0-${maxBytes - 1}")
-            .apply { if (user.isNotEmpty()) header("Authorization", Credentials.basic(user, pass)) }
-            .build()
-        client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) return
-            val stream = resp.body?.byteStream() ?: return
-            FileOutputStream(dest).use { out ->
-                val buf = ByteArray(8192)
-                var total = 0L
-                while (total < maxBytes) {
-                    val n = stream.read(buf, 0, buf.size.coerceAtMost((maxBytes - total).toInt()))
-                    if (n < 0) break
-                    out.write(buf, 0, n)
-                    total += n
+        try {
+            val request = Request.Builder().url(httpUrl)
+                .header("Range", "bytes=0-${maxBytes - 1}")
+                .apply { if (user.isNotEmpty()) header("Authorization", Credentials.basic(user, pass)) }
+                .build()
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return
+                val stream = resp.body?.byteStream() ?: return
+                FileOutputStream(dest).use { out ->
+                    val buf = ByteArray(8192)
+                    var total = 0L
+                    while (total < maxBytes) {
+                        val n = stream.read(buf, 0, buf.size.coerceAtMost((maxBytes - total).toInt()))
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        total += n
+                    }
                 }
             }
+        } finally {
+            ConnectionPool.returnWebDavClient(host, port, scheme == "webdavs", user, pass)
         }
     }
 

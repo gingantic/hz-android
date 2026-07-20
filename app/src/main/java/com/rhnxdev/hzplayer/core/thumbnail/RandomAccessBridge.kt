@@ -4,23 +4,33 @@ import jcifs.smb.SmbFile
 import jcifs.smb.SmbRandomAccessFile
 import kotlinx.coroutines.*
 import java.io.IOException
+import java.util.concurrent.Semaphore
 import java.util.concurrent.locks.ReentrantLock
 
 /**
  * Bridges the native FFmpeg extractor to SMB.
  *
- * Implements concurrent read-ahead (prefetching) to maximize bandwidth utilization
- * and overcome network latency when loading large stream headers (e.g. 50MB+ MP4 moov atom).
+ * Two modes:
+ * - **Full** (default): concurrent read-ahead with 1 MB blocks and 3 handles.
+ *   Best for playback or large sequential reads.
+ * - **Lightweight** (`lightweight = true`): 256 KB blocks, no prefetch, single
+ *   handle.  Minimises network bytes for random-access patterns like thumbnail
+ *   extraction where FFmpeg reads a header then jumps to one keyframe.
  */
 class RandomAccessBridge(
     private val file: SmbFile,
     private val fileSize: Long,
+    lightweight: Boolean = false,
 ) : ThumbnailSource {
     companion object {
-        private const val BLOCK_SIZE = 1024 * 1024 // 1 MB
-        private const val PREFETCH_COUNT = 3        // Prefetch up to 3 blocks ahead
-        private const val MAX_HANDLES = 3           // Number of persistent file handles
+        private const val BLOCK_SIZE_FULL = 1024 * 1024   // 1 MB
+        private const val BLOCK_SIZE_LIGHT = 256 * 1024   // 256 KB
+        private const val PREFETCH_COUNT = 3              // Prefetch up to 3 blocks ahead (full mode)
     }
+
+    private val blockSize = if (lightweight) BLOCK_SIZE_LIGHT else BLOCK_SIZE_FULL
+    private val maxHandles = if (lightweight) 1 else 3
+    private val prefetchEnabled = !lightweight
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -33,10 +43,11 @@ class RandomAccessBridge(
     // Persistent file handle pool
     private val handles = mutableListOf<SmbRandomAccessFile>()
     private val handleLocks = mutableListOf<ReentrantLock>()
+    private val handleSemaphore = Semaphore(maxHandles)
 
     init {
         try {
-            for (i in 0 until MAX_HANDLES) {
+            for (i in 0 until maxHandles) {
                 handles.add(SmbRandomAccessFile(file, "r"))
                 handleLocks.add(ReentrantLock())
             }
@@ -61,10 +72,10 @@ class RandomAccessBridge(
         var currentPos = position
 
         while (bytesCopied < bytesToRead) {
-            val blockIdx = currentPos / BLOCK_SIZE
-            val blockOffset = blockIdx * BLOCK_SIZE
+            val blockIdx = currentPos / blockSize
+            val blockOffset = blockIdx * blockSize
             val offsetInBlock = (currentPos - blockOffset).toInt()
-            val remainingInBlock = BLOCK_SIZE - offsetInBlock
+            val remainingInBlock = blockSize - offsetInBlock
             val chunkToCopy = (bytesToRead - bytesCopied).coerceAtMost(remainingInBlock)
 
             // Fetch current block
@@ -89,11 +100,13 @@ class RandomAccessBridge(
             }
         }
 
-        // Trigger prefetching of subsequent blocks
-        val currentBlockIdx = position / BLOCK_SIZE
-        if (currentBlockIdx != lastReadBlockIdx) {
-            lastReadBlockIdx = currentBlockIdx
-            triggerPrefetches(currentBlockIdx)
+        // Trigger prefetching of subsequent blocks (full mode only)
+        if (prefetchEnabled) {
+            val currentBlockIdx = position / blockSize
+            if (currentBlockIdx != lastReadBlockIdx) {
+                lastReadBlockIdx = currentBlockIdx
+                triggerPrefetches(currentBlockIdx)
+            }
         }
 
         return bytesCopied
@@ -123,7 +136,7 @@ class RandomAccessBridge(
             // Start prefetching next N blocks concurrently
             for (i in 1..PREFETCH_COUNT) {
                 val nextBlockIdx = currentBlockIdx + i
-                val nextOffset = nextBlockIdx * BLOCK_SIZE
+                val nextOffset = nextBlockIdx * blockSize
                 if (nextOffset < fileSize) {
                     cache.getOrPut(nextBlockIdx) {
                         scope.async {
@@ -136,35 +149,46 @@ class RandomAccessBridge(
     }
 
     private fun readBlockFromFile(blockIdx: Long): BlockData {
-        val offset = blockIdx * BLOCK_SIZE
-        val data = ByteArray(BLOCK_SIZE)
+        val offset = blockIdx * blockSize
+        val data = ByteArray(blockSize)
         var total = 0
 
-        // Find a free handle or wait for one from the pool
-        var handleIdx = -1
-        while (handleIdx == -1) {
+        // Block on semaphore until a handle is available — avoids busy-wait.
+        handleSemaphore.acquire()
+        val handleIdx = try {
+            var idx = -1
             for (i in handles.indices) {
                 if (handleLocks[i].tryLock()) {
-                    handleIdx = i
+                    idx = i
                     break
                 }
             }
-            if (handleIdx == -1) {
-                Thread.sleep(5) // Wait a tiny bit and retry
+            // Semaphore guarantees at least one lock is free.
+            if (idx == -1) {
+                for (i in handles.indices) {
+                    handleLocks[i].lock()
+                    idx = i
+                    break
+                }
             }
+            idx
+        } catch (e: Exception) {
+            handleSemaphore.release()
+            throw e
         }
 
         try {
             val raf = handles[handleIdx]
             raf.seek(offset)
-            while (total < BLOCK_SIZE) {
-                val toRead = BLOCK_SIZE - total
+            while (total < blockSize) {
+                val toRead = blockSize - total
                 val n = raf.read(data, total, toRead)
                 if (n < 0) break
                 total += n
             }
         } finally {
             handleLocks[handleIdx].unlock()
+            handleSemaphore.release()
         }
 
         return BlockData(data, total)

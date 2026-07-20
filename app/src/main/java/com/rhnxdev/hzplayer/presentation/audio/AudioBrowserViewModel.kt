@@ -66,8 +66,7 @@ class AudioBrowserViewModel @Inject constructor(
                         _uiState.update { it.copy(isLoadingSongs = false) }
                     }
                     .collect { songs ->
-                        val minSecs = userPrefs.minSongDurationSecs.first()
-                        val filtered = Companion.filterSongs(songs, "", minSecs)
+                        val filtered = Companion.filterSongs(songs, "", cachedMinSecs)
                         _uiState.update {
                             it.copy(songs = songs, filteredSongs = filtered, isLoadingSongs = false)
                         }
@@ -136,13 +135,12 @@ class AudioBrowserViewModel @Inject constructor(
 
     private fun applyPreviewFallback() {
         viewModelScope.launch {
-            val minSecs = userPrefs.minSongDurationSecs.first()
             _uiState.update {
                 it.copy(
                     songs = PreviewMedia.songs,
                     albums = PreviewMedia.albums,
                     artists = PreviewMedia.artists,
-                    filteredSongs = Companion.filterSongs(PreviewMedia.songs, "", minSecs),
+                    filteredSongs = Companion.filterSongs(PreviewMedia.songs, "", cachedMinSecs),
                     isLoadingSongs = false,
                     isLoadingAlbums = false,
                     isLoadingArtists = false,

@@ -102,6 +102,13 @@ class PlayerViewModel @Inject constructor(
      */
     var isMinimizing = false
 
+    /**
+     * Set to true by the Activity in onDestroy() to signal that the ViewModel
+     * should stop the singleton player. When false (default), onCleared() skips
+     * stop() so config changes and process-death recreation don't kill playback.
+     */
+    var isShuttingDown = false
+
     private var subtitlePreferenceAppliedForUri: String? = null
 
     private fun applySubtitlePreference() {
@@ -192,6 +199,10 @@ class PlayerViewModel @Inject constructor(
                         subtitlePreferenceAppliedForUri = null
                         trackCache.markNeedsRefresh()
                     }
+                    // Track whether the video surface is actively presenting frames.
+                    // Used by VideoPlayerScreen to manage the window HDR color mode.
+                    val videoActive = state.isVideo &&
+                        (info.state == PlayerState.READY || info.state == PlayerState.BUFFERING)
                     state.copy(
                         isPlaying = info.isPlaying,
                         isLoading = newIsLoading,
@@ -209,6 +220,7 @@ class PlayerViewModel @Inject constructor(
                         // surface selection while HDR/SDR colour-correction is in
                         // progress.
                         drmSessionActive = info.drmSessionActive,
+                        isVideoSurfaceActive = videoActive,
                     )
                 }
                 // Refresh track cache once ExoPlayer finishes preparing (state == READY).
@@ -274,6 +286,16 @@ class PlayerViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    /**
+     * Re-query the engine's track lists/selection into the UI state. Called right
+     * before the subtitle dialog opens so the displayed indices match the engine's
+     * live tracks — a stale cached list could map a tapped external track onto an
+     * embedded index and wipe the libass overlay on selection.
+     */
+    fun refreshSubtitleTracks() {
+        trackCache.refresh()
     }
 
     fun onSubtitleDelayChange(delayMs: Long) {
@@ -573,7 +595,8 @@ class PlayerViewModel @Inject constructor(
             isPlaying = false, 
             currentPlaybackUri = null, 
             videoPlaylist = emptyList(),
-            errorMessage = null
+            errorMessage = null,
+            isVideoSurfaceActive = false,
         ) }
     }
 
@@ -631,8 +654,10 @@ class PlayerViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        android.util.Log.i(TAG, "onCleared() called")
+        android.util.Log.i(TAG, "onCleared() called, isShuttingDown=$isShuttingDown")
         positionController.onCleared()
-        playerRepository.stop()
+        if (isShuttingDown) {
+            playerRepository.stop()
+        }
     }
 }

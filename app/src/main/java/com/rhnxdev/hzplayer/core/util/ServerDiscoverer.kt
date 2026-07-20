@@ -23,7 +23,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -81,7 +83,7 @@ class ServerDiscoverer @Inject constructor(
     private val discoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val networkCallback = createNetworkCallback()
     private var registerNetworkCalled = false
-    private val discoveredNames = mutableSetOf<String>()
+    private val discoveredNames = ConcurrentHashMap.newKeySet<String>()
     private var multicastLock: WifiManager.MulticastLock? = null
 
     // Map of serviceType to its active DiscoveryListener
@@ -206,6 +208,7 @@ class ServerDiscoverer @Inject constructor(
         // @Singleton, so cancelling discoveryScope or unregistering the network
         // callback here would break discovery for the rest of the process.
         stopScan()
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
     }
 
     // ── Subnet Port Scanner Fallback ───────────────────────────────────
@@ -341,19 +344,18 @@ class ServerDiscoverer @Inject constructor(
     }
 
     private fun addDiscoveredServer(name: String, protocol: NetworkProtocol, host: String, port: Int) {
-        val existing = _discoveredServers.value.any {
-            it.host == host && it.protocol == protocol
+        _discoveredServers.update { current ->
+            val existing = current.any { it.host == host && it.protocol == protocol }
+            if (existing) return@update current
+            Log.d(TAG, "addDiscoveredServer: adding $name ($protocol @ $host:$port)")
+            current + ServerConfig(
+                name = name,
+                protocol = protocol,
+                host = host,
+                port = port,
+                basePath = "/",
+            )
         }
-        if (existing) return
-
-        Log.d(TAG, "addDiscoveredServer: adding $name ($protocol @ $host:$port)")
-        _discoveredServers.value = _discoveredServers.value + ServerConfig(
-            name = name,
-            protocol = protocol,
-            host = host,
-            port = port,
-            basePath = "/",
-        )
     }
 
     // ── Network detection ──────────────────────────────────────────────

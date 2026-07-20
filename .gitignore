@@ -35,3 +35,13 @@ libass_build_tmp/
 # Native compiler build folders
 build_archive/
 .build_archive/
+
+# Vendored native source trees / submodules (keep out of repo as gitlinks)
+native/fast_float_repo/
+native/src/dav1d/
+native/src/ffmpeg/
+native/src/libplacebo/
+native/src/shaderc/
+native/vulkan-headers/
+
+graphify-out/

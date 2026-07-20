@@ -16,9 +16,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class AudioRepositoryImpl @Inject constructor(
     private val mediaDao: MediaDao,
     private val mediaScanner: MediaScanner,
@@ -51,8 +49,7 @@ class AudioRepositoryImpl @Inject constructor(
         try {
             val scanned = mediaScanner.scanAudio().first()
             if (scanned.isNotEmpty()) {
-                mediaDao.deleteAudio()
-                mediaDao.insertAll(scanned)
+                mediaDao.replaceAudio(scanned)
                 val list = scanned.map { it.toAudioItem() }
                 cachedSongs = list
                 emit(list)
@@ -82,7 +79,7 @@ class AudioRepositoryImpl @Inject constructor(
         if (songs.isNotEmpty()) {
             val albums = songs
                 .filter { !it.album.isNullOrBlank() }
-                .groupBy { it.album!! }
+                .groupBy { it.album.orEmpty() }
                 .map { (title, albumSongs) ->
                     val artists = albumSongs.mapNotNull { it.artist }.distinct()
                     Album(
@@ -121,7 +118,7 @@ class AudioRepositoryImpl @Inject constructor(
         if (songs.isNotEmpty()) {
             val artists = songs
                 .filter { !it.artist.isNullOrBlank() }
-                .groupBy { it.artist!! }
+                .groupBy { it.artist.orEmpty() }
                 .map { (name, artistSongs) ->
                     Artist(
                         id = name.hashCode().toLong(),

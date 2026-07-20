@@ -151,10 +151,35 @@ static int g_avioBufSize = 1024 * 1024; // 1 MB
 struct IOBridge {
     RandomAccessFile* file;
     IOStats* stats;
+    // Probe budget: during avformat_find_stream_info, cap *additional* I/O
+    // (relative to probeBaseBytes) so pathological files don't scan forever.
+    int64_t probeLimit    = 0;
+    int64_t probeBaseBytes = 0; // totalBytes snapshot when probing started
+    bool    probing       = false;
+    // Hard deadline: abort I/O after this point.  Returns AVERROR_EXIT (not
+    // EOF) so FFmpeg fails immediately instead of retrying endlessly.
+    std::chrono::steady_clock::time_point deadline{};
+    bool hasDeadline  = false;
+    bool deadlineHit  = false; // log only once
 };
 
 static int io_read(void* opaque, uint8_t* buf, int bufSize) {
     auto* io = static_cast<IOBridge*>(opaque);
+    // Enforce hard deadline — return AVERROR_EXIT so FFmpeg aborts the
+    // operation immediately (returning 0/EOF causes demuxer retries → spam).
+    if (io->hasDeadline &&
+        std::chrono::steady_clock::now() > io->deadline) {
+        if (!io->deadlineHit) {
+            io->deadlineHit = true;
+            LOGD("I/O deadline exceeded, aborting extraction");
+        }
+        return AVERROR_EXIT;
+    }
+    // Enforce probe budget — cap *additional* bytes read since probing began.
+    if (io->probing && io->probeLimit > 0 &&
+        (io->stats->totalBytes - io->probeBaseBytes) >= io->probeLimit) {
+        return AVERROR_EOF;
+    }
     int64_t offset = io->stats->currentPos;
     int64_t n = io->file->read(buf, bufSize);
     if (n > 0) {
@@ -238,9 +263,9 @@ static std::vector<uint8_t> frameToRgba(AVFrame* frame, int dstW, int dstH, int&
 // ─── JNI: native entry point ────────────────────────────────────────
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbnail(
+Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeExtract(
     JNIEnv* env, jclass /*clazz*/, jobject bridge,
-    jfloat positionPercent, jint maxWidth) {
+    jfloat positionPercent, jint maxWidth, jboolean fastMode) {
 
     if (!bridge) { LOGE("bridge is null"); return nullptr; }
 
@@ -250,23 +275,41 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
     IOStats stats;
     IOBridge ioBridge{&file, &stats};
 
-    uint8_t* ioBuf = static_cast<uint8_t*>(av_malloc(g_avioBufSize));
+    // In fast mode (network/SMB), use a 1 MB AVIO buffer.  SMB has ~50 ms
+    // round-trip latency per read; a larger buffer means fewer round-trips
+    // for sequential header/moov parsing (15 MB MKV attachments: 15 reads
+    // instead of 60, saving ~2.5 s).  Memory cost is negligible.
+    const int avioBufSize = fastMode ? (1024 * 1024) : g_avioBufSize;
+    uint8_t* ioBuf = static_cast<uint8_t*>(av_malloc(avioBufSize));
     if (!ioBuf) { LOGE("av_malloc failed"); return nullptr; }
-    AVIOContext* avio = avio_alloc_context(ioBuf, g_avioBufSize, 0,
+    AVIOContext* avio = avio_alloc_context(ioBuf, avioBufSize, 0,
                                            &ioBridge, io_read, nullptr, io_seek);
 
     AVFormatContext* fmtCtx = avformat_alloc_context();
     fmtCtx->pb = avio;
-    // Caps are a *max*, not a forced read: MP4/MKV expose streams immediately and
-    // stop early, so these don't slow the common case. MPEG-TS has no global
-    // header — streams are discovered by scanning PES packets — so the previous
-    // 32KB/100ms budget failed to detect the video stream. 2MB/2s gives TS enough
-    // room while staying bounded (~2 SMB blocks worst case).
-    fmtCtx->probesize = 2 * 1024 * 1024;        // 2 MB
-    fmtCtx->max_analyze_duration = 2000000;     // 2s analysis max
+
+    if (fastMode) {
+        // Network-optimised probing: MP4/MKV expose streams from the header
+        // alone; 256 KB is generous. MPEG-TS may need a bit more but 256 KB
+        // still catches the first video PES in the vast majority of streams.
+        fmtCtx->probesize = 256 * 1024;          // 256 KB
+        fmtCtx->max_analyze_duration = 500000;   // 500 ms
+    } else {
+        // Local files: generous budget so MPEG-TS streams are detected.
+        fmtCtx->probesize = 2 * 1024 * 1024;     // 2 MB
+        fmtCtx->max_analyze_duration = 2000000;  // 2s analysis max
+    }
     fmtCtx->fps_probe_size = 1; // Don't decode 20 frames just to estimate frame rate
 
     auto t0 = std::chrono::steady_clock::now();
+
+    // Hard deadline: in fastMode, abort I/O after 15 seconds so the thread
+    // returns gracefully (Coil would cancel the coroutine, but JNI calls
+    // can't be interrupted — the native code must self-terminate).
+    if (fastMode) {
+        ioBridge.deadline    = t0 + std::chrono::seconds(15);
+        ioBridge.hasDeadline = true;
+    }
 
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "ignore_chapters", "1", 0);
@@ -278,16 +321,31 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
 
     if (openRet != 0) {
         LOGE("avformat_open_input via AVIO failed");
-        // avformat_open_input error: fmtCtx and pb need manual cleanup
-        av_freep(&avio->buffer);
-        avio_context_free(&avio);
-        avformat_free_context(fmtCtx);
+        // avformat_open_input already frees fmtCtx AND fmtCtx->pb (our avio)
+        // on failure — no manual cleanup needed (doing so would double-free).
         return nullptr;
     }
-    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
-        LOGE("avformat_find_stream_info failed");
-        avformat_close_input(&fmtCtx); // frees avio + ioBuf
-        return nullptr;
+    // Probe budget for fast mode: cap *additional* I/O during find_stream_info.
+    // probeBaseBytes snapshots current total so files that already read 15 MB
+    // during open_input (MKV attachments) still get a full 4 MB probe window.
+    static constexpr int64_t FAST_PROBE_LIMIT = 4 * 1024 * 1024; // 4 MB
+    ioBridge.probeBaseBytes = stats.totalBytes;
+    ioBridge.probing        = fastMode;
+    ioBridge.probeLimit     = fastMode ? FAST_PROBE_LIMIT : 0;
+
+    int siRet = avformat_find_stream_info(fmtCtx, nullptr);
+    ioBridge.probing = false; // lift the budget for the decode phase
+
+    if (siRet < 0) {
+        if (fastMode && fmtCtx->nb_streams > 0) {
+            // Budget exhausted but header detected streams — proceed with
+            // header-only codec params (MKV Tracks / MP4 stbl provide these).
+            LOGD("fastMode: find_stream_info truncated (budget), using header info");
+        } else {
+            LOGE("avformat_find_stream_info failed");
+            avformat_close_input(&fmtCtx); // frees avio + ioBuf
+            return nullptr;
+        }
     }
 
     int si = -1;
@@ -303,11 +361,29 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
 
     // ── Seek to target timestamp ──
     AVStream* st = fmtCtx->streams[si];
-    int64_t targetUs = static_cast<int64_t>(fmtCtx->duration *
+    int64_t durationUs = fmtCtx->duration; // container-level, AV_TIME_BASE
+    int64_t targetUs = static_cast<int64_t>(durationUs *
                                             static_cast<double>(positionPercent));
     int64_t targetTs = av_rescale_q(targetUs, AV_TIME_BASE_Q, st->time_base);
 
-    if (av_seek_frame(fmtCtx, si, targetTs, AVSEEK_FLAG_BACKWARD) < 0) {
+    bool seekOk = false;
+    if (av_seek_frame(fmtCtx, si, targetTs, AVSEEK_FLAG_BACKWARD) >= 0) {
+        seekOk = true;
+    } else if (fastMode) {
+        // find_stream_info was truncated → no seek index.
+        // Try byte-based seek (demuxer may support AVSEEK_FLAG_BYTE), then
+        // fall back to raw AVIO seek.  The demuxer will resync on the next
+        // av_read_frame by scanning for a valid cluster/frame header.
+        int64_t fileSize = file.size();
+        int64_t estimatedPos = static_cast<int64_t>(
+            fileSize * static_cast<double>(positionPercent) * 0.95);
+        LOGD("fastMode: av_seek_frame failed, byte-seeking to %" PRId64, estimatedPos);
+        if (av_seek_frame(fmtCtx, -1, estimatedPos, AVSEEK_FLAG_BYTE) < 0) {
+            avio_seek(fmtCtx->pb, estimatedPos, SEEK_SET);
+        }
+        seekOk = true;
+    }
+    if (!seekOk) {
         LOGE("av_seek_frame failed");
         avformat_close_input(&fmtCtx);
         return nullptr;
@@ -348,6 +424,15 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
             if (ret < 0) break;
 
+            if (fastMode) {
+                // Network-fast: accept the very first decoded frame.
+                // We already seeked to the target keyframe; decoding more
+                // just burns network bytes for a marginally better pick.
+                foundFrame = av_frame_clone(frame);
+                av_frame_unref(frame);
+                break;
+            }
+
             if (frame->pts != AV_NOPTS_VALUE) {
                 // Pick the frame closest to the target timestamp (not just the
                 // first one at/after it), so a late keyframe still lands well.
@@ -367,7 +452,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
             }
             av_frame_unref(frame);
         }
-        if (foundFrame && bestDelta == 0) break; // exact match, no need to continue
+        if (foundFrame && (fastMode || bestDelta == 0)) break;
     }
 
     av_frame_free(&frame);
@@ -457,9 +542,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
                                                 AndroidBitmap_unlockPixels(env, bitmap);
                                             }
                                         }
-                                        // Create a global ref so the Bitmap survives return
-                                        resultBitmap = env->NewGlobalRef(bitmap);
-                                        env->DeleteLocalRef(bitmap);
+                                        resultBitmap = bitmap;
                                     }
                                 }
                             }
@@ -500,7 +583,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_extractThumbna
 
     LOGD("===== Thumbnail I/O Statistics =====");
     LOGD("Duration: %d ms", elapsedMs);
-    LOGD("AVIO buffer: %d", g_avioBufSize);
+    LOGD("AVIO buffer: %d", avioBufSize);
     LOGD("Read calls: %" PRId64, stats.readCalls);
     LOGD("Seek calls: %" PRId64, stats.seekCalls);
     LOGD("Total bytes read: %.2f MB", stats.totalBytes / (1024.0 * 1024.0));
@@ -620,6 +703,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtr
         LOGE("ass: avformat_open_input failed");
         av_freep(&avio->buffer);
         avio_context_free(&avio);
+        fmtCtx->pb = nullptr;  // prevent double-free in avformat_free_context
         avformat_free_context(fmtCtx);
         return nullptr;
     }
@@ -725,6 +809,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtr
     if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
         av_freep(&avio->buffer);
         avio_context_free(&avio);
+        fmtCtx->pb = nullptr;  // prevent double-free in avformat_free_context
         avformat_free_context(fmtCtx);
         return nullptr;
     }
@@ -751,6 +836,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtr
     jclass objCls = env->FindClass("java/lang/Object");
     jobjectArray arr = env->NewObjectArray(
         static_cast<jsize>(fontStreams.size() * 2), objCls, nullptr);
+    env->DeleteLocalRef(objCls);
     if (!arr) { avformat_close_input(&fmtCtx); return nullptr; }
 
     for (size_t k = 0; k < fontStreams.size(); k++) {

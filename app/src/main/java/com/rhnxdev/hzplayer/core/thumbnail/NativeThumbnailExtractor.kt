@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.core.thumbnail
 
 import android.graphics.Bitmap
+import androidx.annotation.Keep
 
 /**
  * JNI bridge to the native FFmpeg thumbnail extractor.
@@ -9,6 +10,7 @@ import android.graphics.Bitmap
  * video, scales it to fit within [maxWidth] (preserving aspect ratio), and
  * returns RGBA pixels as an [android.graphics.Bitmap].
  */
+@Keep
 object NativeThumbnailExtractor {
     private var loaded = false
 
@@ -26,12 +28,26 @@ object NativeThumbnailExtractor {
         bridge: ThumbnailSource,
         positionPercent: Float,
         maxWidth: Int,
-    ): Bitmap? = if (loaded) nativeExtract(bridge, positionPercent, maxWidth) else null
+        fastMode: Boolean = false,
+    ): Bitmap? {
+        if (!loaded) return null
+        return try {
+            nativeExtract(bridge, positionPercent, maxWidth, fastMode)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "nativeExtract failed", e)
+            null
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.e(TAG, "nativeExtract linkage error", e)
+            loaded = false
+            null
+        }
+    }
 
     private external fun nativeExtract(
         bridge: ThumbnailSource,
         positionPercent: Float,
         maxWidth: Int,
+        fastMode: Boolean,
     ): Bitmap?
 
     private const val TAG = "NativeThumbnailExtractor"

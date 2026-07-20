@@ -144,21 +144,11 @@ class MediaPlayerHolder @Inject constructor(
                         initializationDurationMs: Long,
                         codecInitializationDurationMs: Long,
                     ) { _videoDecoderName.value = decoderName }
-                    override fun onVideoDecoderInitialized(
-                        eventTime: AnalyticsListener.EventTime,
-                        decoderName: String,
-                        initializationDurationMs: Long,
-                    ) { _videoDecoderName.value = decoderName }
                     override fun onAudioDecoderInitialized(
                         eventTime: AnalyticsListener.EventTime,
                         decoderName: String,
                         initializationDurationMs: Long,
                         codecInitializationDurationMs: Long,
-                    ) { _audioDecoderName.value = decoderName }
-                    override fun onAudioDecoderInitialized(
-                        eventTime: AnalyticsListener.EventTime,
-                        decoderName: String,
-                        initializationDurationMs: Long,
                     ) { _audioDecoderName.value = decoderName }
                     override fun onAudioSessionIdChanged(
                         eventTime: AnalyticsListener.EventTime,
@@ -380,44 +370,42 @@ class MediaPlayerHolder @Inject constructor(
                         bufferedPosition = player.bufferedPosition.coerceAtLeast(0),
                     )
                 }
+
+                override fun onTracksChanged(tracks: Tracks) {
+                    var selectedAssFormat: androidx.media3.common.Format? = null
+                    for (group in tracks.groups) {
+                        if (group.type == androidx.media3.common.C.TRACK_TYPE_TEXT && group.isSelected) {
+                            for (i in 0 until group.length) {
+                                if (group.isTrackSelected(i)) {
+                                    val format = group.getTrackFormat(i)
+                                    val isAss = isLibassSubtitleFormat(format)
+                                    if (isAss) {
+                                        selectedAssFormat = format
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    }
+
+                    isCurrentTrackAss = selectedAssFormat != null
+
+                    if (selectedAssFormat != null) {
+                        assHandler.selectTrackByFormat(selectedAssFormat)
+                    } else if (assHandler.getActiveExternalTrackIndex() < 0) {
+                        assHandler.clearOverlay()
+                    }
+                }
+
+                override fun onCues(cues: MutableList<Cue>) {
+                    if (isCurrentTrackAss) {
+                        _subtitleCues.value = emptyList()
+                    } else {
+                        _subtitleCues.value = cues.toList()
+                    }
+                }
             },
         )
-
-        target.addListener(object : Player.Listener {
-            override fun onTracksChanged(tracks: Tracks) {
-                var selectedAssFormat: androidx.media3.common.Format? = null
-                for (group in tracks.groups) {
-                    if (group.type == androidx.media3.common.C.TRACK_TYPE_TEXT && group.isSelected) {
-                        for (i in 0 until group.length) {
-                    if (group.isTrackSelected(i)) {
-                        val format = group.getTrackFormat(i)
-                        val isAss = isLibassSubtitleFormat(format)
-                        if (isAss) {
-                            selectedAssFormat = format
-                        }
-                        break
-                    }
-                        }
-                    }
-                }
-
-                isCurrentTrackAss = selectedAssFormat != null
-
-                if (selectedAssFormat != null) {
-                    assHandler.selectTrackByFormat(selectedAssFormat)
-                } else if (assHandler.getActiveExternalTrackIndex() < 0) {
-                    assHandler.clearOverlay()
-                }
-            }
-
-            override fun onCues(cues: MutableList<Cue>) {
-                if (isCurrentTrackAss) {
-                    _subtitleCues.value = emptyList()
-                } else {
-                    _subtitleCues.value = cues.toList()
-                }
-            }
-        })
     }
 
     fun updateSpeed(speed: Float) {
@@ -452,8 +440,8 @@ class MediaPlayerHolder @Inject constructor(
      * `file:`. Returns null on failure.
      */
     fun readUriBytes(uri: Uri): ByteArray? {
+        val ds = buildCompositeDataSourceFactory(context).createDataSource()
         return runCatching {
-            val ds = buildCompositeDataSourceFactory(context).createDataSource()
             ds.open(androidx.media3.datasource.DataSpec.Builder().setUri(uri).build())
             val out = java.io.ByteArrayOutputStream()
             val buf = ByteArray(16 * 1024)
@@ -461,9 +449,10 @@ class MediaPlayerHolder @Inject constructor(
             while (ds.read(buf, 0, buf.size).also { read = it } != androidx.media3.common.C.RESULT_END_OF_INPUT) {
                 out.write(buf, 0, read)
             }
-            ds.close()
             out.toByteArray()
-        }.getOrNull()
+        }.getOrNull().also {
+            runCatching { ds.close() }
+        }
     }
 
     companion object {

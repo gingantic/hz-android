@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.presentation.settings
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
@@ -39,7 +40,9 @@ class SettingsViewModel @Inject constructor(
                 imageLoader.memoryCache?.clear()
                 imageLoader.diskCache?.clear()
                 success = true
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "Failed to clear cache", e)
+            }
 
             if (success) {
                 withContext(Dispatchers.Main) {

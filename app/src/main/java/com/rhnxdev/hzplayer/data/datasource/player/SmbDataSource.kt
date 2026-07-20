@@ -172,6 +172,9 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
                 }
                 if (attempt < backoffMs.size) {
                     android.util.Log.w(TAG, "SMB open attempt $attempt failed, retrying", e)
+                    // Trade-off: blocks the ExoPlayer loader thread, but retry
+                    // backoff is necessary to avoid tight-loop hammering a flaky
+                    // SMB server. Kept short (250/750/2000ms) to minimise stall.
                     Thread.sleep(backoffMs[attempt])
                 }
             }
@@ -193,7 +196,13 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         private const val MAX_CACHE = 32
         private val resolvedFileCache =
             object : java.util.LinkedHashMap<String, SmbFile>(16, 0.75f, true) {
-                override fun removeEldestEntry(eldest: Map.Entry<String, SmbFile>) = size > MAX_CACHE
+                override fun removeEldestEntry(eldest: Map.Entry<String, SmbFile>): Boolean {
+                    val shouldRemove = size > MAX_CACHE
+                    if (shouldRemove) {
+                        runCatching { eldest.value.close() }
+                    }
+                    return shouldRemove
+                }
             }.let { java.util.Collections.synchronizedMap(it) }
 
         /** Drop resolved-file entries so none outlive [ConnectionPool.releaseAll]. */

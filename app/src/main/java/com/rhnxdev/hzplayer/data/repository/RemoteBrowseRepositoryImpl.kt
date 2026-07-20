@@ -19,9 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class RemoteBrowseRepositoryImpl @Inject constructor() : RemoteBrowseRepository {
 
     companion object {

@@ -27,6 +27,14 @@ struct AssDirectContext {
 
     /* diagnostic: how many times ass_set_fonts has been called */
     int fonts_set_count;
+
+    /* Content state of the last rendered frame. ass_render_frame() reports
+     * changed==0 when the image list is identical to the previous call — in
+     * that case the previously blitted overlay is still valid and must stay
+     * on screen, so we return this cached result instead of 0 (returning 0
+     * made the caller clear the overlay, so every cue flashed for a single
+     * frame only). */
+    int last_has_content;
 };
 
 #include <stdarg.h>
@@ -137,6 +145,8 @@ int ass_direct_load_header(AssDirectContext *ctx,
         ass_free_track(ctx->ass_track);
         ctx->ass_track = NULL;
     }
+    /* New track — previous overlay no longer corresponds to any cue. */
+    ctx->last_has_content = 0;
 
     ctx->ass_track = ass_new_track(ctx->ass_library);
     if (!ctx->ass_track) {
@@ -310,6 +320,9 @@ void ass_direct_set_frame_size(AssDirectContext *ctx, int width, int height) {
         ass_set_storage_size(ctx->ass_renderer, width, height);
         ass_set_frame_size  (ctx->ass_renderer, width, height);
     }
+    /* The caller recreates its bitmap on resize, so the cached overlay is
+     * stale; force a full re-blit on the next frame. */
+    ctx->last_has_content = 0;
 }
 
 /* ─────────────────────────────── DATA ─────────────────────────────────── */
@@ -354,9 +367,24 @@ int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixel
     ASS_Image *img = ass_render_frame(ctx->ass_renderer, ctx->ass_track,
                                       time_ms, &changed);
 
+    /* changed==0 means the image list is identical to the previous call, so
+     * the overlay we blitted last time is still valid and must remain on
+     * screen. Return the cached content state so the caller keeps showing it
+     * (the bitmap still holds the previous frame). Returning 0 here would make
+     * the caller clear the overlay, causing every subtitle to flash for only a
+     * single frame. */
+    if (changed == 0) return ctx->last_has_content;
+
+    /* Defensive buffer size validation */
+    size_t expected_size = (size_t)ctx->width * ctx->height * 4;
+    if (expected_size == 0) return 0;
+
     /* Clear output */
-    memset(out_pixels, 0, (size_t)ctx->width * ctx->height * 4);
-    if (!img) return 0;
+    memset(out_pixels, 0, expected_size);
+    if (!img) {
+        ctx->last_has_content = 0;
+        return 0;
+    }
 
     int has_content = 0;
     while (img) {
@@ -379,7 +407,7 @@ int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixel
 
         static int log_count = 0;
         if (log_count < 20) {
-            LOGI("[COLOR] img w=%d h=%d x=%d y=%d color=0x%08X -> r=%d g=%d b=%d a=%d", img->w, img->h, img->dst_x, img->dst_y, img->color, r, g, b, a);
+            LOGV("[COLOR] img w=%d h=%d x=%d y=%d color=0x%08X -> r=%d g=%d b=%d a=%d", img->w, img->h, img->dst_x, img->dst_y, img->color, r, g, b, a);
             log_count++;
         }
 
@@ -424,6 +452,7 @@ int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixel
         }
         img = img->next;
     }
+    ctx->last_has_content = has_content;
     return has_content;
 }
 
@@ -436,6 +465,8 @@ void ass_direct_flush(AssDirectContext *ctx) {
     }
     LOGI("[TRACK] flushing %d events", ctx->ass_track->n_events);
     ass_flush_events(ctx->ass_track);
+    /* All cues removed — the cached overlay is stale; force a blank frame. */
+    ctx->last_has_content = 0;
     LOGI("[TRACK] flush done");
 }
 

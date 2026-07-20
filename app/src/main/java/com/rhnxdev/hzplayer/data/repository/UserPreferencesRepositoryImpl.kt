@@ -20,25 +20,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class UserPreferencesRepositoryImpl @Inject constructor(
     private val dataStore: DataStore<Preferences>,
 ) : UserPreferencesRepository {
 
-    override val themeMode: Flow<ThemeMode> = dataStore.data.map { prefs ->
-        val themeName = prefs[PrefKey.ThemeMode.key]
-        if (themeName != null) {
-            try {
-                ThemeMode.valueOf(themeName)
-            } catch (_: IllegalArgumentException) {
-                ThemeMode.SYSTEM
-            }
-        } else {
-            ThemeMode.SYSTEM
-        }
-    }.distinctUntilChanged()
+    override val themeMode: Flow<ThemeMode> =
+        enumPreference(PrefKey.ThemeMode.key, ThemeMode.SYSTEM)
 
     override val appColorArgb: Flow<Int> = dataStore.data.map { prefs ->
         prefs[PrefKey.AppColorArgb.key] ?: 0xFFE85E00.toInt()
@@ -48,14 +36,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         prefs[PrefKey.DynamicColors.key] ?: false
     }.distinctUntilChanged()
 
-    override val activeEngine: Flow<EngineType> = dataStore.data.map { prefs ->
-        val name = prefs[PrefKey.Engine.key]
-        try {
-            name?.let { EngineType.valueOf(it) } ?: EngineType.EXO_PLAYER
-        } catch (_: IllegalArgumentException) {
-            EngineType.EXO_PLAYER
-        }
-    }.distinctUntilChanged()
+    override val activeEngine: Flow<EngineType> =
+        enumPreference(PrefKey.Engine.key, EngineType.EXO_PLAYER)
 
     // ponytail: SubDL API key is stored in PLAINTEXT in this DataStore.
     // The store is app-private (mode 0600, same-UID only), so risk is limited to
@@ -78,36 +60,18 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         prefs[PrefKey.UseSurfaceView.key] ?: true
     }.distinctUntilChanged()
 
-    override val decoderMode: Flow<DecoderMode> = dataStore.data.map { prefs ->
-        val name = prefs[PrefKey.DecoderMode.key]
-        try {
-            name?.let { DecoderMode.valueOf(it) } ?: DecoderMode.AUTO
-        } catch (_: IllegalArgumentException) {
-            DecoderMode.AUTO
-        }
-    }.distinctUntilChanged()
+    override val decoderMode: Flow<DecoderMode> =
+        enumPreference(PrefKey.DecoderMode.key, DecoderMode.AUTO)
 
     override val fileBrowserMediaMode: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[PrefKey.FileBrowserMediaMode.key] ?: false
     }.distinctUntilChanged()
 
-    override val orientationMode: Flow<OrientationMode> = dataStore.data.map { prefs ->
-        val name = prefs[PrefKey.OrientationMode.key]
-        try {
-            name?.let { OrientationMode.valueOf(it) } ?: OrientationMode.AUTO
-        } catch (_: IllegalArgumentException) {
-            OrientationMode.AUTO
-        }
-    }.distinctUntilChanged()
+    override val orientationMode: Flow<OrientationMode> =
+        enumPreference(PrefKey.OrientationMode.key, OrientationMode.AUTO)
 
-    override val resumeMode: Flow<ResumeMode> = dataStore.data.map { prefs ->
-        val name = prefs[PrefKey.ResumeMode.key]
-        try {
-            name?.let { ResumeMode.valueOf(it) } ?: ResumeMode.ALWAYS
-        } catch (_: IllegalArgumentException) {
-            ResumeMode.ALWAYS
-        }
-    }.distinctUntilChanged()
+    override val resumeMode: Flow<ResumeMode> =
+        enumPreference(PrefKey.ResumeMode.key, ResumeMode.ALWAYS)
 
     override val minSongDurationSecs: Flow<Int> = dataStore.data.map { prefs ->
         prefs[PrefKey.MinSongDurationSecs.key] ?: 0
@@ -121,23 +85,11 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         prefs[PrefKey.BackgroundPlay.key] ?: false
     }.distinctUntilChanged()
 
-    override fun getViewMode(key: String): Flow<ViewMode> = dataStore.data.map { prefs ->
-        val name = prefs[stringPreferencesKey("view_mode_$key")]
-        try {
-            name?.let { ViewMode.valueOf(it) } ?: ViewMode.GRID
-        } catch (_: IllegalArgumentException) {
-            ViewMode.GRID
-        }
-    }.distinctUntilChanged()
+    override fun getViewMode(key: String): Flow<ViewMode> =
+        enumPreference(stringPreferencesKey("view_mode_$key"), ViewMode.GRID)
 
-    override fun getSortType(key: String): Flow<SortType> = dataStore.data.map { prefs ->
-        val name = prefs[stringPreferencesKey("sort_type_$key")]
-        try {
-            name?.let { SortType.valueOf(it) } ?: SortType.TITLE
-        } catch (_: IllegalArgumentException) {
-            SortType.TITLE
-        }
-    }
+    override fun getSortType(key: String): Flow<SortType> =
+        enumPreference(stringPreferencesKey("sort_type_$key"), SortType.TITLE)
 
     override suspend fun setThemeMode(mode: ThemeMode) {
         dataStore.edit { prefs -> prefs[PrefKey.ThemeMode.key] = mode.name }
@@ -167,14 +119,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
-    override fun getSortDirection(key: String): Flow<SortDirection> = dataStore.data.map { prefs ->
-        val name = prefs[stringPreferencesKey("sort_dir_$key")]
-        try {
-            name?.let { SortDirection.valueOf(it) } ?: SortDirection.ASCENDING
-        } catch (_: IllegalArgumentException) {
-            SortDirection.ASCENDING
-        }
-    }
+    override fun getSortDirection(key: String): Flow<SortDirection> =
+        enumPreference(stringPreferencesKey("sort_dir_$key"), SortDirection.ASCENDING)
 
     override suspend fun setSortDirection(key: String, direction: SortDirection) {
         dataStore.edit { prefs ->
@@ -249,6 +195,15 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override suspend fun setBackgroundPlay(enabled: Boolean) {
         dataStore.edit { prefs -> prefs[PrefKey.BackgroundPlay.key] = enabled }
     }
+
+    private inline fun <reified T : Enum<T>> enumPreference(
+        key: Preferences.Key<String>,
+        default: T,
+    ): Flow<T> = dataStore.data
+        .map { prefs ->
+            try { enumValueOf<T>(prefs[key] ?: default.name) } catch (_: Exception) { default }
+        }
+        .distinctUntilChanged()
 
     companion object {
         /** Built-in fallback key so subtitle search works without visiting Settings. */

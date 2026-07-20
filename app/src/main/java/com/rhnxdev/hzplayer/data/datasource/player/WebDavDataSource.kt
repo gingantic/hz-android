@@ -98,6 +98,8 @@ class WebDavDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
                     if (e.message?.startsWith("WebDAV HTTP") == true) throw e
                     if (attempt < backoffMs.size) {
                         android.util.Log.w(TAG, "WebDAV open attempt $attempt failed, retrying", e)
+                        // Trade-off: blocks the ExoPlayer loader thread, but retry
+                        // backoff is necessary to avoid tight-loop hammering the server.
                         Thread.sleep(backoffMs[attempt])
                     }
                 }

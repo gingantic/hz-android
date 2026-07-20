@@ -177,7 +177,7 @@ object SubtitleConverters {
             val line = lines.next()
             if (VTT_TIMING.containsMatchIn(line)) {
                 // Cue timing line — consume following text until blank.
-                val m = VTT_TIMING.find(line)!!
+                val m = VTT_TIMING.find(line) ?: continue
                 val start = vttTimeToMs(m)
                 val end = vttTimeToMs(m, isEnd = true)
                 while (lines.hasNext()) {

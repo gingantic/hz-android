@@ -6,9 +6,7 @@ import com.rhnxdev.hzplayer.data.datasource.local.room.entities.PlaybackPosition
 import com.rhnxdev.hzplayer.domain.model.PlaybackProgress
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
 class ResumeRepositoryImpl @Inject constructor(
     private val dao: PlaybackPositionDao,
 ) : ResumeRepository {

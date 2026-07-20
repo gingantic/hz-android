@@ -1,9 +1,18 @@
 package com.rhnxdev.hzplayer.data.datasource.local.room.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "media")
+@Entity(
+    tableName = "media",
+    indices = [
+        Index("mediaType"),
+        Index("uri"),
+        Index("album"),
+        Index("artist"),
+    ],
+)
 data class MediaEntity(
     @PrimaryKey
     val id: Long,

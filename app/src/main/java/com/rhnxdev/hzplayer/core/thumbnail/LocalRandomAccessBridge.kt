@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.core.thumbnail
 
+import java.io.Closeable
 import java.io.RandomAccessFile
 
 /**
@@ -9,7 +10,7 @@ import java.io.RandomAccessFile
  *
  * No prefetch/caching — local disk seeks are cheap, unlike the SMB bridge.
  */
-class LocalRandomAccessBridge(path: String) : ThumbnailSource {
+class LocalRandomAccessBridge(path: String) : ThumbnailSource, Closeable {
     private val raf = RandomAccessFile(path, "r")
     private val size = raf.length()
 
@@ -21,7 +22,7 @@ class LocalRandomAccessBridge(path: String) : ThumbnailSource {
 
     override fun getSize(): Long = size
 
-    fun close() {
+    override fun close() {
         runCatching { raf.close() }
     }
 }

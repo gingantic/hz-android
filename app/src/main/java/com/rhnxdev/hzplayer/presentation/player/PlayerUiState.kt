@@ -57,6 +57,14 @@ data class PlayerUiState(
     val drmSessionActive: Boolean = false,
     val debugMode: Boolean = false,
     val debugOverlayVisible: Boolean = false,
+    /**
+     * True while the player is actively presenting video frames (state == READY
+     * or BUFFERING and content is video).  False once the video ends, the player
+     * goes idle, or an error occurs.  Used to manage the window HDR color mode:
+     * the display stays in HDR/wide-gamut while this is true and reverts to SDR
+     * (so the app's custom accent color renders correctly) once it flips false.
+     */
+    val isVideoSurfaceActive: Boolean = false,
     /** Active playback engine — drives the surface selection in [VideoPlayerScreen]. */
     val activeEngineType: EngineType = EngineType.EXO_PLAYER,
     /**

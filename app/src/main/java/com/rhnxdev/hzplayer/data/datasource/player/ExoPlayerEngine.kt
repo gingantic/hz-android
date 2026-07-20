@@ -28,6 +28,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -440,22 +441,32 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun getSelectedSubtitleTrack(): Int {
+        val tracks = getExoTextTracks()
+        // An active external libass track is what's actually on screen (ExoPlayer's
+        // SubtitleView is hidden while libass renders), so report it regardless of
+        // ExoPlayer's embedded TEXT selection / disabled state. Without this, a
+        // downloaded subtitle that auto-loads into libass shows on screen but the
+        // dialog reports "Off" (TEXT disabled) or an embedded track as selected.
+        val extIdx = assHandler.getActiveExternalTrackIndex()
+        if (extIdx >= 0) return tracks.size + extIdx
         if (player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
             return -1
         }
-        val tracks = getExoTextTracks()
         for (index in tracks.indices) {
             val trackInfo = tracks[index]
             if (trackInfo.group.isTrackSelected(trackInfo.trackIndex)) {
                 return index
             }
         }
-        val extIdx = assHandler.getActiveExternalTrackIndex()
-        return if (extIdx >= 0) tracks.size + extIdx else -1
+        return -1
     }
 
     override fun selectSubtitleTrack(index: Int) {
-        val embeddedCount = getExoTextTracks().size
+        // Single snapshot so the embedded/external boundary and the embedded-track
+        // lookup can't diverge mid-call (a stale second query could mis-route an
+        // external index into the embedded path and wipe the libass overlay).
+        val tracks = getExoTextTracks()
+        val embeddedCount = tracks.size
         if (index >= embeddedCount) {
             // External libass track — select without touching ExoPlayer, so the
             // onTracksChanged — clearOverlay cascade (which would wipe libass)
@@ -465,11 +476,9 @@ class ExoPlayerEngine @Inject constructor(
             if (extIdx in extIds.indices) {
                 assHandler.selectTrack(extIds[extIdx])
                 assHandler.onAssTrackSelected?.invoke()
-                return
             }
             return
         }
-        val tracks = getExoTextTracks()
         if (index in tracks.indices) {
             val selectedTrack = tracks[index]
             val format = selectedTrack.group.getTrackFormat(selectedTrack.trackIndex)
@@ -479,8 +488,11 @@ class ExoPlayerEngine @Inject constructor(
                 // text renderer is fed a no-op parser so it won't draw duplicates.
                 assHandler.selectTrackByFormat(format)
             } else {
-                // Switching to a non-libass embedded track: libass overlay must go.
+                // Switching to a non-libass embedded track: libass overlay must go AND
+                // ExoPlayer's built-in SubtitleView must be shown again (it was hidden
+                // while libass was active), otherwise the embedded subtitle is invisible.
                 assHandler.clearOverlay()
+                setExoSubtitleViewVisible(true)
             }
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
@@ -495,6 +507,7 @@ class ExoPlayerEngine @Inject constructor(
                 .build()
         } else {
             assHandler.clearOverlay()
+            setExoSubtitleViewVisible(true)
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -620,6 +633,7 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun release() {
+        subtitleDiscoveryScope.cancel()
         playerHolder.release()
     }
 
