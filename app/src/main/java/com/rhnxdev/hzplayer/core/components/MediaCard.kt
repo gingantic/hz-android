@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -53,6 +54,7 @@ fun MediaCard(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     onPropertiesClick: (() -> Unit)? = null,
+    onPlayAsAudioClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val cardShape = remember { RoundedCornerShape(CornerRadii.md) }
@@ -136,7 +138,7 @@ fun MediaCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    if (onPropertiesClick != null) {
+                    if (onPropertiesClick != null || onPlayAsAudioClick != null) {
                         var showMenu by remember { mutableStateOf(false) }
                         Box {
                             IconButton(
@@ -154,14 +156,26 @@ fun MediaCard(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.media_properties)) },
-                                    leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                                    onClick = {
-                                        showMenu = false
-                                        onPropertiesClick()
-                                    },
-                                )
+                                if (onPlayAsAudioClick != null) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.media_play_as_audio)) },
+                                        leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null) },
+                                        onClick = {
+                                            showMenu = false
+                                            onPlayAsAudioClick()
+                                        },
+                                    )
+                                }
+                                if (onPropertiesClick != null) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.media_properties)) },
+                                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                        onClick = {
+                                            showMenu = false
+                                            onPropertiesClick()
+                                        },
+                                    )
+                                }
                             }
                         }
                     }

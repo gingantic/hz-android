@@ -19,7 +19,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -76,6 +78,7 @@ import com.rhnxdev.hzplayer.core.util.formatFileSize
 fun VideoLibraryScreen(
     viewModel: VideoLibraryViewModel = hiltViewModel(),
     onVideoClicked: (Long) -> Unit = {},
+    onPlayAsAudio: (VideoItem) -> Unit = {},
     isActive: Boolean = true,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -252,6 +255,7 @@ fun VideoLibraryScreen(
                                         viewModel.onVideoClicked(v)
                                         onVideoClicked(v.id)
                                     },
+                                    onPlayAsAudio = onPlayAsAudio,
                                     searchQuery = searchQuery,
                                 )
                             }
@@ -269,6 +273,7 @@ fun VideoLibraryScreen(
                                         viewModel.onVideoClicked(v)
                                         onVideoClicked(v.id)
                                     },
+                                    onPlayAsAudio = onPlayAsAudio,
                                     searchQuery = "",
                                 )
                             }
@@ -392,6 +397,7 @@ private fun SearchResultsContent(
     videos: List<VideoItem>,
     viewMode: ViewMode,
     onVideoClicked: (VideoItem) -> Unit,
+    onPlayAsAudio: (VideoItem) -> Unit,
     searchQuery: String,
 ) {
     var propertiesVideo by remember { mutableStateOf<VideoItem?>(null) }
@@ -440,6 +446,7 @@ private fun SearchResultsContent(
                     },
                     onClick = { onVideoClicked(video) },
                     onPropertiesClick = { propertiesVideo = video },
+                    onPlayAsAudioClick = { onPlayAsAudio(video) },
                 )
             }
         }
@@ -468,16 +475,40 @@ private fun SearchResultsContent(
                     },
                     onClick = { onVideoClicked(video) },
                     trailingContent = {
-                        IconButton(
-                            onClick = { propertiesVideo = video },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = stringResource(R.string.media_overflow_cd),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
-                            )
+                        var showMenu by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.media_overflow_cd),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.media_play_as_audio)) },
+                                    leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null) },
+                                    onClick = {
+                                        showMenu = false
+                                        onPlayAsAudio(video)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.media_properties)) },
+                                    leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                    onClick = {
+                                        showMenu = false
+                                        propertiesVideo = video
+                                    },
+                                )
+                            }
                         }
                     },
                 )

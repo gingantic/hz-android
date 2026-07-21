@@ -207,24 +207,6 @@
                 <data android:pathSuffix=".m4a" />
             </intent-filter>
 
-            <!-- Catch-all: claim any URI with any MIME type so the app is always
-                 offered as a player, matching how MX Player / CX / ytdl appear
-                 (they declare */*). Covers website-caught stream links (download
-                 managers' "play with"), content:// provider URIs, and local files,
-                 including extension-less URLs and generic MIME types. Delete this
-                 single filter to restrict the app to concrete media types only. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-                <data android:scheme="rtsp" />
-                <data android:scheme="content" />
-                <data android:scheme="file" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-
             <!-- Browser-style: claim EVERY http(s) URL, even type-less ones (plain
                  web page links), the way a browser registers. A filter that
                  declares a mimeType only matches typed intents, so this scheme-only

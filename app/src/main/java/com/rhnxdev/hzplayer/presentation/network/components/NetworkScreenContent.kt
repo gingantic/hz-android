@@ -99,6 +99,7 @@ internal fun NetworkHomeContent(
     onToggleFavorite: (Long) -> Unit,
     onDeleteHistoryItem: (Long) -> Unit,
     onClearHistory: () -> Unit,
+    onOpenBrowser: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -173,6 +174,8 @@ internal fun NetworkHomeContent(
                         }
                     },
                 )
+
+                // Browser launch button — removed; stub kept in NetworkScreen
             }
         }
 
