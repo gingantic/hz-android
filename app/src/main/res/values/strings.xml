@@ -109,6 +109,7 @@
     <!-- Media overflow menu / properties -->
     <string name="media_overflow_cd">More options</string>
     <string name="media_properties">Properties</string>
+    <string name="media_play_as_audio">Play as Audio</string>
     <string name="prop_file_name">File name</string>
     <string name="prop_path">Path</string>
     <string name="prop_size">Size</string>

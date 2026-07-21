@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -83,7 +84,6 @@ import com.rhnxdev.hzplayer.presentation.navigation.AppDestination
 import com.rhnxdev.hzplayer.presentation.navigation.NavRoutes
 import com.rhnxdev.hzplayer.presentation.navigation.bottomNavDestinations
 import com.rhnxdev.hzplayer.presentation.network.NetworkScreen
-import com.rhnxdev.hzplayer.presentation.browser.BrowserScreen
 import com.rhnxdev.hzplayer.presentation.player.AudioPlayerScreen
 import com.rhnxdev.hzplayer.presentation.player.PlayerViewModel
 import com.rhnxdev.hzplayer.presentation.player.components.MiniPlayerBar
@@ -120,6 +120,9 @@ class MainActivity : ComponentActivity() {
     /** MIME type from the VIEW intent, used to reliably detect video vs audio. */
     private var incomingMimeType by mutableStateOf<String?>(null)
 
+    /** Optional title override from the browser (instead of deriving from URL). */
+    private var incomingMediaTitle by mutableStateOf<String?>(null)
+
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grantResults ->
@@ -155,11 +158,14 @@ class MainActivity : ComponentActivity() {
                         incomingMediaUri = incomingMediaUri,
                         incomingMediaHeaders = incomingMediaHeaders,
                         incomingMimeType = incomingMimeType,
+                        incomingMediaTitle = incomingMediaTitle,
                         onIncomingMediaConsumed = {
                             incomingMediaUri = null
                             incomingMediaHeaders = null
                             incomingMimeType = null
+                            incomingMediaTitle = null
                         },
+                        onOpenBrowser = {},
                     )
                 } else {
                     Box(
@@ -190,6 +196,7 @@ class MainActivity : ComponentActivity() {
             incomingMediaUri = intent.data.toString()
             incomingMediaHeaders = extractHttpHeaders(intent)
             incomingMimeType = intent.type
+            incomingMediaTitle = intent.getStringExtra("extra_media_title")
             Log.i(TAG, "Received VIEW intent: $incomingMediaUri (type=${incomingMimeType}, headers=${incomingMediaHeaders?.size ?: 0})")
         }
     }
@@ -361,7 +368,9 @@ fun HzPlayerApp(
     incomingMediaUri: String? = null,
     incomingMediaHeaders: Map<String, String>? = null,
     incomingMimeType: String? = null,
+    incomingMediaTitle: String? = null,
     onIncomingMediaConsumed: () -> Unit = {},
+    onOpenBrowser: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -370,7 +379,6 @@ fun HzPlayerApp(
     // Full-screen overlay routes draw over the main tab layout
     val isFullScreen = currentRoute == NavRoutes.SEARCH ||
         currentRoute == NavRoutes.AUDIO_PLAYER ||
-        currentRoute == NavRoutes.BROWSER ||
         currentRoute?.startsWith("video_player") == true ||
         currentRoute?.startsWith("album_detail") == true ||
         currentRoute?.startsWith("artist_detail") == true
@@ -415,10 +423,10 @@ fun HzPlayerApp(
         onPipEligibilityChange(pipEligibleNow)
     }
 
-    // Handle incoming media URI from external VIEW intents (file chooser / share).
+    // Handle incoming media URI from external VIEW intents (file chooser / share / browser).
     LaunchedEffect(incomingMediaUri) {
         val uri = incomingMediaUri ?: return@LaunchedEffect
-        val fileName = uri.substringAfterLast('/').substringBefore('?')
+        val fileName = incomingMediaTitle ?: uri.substringAfterLast('/').substringBefore('?')
         val isVideo = incomingMimeType?.let { mime ->
             mime.startsWith("video/") ||
                 mime.equals("application/x-mpegURL", ignoreCase = true) ||
@@ -615,7 +623,7 @@ fun HzPlayerApp(
                                         navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                     },
                                     onOpenBrowser = {
-                                        navController.navigate(NavRoutes.BROWSER)
+                                        onOpenBrowser()
                                     },
                                 )
                                 4 -> SettingsScreen(
@@ -674,26 +682,6 @@ fun HzPlayerApp(
                     onArtistClicked = { artist ->
                         navController.navigate(NavRoutes.artistDetail(artist.name))
                     },
-                )
-            }
-
-            composable(
-                route = NavRoutes.BROWSER,
-                enterTransition = { slideInHorizontally { it } },
-                exitTransition = { slideOutHorizontally { -it } },
-                popEnterTransition = { slideInHorizontally { -it } },
-                popExitTransition = { slideOutHorizontally { it } },
-            ) {
-                BrowserScreen(
-                    onPlayMedia = { url, title, isVideo, mimeType ->
-                        playerViewModel.playNetworkUri(url, title, isVideo, mimeType)
-                        if (isVideo) {
-                            navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
-                        } else {
-                            navController.navigate(NavRoutes.AUDIO_PLAYER)
-                        }
-                    },
-                    onExitBrowser = { navController.popBackStack() },
                 )
             }
 

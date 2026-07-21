@@ -69,4 +69,5 @@ interface UserPreferencesRepository {
     val archivePasswords: Flow<Map<String, String>>
     suspend fun setArchivePassword(container: String, password: String)
     suspend fun removeArchivePassword(container: String)
+
 }
