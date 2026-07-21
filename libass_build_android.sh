@@ -27,7 +27,7 @@ if [[ -z "$NDK_PATH" ]]; then
 fi
 if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then
   if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME/ndk" ]]; then
-    NDK_PATH=$(ls -d "$ANDROID_HOME/ndk"/* 2>/dev/null | head -1)
+    NDK_PATH=$(ls -d "$ANDROID_HOME/ndk"/* 2>/dev/null | sort -V | tail -n 1)
   fi
 fi
 if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then

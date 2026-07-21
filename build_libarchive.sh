@@ -32,8 +32,13 @@ if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then
   if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME/ndk" ]]; then
     # Pick the latest NDK version installed under Android Home
     NDK_PATH=$(ls -d "$ANDROID_HOME/ndk"/* 2>/dev/null | sort -V | tail -n 1)
-  elif [[ -d "/mnt/c/Users/reihan/AppData/Local/Android/Sdk/ndk/27.0.12077973" ]]; then
-    NDK_PATH="/mnt/c/Users/reihan/AppData/Local/Android/Sdk/ndk/27.0.12077973"
+  else
+    for user_dir in /mnt/c/Users/*; do
+      if [[ -d "$user_dir/AppData/Local/Android/Sdk/ndk" ]]; then
+        NDK_PATH=$(ls -d "$user_dir/AppData/Local/Android/Sdk/ndk"/* 2>/dev/null | sort -V | tail -n 1 || true)
+        [[ -n "$NDK_PATH" && -d "$NDK_PATH" ]] && break
+      fi
+    done
   fi
 fi
 
