@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # contents:write needed to create GitHub Releases and move the 'latest' tag.
 permissions:
   contents: write
@@ -156,6 +160,18 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Extract Version Info
+        id: version
+        run: |
+          VNAME=$(./gradlew -q :app:printVersionName 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+          VCODE=$(./gradlew -q :app:printVersionCode 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+          echo "version_name=$VNAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VCODE" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VNAME (code: $VCODE)"
+
+      - name: Run Unit Tests
+        run: ./gradlew test
+
       - name: Build release APK
         run: ./gradlew assembleRelease
         env:
@@ -164,13 +180,6 @@ jobs:
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASS: ${{ secrets.KEY_PASS }}
-
-      - name: Get Version Name
-        id: version
-        run: |
-          VERSION_NAME=$(./gradlew -q :app:printVersionName 2>/dev/null | tail -n 1 | tr -d '[:space:]')
-          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "Resolved version name: $VERSION_NAME"
 
       - name: Rename APK with version
         run: |
@@ -279,22 +288,10 @@ jobs:
           aws s3 cp "$APK" "s3://${{ secrets.R2_BUCKET }}/HzPlayer-v${{ steps.version.outputs.version_name }}.apk" \
             --endpoint-url "$ENDPOINT"
           VNAME="${{ steps.version.outputs.version_name }}"
-          VCODE=$(./gradlew -q :app:printVersionCode 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+          VCODE="${{ steps.version.outputs.version_code }}"
           DL_URL="${{ secrets.R2_PUBLIC_URL }}/HzPlayer-v${VNAME}.apk"
           # Build latest.json safely using python to escape the changelog
-          python3 -c "
-import json, sys
-with open('/tmp/changelog.md', 'r') as f:
-    notes = f.read().strip()
-manifest = {
-    'versionName': '${VNAME}',
-    'versionCode': int('${VCODE}'),
-    'downloadUrl': '${DL_URL}',
-    'releaseNotes': notes
-}
-with open('/tmp/latest.json', 'w') as f:
-    json.dump(manifest, f, indent=2)
-"
+          python3 -c "import json; notes = open('/tmp/changelog.md').read().strip(); manifest = {'versionName': '${VNAME}', 'versionCode': int('${VCODE}'), 'downloadUrl': '${DL_URL}', 'releaseNotes': notes}; open('/tmp/latest.json', 'w').write(json.dumps(manifest, indent=2))"
           aws s3 cp /tmp/latest.json "s3://${{ secrets.R2_BUCKET }}/latest.json" \
             --endpoint-url "$ENDPOINT" --cache-control "no-cache"
           echo "=== Published to R2 ==="
