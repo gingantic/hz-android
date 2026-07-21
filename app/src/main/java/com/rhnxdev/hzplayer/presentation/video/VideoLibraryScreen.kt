@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +54,7 @@ import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaErrorState
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
+import com.rhnxdev.hzplayer.core.components.MediaPropertiesDialog
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
@@ -65,6 +68,8 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 import coil3.compose.SubcomposeAsyncImage
 import androidx.compose.ui.layout.ContentScale
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
+import com.rhnxdev.hzplayer.core.util.formatDuration
+import com.rhnxdev.hzplayer.core.util.formatFileSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -389,6 +394,17 @@ private fun SearchResultsContent(
     onVideoClicked: (VideoItem) -> Unit,
     searchQuery: String,
 ) {
+    var propertiesVideo by remember { mutableStateOf<VideoItem?>(null) }
+
+    propertiesVideo?.let { video ->
+        MediaPropertiesDialog(
+            title = video.title,
+            properties = buildVideoProperties(video),
+            onDismiss = { propertiesVideo = null },
+            probeUri = video.uri,
+        )
+    }
+
     if (videos.isEmpty()) {
         MediaEmptyState(
             icon = Icons.Default.Search,
@@ -407,6 +423,7 @@ private fun SearchResultsContent(
                     title = video.title,
                     subtitle = remember(video) { buildSubtitle(video) },
                     durationMs = video.durationMs,
+                    progress = if (video.watchedProgress > 0f) video.watchedProgress else null,
                     thumbnailContent = {
                         SubcomposeAsyncImage(
                             model = VideoFrame(video.uri, video.dateModified),
@@ -422,6 +439,7 @@ private fun SearchResultsContent(
                         )
                     },
                     onClick = { onVideoClicked(video) },
+                    onPropertiesClick = { propertiesVideo = video },
                 )
             }
         }
@@ -449,6 +467,19 @@ private fun SearchResultsContent(
                         )
                     },
                     onClick = { onVideoClicked(video) },
+                    trailingContent = {
+                        IconButton(
+                            onClick = { propertiesVideo = video },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = stringResource(R.string.media_overflow_cd),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    },
                 )
             }
         }
@@ -465,6 +496,31 @@ private fun buildSubtitle(video: VideoItem): String {
         parts.add(if (hours > 0) "${hours}h${minutes}m" else "${minutes}m")
     }
     return parts.joinToString(" • ")
+}
+
+@Composable
+private fun buildVideoProperties(video: VideoItem): List<Pair<String, String>> {
+    val dateFormat = remember { java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault()) }
+    val path = remember(video.uri) {
+        android.net.Uri.parse(video.uri).path ?: video.uri
+    }
+    val fileName = remember(path) { path.substringAfterLast('/') }
+
+    return buildList {
+        add(stringResource(R.string.prop_file_name) to fileName)
+        add(stringResource(R.string.prop_path) to path)
+        if (video.fileSize > 0) {
+            add(stringResource(R.string.prop_size) to formatFileSize(video.fileSize))
+        }
+        video.resolution?.let { add(stringResource(R.string.prop_resolution) to it) }
+        if (video.durationMs > 0) {
+            add(stringResource(R.string.prop_duration) to formatDuration(video.durationMs))
+        }
+        video.mimeType?.let { add(stringResource(R.string.prop_type) to it) }
+        if (video.dateAdded > 0) {
+            add(stringResource(R.string.prop_date_added) to dateFormat.format(java.util.Date(video.dateAdded * 1000)))
+        }
+    }
 }
 
 @PreviewLightDark

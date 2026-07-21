@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -69,6 +70,7 @@ fun AudioPlayerSheet(
     onSeekTo: (Long) -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
+    onToggleQueue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
@@ -220,6 +222,17 @@ fun AudioPlayerSheet(
                             modifier = Modifier.size(24.dp),
                         )
                     }
+
+                    if (uiState.audioQueue.size > 1) {
+                        IconButton(onClick = onToggleQueue) {
+                            Icon(
+                                imageVector = Icons.Default.QueueMusic,
+                                contentDescription = stringResource(R.string.queue),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -347,7 +360,7 @@ fun AudioPlayerSheet(
 
             Spacer(modifier = Modifier.height(Spacing.md))
 
-            // Secondary controls — shuffle & repeat (smaller, below main controls)
+            // Secondary controls — shuffle, queue & repeat (smaller, below main controls)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -362,8 +375,18 @@ fun AudioPlayerSheet(
                     )
                 }
 
-                // Spacer to balance the layout (center the main controls, place secondary on sides)
-                Spacer(modifier = Modifier.width(72.dp))
+                if (uiState.audioQueue.size > 1) {
+                    IconButton(onClick = onToggleQueue) {
+                        Icon(
+                            imageVector = Icons.Default.QueueMusic,
+                            contentDescription = stringResource(R.string.queue),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(24.dp))
+                }
 
                 IconButton(onClick = onCycleRepeat) {
                     Icon(
@@ -427,6 +450,7 @@ private fun AudioPlayerSheetPreview() {
             onSeekTo = {},
             onToggleShuffle = {},
             onCycleRepeat = {},
+            onToggleQueue = {},
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface),

@@ -95,6 +95,12 @@ class FileBrowserViewModel @Inject constructor(
             _uiState.update { it.copy(sortType = savedSort, sortDirection = savedDir, isMediaMode = savedMediaMode) }
         }
         viewModelScope.launch {
+            userPrefs.archivePasswords.collect { persisted ->
+                archivePasswords.clear()
+                archivePasswords.putAll(persisted)
+            }
+        }
+        viewModelScope.launch {
             userPrefs.showHiddenFiles.collect { hidden ->
                 showHidden = hidden
                 val layers = _uiState.value.layers
@@ -201,6 +207,7 @@ class FileBrowserViewModel @Inject constructor(
         val container = _uiState.value.passwordPromptContainer ?: return
         _uiState.update { it.copy(passwordPromptContainer = null, passwordError = null) }
         archivePasswords[container] = password
+        viewModelScope.launch { userPrefs.setArchivePassword(container, password) }
 
         val layers = _uiState.value.layers
         val idx = layers.indexOfLast {
@@ -301,6 +308,7 @@ class FileBrowserViewModel @Inject constructor(
         if (fileItems.isEmpty()) return items
 
         val paths = fileItems.map { it.path }
+        val showProgress = userPrefs.showWatchProgress.first()
         val progressMap = resumeRepository.getPlaybackProgressList(paths)
         val localVideos = mediaRepository.getVideosByUris(paths)
         val durationMap = localVideos.associate { it.uri to it.durationMs }
@@ -313,7 +321,7 @@ class FileBrowserViewModel @Inject constructor(
             } else {
                 val progress = progressMap[item.path]
                 val duration = progress?.durationMs ?: durationMap[item.path] ?: 0L
-                val position = progress?.positionMs ?: 0L
+                val position = if (showProgress) progress?.positionMs ?: 0L else 0L
                 item.copy(
                     durationMs = duration,
                     playbackPositionMs = position,

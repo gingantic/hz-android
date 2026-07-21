@@ -8,6 +8,7 @@ import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
+import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.presentation.player.PlayerUiState
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
@@ -28,6 +29,7 @@ class VideoLibraryViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val playerRepository: PlayerRepository,
+    private val resumeRepository: ResumeRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(VideoLibraryUiState())
@@ -83,10 +85,26 @@ class VideoLibraryViewModel @Inject constructor(
                 // Try real data from MediaStore via repository
                 mediaRepository.getAllVideos(sortType, forceRefresh)
                     .catch { e -> emitFailure(e.message) }
-                    .collect { videos -> emitLoaded(videos) }
+                    .collect { videos -> emitLoaded(enrichWithProgress(videos)) }
             } catch (e: Exception) {
                 emitFailure(e.message)
             }
+        }
+    }
+
+    /** Merges persisted playback positions (resume table) into [VideoItem.watchedProgress]. */
+    private suspend fun enrichWithProgress(videos: List<VideoItem>): List<VideoItem> {
+        if (videos.isEmpty()) return videos
+        if (!userPreferencesRepository.showWatchProgress.first()) return videos
+        val progressMap = resumeRepository.getPlaybackProgressList(videos.map { it.uri })
+        if (progressMap.isEmpty()) return videos
+        return videos.map { video ->
+            val progress = progressMap[video.uri] ?: return@map video
+            val duration = if (video.durationMs > 0) video.durationMs else progress.durationMs
+            val watched = if (duration > 0) {
+                (progress.positionMs.toFloat() / duration).coerceIn(0f, 1f)
+            } else 0f
+            video.copy(durationMs = duration, watchedProgress = watched)
         }
     }
 

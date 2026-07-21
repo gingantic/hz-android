@@ -34,8 +34,11 @@ interface IPlayerEngine {
     /** Load a URI for playback. Call [resume] to start.
      *  @param resumePositionMs if > 0, seek to this position right after prepare
      *         (used to resume where the user left off). The engine applies the
-     *         seek itself once the media item is set, avoiding a race with load. */
-    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0)
+     *         seek itself once the media item is set, avoiding a race with load.
+     *  @param headers HTTP request headers (e.g. `Authorization` / a stream token
+     *         forwarded from a VIEW intent) applied to network requests for this
+     *         URI. An empty map clears any previously applied headers. */
+    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0, headers: Map<String, String> = emptyMap())
 
     /** Load a playlist (video) and start at [startIndex] / [startPositionMs]. */
     fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int = 0, startPositionMs: Long = 0)
@@ -74,6 +77,9 @@ interface IPlayerEngine {
 
     /** Total number of media items in the current playlist, or 0. */
     fun getMediaItemCount(): Int
+
+    /** Jump to the media item at [index] in the current playlist (starts from 0 ms). */
+    fun seekToMediaItem(index: Int)
 
     // ── Queries ─────────────────────────────────────────────────
 

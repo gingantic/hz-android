@@ -134,11 +134,11 @@ class PlayerRepositoryImpl @Inject constructor(
         engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false, resumePositionMs = resumePositionMs)
     }
 
-    override fun playUri(uri: String, title: String, isVideo: Boolean, mimeType: String?, resumePositionMs: Long) {
-        Log.i(TAG, "playUri: title=$title isVideo=$isVideo mimeType=$mimeType resumeMs=$resumePositionMs")
+    override fun playUri(uri: String, title: String, isVideo: Boolean, mimeType: String?, resumePositionMs: Long, headers: Map<String, String>) {
+        Log.i(TAG, "playUri: title=$title isVideo=$isVideo mimeType=$mimeType resumeMs=$resumePositionMs headers=${headers.size}")
         savedPlaybackUri = uri
         startTrafficPolling()
-        engine().play(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = resumePositionMs)
+        engine().play(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = resumePositionMs, headers = headers)
     }
 
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
@@ -158,6 +158,8 @@ class PlayerRepositoryImpl @Inject constructor(
     override fun getCurrentMediaItemIndex(): Int = engine().getCurrentMediaItemIndex()
 
     override fun getMediaItemCount(): Int = engine().getMediaItemCount()
+
+    override fun seekToMediaItem(index: Int) = engine().seekToMediaItem(index)
 
     override fun togglePlayPause() {
         if (engine().isPlaying()) engine().pause()

@@ -94,6 +94,7 @@ fun HzPlayerTopBar(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
             SpacingExtra(Spacing.md)
@@ -107,6 +108,7 @@ fun HzPlayerTopBar(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Close search",
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
             SpacingExtra(Spacing.sm)

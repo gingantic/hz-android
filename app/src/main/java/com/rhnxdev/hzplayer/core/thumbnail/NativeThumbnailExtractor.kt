@@ -50,5 +50,35 @@ object NativeThumbnailExtractor {
         fastMode: Boolean,
     ): Bitmap?
 
+    /**
+     * Probes container + stream headers of [bridge] and returns codec metadata
+     * as a map (e.g. `video_codec` → `h264`, `audio_codec` → `aac`). Only keys
+     * the demuxer could determine are present. Returns null when the native lib
+     * is unavailable or the source can't be parsed.
+     */
+    fun probeMediaInfo(bridge: ThumbnailSource): Map<String, String>? {
+        if (!loaded) return null
+        return try {
+            nativeProbeMediaInfo(bridge)?.let { arr ->
+                buildMap {
+                    var i = 0
+                    while (i + 1 < arr.size) {
+                        put(arr[i], arr[i + 1])
+                        i += 2
+                    }
+                }.takeIf { it.isNotEmpty() }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "nativeProbeMediaInfo failed", e)
+            null
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.e(TAG, "nativeProbeMediaInfo linkage error", e)
+            loaded = false
+            null
+        }
+    }
+
+    private external fun nativeProbeMediaInfo(bridge: ThumbnailSource): Array<String>?
+
     private const val TAG = "NativeThumbnailExtractor"
 }

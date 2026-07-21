@@ -31,6 +31,8 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rhnxdev.hzplayer.domain.model.Album
+import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
@@ -51,6 +53,8 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
     onVideoClicked: (VideoItem) -> Unit = {},
     onAudioClicked: (AudioItem, List<AudioItem>) -> Unit = { _, _ -> },
+    onAlbumClicked: (Album) -> Unit = {},
+    onArtistClicked: (Artist) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -106,7 +110,8 @@ fun SearchScreen(
                 )
             }
 
-            uiState.hasSearched && uiState.videoResults.isEmpty() && uiState.audioResults.isEmpty() -> {
+            uiState.hasSearched && uiState.videoResults.isEmpty() && uiState.audioResults.isEmpty()
+                && uiState.albumResults.isEmpty() && uiState.artistResults.isEmpty() -> {
                 MediaEmptyState(
                     icon = Icons.Default.Search,
                     title = stringResource(R.string.no_results_title),
@@ -124,6 +129,8 @@ fun SearchScreen(
                     onAudioClicked = { audio ->
                         onAudioClicked(audio, uiState.audioResults)
                     },
+                    onAlbumClicked = onAlbumClicked,
+                    onArtistClicked = onArtistClicked,
                 )
             }
 
@@ -144,6 +151,8 @@ private fun SearchResults(
     uiState: SearchUiState,
     onVideoClicked: (VideoItem) -> Unit = {},
     onAudioClicked: (AudioItem) -> Unit = {},
+    onAlbumClicked: (Album) -> Unit = {},
+    onArtistClicked: (Artist) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -232,6 +241,99 @@ private fun SearchResults(
                         }
                     },
                     onClick = { onAudioClicked(song) },
+                    modifier = Modifier.padding(horizontal = Spacing.lg),
+                )
+            }
+        }
+
+        // Album results
+        if (uiState.albumResults.isNotEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.search_albums_count, uiState.albumResults.size),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(
+                        start = Spacing.lg,
+                        top = Spacing.lg,
+                        bottom = Spacing.xs,
+                    ),
+                )
+            }
+            items(uiState.albumResults, key = { "al_${it.id}" }) { album ->
+                val albumSubtitle = buildString {
+                    album.artist?.let { append(it) }
+                    if (album.trackCount > 0) {
+                        if (isNotEmpty()) append(" • ")
+                        append("${album.trackCount} songs")
+                    }
+                }
+                MediaListItem(
+                    title = album.title,
+                    subtitle = albumSubtitle,
+                    isSquareThumbnail = true,
+                    thumbnailContent = {
+                        if (album.albumArtUri != null) {
+                            SubcomposeAsyncImage(
+                                model = album.albumArtUri,
+                                contentDescription = album.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                                error = {
+                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                },
+                                loading = {
+                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                }
+                            )
+                        } else {
+                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                        }
+                    },
+                    onClick = { onAlbumClicked(album) },
+                    modifier = Modifier.padding(horizontal = Spacing.lg),
+                )
+            }
+        }
+
+        // Artist results
+        if (uiState.artistResults.isNotEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.search_artists_count, uiState.artistResults.size),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(
+                        start = Spacing.lg,
+                        top = Spacing.lg,
+                        bottom = Spacing.xs,
+                    ),
+                )
+            }
+            items(uiState.artistResults, key = { "ar_${it.id}" }) { artist ->
+                MediaListItem(
+                    title = artist.name,
+                    subtitle = stringResource(R.string.artist_subtitle, artist.albumCount, artist.trackCount),
+                    isSquareThumbnail = true,
+                    thumbnailContent = {
+                        if (artist.albumArtUri != null) {
+                            SubcomposeAsyncImage(
+                                model = artist.albumArtUri,
+                                contentDescription = artist.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                                error = {
+                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                },
+                                loading = {
+                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                                }
+                            )
+                        } else {
+                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+                        }
+                    },
+                    onClick = { onArtistClicked(artist) },
                     modifier = Modifier.padding(horizontal = Spacing.lg),
                 )
             }

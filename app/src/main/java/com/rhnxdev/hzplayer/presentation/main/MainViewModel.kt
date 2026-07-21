@@ -3,11 +3,13 @@ package com.rhnxdev.hzplayer.presentation.main
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rhnxdev.hzplayer.core.util.UpdateChecker
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import com.rhnxdev.hzplayer.presentation.navigation.AppDestination
 import com.rhnxdev.hzplayer.presentation.navigation.bottomNavDestinations
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +54,10 @@ class MainViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
+    /** Non-null when a startup update is available and hasn't been dismissed. */
+    private val _pendingUpdate = MutableStateFlow<UpdateChecker.UpdateInfo?>(null)
+    val pendingUpdate: StateFlow<UpdateChecker.UpdateInfo?> = _pendingUpdate.asStateFlow()
+
     init {
         viewModelScope.launch {
             val savedIndex = userPreferencesRepository.selectedTabIndex.first()
@@ -62,6 +68,37 @@ class MainViewModel @Inject constructor(
                 selectedTabIndex = clampedIndex,
                 isReady = true,
             )
+        }
+        checkForUpdateOnStartup()
+    }
+
+    private fun checkForUpdateOnStartup() {
+        viewModelScope.launch {
+            // Small delay so the UI settles before showing the dialog
+            delay(1500)
+            val dismissedCode = userPreferencesRepository.dismissedUpdateVersionCode.first()
+            val result = UpdateChecker.checkForUpdates()
+            if (result is UpdateChecker.CheckResult.Available) {
+                val info = result.info
+                // Only show if user hasn't dismissed THIS specific version
+                if (info.latestVersionCode > dismissedCode) {
+                    _pendingUpdate.value = info
+                }
+            }
+        }
+    }
+
+    /** Dismiss the update dialog for this session only. */
+    fun dismissUpdate() {
+        _pendingUpdate.value = null
+    }
+
+    /** Dismiss and persist — won't show again for this version. */
+    fun dismissUpdateForever() {
+        val info = _pendingUpdate.value ?: return
+        _pendingUpdate.value = null
+        viewModelScope.launch {
+            userPreferencesRepository.setDismissedUpdateVersionCode(info.latestVersionCode)
         }
     }
 

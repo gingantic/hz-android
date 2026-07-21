@@ -40,7 +40,8 @@ import java.io.File
 @Composable
 fun UpdateDialog(
     updateInfo: UpdateChecker.UpdateInfo,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onDontShowAgain: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -174,13 +175,25 @@ fun UpdateDialog(
         },
         dismissButton = {
             if (!isDownloading) {
-                TextButton(onClick = onDismiss) {
-                    Text(
-                        text = stringResource(R.string.dialog_cancel),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                Row {
+                    if (onDontShowAgain != null) {
+                        TextButton(onClick = onDontShowAgain) {
+                            Text(
+                                text = stringResource(R.string.update_dont_show_again),
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                            )
+                        }
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text(
+                            text = stringResource(R.string.dialog_cancel),
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
                         )
-                    )
+                    }
                 }
             }
         }

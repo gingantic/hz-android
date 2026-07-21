@@ -199,6 +199,16 @@ class PlayerViewModel @Inject constructor(
                         subtitlePreferenceAppliedForUri = null
                         trackCache.markNeedsRefresh()
                     }
+                    // Keep the audio queue index in sync when the engine advances
+                    // to the next/previous item in an audio playlist.
+                    val newQueueIndex = if (!state.isVideo && state.audioQueue.isNotEmpty()
+                        && info.currentUri != null && info.currentUri != oldUri
+                    ) {
+                        state.audioQueue.indexOfFirst { it.uri == info.currentUri }
+                            .takeIf { it >= 0 } ?: state.audioQueueIndex
+                    } else {
+                        state.audioQueueIndex
+                    }
                     // Track whether the video surface is actively presenting frames.
                     // Used by VideoPlayerScreen to manage the window HDR color mode.
                     val videoActive = state.isVideo &&
@@ -215,6 +225,7 @@ class PlayerViewModel @Inject constructor(
                         currentArtist = if (isIdle) null else (info.currentArtist ?: state.currentArtist),
                         currentPlaybackUri = if (isIdle) null else (info.currentUri ?: state.currentPlaybackUri),
                         currentArtworkUri = if (isIdle) null else (artworkUri ?: if (info.currentUri != state.currentPlaybackUri) null else state.currentArtworkUri),
+                        audioQueueIndex = newQueueIndex,
                         // Track DRM status — exposed in `drmSessionActive` for any
                         // future pipeline that needs it; not currently driving the
                         // surface selection while HDR/SDR colour-correction is in
@@ -353,6 +364,8 @@ class PlayerViewModel @Inject constructor(
                 duration = video.durationMs,
                 currentPlaybackUri = video.uri,
                 videoPlaylist = emptyList(),
+                audioQueue = emptyList(),
+                audioQueueIndex = 0,
             )
         }
         // Decide how to handle a saved resume position, then start accordingly.
@@ -377,7 +390,7 @@ class PlayerViewModel @Inject constructor(
         isVideo: Boolean = false,
         playImmediately: Boolean = true,
         mimeType: String? = null,
-
+        headers: Map<String, String> = emptyMap(),
     ) {
         _uiState.update { state ->
             state.copy(
@@ -389,6 +402,8 @@ class PlayerViewModel @Inject constructor(
                 isLoading = true,
                 currentPlaybackUri = uri,
                 videoPlaylist = emptyList(),
+                audioQueue = emptyList(),
+                audioQueueIndex = 0,
             )
         }
         viewModelScope.launch {
@@ -400,7 +415,7 @@ class PlayerViewModel @Inject constructor(
                 mimeType = mimeType,
                 artist = null,
                 savedPositionMs = resumePos,
-                play = { pos -> playerRepository.playUri(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = pos) },
+                play = { pos -> playerRepository.playUri(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = pos, headers = headers) },
             )
         }
         trackCache.markNeedsRefresh()
@@ -430,6 +445,8 @@ class PlayerViewModel @Inject constructor(
                 duration = audio.durationMs,
                 currentPlaybackUri = audio.uri,
                 videoPlaylist = emptyList(),
+                audioQueue = listOf(audio),
+                audioQueueIndex = 0,
             )
         }
         viewModelScope.launch {
@@ -545,6 +562,8 @@ class PlayerViewModel @Inject constructor(
                 duration = item.durationMs,
                 currentPlaybackUri = item.uri,
                 videoPlaylist = emptyList(),
+                audioQueue = items,
+                audioQueueIndex = startIndex.coerceIn(0, items.lastIndex),
             )
         }
         playerRepository.playAudioPlaylist(items, startIndex)
@@ -641,6 +660,30 @@ class PlayerViewModel @Inject constructor(
     fun onTogglePlaylistDrawer() = playlistController.onTogglePlaylistDrawer()
 
     fun clearPlaylist() = playlistController.clearPlaylist()
+
+    // ── Audio queue ───────────────────────────────────────────────
+
+    fun onToggleAudioQueue() {
+        _uiState.update { it.copy(showAudioQueue = !it.showAudioQueue) }
+    }
+
+    fun onAudioQueueSelect(index: Int) {
+        val queue = _uiState.value.audioQueue
+        if (index !in queue.indices) return
+        val item = queue[index]
+        _uiState.update {
+            it.copy(
+                audioQueueIndex = index,
+                currentTitle = item.title,
+                currentArtist = item.artist,
+                currentArtworkUri = item.albumArtUri,
+                duration = item.durationMs,
+                currentPlaybackUri = item.uri,
+            )
+        }
+        playerRepository.seekToMediaItem(index)
+        trackCache.markNeedsRefresh()
+    }
 
     fun onToggleDebugOverlay() = debugController.onToggleDebugOverlay()
 

@@ -87,6 +87,22 @@ class MediaPlayerHolder @Inject constructor(
             .build()
     }
 
+    /**
+     * Shared HTTP data source factory, kept as a field (not rebuilt per play) so
+     * request headers set via [setHttpRequestHeaders] persist across plays and
+     * apply to every network request. Cross-protocol redirects are enabled because
+     * HLS/DASH manifests and many CDNs redirect the request (https<->http or to a
+     * token host); with them off those loads fail and the error is misclassified
+     * as an auth failure ("Sign-in failed").
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private val httpDataSourceFactory: androidx.media3.datasource.DefaultHttpDataSource.Factory =
+        androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(30_000)
+            .setReadTimeoutMs(30_000)
+            .setUserAgent(androidx.media3.common.util.Util.getUserAgent(context, "HzPlayer"))
+
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     var player: ExoPlayer = buildPlayer()
         private set
@@ -122,7 +138,7 @@ class MediaPlayerHolder @Inject constructor(
             )
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context, AssExtractorsFactory(assHandler))
-                    .setDataSourceFactory(buildCompositeDataSourceFactory(context))
+                    .setDataSourceFactory(buildCompositeDataSourceFactory())
                     .setSubtitleParserFactory(AssSubtitleParserFactory())
             )
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
@@ -440,7 +456,7 @@ class MediaPlayerHolder @Inject constructor(
      * `file:`. Returns null on failure.
      */
     fun readUriBytes(uri: Uri): ByteArray? {
-        val ds = buildCompositeDataSourceFactory(context).createDataSource()
+        val ds = buildCompositeDataSourceFactory().createDataSource()
         return runCatching {
             ds.open(androidx.media3.datasource.DataSpec.Builder().setUri(uri).build())
             val out = java.io.ByteArrayOutputStream()
@@ -455,16 +471,32 @@ class MediaPlayerHolder @Inject constructor(
         }
     }
 
+    /**
+     * Build the scheme-routing data source factory used by the player and by
+     * [readUriBytes]. Network (http/https) requests route through the shared
+     * [httpDataSourceFactory] so header changes take effect on the next request.
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun buildCompositeDataSourceFactory(): DataSource.Factory {
+        val defaultFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        return DataSource.Factory {
+            ProtocolRoutingDataSource(defaultFactory)
+        }
+    }
+
+    /**
+     * Apply HTTP request headers (e.g. `Authorization` / a stream token forwarded
+     * from a VIEW intent) to every subsequent network request. An empty map clears
+     * previously set headers so a token from one stream never leaks into the next.
+     * Mutates the shared [httpDataSourceFactory]; takes effect on the next prepare().
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    fun setHttpRequestHeaders(headers: Map<String, String>) {
+        httpDataSourceFactory.setDefaultRequestProperties(headers)
+    }
+
     companion object {
         private const val TAG = "MediaPlayerHolder"
-
-        @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-        fun buildCompositeDataSourceFactory(context: Context): DataSource.Factory {
-            val defaultFactory = DefaultDataSource.Factory(context)
-            return DataSource.Factory {
-                ProtocolRoutingDataSource(defaultFactory)
-            }
-        }
     }
 }
 

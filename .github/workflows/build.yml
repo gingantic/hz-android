@@ -7,9 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# contents:read is enough. Fork-PR cache writes are denied by GitHub (expected).
+# contents:write needed to create GitHub Releases and move the 'latest' tag.
 permissions:
-  contents: read
+  contents: write
 
 env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -183,6 +183,90 @@ jobs:
           name: HzPlayer-${{ github.sha }}-release
           path: app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk
 
+      - name: Generate Changelog
+        run: |
+          # Determine the commit range: from the 'latest' tag (previous release) to HEAD.
+          # If the tag doesn't exist, use the last 50 commits as fallback.
+          if git rev-parse "latest" >/dev/null 2>&1; then
+            PREV=$(git rev-list -n1 latest 2>/dev/null || echo "")
+          else
+            PREV=""
+          fi
+          if [ -n "$PREV" ] && [ "$PREV" != "$(git rev-parse HEAD)" ]; then
+            RANGE="${PREV}..HEAD"
+          else
+            RANGE="HEAD~50..HEAD"
+          fi
+
+          # Collect commits in conventional-commit format
+          COMMITS=$(git log "$RANGE" --pretty=format:"%s" --no-merges 2>/dev/null || git log --max-count=50 --pretty=format:"%s" --no-merges)
+
+          # Categorize commits
+          FEATURES=""
+          FIXES=""
+          PERF=""
+          CI_CHANGES=""
+          REFACTORS=""
+          OTHER=""
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            # Strip conventional-commit prefix: type(scope): description -> description
+            STRIPPED=$(echo "$line" | sed -E 's/^[a-z]+(\([^)]*\))?!?: //')
+            case "$line" in
+              feat*)     FEATURES="${FEATURES}- ${STRIPPED}\n" ;;
+              fix*)      FIXES="${FIXES}- ${STRIPPED}\n" ;;
+              perf*)     PERF="${PERF}- ${STRIPPED}\n" ;;
+              ci*)       CI_CHANGES="${CI_CHANGES}- ${STRIPPED}\n" ;;
+              refactor*) REFACTORS="${REFACTORS}- ${STRIPPED}\n" ;;
+              *)         OTHER="${OTHER}- ${line}\n" ;;
+            esac
+          done <<< "$COMMITS"
+
+          # Build the changelog markdown
+          CHANGELOG=""
+          if [ -n "$FEATURES" ]; then
+            CHANGELOG="${CHANGELOG}### ✨ Features\n${FEATURES}\n"
+          fi
+          if [ -n "$FIXES" ]; then
+            CHANGELOG="${CHANGELOG}### 🐛 Bug Fixes\n${FIXES}\n"
+          fi
+          if [ -n "$PERF" ]; then
+            CHANGELOG="${CHANGELOG}### ⚡ Performance\n${PERF}\n"
+          fi
+          if [ -n "$REFACTORS" ]; then
+            CHANGELOG="${CHANGELOG}### ♻️ Refactoring\n${REFACTORS}\n"
+          fi
+          if [ -n "$CI_CHANGES" ]; then
+            CHANGELOG="${CHANGELOG}### 🔧 CI / Build\n${CI_CHANGES}\n"
+          fi
+          if [ -n "$OTHER" ]; then
+            CHANGELOG="${CHANGELOG}### 📦 Other\n${OTHER}\n"
+          fi
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="No notable changes."
+          fi
+
+          # Write to file (for GitHub Release body and R2 manifest)
+          printf "%b" "$CHANGELOG" > /tmp/changelog.md
+
+          echo "=== Generated Changelog ==="
+          cat /tmp/changelog.md
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version_name }}
+          name: HzPlayer v${{ steps.version.outputs.version_name }}
+          body_path: /tmp/changelog.md
+          draft: false
+          prerelease: false
+          files: app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push release to R2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -197,19 +281,31 @@ jobs:
           VNAME="${{ steps.version.outputs.version_name }}"
           VCODE=$(./gradlew -q :app:printVersionCode 2>/dev/null | tail -n 1 | tr -d '[:space:]')
           DL_URL="${{ secrets.R2_PUBLIC_URL }}/HzPlayer-v${VNAME}.apk"
-          cat > /tmp/latest.json << EOF
-          {
-            "versionName": "${VNAME}",
-            "versionCode": ${VCODE},
-            "downloadUrl": "${DL_URL}",
-            "releaseNotes": "Automated OTA build from commit ${GITHUB_SHA}"
-          }
-          EOF
+          # Build latest.json safely using python to escape the changelog
+          python3 -c "
+import json, sys
+with open('/tmp/changelog.md', 'r') as f:
+    notes = f.read().strip()
+manifest = {
+    'versionName': '${VNAME}',
+    'versionCode': int('${VCODE}'),
+    'downloadUrl': '${DL_URL}',
+    'releaseNotes': notes
+}
+with open('/tmp/latest.json', 'w') as f:
+    json.dump(manifest, f, indent=2)
+"
           aws s3 cp /tmp/latest.json "s3://${{ secrets.R2_BUCKET }}/latest.json" \
             --endpoint-url "$ENDPOINT" --cache-control "no-cache"
           echo "=== Published to R2 ==="
           echo "APK: HzPlayer-v${VNAME}.apk"
           echo "Manifest: latest.json"
+
+      - name: Update 'latest' tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git tag -f latest
+          git push origin latest --force
 
       - name: ccache stats
         run: |

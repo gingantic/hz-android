@@ -3,11 +3,12 @@
 > Goal: make `IPlayerEngine` the **only** playback contract. No Media3 type
 > (`Player`, `PlayerView`, `Cue`, `MediaSession`, …) may cross the domain /
 > presentation boundary. A second backend (libVLC, mpv, …) is added by writing
-> one class + one Hilt binding + one `when` branch in the surface composable.
+> one class + one Hilt binding. The render seam lives on the interface itself —
+> `PlayerSurface` needs **zero** changes for a new engine.
 >
 > **Status: IMPLEMENTED.** The refactor landed in commit `57e66db`. This doc
 > describes the design that is now in code; the "implementation phases" below are
-> historical and complete. Last refreshed: 2026-07-11.
+> historical and complete. Last refreshed: 2026-07-21.
 
 ---
 
@@ -86,7 +87,7 @@ interface IPlayerEngine {
     val playbackState: StateFlow<PlayerStateInfo>
 
     // playback
-    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false)
+    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0)
     fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long)
     fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int)
     fun pause()
@@ -97,10 +98,11 @@ interface IPlayerEngine {
     fun seekTo(positionMs: Long)
     fun skipForward(ms: Long = 10_000)
     fun skipBackward(ms: Long = 10_000)
-    fun skipToNext()                 // replaces player.seekToNextMediaItem()
+    fun skipToNext()
     fun skipToPrevious()
     fun getCurrentMediaItemIndex(): Int
     fun getMediaItemCount(): Int
+    fun seekToMediaItem(index: Int)
 
     // queries
     fun isPlaying(): Boolean
@@ -112,12 +114,18 @@ interface IPlayerEngine {
     fun setPlaybackSpeed(speed: Float)
     fun setShuffleEnabled(enabled: Boolean)
     fun setRepeatMode(mode: RepeatMode)
+    fun isShuffleEnabled(): Boolean = false
+    fun getRepeatMode(): RepeatMode = RepeatMode.NONE
+    fun setDecoderMode(mode: DecoderMode) {}
 
     // tracks
     fun getSubtitleTracks(): List<String>
     fun getSelectedSubtitleTrack(): Int
     fun selectSubtitleTrack(index: Int)
+    fun loadExternalAss(uri: Uri)
+    fun getSubtitleTrackMimeTypes(): List<String?> = emptyList()
     fun addExternalSubtitle(uri: Uri): Boolean
+    var subtitleTrackChangeListener: (() -> Unit)?
     fun setSubtitleDelay(delayMs: Long)
     fun getSubtitleDelay(): Long = 0
     fun getAudioTracks(): List<String>
@@ -127,6 +135,16 @@ interface IPlayerEngine {
     // engine-specific extras (nullable → engine may not support)
     fun getDebugStats(): DebugStats? = null
 
+    // render seam (on the interface — no casts needed in PlayerSurface)
+    fun createRenderView(context: Context, useSurfaceView: Boolean): View
+    fun updateRenderView(view: View, config: RenderViewConfig)
+    fun onRenderViewPaused(view: View)
+    fun onRenderViewResumed(view: View)
+
+    // MediaSession bridge
+    fun getMedia3Player(): Player? = null
+    fun setOnPlayerReplacedListener(listener: ((Player) -> Unit)?) {}
+
     // lifecycle
     fun clearError()
     fun retry()
@@ -134,10 +152,9 @@ interface IPlayerEngine {
 }
 ```
 
-**No `android.view.View` lives in this interface.** Rendering is the engine's
-private concern, surfaced through the `PlayerSurface` composable (§4), not the
-contract. This keeps `domain` pure and lets a future engine paint however it
-wants.
+The render seam methods (`createRenderView`, `updateRenderView`, `onRenderViewPaused`,
+`onRenderViewResumed`) are **on the interface** — `PlayerSurface` calls them directly
+without any `when`/cast. A new engine simply implements them and the surface works.
 
 ### 3.3 `IPlayerEngine.getMedia3Player()` — Media3 MediaSession bridge
 
@@ -179,8 +196,8 @@ annotation class EngineKey(val value: EngineType)
 
 ## 4. Presentation seam — `PlayerSurface`
 
-A single composable owns all engine-specific rendering. `VideoPlayerScreen`
-never touches Media3:
+A single composable owns all engine-specific rendering. The render methods are on
+`IPlayerEngine` directly — no `when` branches, no casts, no per-engine code:
 
 ```kotlin
 @Composable
@@ -188,25 +205,17 @@ fun PlayerSurface(
     engine: IPlayerEngine,
     uiState: PlayerUiState,
     modifier: Modifier = Modifier,
-    onRenderView: (View?) -> Unit,     // expose ref for lifecycle pause/resume
+    onRenderView: (View?) -> Unit,
 ) {
     key(engine.engineType) {
         AndroidView(
             factory = { ctx ->
-                when (engine.engineType) {
-                    EngineType.EXO_PLAYER -> (engine as ExoPlayerEngine)
-                        .createRenderView(ctx, uiState.useSurfaceView)
-                    // EngineType.VLC -> (engine as VlcEngine).createRenderView(ctx)
-                    // EngineType.MPV -> (engine as MpvEngine).createRenderView(ctx)
-                }.also { onRenderView(it) }
+                val view = engine.createRenderView(ctx, uiState.useSurfaceView)
+                onRenderView(view)
+                view
             },
             update = { view ->
-                when (engine.engineType) {
-                    EngineType.EXO_PLAYER -> (engine as ExoPlayerEngine)
-                        .updateRenderView(view, RenderViewConfig(
-                            uiState.aspectRatioMode))
-                    // other branches delegate to their engine's updateRenderView
-                }
+                engine.updateRenderView(view, RenderViewConfig(uiState.aspectRatioMode))
             },
             modifier = modifier,
         )
@@ -216,8 +225,6 @@ fun PlayerSurface(
 
 Lifecycle in `VideoPlayerScreen`:
 ```kotlin
-val renderViewRef = remember<View?> { null }
-
 DisposableEffect(lifecycleOwner) {
     val obs = LifecycleEventObserver { _, e ->
         when (e) {
@@ -230,10 +237,7 @@ DisposableEffect(lifecycleOwner) {
     onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
 }
 ```
-`IPlayerEngine` is **not** given `onRenderViewPaused/Resumed` — those live on the
-concrete engine class (e.g. `ExoPlayerEngine.onRenderViewPaused(view)` casts to
-`PlayerView` and calls `.onPause()`). The composable calls them through the
-typed cast in the `when`.
+`onRenderViewPaused/Resumed` are **on the interface** — no typed cast needed.
 
 ---
 
@@ -322,15 +326,13 @@ When adding libVLC or mpv later:
    class VlcEngine @Inject constructor(@ApplicationContext ctx: Context) : IPlayerEngine {
        override val engineType = EngineType.VLC
        // play/pause/seek/tracks/speed via the VLC MediaPlayer API…
+       override fun createRenderView(context: Context, useSurfaceView: Boolean): View { ... }
+       override fun updateRenderView(view: View, config: RenderViewConfig) { ... }
+       override fun onRenderViewPaused(view: View) { ... }
+       override fun onRenderViewResumed(view: View) { ... }
        override fun getDebugStats(): DebugStats? = null   // optional
    }
    ```
-   - `createRenderView(ctx)` returns the engine's own `SurfaceView`/`TextureView`
-     (and wires it to the VLC `IVLCVout`).
-   - `updateRenderView(view, config)` applies aspect ratio + subtitle style.
-   - `onRenderViewPaused/Resumed(view)` release/reattach the surface.
-   - If it can back system media control, override `getMedia3Player()` to return the
-	     Media3 Player (or null for non-Media3 backends).
 
 3. **Bind it in Hilt** — one line in `PlayerEngineModule`:
    ```kotlin
@@ -338,29 +340,25 @@ When adding libVLC or mpv later:
    abstract fun bindVlc(impl: VlcEngine): IPlayerEngine
    ```
 
-4. **Add the surface branch** in `PlayerSurface`:
-   ```kotlin
-   EngineType.VLC -> (engine as VlcEngine).createRenderView(ctx)
-   ```
-   and the matching `update` + lifecycle branches.
-
-That is the entire integration surface. Nothing in `PlayerViewModel`,
-`PlayerRepositoryImpl` delegation, the controls overlay, or the settings switch
-changes — they are engine-agnostic by construction.
+That is the entire integration surface. `PlayerSurface`, `PlayerViewModel`,
+`PlayerRepositoryImpl` delegation, the controls overlay, and the settings switch
+are all engine-agnostic by construction — **zero** changes needed.
 
 ---
 
 ## 6b. As-built notes (vs. the design above)
 
+- **Render seam is on `IPlayerEngine`** (`createRenderView`, `updateRenderView`,
+  `onRenderViewPaused/Resumed`). `PlayerSurface` calls them directly — no `when`
+  branches, no typed casts. A new engine needs zero surface changes.
 - **`getMedia3Player()` lives on `IPlayerEngine`**, not a separate provider.
   `MediaPlaybackService` calls `engine.getMedia3Player()` directly — no separate
-  `MediaSessionProvider` interface or Hilt binding. Simpler and avoids an extra
-  indirection.
+  `MediaSessionProvider` interface or Hilt binding.
 - **Error mapping is in place**: `domain/player/PlaybackErrorMapper.kt` produces a
   redacted `(PlaybackErrorKind, message)` from `PlaybackException`; `PlayerStateInfo`
-  carries `errorKind`/`errorMessage`; `PlaybackErrorOverlay` consumes it. The
-  `subtitleCueTexts`/`subtitleCues` boundary types mentioned in §5 were dropped — native
-  `PlayerView` renders subtitles.
+  carries `errorKind`/`errorMessage`; `PlaybackErrorOverlay` consumes it.
+- **libass subtitle pipeline** intercepts embedded tracks and renders them natively;
+  `loadExternalAss(uri)` and `getSubtitleTrackMimeTypes()` are on the interface.
 - **`EngineType` currently has only `EXO_PLAYER`.** `PlayerRepositoryImpl` falls back to
   `EXO_PLAYER` if a persisted engine isn't in the binding map, so stale prefs are safe.
 

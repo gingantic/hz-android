@@ -85,6 +85,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         prefs[PrefKey.BackgroundPlay.key] ?: false
     }.distinctUntilChanged()
 
+    override val showWatchProgress: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PrefKey.ShowWatchProgress.key] ?: true
+    }.distinctUntilChanged()
+
     override fun getViewMode(key: String): Flow<ViewMode> =
         enumPreference(stringPreferencesKey("view_mode_$key"), ViewMode.GRID)
 
@@ -196,6 +200,56 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[PrefKey.BackgroundPlay.key] = enabled }
     }
 
+    override suspend fun setShowWatchProgress(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[PrefKey.ShowWatchProgress.key] = enabled }
+    }
+
+    override val dismissedUpdateVersionCode: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[PrefKey.DismissedUpdateVersionCode.key] ?: 0
+    }.distinctUntilChanged()
+
+    override suspend fun setDismissedUpdateVersionCode(versionCode: Int) {
+        dataStore.edit { prefs -> prefs[PrefKey.DismissedUpdateVersionCode.key] = versionCode }
+    }
+
+    // Archive passwords stored as a single string: entries separated by \x1E,
+    // each entry is "container\x1Fpassword". Control chars won't appear in paths/passwords.
+    override val archivePasswords: Flow<Map<String, String>> = dataStore.data.map { prefs ->
+        val raw = prefs[PrefKey.ArchivePasswords.key].orEmpty()
+        if (raw.isBlank()) emptyMap()
+        else raw.split("\u001E").mapNotNull { entry ->
+            val parts = entry.split("\u001F", limit = 2)
+            if (parts.size == 2 && parts[0].isNotEmpty()) parts[0] to parts[1] else null
+        }.toMap()
+    }.distinctUntilChanged()
+
+    override suspend fun setArchivePassword(container: String, password: String) {
+        dataStore.edit { prefs ->
+            val current = decodeArchivePasswords(prefs[PrefKey.ArchivePasswords.key].orEmpty())
+            val updated = current + (container to password)
+            prefs[PrefKey.ArchivePasswords.key] = encodeArchivePasswords(updated)
+        }
+    }
+
+    override suspend fun removeArchivePassword(container: String) {
+        dataStore.edit { prefs ->
+            val current = decodeArchivePasswords(prefs[PrefKey.ArchivePasswords.key].orEmpty())
+            val updated = current - container
+            prefs[PrefKey.ArchivePasswords.key] = encodeArchivePasswords(updated)
+        }
+    }
+
+    private fun decodeArchivePasswords(raw: String): Map<String, String> {
+        if (raw.isBlank()) return emptyMap()
+        return raw.split("\u001E").mapNotNull { entry ->
+            val parts = entry.split("\u001F", limit = 2)
+            if (parts.size == 2 && parts[0].isNotEmpty()) parts[0] to parts[1] else null
+        }.toMap()
+    }
+
+    private fun encodeArchivePasswords(map: Map<String, String>): String =
+        map.entries.joinToString("\u001E") { "${it.key}\u001F${it.value}" }
+
     private inline fun <reified T : Enum<T>> enumPreference(
         key: Preferences.Key<String>,
         default: T,
@@ -228,6 +282,9 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object MinSongDurationSecs : PrefKey<Int>(intPreferencesKey("min_song_duration_secs"))
         object DebugMode : PrefKey<Boolean>(booleanPreferencesKey("debug_mode"))
         object BackgroundPlay : PrefKey<Boolean>(booleanPreferencesKey("background_play"))
+        object ShowWatchProgress : PrefKey<Boolean>(booleanPreferencesKey("show_watch_progress"))
         object SubtitleSearchHistory : PrefKey<String>(stringPreferencesKey("subtitle_search_history"))
+        object DismissedUpdateVersionCode : PrefKey<Int>(intPreferencesKey("dismissed_update_version_code"))
+        object ArchivePasswords : PrefKey<String>(stringPreferencesKey("archive_passwords"))
     }
 }

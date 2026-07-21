@@ -13,4 +13,6 @@ interface AudioRepository {
     fun getSongsByArtist(artistName: String): Flow<List<AudioItem>>
     suspend fun toggleFavorite(songId: Long, isFavorite: Boolean)
     fun searchSongs(query: String): Flow<List<AudioItem>>
+    fun searchAlbums(query: String): Flow<List<Album>>
+    fun searchArtists(query: String): Flow<List<Artist>>
 }

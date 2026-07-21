@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -15,22 +16,34 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -71,6 +84,7 @@ fun FileItemCard(
     fileCount: Int = -1,
     mediaCount: Int = -1,
     mediaMode: Boolean = false,
+    onPropertiesClick: (() -> Unit)? = null,
 ) {
 
     val subtitle = when {
@@ -128,6 +142,40 @@ fun FileItemCard(
                         size = 32.dp
                     )
                     leadingThumbnail()
+
+                    // Duration badge (bottom-right, YouTube style)
+                    if (durationMs > 0) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(3.dp),
+                        ) {
+                            DurationBadge(durationMs = durationMs)
+                        }
+                    }
+
+                    // YouTube-style red watch-progress line flush at the thumbnail bottom
+                    val progress = if (durationMs > 0 && playbackPositionMs > 0) {
+                        (playbackPositionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                    } else null
+                    if (progress != null) {
+                        // Track
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .background(Color.White.copy(alpha = 0.35f))
+                        )
+                        // Watched portion
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth(fraction = progress)
+                                .height(2.dp)
+                                .background(Color(0xFFE53935))
+                        )
+                    }
                 }
             } else {
                 FileItemIcon(
@@ -175,6 +223,36 @@ fun FileItemCard(
                     )
                 }
             }
+
+            if (onPropertiesClick != null) {
+                var showMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = stringResource(R.string.media_overflow_cd),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.media_properties)) },
+                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                onPropertiesClick()
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -218,6 +296,7 @@ private fun FileItemIcon(
     modifier: Modifier = Modifier,
     size: Dp = 40.dp,
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
     if (isDirectory) {
         val lowerName = name.lowercase()
         val badgeIcon = when {
@@ -229,32 +308,32 @@ private fun FileItemIcon(
         }
 
         if (badgeIcon != null) {
+            // FolderSpecial-style icon: the symbol is punched out of the
+            // folder as transparent negative space (like Icons.Filled.FolderSpecial).
+            // Offscreen compositing confines the DstOut erase to this Box so the
+            // cutout reveals the list background instead of erasing the window.
             Box(
-                modifier = modifier.size(size),
-                contentAlignment = Alignment.Center
+                modifier = modifier
+                    .size(size)
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Filled.Folder,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = primaryColor,
                 )
-                // Small badge overlapping the folder
-                Box(
+                Icon(
+                    imageVector = badgeIcon,
+                    contentDescription = null,
                     modifier = Modifier
-                        .size(size * 0.45f)
+                        .fillMaxSize(0.52f)
                         .align(Alignment.BottomEnd)
-                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
-                        .padding((size.value * 0.05f).dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = badgeIcon,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
+                        .padding(end = 2.5.dp, bottom = 4.5.dp)
+                        .graphicsLayer { blendMode = BlendMode.DstOut },
+                    tint = primaryColor,
+                )
             }
         } else {
             Icon(

@@ -30,6 +30,8 @@ interface UserPreferencesRepository {
     val minSongDurationSecs: Flow<Int>
     val debugMode: Flow<Boolean>
     val backgroundPlay: Flow<Boolean>
+    /** Show the YouTube-style watched-progress line on video thumbnails. */
+    val showWatchProgress: Flow<Boolean>
 
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setAppColorArgb(argb: Int)
@@ -49,6 +51,7 @@ interface UserPreferencesRepository {
     suspend fun setMinSongDurationSecs(seconds: Int)
     suspend fun setDebugMode(enabled: Boolean)
     suspend fun setBackgroundPlay(enabled: Boolean)
+    suspend fun setShowWatchProgress(enabled: Boolean)
 
     val selectedTabIndex: Flow<Int>
 
@@ -57,4 +60,13 @@ interface UserPreferencesRepository {
     /** Ordered list of recent subtitle search queries (newest first, max 10). */
     val subtitleSearchHistory: Flow<List<String>>
     suspend fun setSubtitleSearchHistory(history: List<String>)
+
+    /** Version code the user dismissed the startup update dialog for (0 = never dismissed). */
+    val dismissedUpdateVersionCode: Flow<Int>
+    suspend fun setDismissedUpdateVersionCode(versionCode: Int)
+
+    /** Persisted archive passwords keyed by container path. */
+    val archivePasswords: Flow<Map<String, String>>
+    suspend fun setArchivePassword(container: String, password: String)
+    suspend fun removeArchivePassword(container: String)
 }
