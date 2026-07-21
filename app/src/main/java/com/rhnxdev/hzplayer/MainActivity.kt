@@ -83,6 +83,7 @@ import com.rhnxdev.hzplayer.presentation.navigation.AppDestination
 import com.rhnxdev.hzplayer.presentation.navigation.NavRoutes
 import com.rhnxdev.hzplayer.presentation.navigation.bottomNavDestinations
 import com.rhnxdev.hzplayer.presentation.network.NetworkScreen
+import com.rhnxdev.hzplayer.presentation.browser.BrowserScreen
 import com.rhnxdev.hzplayer.presentation.player.AudioPlayerScreen
 import com.rhnxdev.hzplayer.presentation.player.PlayerViewModel
 import com.rhnxdev.hzplayer.presentation.player.components.MiniPlayerBar
@@ -115,6 +116,9 @@ class MainActivity : ComponentActivity() {
 
     /** HTTP headers (e.g. auth token) supplied alongside a VIEW intent URI. */
     private var incomingMediaHeaders by mutableStateOf<Map<String, String>?>(null)
+
+    /** MIME type from the VIEW intent, used to reliably detect video vs audio. */
+    private var incomingMimeType by mutableStateOf<String?>(null)
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -150,9 +154,11 @@ class MainActivity : ComponentActivity() {
                         onPipEligibilityChange = { pipEligible = it },
                         incomingMediaUri = incomingMediaUri,
                         incomingMediaHeaders = incomingMediaHeaders,
+                        incomingMimeType = incomingMimeType,
                         onIncomingMediaConsumed = {
                             incomingMediaUri = null
                             incomingMediaHeaders = null
+                            incomingMimeType = null
                         },
                     )
                 } else {
@@ -183,7 +189,8 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
             incomingMediaUri = intent.data.toString()
             incomingMediaHeaders = extractHttpHeaders(intent)
-            Log.i(TAG, "Received VIEW intent: $incomingMediaUri (headers=${incomingMediaHeaders?.size ?: 0})")
+            incomingMimeType = intent.type
+            Log.i(TAG, "Received VIEW intent: $incomingMediaUri (type=${incomingMimeType}, headers=${incomingMediaHeaders?.size ?: 0})")
         }
     }
 
@@ -353,6 +360,7 @@ fun HzPlayerApp(
     onPipEligibilityChange: (Boolean) -> Unit = {},
     incomingMediaUri: String? = null,
     incomingMediaHeaders: Map<String, String>? = null,
+    incomingMimeType: String? = null,
     onIncomingMediaConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
@@ -362,6 +370,7 @@ fun HzPlayerApp(
     // Full-screen overlay routes draw over the main tab layout
     val isFullScreen = currentRoute == NavRoutes.SEARCH ||
         currentRoute == NavRoutes.AUDIO_PLAYER ||
+        currentRoute == NavRoutes.BROWSER ||
         currentRoute?.startsWith("video_player") == true ||
         currentRoute?.startsWith("album_detail") == true ||
         currentRoute?.startsWith("artist_detail") == true
@@ -410,7 +419,13 @@ fun HzPlayerApp(
     LaunchedEffect(incomingMediaUri) {
         val uri = incomingMediaUri ?: return@LaunchedEffect
         val fileName = uri.substringAfterLast('/').substringBefore('?')
-        val isVideo = isVideoExtension(fileName) ||
+        val isVideo = incomingMimeType?.let { mime ->
+            mime.startsWith("video/") ||
+                mime.equals("application/x-mpegURL", ignoreCase = true) ||
+                mime.equals("application/vnd.apple.mpegurl", ignoreCase = true) ||
+                mime.equals("application/dash+xml", ignoreCase = true)
+        } == true ||
+            isVideoExtension(fileName) ||
             uri.contains("video") // fallback for content:// URIs without clear extension
         playerViewModel.playUri(uri, fileName, isVideo = isVideo, headers = incomingMediaHeaders ?: emptyMap())
         if (isVideo) {
@@ -537,6 +552,10 @@ fun HzPlayerApp(
                                         playerViewModel.onVideoStarted()
                                         navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                     },
+                                    onPlayAsAudio = { video ->
+                                        playerViewModel.playUri(video.uri, video.title, isVideo = false)
+                                        navController.navigate(NavRoutes.AUDIO_PLAYER)
+                                    },
                                 )
                                 1 -> AudioBrowserScreen(
                                     isActive = pagerState.currentPage == page,
@@ -595,6 +614,9 @@ fun HzPlayerApp(
                                         playerViewModel.playVideoPlaylist(playlist)
                                         navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                     },
+                                    onOpenBrowser = {
+                                        navController.navigate(NavRoutes.BROWSER)
+                                    },
                                 )
                                 4 -> SettingsScreen(
                                     onRequestPermissions = onRequestPermissions,
@@ -652,6 +674,26 @@ fun HzPlayerApp(
                     onArtistClicked = { artist ->
                         navController.navigate(NavRoutes.artistDetail(artist.name))
                     },
+                )
+            }
+
+            composable(
+                route = NavRoutes.BROWSER,
+                enterTransition = { slideInHorizontally { it } },
+                exitTransition = { slideOutHorizontally { -it } },
+                popEnterTransition = { slideInHorizontally { -it } },
+                popExitTransition = { slideOutHorizontally { it } },
+            ) {
+                BrowserScreen(
+                    onPlayMedia = { url, title, isVideo, mimeType ->
+                        playerViewModel.playNetworkUri(url, title, isVideo, mimeType)
+                        if (isVideo) {
+                            navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+                        } else {
+                            navController.navigate(NavRoutes.AUDIO_PLAYER)
+                        }
+                    },
+                    onExitBrowser = { navController.popBackStack() },
                 )
             }
 

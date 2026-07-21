@@ -312,12 +312,12 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Sync system bars with controls visibility
-    DisposableEffect(uiState.showControls) {
+    // Sync system bars with controls visibility (also hide when locked)
+    DisposableEffect(uiState.showControls, uiState.playerLocked) {
         val window = (view.context as? android.app.Activity)?.window ?: return@DisposableEffect onDispose {}
         val controller = WindowInsetsControllerCompat(window, view)
 
-        if (uiState.showControls) {
+        if (uiState.showControls && !uiState.playerLocked) {
             controller.show(WindowInsetsCompat.Type.systemBars())
         } else {
             controller.hide(WindowInsetsCompat.Type.systemBars())
