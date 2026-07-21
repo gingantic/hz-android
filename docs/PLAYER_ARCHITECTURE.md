@@ -1,8 +1,8 @@
 # Hz Player — Player Architecture
 
 > Media3 ExoPlayer behind the `IPlayerEngine` contract, rendered through `PlayerSurface`.
-> Last refreshed: 2026-07-11. Supersedes the earlier "ExoPlayer wired directly into
-> every layer" design — see `docs/ENGINE_MODULARITY.md` for the refactor rationale.
+> Last refreshed: 2026-07-21. Reflects the libass subtitle pipeline, position controller
+> split, audio queue, floating video player, and resume-mode support.
 
 ---
 
@@ -67,8 +67,10 @@ class MediaPlayerHolder @Inject constructor(@ApplicationContext context: Context
 
 ## Engine seam — `PlayerSurface`
 
-Presentation renders video through one composable; it switches on `engine.engineType`
-and asks the concrete engine for its render view. Screens never import `PlayerView`.
+Presentation renders video through one composable. The render seam methods
+(`createRenderView`, `updateRenderView`, `onRenderViewPaused/Resumed`) live directly
+on `IPlayerEngine` — no typed casts or `when` branches needed. Adding a new engine
+requires **zero** changes to `PlayerSurface`.
 
 ```kotlin
 @Composable
@@ -76,21 +78,21 @@ fun PlayerSurface(engine: IPlayerEngine, uiState: PlayerUiState, modifier: Modif
     key(engine.engineType) {
         AndroidView(
             factory = { ctx ->
-                when (engine.engineType) {
-                    EngineType.EXO_PLAYER ->
-                        (engine as ExoPlayerEngine).createRenderView(ctx, uiState.useSurfaceView)
-                    // EngineType.VLC / MPV → their engine.createRenderView(ctx)
-                }.also(onRenderView)
+                val view = engine.createRenderView(ctx, uiState.useSurfaceView)
+                onRenderView(view)
+                view
             },
-            update = { view -> /* engine.updateRenderView(view, RenderViewConfig(...)) */ },
+            update = { view ->
+                engine.updateRenderView(view, RenderViewConfig(uiState.aspectRatioMode))
+            },
         )
     }
 }
 ```
 
 Lifecycle (brightness/volume pause on `ON_STOP`, resume on `ON_RESUME`) lives in
-`VideoPlayerScreen` and calls engine-specific `onRenderViewPaused/Resumed` through the
-typed cast — those methods are **not** on `IPlayerEngine`.
+`VideoPlayerScreen` and calls `engine.onRenderViewPaused(view)` /
+`engine.onRenderViewResumed(view)` directly through the interface.
 
 ---
 
@@ -137,40 +139,56 @@ non-null (ExoPlayer today). A future non-Media3 backend returns `null` and opts 
 ## PlayerState
 
 ```kotlin
-enum class PlayerState { IDLE, BUFFERING, READY, ENDED }
+enum class PlayerState { IDLE, BUFFERING, READY, ENDED, ERROR }
 
 data class PlayerStateInfo(
     val state: PlayerState = IDLE,
     val isPlaying: Boolean = false,
-    val currentUri: String? = null,
     val currentPosition: Long = 0,
     val duration: Long = 0,
     val bufferedPosition: Long = 0,
     val playbackSpeed: Float = 1.0f,
     val shuffleModeEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.NONE,
-    val subtitleTracks: List<String> = emptyList(),
-    val audioTracks: List<String> = emptyList(),
-    val selectedSubtitleTrack: Int = -1,
-    val selectedAudioTrack: Int = -1,
-    val errorKind: PlaybackErrorKind? = null,
     val errorMessage: String? = null,
+    val errorKind: PlaybackErrorKind? = null,
+    val currentTitle: String? = null,
+    val currentArtist: String? = null,
+    val currentUri: String? = null,
+    val drmSessionActive: Boolean = false,
 )
 ```
+
+Track lists (subtitle/audio) are **not** in `PlayerStateInfo` — they are cached by
+`PlayerTrackCache` and refreshed on READY to avoid per-tick re-queries.
 
 ---
 
 ## PlayerViewModel (engine-agnostic)
+
+The ViewModel is split into focused controllers to keep each class small:
+
+| Controller | Responsibility |
+|---|---|
+| `PlayerViewModel` | Orchestrates controllers, maps `PlayerStateInfo` → `PlayerUiState` |
+| `PlayerPositionController` | 250ms position tick (`StateFlow<Long>`), periodic resume-save |
+| `PlayerTrackCache` | Caches subtitle/audio track lists; refreshes on READY |
+| `PlayerPlaylistController` | Video playlist + audio queue management |
+| `PlayerDebugController` | Debug stats polling |
 
 ```kotlin
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
+    private val resumeRepository: ResumeRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
+
+    // Position is a SEPARATE StateFlow so the 250ms tick only recomposes the seekbar
+    val position: StateFlow<Long>  // from PlayerPositionController
 
     init {
         viewModelScope.launch {
@@ -179,19 +197,15 @@ class PlayerViewModel @Inject constructor(
                     state.copy(
                         isPlaying = info.isPlaying,
                         isLoading = info.state == PlayerState.BUFFERING,
-                        currentPosition = info.currentPosition,
                         duration = info.duration,
-                        bufferedPercentage = if (info.duration > 0)
-                            (info.bufferedPosition * 100 / info.duration).toInt() else 0,
+                        bufferedPercentage = ...,
                         playbackSpeed = info.playbackSpeed,
                         shuffleMode = info.shuffleModeEnabled,
                         repeatMode = info.repeatMode,
-                        subtitleTracks = info.subtitleTracks,
-                        audioTracks = info.audioTracks,
-                        selectedSubtitleTrack = info.selectedSubtitleTrack,
-                        selectedAudioTrack = info.selectedAudioTrack,
                         errorMessage = info.errorMessage,
                         errorKind = info.errorKind,
+                        currentTitle = info.currentTitle,
+                        currentArtist = info.currentArtist,
                         activeEngineType = playerRepository.activeEngine.engineType,
                     )
                 }
@@ -208,26 +222,64 @@ class PlayerViewModel @Inject constructor(
 
 ## VideoPlayerScreen — Gestures
 
+Gestures are handled by the extracted `PlayerGestures` composable:
+
 - **Single tap**: toggle controls overlay (auto-hide ~3s).
 - **Double tap left/right**: seek ∓10s (with `SeekIndicator`/`DragSeekIndicator`).
 - **Swipe left half**: brightness. **Swipe right half**: volume.
 - **Swipe up/down**: dismiss player (portrait).
 - **Pinch / aspect button**: zoom-to-fit / fill (`AspectRatioMode`).
 - Lock pill (`UnlockPill`) disables gestures; swipe to unlock.
+- `GestureCueIndicators` provides visual feedback for all gesture types.
+
+---
+
+## Subtitle pipeline (libass)
+
+All subtitle rendering goes through native libass for pixel-perfect ASS/SSA output:
+
+1. **Embedded tracks**: `AssExtractorsFactory` + `AssMatroskaExtractor` intercept
+   subtitle samples in ExoPlayer's extractor chain → `AssTrackOutput` buffers them.
+2. **External files**: `NeighborSubtitleDiscoverer` auto-detects sibling `.srt/.ass`
+   files (local + SMB); external ASS loads via `IPlayerEngine.loadExternalAss(uri)`.
+3. **SRT/VTT**: `SubtitleConverters` converts to ASS on-the-fly for unified rendering.
+4. **Rendering**: `AssHandler` feeds data to libass via `AssDirectBridge` (JNI) →
+   renders a bitmap at each frame time → displayed on `SubtitleOverlayView`.
+5. **Compose**: `AssSubtitleOverlay` wraps the overlay view in an `AndroidView`.
+
+Subtitle track names are resolved to languages + country flags via
+`SubtitleLanguageResolver` and displayed with `FlagIcon` in the selection dialogs.
+
+---
+
+## Floating Video Player
+
+`FloatingVideoPlayer` provides a draggable, resizable PiP-style overlay that stays
+on top when the user navigates away from the full-screen player. Includes play/pause,
+close, fullscreen-return buttons, and a progress indicator.
+
+---
+
+## Audio Queue
+
+`AudioQueueSheet` shows the current "now playing" list for audio playback. The queue
+is managed by `PlayerPlaylistController` and exposed via `PlayerUiState.audioQueue` /
+`audioQueueIndex`. Users can tap a queue item to jump to it.
 
 ---
 
 ## ExoPlayer Integration Points
 
-| VLC Feature | Media3 Equivalent |
+| Feature | Media3 Implementation |
 |---|---|
-| `MediaPlayer.play()/pause()` | `ExoPlayer.play()/pause()` |
-| `MediaPlayer.time/length` | `currentPosition` / `duration` |
+| `play()/pause()` | `ExoPlayer.play()/pause()` |
+| `time/length` | `currentPosition` / `duration` |
 | `setRate()` | `setPlaybackSpeed()` |
-| Subtitles `setSubtitle()` | `setTrackSelectionParameters()` + external `.addExternalSubtitle(uri)` |
-| Audio tracks `getAudioTracks()` | `getCurrentTracks().getGroups()` |
-| Chapters | `timeline.getPeriod()` |
+| Subtitles (embedded) | `AssExtractorsFactory` intercepts → libass pipeline |
+| Subtitles (external) | `addExternalSubtitle(uri)` / `loadExternalAss(uri)` |
+| Audio tracks | `getCurrentTracks().getGroups()` |
+| Decoder mode | `setDecoderMode()` → rebuilds renderers (SW/HW) |
+| DRM | `drmSessionActive` flag → TextureView for secure decode |
 | ABRepeat | manual (not native) |
 
-Subtitle timing offset is exposed via `IPlayerEngine.setSubtitleDelay/getSubtitleDelay`
-and styled through `SubtitleStyle` + `SubtitleStylingDialog`.
+Subtitle timing offset is exposed via `IPlayerEngine.setSubtitleDelay/getSubtitleDelay`.

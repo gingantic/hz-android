@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.presentation.player
 
 import android.net.Uri
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
+import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
@@ -45,6 +46,10 @@ data class PlayerUiState(
     val videoPlaylist: List<VideoItem> = emptyList(),
     val currentPlaylistIndex: Int = 0,
     val showPlaylistDrawer: Boolean = false,
+    /** Audio queue ("now playing" list) for the music player. */
+    val audioQueue: List<AudioItem> = emptyList(),
+    val audioQueueIndex: Int = 0,
+    val showAudioQueue: Boolean = false,
     /**
      * Derived surface-selection hint: `true` if the player should render through a
      * `TextureView` (composited), `false` for `SurfaceView`.

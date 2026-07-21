@@ -40,6 +40,8 @@
     <string name="search_empty">No media found for \"%1$s\".</string>
     <string name="search_videos_count">Videos (%1$d)</string>
     <string name="search_music_count">Music (%1$d)</string>
+    <string name="search_albums_count">Albums (%1$d)</string>
+    <string name="search_artists_count">Artists (%1$d)</string>
 
     <!-- Browse -->
     <string name="browse_sort_cd">Sort</string>
@@ -104,6 +106,29 @@
     <string name="dialog_close">Close</string>
     <string name="dialog_select">Select</string>
 
+    <!-- Media overflow menu / properties -->
+    <string name="media_overflow_cd">More options</string>
+    <string name="media_properties">Properties</string>
+    <string name="prop_file_name">File name</string>
+    <string name="prop_path">Path</string>
+    <string name="prop_size">Size</string>
+    <string name="prop_resolution">Resolution</string>
+    <string name="prop_duration">Duration</string>
+    <string name="prop_type">Type</string>
+    <string name="prop_date_added">Date added</string>
+    <string name="prop_date_modified">Date modified</string>
+    <string name="prop_container">Container</string>
+    <string name="prop_overall_bitrate">Overall bitrate</string>
+    <string name="prop_video_codec">Video codec</string>
+    <string name="prop_audio_codec">Audio codec</string>
+    <string name="prop_frame_rate">Frame rate</string>
+    <string name="prop_video_bitrate">Video bitrate</string>
+    <string name="prop_audio_bitrate">Audio bitrate</string>
+    <string name="prop_sample_rate">Sample rate</string>
+    <string name="prop_channels">Channels</string>
+    <string name="prop_pixel_format">Pixel format</string>
+    <string name="prop_loading_codecs">Reading codec info…</string>
+
     <!-- Not-implemented suffix (concatenated where needed) -->
     <string name="not_implemented">(Not implemented)</string>
 
@@ -127,6 +152,8 @@
     <string name="decoder_mode_software">Software (prefer Android SW codecs)</string>
     <string name="settings_resume_playback">Resume playback</string>
     <string name="settings_resume_playback_sub">Continue from where you left off</string>
+    <string name="settings_show_watch_progress">Show watch progress</string>
+    <string name="settings_show_watch_progress_sub">Show a red progress line on thumbnails for partially watched videos</string>
     <string name="resume_mode_selection_title">Resume playback</string>
     <string name="resume_mode_none">Never</string>
     <string name="resume_mode_ask">Ask every time</string>
@@ -165,8 +192,6 @@
     <string name="settings_stats_nerds_sub">Show video/audio codec info in player overlay</string>
     <string name="settings_about">About Hz Player</string>
     <string name="settings_version">Version 1.0</string>
-    <string name="settings_licenses">Open source licenses</string>
-    <string name="settings_licenses_sub">View third-party licenses</string>
 
     <!-- About dialog -->
     <string name="about_title">About Hz Player</string>
@@ -244,6 +269,9 @@
     <!-- Audio player sheet -->
     <string name="no_track">No track</string>
     <string name="unknown_artist">Unknown artist</string>
+    <string name="queue">Queue</string>
+    <string name="queue_track_count">%1$d tracks</string>
+    <string name="queue_empty">No tracks in the queue</string>
 
     <!-- Audio selection dialog -->
     <string name="no_alternate_audio">No alternate audio tracks available</string>
@@ -402,6 +430,7 @@
     <string name="update_button_download">Download &amp; Install</string>
     <string name="update_no_updates">No updates available. You are on the latest version.</string>
     <string name="update_checking">Checking for updates...</string>
+    <string name="update_dont_show_again">Don\'t show again</string>
     <string name="settings_check_updates">Check for Updates</string>
     <string name="settings_check_updates_sub">Get the latest builds from GitHub</string>
 

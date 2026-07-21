@@ -38,14 +38,23 @@ class SearchViewModel @Inject constructor(
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             if (query.isBlank()) {
-                _uiState.update { it.copy(videoResults = emptyList(), audioResults = emptyList(), isSearching = false, hasSearched = false) }
+                _uiState.update {
+                    it.copy(
+                        videoResults = emptyList(),
+                        audioResults = emptyList(),
+                        albumResults = emptyList(),
+                        artistResults = emptyList(),
+                        isSearching = false,
+                        hasSearched = false,
+                    )
+                }
                 return@launch
             }
 
             _uiState.update { it.copy(isSearching = true) }
             delay(300) // Debounce
 
-            // Parallel search — both launch simultaneously
+            // Parallel search — all launch simultaneously
             val videoJob = launch {
                 mediaRepository.searchVideos(query).collect { videos ->
                     _uiState.update { it.copy(videoResults = videos, isSearching = false, hasSearched = true) }
@@ -56,8 +65,20 @@ class SearchViewModel @Inject constructor(
                     _uiState.update { it.copy(audioResults = songs, isSearching = false, hasSearched = true) }
                 }
             }
+            val albumJob = launch {
+                audioRepository.searchAlbums(query).collect { albums ->
+                    _uiState.update { it.copy(albumResults = albums, isSearching = false, hasSearched = true) }
+                }
+            }
+            val artistJob = launch {
+                audioRepository.searchArtists(query).collect { artists ->
+                    _uiState.update { it.copy(artistResults = artists, isSearching = false, hasSearched = true) }
+                }
+            }
             videoJob.join()
             audioJob.join()
+            albumJob.join()
+            artistJob.join()
         }
     }
 

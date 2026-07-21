@@ -103,7 +103,10 @@ class ExoPlayerEngine @Inject constructor(
     private var currentPlaylist: List<androidx.media3.common.MediaItem>? = null
     private val subtitleDiscoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?, resumePositionMs: Long) {
+    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?, resumePositionMs: Long, headers: Map<String, String>) {
+        // Apply (or clear, when empty) HTTP headers before prepare so an auth token
+        // forwarded from a VIEW intent reaches the network requests for this URI.
+        playerHolder.setHttpRequestHeaders(headers)
         playerHolder.prepareForUri(uri)
         currentPlaylist = null
         // Set the current-uri fields up front: addExternalSubtitle reads them on
@@ -233,6 +236,12 @@ class ExoPlayerEngine @Inject constructor(
     override fun getCurrentMediaItemIndex(): Int = player.currentMediaItemIndex
 
     override fun getMediaItemCount(): Int = player.mediaItemCount
+
+    override fun seekToMediaItem(index: Int) {
+        if (index in 0 until player.mediaItemCount) {
+            player.seekTo(index, 0)
+        }
+    }
 
     override fun setShuffleEnabled(enabled: Boolean) {
         player.shuffleModeEnabled = enabled

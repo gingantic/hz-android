@@ -1,9 +1,9 @@
 # Archive Support — Design & Implementation Plan
 
-**Status:** Design (not yet implemented)
+**Status:** Phase 0 + Phase 1 implemented (native seam + virtual navigation + password dialog)
 **Decision log:** libarchive · virtual FS / play-in-place · full format set · native delivery
 **Owner:** to be assigned
-**Last updated:** 2026-07-14
+**Last updated:** 2026-07-21
 
 ---
 
@@ -438,4 +438,11 @@ media entries play via `archive://`. No extraction. Wiring:
 - Password prompt UI still deferred (native accepts it; DataSource/repo pass `null`).
 
 **Remaining:** on-device smoke test (C.5); in-archive sibling-subtitle discovery.
+
+### Password dialog — DONE ✅ (2026-07-21)
+
+`ArchivePasswordDialog` (`presentation/browse/components/ArchivePasswordDialog.kt`) prompts
+the user when an encrypted archive fails to list. Passwords are persisted via
+`UserPreferencesRepository.archivePasswords` (keyed by container path) so re-opening
+the same archive doesn't re-prompt.
 

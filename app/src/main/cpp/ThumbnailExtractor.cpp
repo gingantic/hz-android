@@ -5,6 +5,7 @@
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavcodec/codec_desc.h>
 #include <libavutil/avutil.h>
 #include <libavutil/pixdesc.h>
 #include <libavutil/imgutils.h>
@@ -814,5 +815,149 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtr
 
     LOGD("ass: extracted %zu embedded fonts", fontStreams.size());
     avformat_close_input(&fmtCtx);
+    return arr;
+}
+
+// ─── Media info probe (codec / container metadata) ─────────────────
+// Opens the source just far enough to read container + stream headers and
+// returns a flat String[] of key/value pairs describing the codecs. The
+// Kotlin side converts it to a Map. Keys (only present when known):
+//   format, format_long, bitrate,
+//   video_codec, video_codec_long, video_profile, video_resolution,
+//   video_bitrate, video_fps, video_pix_fmt,
+//   audio_codec, audio_codec_long, audio_bitrate, audio_sample_rate,
+//   audio_channels
+
+static void probePut(std::vector<std::string>& kv, const char* key,
+                     const std::string& value) {
+    if (value.empty()) return;
+    kv.emplace_back(key);
+    kv.push_back(value);
+}
+
+static std::string probeCodecName(const AVCodecParameters* par) {
+    const AVCodecDescriptor* desc = avcodec_descriptor_get(par->codec_id);
+    if (desc && desc->name) return desc->name;
+    return "";
+}
+
+static std::string probeCodecLongName(const AVCodecParameters* par) {
+    const AVCodecDescriptor* desc = avcodec_descriptor_get(par->codec_id);
+    if (desc && desc->long_name) return desc->long_name;
+    return "";
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMediaInfo(
+    JNIEnv* env, jclass /*clazz*/, jobject bridge) {
+
+    if (!bridge) { LOGE("probe: bridge is null"); return nullptr; }
+    JniFile file(env, bridge);
+    if (!file.ok()) { LOGE("probe: JniFile init failed"); return nullptr; }
+
+    IOStats stats;
+    IOBridge ioBridge{&file, &stats};
+    uint8_t* ioBuf = static_cast<uint8_t*>(av_malloc(g_avioBufSize));
+    if (!ioBuf) return nullptr;
+    AVIOContext* avio = avio_alloc_context(ioBuf, g_avioBufSize, 0,
+                                           &ioBridge, io_read, nullptr, io_seek);
+    AVFormatContext* fmtCtx = avformat_alloc_context();
+    fmtCtx->pb = avio;
+    fmtCtx->probesize = 5 * 1024 * 1024;
+    fmtCtx->max_analyze_duration = 5000000;
+
+    if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
+        av_freep(&avio->buffer);
+        avio_context_free(&avio);
+        fmtCtx->pb = nullptr;
+        avformat_free_context(fmtCtx);
+        LOGE("probe: avformat_open_input failed");
+        return nullptr;
+    }
+    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
+        avformat_close_input(&fmtCtx);
+        LOGE("probe: find_stream_info failed");
+        return nullptr;
+    }
+
+    std::vector<std::string> kv;
+
+    // ── Container ──
+    if (fmtCtx->iformat && fmtCtx->iformat->name)
+        probePut(kv, "format", fmtCtx->iformat->name);
+    if (fmtCtx->iformat && fmtCtx->iformat->long_name)
+        probePut(kv, "format_long", fmtCtx->iformat->long_name);
+    if (fmtCtx->bit_rate > 0)
+        probePut(kv, "bitrate", std::to_string(fmtCtx->bit_rate));
+
+    // ── First video stream ──
+    int vIdx = av_find_best_stream(fmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1,
+                                   nullptr, 0);
+    if (vIdx >= 0) {
+        AVStream* st = fmtCtx->streams[vIdx];
+        const AVCodecParameters* par = st->codecpar;
+        probePut(kv, "video_codec", probeCodecName(par));
+        probePut(kv, "video_codec_long", probeCodecLongName(par));
+
+        const AVCodec* dec = avcodec_find_decoder(par->codec_id);
+        if (dec && par->profile != AV_PROFILE_UNKNOWN) {
+            const char* prof = av_get_profile_name(dec, par->profile);
+            if (prof) probePut(kv, "video_profile", prof);
+        }
+
+        if (par->width > 0 && par->height > 0) {
+            probePut(kv, "video_resolution",
+                     std::to_string(par->width) + "x" + std::to_string(par->height));
+        }
+        if (par->bit_rate > 0)
+            probePut(kv, "video_bitrate", std::to_string(par->bit_rate));
+
+        AVRational fr = av_guess_frame_rate(fmtCtx, st, nullptr);
+        if (fr.den > 0 && fr.num > 0) {
+            double fps = av_q2d(fr);
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.2f", fps);
+            probePut(kv, "video_fps", buf);
+        }
+        if (par->format != AV_PIX_FMT_NONE) {
+            const char* pf = av_get_pix_fmt_name(
+                static_cast<AVPixelFormat>(par->format));
+            if (pf) probePut(kv, "video_pix_fmt", pf);
+        }
+    }
+
+    // ── First audio stream ──
+    int aIdx = av_find_best_stream(fmtCtx, AVMEDIA_TYPE_AUDIO, -1, -1,
+                                   nullptr, 0);
+    if (aIdx >= 0) {
+        const AVCodecParameters* par = fmtCtx->streams[aIdx]->codecpar;
+        probePut(kv, "audio_codec", probeCodecName(par));
+        probePut(kv, "audio_codec_long", probeCodecLongName(par));
+        if (par->bit_rate > 0)
+            probePut(kv, "audio_bitrate", std::to_string(par->bit_rate));
+        if (par->sample_rate > 0)
+            probePut(kv, "audio_sample_rate", std::to_string(par->sample_rate));
+        if (par->ch_layout.nb_channels > 0)
+            probePut(kv, "audio_channels",
+                     std::to_string(par->ch_layout.nb_channels));
+    }
+
+    avformat_close_input(&fmtCtx);
+
+    if (kv.empty()) return nullptr;
+
+    jclass strCls = env->FindClass("java/lang/String");
+    jobjectArray arr = env->NewObjectArray(static_cast<jsize>(kv.size()),
+                                           strCls, nullptr);
+    env->DeleteLocalRef(strCls);
+    if (!arr) return nullptr;
+
+    for (size_t i = 0; i < kv.size(); i++) {
+        jstring js = env->NewStringUTF(kv[i].c_str());
+        env->SetObjectArrayElement(arr, static_cast<jsize>(i), js);
+        env->DeleteLocalRef(js);
+    }
+
+    LOGD("probe: %zu key/value pairs", kv.size() / 2);
     return arr;
 }

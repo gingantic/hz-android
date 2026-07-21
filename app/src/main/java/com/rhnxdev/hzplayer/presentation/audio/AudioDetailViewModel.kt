@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.model.Album
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.repository.AudioRepository
-import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +30,6 @@ data class AudioDetailUiState(
 @HiltViewModel
 class AudioDetailViewModel @Inject constructor(
     private val audioRepository: AudioRepository,
-    private val playerRepository: PlayerRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AudioDetailUiState())
@@ -87,21 +85,6 @@ class AudioDetailViewModel @Inject constructor(
                     }
                 }
         }
-    }
-
-    fun onSongClicked(index: Int) {
-        val songs = _uiState.value.songs
-        if (index in songs.indices) playerRepository.playAudioPlaylist(songs, index)
-    }
-
-    fun onPlay() {
-        val songs = _uiState.value.songs
-        if (songs.isNotEmpty()) playerRepository.playAudioPlaylist(songs, 0)
-    }
-
-    fun onShuffle() {
-        val songs = _uiState.value.songs
-        if (songs.isNotEmpty()) playerRepository.playAudioPlaylist(songs.shuffled(), 0)
     }
 
     private fun subtitle(count: Int, totalMs: Long): String =

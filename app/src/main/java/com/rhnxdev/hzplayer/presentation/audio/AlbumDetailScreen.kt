@@ -29,6 +29,7 @@ import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.presentation.audio.components.AudioDetailHeader
 
@@ -36,7 +37,7 @@ import com.rhnxdev.hzplayer.presentation.audio.components.AudioDetailHeader
 fun AlbumDetailScreen(
     albumTitle: String,
     onBack: () -> Unit,
-    onSongPlayed: () -> Unit,
+    onPlaySongs: (List<AudioItem>, Int) -> Unit,
     viewModel: AudioDetailViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -62,8 +63,8 @@ fun AlbumDetailScreen(
                     subtitle = uiState.subtitle,
                     albumArtUri = uiState.albumArtUri,
                     circleArt = false,
-                    onPlay = viewModel::onPlay,
-                    onShuffle = viewModel::onShuffle,
+                    onPlay = { onPlaySongs(uiState.songs, 0) },
+                    onShuffle = { onPlaySongs(uiState.songs.shuffled(), 0) },
                 )
             }
             itemsIndexed(uiState.songs, key = { _, s -> s.id }) { index, song ->
@@ -76,8 +77,7 @@ fun AlbumDetailScreen(
                         TrackNumber(song.trackNumber, song.albumArtUri, song.title)
                     },
                     onClick = {
-                        viewModel.onSongClicked(index)
-                        onSongPlayed()
+                        onPlaySongs(uiState.songs, index)
                     },
                 )
             }

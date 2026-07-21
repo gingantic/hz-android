@@ -21,14 +21,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
+import com.rhnxdev.hzplayer.core.util.formatDuration
+import com.rhnxdev.hzplayer.core.util.formatFileSize
 
 import androidx.compose.runtime.Immutable
 
@@ -97,6 +104,16 @@ fun DirectoryBrowsePane(
     val displayItems = remember(items, searchQuery, isSearchActive) {
         if (!isSearchActive || searchQuery.isBlank()) items
         else items.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+
+    var propertiesItem by remember { mutableStateOf<FileItemData?>(null) }
+    propertiesItem?.let { item ->
+        MediaPropertiesDialog(
+            title = item.name,
+            properties = buildFileProperties(item),
+            onDismiss = { propertiesItem = null },
+            probeUri = if (item.isDirectory) null else (item.playbackUri ?: item.path),
+        )
     }
 
     // Initial loading (no items yet) — show shimmer directly.
@@ -203,10 +220,32 @@ fun DirectoryBrowsePane(
                             leadingThumbnail = thumbnail,
                             resolution = if (mediaMode) item.resolution else null,
                             isNew = !item.isDirectory && item.dateAdded > 0L && (System.currentTimeMillis() / 1000L - item.dateAdded < 3600L),
+                            onPropertiesClick = { propertiesItem = item },
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun buildFileProperties(item: FileItemData): List<Pair<String, String>> {
+    val dateFormat = remember { java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault()) }
+
+    return buildList {
+        add(stringResource(R.string.prop_file_name) to item.name)
+        add(stringResource(R.string.prop_path) to item.path)
+        if (!item.isDirectory && item.fileSize > 0) {
+            add(stringResource(R.string.prop_size) to formatFileSize(item.fileSize))
+        }
+        item.resolution?.let { add(stringResource(R.string.prop_resolution) to it) }
+        if (item.durationMs > 0) {
+            add(stringResource(R.string.prop_duration) to formatDuration(item.durationMs))
+        }
+        item.mimeType?.let { add(stringResource(R.string.prop_type) to it) }
+        if (item.dateModified > 0) {
+            add(stringResource(R.string.prop_date_modified) to dateFormat.format(java.util.Date(item.dateModified)))
         }
     }
 }

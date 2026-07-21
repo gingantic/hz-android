@@ -90,6 +90,7 @@ import com.rhnxdev.hzplayer.presentation.player.components.FloatingVideoPlayer
 import com.rhnxdev.hzplayer.presentation.player.VideoPlayerScreen
 import com.rhnxdev.hzplayer.presentation.search.SearchScreen
 import com.rhnxdev.hzplayer.presentation.settings.SettingsScreen
+import com.rhnxdev.hzplayer.presentation.settings.components.UpdateDialog
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 import com.rhnxdev.hzplayer.presentation.video.VideoLibraryScreen
 import dagger.hilt.android.AndroidEntryPoint
@@ -111,6 +112,9 @@ class MainActivity : ComponentActivity() {
 
     /** Media URI received from an external VIEW intent (file chooser / share). */
     private var incomingMediaUri by mutableStateOf<String?>(null)
+
+    /** HTTP headers (e.g. auth token) supplied alongside a VIEW intent URI. */
+    private var incomingMediaHeaders by mutableStateOf<Map<String, String>?>(null)
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -145,7 +149,11 @@ class MainActivity : ComponentActivity() {
                         onRequestPermissions = { requestMediaPermissions() },
                         onPipEligibilityChange = { pipEligible = it },
                         incomingMediaUri = incomingMediaUri,
-                        onIncomingMediaConsumed = { incomingMediaUri = null },
+                        incomingMediaHeaders = incomingMediaHeaders,
+                        onIncomingMediaConsumed = {
+                            incomingMediaUri = null
+                            incomingMediaHeaders = null
+                        },
                     )
                 } else {
                     Box(
@@ -170,12 +178,41 @@ class MainActivity : ComponentActivity() {
         handleViewIntent(intent)
     }
 
-    /** Extract the media URI from a VIEW intent (external file open). */
+    /** Extract the media URI (and any HTTP headers) from a VIEW intent. */
     private fun handleViewIntent(intent: Intent?) {
         if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
             incomingMediaUri = intent.data.toString()
-            Log.i(TAG, "Received VIEW intent: $incomingMediaUri")
+            incomingMediaHeaders = extractHttpHeaders(intent)
+            Log.i(TAG, "Received VIEW intent: $incomingMediaUri (headers=${incomingMediaHeaders?.size ?: 0})")
         }
+    }
+
+    /**
+     * Parse HTTP headers from the conventions other apps (browsers, IPTV/players)
+     * use to forward auth tokens with a media URL:
+     *  - a `String[]` extra named `headers` of alternating key, value entries
+     *    (the de-facto standard shared by VLC / MX Player / the ExoPlayer demo), and
+     *  - a `Bundle` extra `android.media.intent.extra.HTTP_HEADERS` of string values.
+     * Returns null when no headers are present.
+     */
+    private fun extractHttpHeaders(intent: Intent): Map<String, String>? {
+        val out = LinkedHashMap<String, String>()
+        intent.getStringArrayExtra("headers")?.let { arr ->
+            var i = 0
+            while (i + 1 < arr.size) {
+                val key = arr[i]?.trim().orEmpty()
+                val value = arr[i + 1] ?: ""
+                if (key.isNotEmpty()) out[key] = value
+                i += 2
+            }
+        }
+        intent.getBundleExtra("android.media.intent.extra.HTTP_HEADERS")?.let { bundle ->
+            for (key in bundle.keySet()) {
+                val value = bundle.getString(key) ?: continue
+                if (key.isNotBlank()) out[key] = value
+            }
+        }
+        return if (out.isEmpty()) null else out
     }
 
     /**
@@ -315,6 +352,7 @@ fun HzPlayerApp(
     onRequestPermissions: () -> Unit = {},
     onPipEligibilityChange: (Boolean) -> Unit = {},
     incomingMediaUri: String? = null,
+    incomingMediaHeaders: Map<String, String>? = null,
     onIncomingMediaConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
@@ -374,7 +412,7 @@ fun HzPlayerApp(
         val fileName = uri.substringAfterLast('/').substringBefore('?')
         val isVideo = isVideoExtension(fileName) ||
             uri.contains("video") // fallback for content:// URIs without clear extension
-        playerViewModel.playUri(uri, fileName, isVideo = isVideo)
+        playerViewModel.playUri(uri, fileName, isVideo = isVideo, headers = incomingMediaHeaders ?: emptyMap())
         if (isVideo) {
             playerViewModel.onVideoStarted()
             navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
@@ -608,6 +646,12 @@ fun HzPlayerApp(
                         playerViewModel.playAudioPlaylist(playlist, playlist.indexOf(audio))
                         navController.navigate(NavRoutes.AUDIO_PLAYER)
                     },
+                    onAlbumClicked = { album ->
+                        navController.navigate(NavRoutes.albumDetail(album.title))
+                    },
+                    onArtistClicked = { artist ->
+                        navController.navigate(NavRoutes.artistDetail(artist.name))
+                    },
                 )
             }
 
@@ -664,7 +708,10 @@ fun HzPlayerApp(
                 AlbumDetailScreen(
                     albumTitle = title,
                     onBack = { navController.popBackStack() },
-                    onSongPlayed = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
+                    onPlaySongs = { songs, index ->
+                        playerViewModel.playAudioPlaylist(songs, index)
+                        navController.navigate(NavRoutes.AUDIO_PLAYER)
+                    },
                 )
             }
 
@@ -680,7 +727,10 @@ fun HzPlayerApp(
                 ArtistDetailScreen(
                     artistName = name,
                     onBack = { navController.popBackStack() },
-                    onSongPlayed = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
+                    onPlaySongs = { songs, index ->
+                        playerViewModel.playAudioPlaylist(songs, index)
+                        navController.navigate(NavRoutes.AUDIO_PLAYER)
+                    },
                     onAlbumClicked = { navController.navigate(NavRoutes.albumDetail(it)) },
                 )
             }
@@ -705,6 +755,16 @@ fun HzPlayerApp(
                 .align(Alignment.BottomEnd)
                 .padding(end = 12.dp, bottom = 84.dp),
         )
+
+        // Startup update reminder dialog
+        val pendingUpdate by mainViewModel.pendingUpdate.collectAsStateWithLifecycle()
+        pendingUpdate?.let { info ->
+            UpdateDialog(
+                updateInfo = info,
+                onDismiss = { mainViewModel.dismissUpdate() },
+                onDontShowAgain = { mainViewModel.dismissUpdateForever() },
+            )
+        }
     }
 }
 

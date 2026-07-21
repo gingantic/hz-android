@@ -82,6 +82,9 @@ class SettingsViewModel @Inject constructor(
     val backgroundPlay: StateFlow<Boolean> = prefs.backgroundPlay
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val showWatchProgress: StateFlow<Boolean> = prefs.showWatchProgress
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val orientationMode: StateFlow<OrientationMode> = prefs.orientationMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrientationMode.AUTO)
 
@@ -141,6 +144,10 @@ class SettingsViewModel @Inject constructor(
 
     fun saveBackgroundPlay(enabled: Boolean) {
         viewModelScope.launch { prefs.setBackgroundPlay(enabled) }
+    }
+
+    fun saveShowWatchProgress(enabled: Boolean) {
+        viewModelScope.launch { prefs.setShowWatchProgress(enabled) }
     }
 
     fun saveOrientationMode(mode: OrientationMode) {

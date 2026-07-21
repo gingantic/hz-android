@@ -53,6 +53,7 @@ import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.presentation.player.components.AudioPlayerSheet
+import com.rhnxdev.hzplayer.presentation.player.components.AudioQueueSheet
 import kotlin.math.roundToInt
 
 @Composable
@@ -159,6 +160,7 @@ fun AudioPlayerScreen(
             onSeekTo = viewModel::onSeekTo,
             onToggleShuffle = viewModel::onToggleShuffle,
             onCycleRepeat = viewModel::onCycleRepeatMode,
+            onToggleQueue = viewModel::onToggleAudioQueue,
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
@@ -184,6 +186,16 @@ fun AudioPlayerScreen(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = stringResource(R.string.back_cd),
                 tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+
+        // Audio queue bottom sheet
+        if (uiState.showAudioQueue) {
+            AudioQueueSheet(
+                queue = uiState.audioQueue,
+                currentIndex = uiState.audioQueueIndex,
+                onTrackSelected = viewModel::onAudioQueueSelect,
+                onDismiss = viewModel::onToggleAudioQueue,
             )
         }
     }

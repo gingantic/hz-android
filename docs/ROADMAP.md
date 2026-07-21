@@ -1,9 +1,9 @@
 # Hz Player — Implementation Roadmap
 
 > Phased delivery from foundation to a working multi-source media player.
-> Last refreshed: 2026-07-11. Original Phases 1–10 are complete; three net-new
+> Last refreshed: 2026-07-21. Original Phases 1–10 are complete; six net-new
 > work streams shipped after the roadmap was written (network streaming, native
-> thumbnails, modular playback engine).
+> thumbnails, modular playback engine, libass subtitles, archive support, OTA updates).
 
 ---
 
@@ -63,8 +63,12 @@ Real `MediaRepositoryImpl` (MediaStore → Room), `MediaPlaybackService`
 | Stream | What | Where |
 |---|---|---|
 | **Network streaming** | SMB / FTP / SFTP / WebDAV browse + playback, LAN server discovery (`ServerDiscoverer`, NSD/mDNS), server config UI with encrypted credentials, stream history | `data/datasource/network/*`, `data/datasource/player/*DataSource.kt`, `presentation/network/*` |
-| **Native thumbnails** | FFmpeg frame extraction over any URI (incl. remote) via JNI + Coil `Fetcher`, disk cache + `.fail` tombstone | `core/thumbnail/*`, `cpp/ThumbnailExtractor.cpp` |
-| **Modular engine** | `IPlayerEngine` contract, `Map<EngineType, IPlayerEngine>` DI, `PlayerSurface` render seam, error-kind mapping | `domain/player/*`, `data/datasource/player/ExoPlayerEngine.kt`, `docs/ENGINE_MODULARITY.md` |
+| **Native thumbnails** | FFmpeg frame extraction over any URI (incl. remote) via JNI + Coil `Fetcher`, disk cache + `.fail` tombstone, codec metadata probe | `core/thumbnail/*`, `cpp/ThumbnailExtractor.cpp` |
+| **Modular engine** | `IPlayerEngine` contract, `Map<EngineType, IPlayerEngine>` DI, `PlayerSurface` render seam (on interface), error-kind mapping | `domain/player/*`, `data/datasource/player/ExoPlayerEngine.kt`, `docs/ENGINE_MODULARITY.md` |
+| **libass subtitles** | Native ASS/SSA rendering via libass JNI; SRT/VTT→ASS conversion; embedded track interception; neighbor subtitle auto-load; language/flag resolution | `data/datasource/subtitle/assrender/*`, `cpp/ass_direct.c`, `core/util/SubtitleLanguageResolver.kt` |
+| **Archive support** | libarchive JNI; virtual folder navigation in File Browser; `archive://` DataSource for play-in-place; password dialog + persistence | `data/datasource/archive/*`, `cpp/ArchiveExtractor.cpp`, `core/util/ArchivePaths.kt` |
+| **OTA updates + About** | Cloudflare R2 update checker; startup update reminder with per-version dismissal; AboutDialog; LicensesScreen (AboutLibraries) | `core/util/UpdateChecker.kt`, `presentation/settings/components/UpdateDialog.kt`, `presentation/settings/LicensesScreen.kt` |
+| **Audio queue + Floating player** | Audio queue sheet for now-playing list; draggable floating video player (PiP-style) | `presentation/player/components/AudioQueueSheet.kt`, `FloatingVideoPlayer.kt` |
 | **Reliability / cleanup** | 27-item bug+reliability+i18n pass (player error redaction, SMB path traversal, JNI guards, connection-pool lifecycle, manifest fixes) | `docs/CLEANUP_PLAN.md` |
 
 ---
@@ -84,7 +88,11 @@ Real `MediaRepositoryImpl` (MediaStore → Room), `MediaPlaybackService`
 | Network streaming stack | ✅ |
 | Native thumbnail pipeline | ✅ |
 | Modular playback engine | ✅ |
+| libass subtitle rendering | ✅ |
+| Archive support (browse + play-in-place) | ✅ |
+| OTA updates + About/Licenses | ✅ |
+| Audio queue + Floating video player | ✅ |
 | Cleanup / reliability / i18n pass | ✅ |
 
-**Overall: feature-complete foundation + network/thumbnail/engine work streams landed.**
+**Overall: feature-complete foundation + all subsystems landed.**
 Remaining items are polish/deferred cross-file refactors (see `CLEANUP_PLAN.md` "Known debt").

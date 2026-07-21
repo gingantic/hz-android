@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.core.components
 
 import com.rhnxdev.hzplayer.domain.model.MediaType
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,13 +21,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.CornerRadii
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
-import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 @Composable
@@ -34,6 +35,7 @@ fun MediaListItem(
     title: String,
     subtitle: String,
     durationMs: Long = 0,
+    progress: Float? = null,
     thumbnailContent: @Composable () -> Unit = {},
     onClick: () -> Unit,
     trailingContent: @Composable (() -> Unit)? = null,
@@ -71,6 +73,37 @@ fun MediaListItem(
                     .clip(clipShape),
             ) {
                 thumbnailContent()
+
+                // Duration badge (bottom-right, YouTube style)
+                if (durationMs > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(3.dp),
+                    ) {
+                        DurationBadge(durationMs = durationMs)
+                    }
+                }
+
+                // YouTube-style red watch-progress line flush at the thumbnail bottom
+                if (progress != null && progress in 0f..1f) {
+                    // Track
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(Color.White.copy(alpha = 0.35f))
+                    )
+                    // Watched portion
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth(fraction = progress)
+                            .height(2.dp)
+                            .background(Color(0xFFE53935))
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(Spacing.md))
@@ -93,15 +126,6 @@ fun MediaListItem(
                 )
             }
 
-            if (durationMs > 0) {
-                Text(
-                    text = formatDuration(durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = Spacing.sm),
-                )
-            }
-
             trailingContent?.invoke()
         }
     }
@@ -116,6 +140,7 @@ private fun MediaListItemPreview() {
             title = "Blade Runner 2049",
             subtitle = "2017 • 2h32m",
             durationMs = 9_123_000,
+            progress = 0.6f,
             thumbnailContent = {
                 ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
             },

@@ -84,6 +84,7 @@ fun SettingsScreen(
     val minSongDurationSecs by settingsViewModel.minSongDurationSecs.collectAsStateWithLifecycle()
     val debugMode by settingsViewModel.debugMode.collectAsStateWithLifecycle()
     val backgroundPlay by settingsViewModel.backgroundPlay.collectAsStateWithLifecycle()
+    val showWatchProgress by settingsViewModel.showWatchProgress.collectAsStateWithLifecycle()
     val orientationMode by settingsViewModel.orientationMode.collectAsStateWithLifecycle()
     val resumeMode by settingsViewModel.resumeMode.collectAsStateWithLifecycle()
     val decoderMode by settingsViewModel.decoderMode.collectAsStateWithLifecycle()
@@ -257,6 +258,12 @@ fun SettingsScreen(
                                 },
                                 onClick = { showResumeDialog = true },
                             )
+                            SettingsToggleItem(
+                                title = stringResource(R.string.settings_show_watch_progress),
+                                subtitle = stringResource(R.string.settings_show_watch_progress_sub),
+                                checked = showWatchProgress,
+                                onCheckedChange = { settingsViewModel.saveShowWatchProgress(it) },
+                            )
                             SettingsItem(
                                 title = stringResource(R.string.settings_decoder_mode),
                                 subtitle = when (decoderMode) {
@@ -428,12 +435,6 @@ fun SettingsScreen(
                                 title = stringResource(R.string.settings_about),
                                 subtitle = "Version ${com.rhnxdev.hzplayer.BuildConfig.VERSION_NAME}",
                                 onClick = { showAboutDialog = true },
-                            )
-                            SettingsItem(
-                                title = stringResource(R.string.settings_licenses),
-                                subtitle = "${stringResource(R.string.settings_licenses_sub)} ${stringResource(R.string.not_implemented)}",
-                                enabled = false,
-                                onClick = {},
                             )
                         }
                     },

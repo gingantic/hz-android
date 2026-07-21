@@ -1,8 +1,8 @@
 # Hz Player — Data Flow Architecture
 
 > How data moves from persistence to pixels.
-> Last refreshed: 2026-07-11. Reflects the modular `IPlayerEngine` seam, the remote
-> network stack, and resumable playback.
+> Last refreshed: 2026-07-21. Reflects the modular `IPlayerEngine` seam, the remote
+> network stack, resumable playback, libass subtitle pipeline, and archive support.
 
 ---
 
@@ -69,6 +69,17 @@ NetworkScreen → ServerCard tap
     → maps RemoteFileItem → domain
 ```
 
+### Archive Browse (virtual folder)
+```
+FileBrowserScreen → tap archive file
+  → FileBrowserViewModel.onOpenArchive(path)
+    → ArchiveRepository.listEntries(archivePath, password)
+      → ArchiveNative.nativeList (JNI → libarchive)
+    → synthesizes virtual directory levels from entry paths
+    → BreadcrumbBar shows archive layers
+  → tap media entry → play via archive:// URI
+```
+
 ---
 
 ## Write Flows
@@ -76,9 +87,10 @@ NetworkScreen → ServerCard tap
 ### Play (local or remote, identical call path)
 ```
 Screen → ViewModel.onPlay(item)
-  → PlayerRepository.playVideo / playAudio / playUri(uri, title, isVideo, mimeType)
+  → PlayerRepository.playVideo / playAudio / playUri(uri, title, isVideo, mimeType, resumePositionMs)
     → activeEngine.play(uri, …)        // IPlayerEngine — no Media3 in caller
       → ExoPlayerEngine → MediaPlayerHolder.player.setMediaItem + prepare + play
+    → NeighborSubtitleDiscoverer auto-loads sibling .srt/.ass files
     → startTrafficPolling() if uri is remote
   → playbackStateInfo Flow updates PlayerUiState
 ```
@@ -95,9 +107,10 @@ SettingsScreen → onEngineSelected(type)
 
 ### Persist playback position (resume)
 ```
-PlayerRepository.playbackStateInfo (on pause / stop)
-  → ResumeRepository.savePosition(mediaId, positionMs, durationMs)
+PlayerPositionController (250ms tick)
+  → periodic save: ResumeRepository.savePosition(mediaId, positionMs, durationMs)
     → PlaybackPositionDao upsert
+  → on pause/stop: final save
 ```
 
 ### Change Sort
@@ -124,6 +137,27 @@ Only `ExoPlayerEngine` imports Media3 `Player`/`PlayerView`. `PlayerViewModel` a
 both player screens import **only** `domain` types (`IPlayerEngine`, `PlayerUiState`,
 `PlayerStateInfo`). New engines plug in without touching the ViewModel or screens.
 
+### Subtitle pipeline (libass)
+```
+ExoPlayer extractor chain
+  → AssExtractorsFactory / AssMatroskaExtractor intercept subtitle samples
+    → AssTrackOutput buffers header + dialogue events
+      → AssHandler receives raw ASS data
+        → AssDirectBridge (JNI) → libass renders bitmap at time T
+          → SubtitleOverlayView displays bitmap
+            → AssSubtitleOverlay (Compose AndroidView wrapper)
+```
+SRT/VTT tracks are converted to ASS on-the-fly via `SubtitleConverters` before
+feeding libass, giving unified rendering for all subtitle formats.
+
+### Position & seek (high-frequency)
+```
+PlayerPositionController (250ms tick)
+  → PlayerRepository.getCurrentPosition()
+    → position: StateFlow<Long>  (separate from PlayerUiState)
+      → only PlayerSeekBar recomposes per tick
+```
+
 ### Seeking / track selection / error
 - Seek: `ViewModel.onSeekTo` → `PlayerRepository.seekTo` → `engine.seekTo`.
 - Tracks: `engine.getSubtitleTracks()/getAudioTracks()` surfaced to bottom sheets.
@@ -137,12 +171,15 @@ both player screens import **only** `domain` types (`IPlayerEngine`, `PlayerUiSt
 
 | Source | Use | Notes |
 |---|---|---|
-| Room | Persistent cache for media index, server configs, resume positions, stream history | 5 DAOs; KSP-generated |
+| Room | Persistent cache for media index, server configs, resume positions, stream history | 4 DAOs; KSP-generated |
 | MediaStore | System media index | `MediaScanner` syncs into Room |
-| DataStore | User preferences (sort, theme, active engine) | Type-safe `Preferences` |
+| DataStore | User preferences (sort, theme, active engine, archive passwords) | Type-safe `Preferences` |
 | Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` |
 | Remote clients | SMB/FTP/SFTP/WebDAV browse + streaming | pooled in `ConnectionPool` |
-| Native FFmpeg | Video thumbnails | JNI in `core/thumbnail` + `cpp/` |
+| Native FFmpeg | Video thumbnails + codec metadata probe | JNI in `core/thumbnail` + `cpp/` |
+| Native libass | ASS/SSA/SRT/VTT subtitle rendering | JNI in `data/datasource/subtitle/assrender` + `cpp/` |
+| Native libarchive | Archive listing + streaming playback | JNI in `data/datasource/archive` + `cpp/` |
+| Cloudflare R2 | OTA update checks + APK download | `UpdateChecker` reads `BuildConfig.R2_UPDATE_BASE_URL` |
 
 ---
 
@@ -152,6 +189,7 @@ both player screens import **only** `domain` types (`IPlayerEngine`, `PlayerUiSt
 |---|---|
 | UI (Composable) | Main (`collectAsStateWithLifecycle`) |
 | ViewModel | Main (`viewModelScope`) |
+| PlayerPositionController | Main (250ms tick via `delay`) |
 | PlayerRepository | Main (engine delegation) + `Dispatchers.Default` for traffic polling |
 | Repository (IO) | `Dispatchers.IO` |
 | Room DAO | Auto-dispatched |
@@ -159,4 +197,6 @@ both player screens import **only** `domain` types (`IPlayerEngine`, `PlayerUiSt
 | Network clients | `ConnectionPool` threads + `Dispatchers.IO` |
 | ExoPlayer | Own internal threads |
 | Native thumbnail | JNI off the main thread (Coil fetcher scope) |
+| Native libass | AssHandler renders on a background thread; bitmap posted to Main |
+| Native libarchive | ExoPlayer playback thread (DataSource callbacks) |
 | DataStore | Auto-dispatched (IO) |

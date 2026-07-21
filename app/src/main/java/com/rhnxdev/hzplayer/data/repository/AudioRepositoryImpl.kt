@@ -170,4 +170,14 @@ class AudioRepositoryImpl @Inject constructor(
             entities.map { it.toAudioItem() }
         }
     }
+
+    override fun searchAlbums(query: String): Flow<List<Album>> = flow {
+        val albums = getAlbums().first()
+        emit(albums.filter { it.title.contains(query, ignoreCase = true) })
+    }.flowOn(Dispatchers.IO)
+
+    override fun searchArtists(query: String): Flow<List<Artist>> = flow {
+        val artists = getArtists().first()
+        emit(artists.filter { it.name.contains(query, ignoreCase = true) })
+    }.flowOn(Dispatchers.IO)
 }

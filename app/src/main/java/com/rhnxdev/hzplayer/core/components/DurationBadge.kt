@@ -9,6 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -25,12 +27,16 @@ fun DurationBadge(
     Text(
         text = formatDuration(durationMs),
         color = Color.White,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Medium,
+        style = TextStyle(
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            lineHeight = 10.sp,
+            platformStyle = PlatformTextStyle(includeFontPadding = false),
+        ),
         modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(3.dp))
             .background(Color.Black.copy(alpha = 0.7f))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .padding(horizontal = 4.dp, vertical = 0.5.dp),
     )
 }
 
