@@ -10,6 +10,10 @@ data class BrowserSettings(
     val javaScriptCanOpenWindows: Boolean = false,
 
     // ── Privacy & Security ───────────────────────────────────────
+    val adBlockEnabled: Boolean = true,
+    val blockTrackersEnabled: Boolean = true,
+    val cosmeticFilteringEnabled: Boolean = true,
+    val blockCrossDomainPopups: Boolean = true,
     val cookiesEnabled: Boolean = true,
     val thirdPartyCookiesEnabled: Boolean = false,
     val blockMixedContent: Boolean = false,       // false = MIXED_CONTENT_ALWAYS_ALLOW (current)

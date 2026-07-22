@@ -14,6 +14,10 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
     fun load(): BrowserSettings = BrowserSettings(
         javaScriptEnabled          = p.getBoolean(KEY_JS, true),
         javaScriptCanOpenWindows   = p.getBoolean(KEY_JS_WINDOWS, false),
+        adBlockEnabled             = p.getBoolean(KEY_ADBLOCK, true),
+        blockTrackersEnabled       = p.getBoolean(KEY_TRACKERS, true),
+        cosmeticFilteringEnabled   = p.getBoolean(KEY_COSMETIC, true),
+        blockCrossDomainPopups     = p.getBoolean(KEY_CROSS_DOMAIN_POPUPS, true),
         cookiesEnabled             = p.getBoolean(KEY_COOKIES, true),
         thirdPartyCookiesEnabled   = p.getBoolean(KEY_3P_COOKIES, false),
         blockMixedContent          = p.getBoolean(KEY_BLOCK_MIXED, false),
@@ -39,6 +43,10 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         p.edit()
             .putBoolean(KEY_JS,              s.javaScriptEnabled)
             .putBoolean(KEY_JS_WINDOWS,      s.javaScriptCanOpenWindows)
+            .putBoolean(KEY_ADBLOCK,         s.adBlockEnabled)
+            .putBoolean(KEY_TRACKERS,        s.blockTrackersEnabled)
+            .putBoolean(KEY_COSMETIC,        s.cosmeticFilteringEnabled)
+            .putBoolean(KEY_CROSS_DOMAIN_POPUPS, s.blockCrossDomainPopups)
             .putBoolean(KEY_COOKIES,         s.cookiesEnabled)
             .putBoolean(KEY_3P_COOKIES,      s.thirdPartyCookiesEnabled)
             .putBoolean(KEY_BLOCK_MIXED,     s.blockMixedContent)
@@ -61,6 +69,10 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         private const val PREFS_NAME  = "browser_settings"
         private const val KEY_JS             = "js_enabled"
         private const val KEY_JS_WINDOWS     = "js_open_windows"
+        private const val KEY_ADBLOCK        = "adblock_enabled"
+        private const val KEY_TRACKERS       = "trackers_enabled"
+        private const val KEY_COSMETIC       = "cosmetic_enabled"
+        private const val KEY_CROSS_DOMAIN_POPUPS = "cross_domain_popups"
         private const val KEY_COOKIES        = "cookies"
         private const val KEY_3P_COOKIES     = "third_party_cookies"
         private const val KEY_BLOCK_MIXED    = "block_mixed"

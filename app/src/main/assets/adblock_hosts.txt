@@ -1,0 +1,134 @@
+! Title: uBlock Origin & EasyList Combined Real AdBlock Rules
+! Description: Real ad domains, tracking servers, and cosmetic element hiding rules.
+! Format: EasyList / uBlock Origin / Hosts standard format
+
+! ==========================================
+! REAL COSMETIC ELEMENT HIDING RULES
+! ==========================================
+##.ad-container
+##.ad-banner
+##.ad-wrapper
+##.ad-unit
+##.ad-slot
+##.ad-box
+##.ad_box
+##.ad_container
+##.ad_banner
+##.sponsored-post
+##.sponsored-content
+##.promoted-post
+##[id*='google_ads']
+##[id*='ad-container']
+##[id*='ad_container']
+##[id*='banner-ad']
+##[id^='ad_slot']
+##[id^='div-gpt-ad']
+##[class*='ad-container']
+##[class*='ad-banner']
+##[class*='ad-unit']
+##[class*='ad-wrapper']
+##[class*='sponsored-post']
+##ins.adsbygoogle
+##iframe[src*='doubleclick']
+##iframe[src*='googlesyndication']
+##iframe[src*='adservice']
+##.trc_rbox_container
+##.outbrain_widget
+###taboola-below-article-thumbnails
+##.ytd-display-ad-renderer
+##div[class*='ytd-ad-slot-renderer']
+
+! ==========================================
+! REAL UBLOCK / EASYLIST DOMAIN RULES
+! ==========================================
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||adservice.google.com^
+||pagead2.googlesyndication.com^
+||google-analytics.com^
+||analytics.google.com^
+||adnxs.com^
+||taboola.com^
+||outbrain.com^
+||criteo.com^
+||popads.net^
+||exoclick.com^
+||adsterra.com^
+||juicyads.com^
+||propellerads.com^
+||a-ads.com^
+||zedo.com^
+||pubmatic.com^
+||rubiconproject.com^
+||openx.net^
+||moatads.com^
+||serving-sys.com^
+||adsafeprotected.com^
+||adroll.com^
+||amazon-adsystem.com^
+||ad-delivery.net^
+||smartadserver.com^
+||yieldmanager.com^
+||casalemedia.com^
+||bidswitch.net^
+||mgid.com^
+||revcontent.com^
+||popunder.net^
+||adthrive.com^
+||mediavine.com^
+||infolinks.com^
+||buyads.com^
+||scorecardresearch.com^
+||hotjar.com^
+||mixpanel.com^
+||segment.io^
+||amplitude.com^
+||clarity.ms^
+||crazyegg.com^
+||quantserve.com^
+||newrelic.com^
+||chartbeat.com^
+||statcounter.com^
+||yandex.ru/metrika^
+||mc.yandex.ru^
+
+! ==========================================
+! STEVENBLACK / UBLOCK HOSTS FORMAT RULES
+! ==========================================
+0.0.0.0 ad.doubleclick.net
+0.0.0.0 pagead2.googlesyndication.com
+0.0.0.0 adservice.google.com
+0.0.0.0 googleads.g.doubleclick.net
+0.0.0.0 www.google-analytics.com
+0.0.0.0 analytics.google.com
+0.0.0.0 static.doubleclick.net
+0.0.0.0 securepubads.g.doubleclick.net
+0.0.0.0 stats.g.doubleclick.net
+0.0.0.0 ad.ca.doubleclick.net
+0.0.0.0 ad.de.doubleclick.net
+0.0.0.0 ad.fr.doubleclick.net
+0.0.0.0 ad.jp.doubleclick.net
+0.0.0.0 ad.uk.doubleclick.net
+0.0.0.0 media.fastclick.net
+0.0.0.0 cdn.fastclick.net
+0.0.0.0 ads.pubmatic.com
+0.0.0.0 showads.pubmatic.com
+0.0.0.0 tracker.mgid.com
+0.0.0.0 cdn.mgid.com
+0.0.0.0 engine.adzerk.net
+0.0.0.0 static.adzerk.net
+0.0.0.0 pixel.quantserve.com
+0.0.0.0 edge.quantserve.com
+0.0.0.0 beacon.krxd.net
+0.0.0.0 cdn.krxd.net
+0.0.0.0 b.scorecardresearch.com
+0.0.0.0 sb.scorecardresearch.com
+0.0.0.0 tracking.outbrain.com
+0.0.0.0 widgets.outbrain.com
+0.0.0.0 cdn.taboola.com
+0.0.0.0 trc.taboola.com
+0.0.0.0 popup.popads.net
+0.0.0.0 serve.popads.net
+0.0.0.0 syndication.exoclick.com
+0.0.0.0 main.exoclick.com
