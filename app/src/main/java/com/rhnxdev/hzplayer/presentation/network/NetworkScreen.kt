@@ -46,7 +46,7 @@ fun NetworkScreen(
     onPlayStream: (url: String, title: String, isVideo: Boolean, mimeType: String?) -> Unit = { _, _, _, _ -> },
     onPlayRemoteFile: (uri: String, title: String, isVideo: Boolean, mimeType: String?) -> Unit = { _, _, _, _ -> },
     onPlayAllVideos: (List<VideoItem>) -> Unit = {},
-    onOpenBrowser: () -> Unit = {}, // kept as stub — callers still pass it
+    onOpenBrowser: (String?) -> Unit = {},
     fullScreenOverlay: Boolean = false,
     isActive: Boolean = true,
     modifier: Modifier = Modifier,

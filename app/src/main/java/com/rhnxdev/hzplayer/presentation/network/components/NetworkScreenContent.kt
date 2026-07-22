@@ -39,6 +39,7 @@ import android.os.Build
 import android.content.pm.PackageManager
 import com.rhnxdev.hzplayer.core.util.ServerDiscoverer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -99,7 +100,7 @@ internal fun NetworkHomeContent(
     onToggleFavorite: (Long) -> Unit,
     onDeleteHistoryItem: (Long) -> Unit,
     onClearHistory: () -> Unit,
-    onOpenBrowser: () -> Unit = {},
+    onOpenBrowser: (String?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -175,7 +176,20 @@ internal fun NetworkHomeContent(
                     },
                 )
 
-                // Browser launch button — removed; stub kept in NetworkScreen
+                // Browser launch button
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                FilledTonalButton(
+                    onClick = { onOpenBrowser(uiState.streamUrl.ifBlank { null }) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Language,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.xs))
+                    Text(stringResource(id = com.rhnxdev.hzplayer.R.string.open_browser))
+                }
             }
         }
 

@@ -45,3 +45,13 @@ val HzPlayerShapes = Shapes(
     large = RoundedCornerShape(CornerRadii.lg),
     extraLarge = RoundedCornerShape(CornerRadii.xl),
 )
+
+// ── Browser-specific Dimensions ───────────────────────────────
+
+object BrowserDimens {
+    val toolbarHeight = 56.dp
+    val tabStripHeight = 44.dp
+    val urlBarHeight = 44.dp
+    val newTabGridColumns = 2
+    val newTabGridLandscapeColumns = 3
+}

@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.di
 
 import com.rhnxdev.hzplayer.data.repository.AudioRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.ArchiveRepositoryImpl
+import com.rhnxdev.hzplayer.data.repository.BrowserHistoryRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.FileRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.MediaRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.NetworkRepositoryImpl
@@ -12,6 +13,7 @@ import com.rhnxdev.hzplayer.data.repository.SubtitleRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.UserPreferencesRepositoryImpl
 import com.rhnxdev.hzplayer.domain.repository.AudioRepository
 import com.rhnxdev.hzplayer.domain.repository.ArchiveRepository
+import com.rhnxdev.hzplayer.domain.repository.BrowserHistoryRepository
 import com.rhnxdev.hzplayer.domain.repository.FileRepository
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
@@ -89,4 +91,10 @@ abstract class RepositoryModule {
     abstract fun bindResumeRepository(
         impl: ResumeRepositoryImpl,
     ): ResumeRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindBrowserHistoryRepository(
+        impl: BrowserHistoryRepositoryImpl,
+    ): BrowserHistoryRepository
 }
