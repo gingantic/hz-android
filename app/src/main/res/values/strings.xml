@@ -440,4 +440,7 @@
     <string name="permission_required_desc">Hz Player requires access to your device storage to scan and show your local audio and video files.</string>
     <string name="permission_grant_button">Grant Permission</string>
     <string name="permission_settings_button">Open App Settings</string>
+
+    <!-- Browser -->
+    <string name="open_browser">Open Browser</string>
 </resources>

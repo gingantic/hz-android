@@ -93,6 +93,7 @@ import com.rhnxdev.hzplayer.presentation.search.SearchScreen
 import com.rhnxdev.hzplayer.presentation.settings.SettingsScreen
 import com.rhnxdev.hzplayer.presentation.settings.components.UpdateDialog
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import com.rhnxdev.hzplayer.browser.BrowserActivity
 import com.rhnxdev.hzplayer.presentation.video.VideoLibraryScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -165,7 +166,17 @@ class MainActivity : ComponentActivity() {
                             incomingMimeType = null
                             incomingMediaTitle = null
                         },
-                        onOpenBrowser = {},
+                        onOpenBrowser = { url ->
+                            val intent = Intent(this@MainActivity, BrowserActivity::class.java).apply {
+                                putExtra(BrowserActivity.THEME_MODE, themeMode.name)
+                                putExtra(BrowserActivity.APP_COLOR, appColorArgb)
+                                putExtra(BrowserActivity.USE_DYNAMIC_COLOR, useDynamicColors)
+                                if (!url.isNullOrBlank()) {
+                                    putExtra(BrowserActivity.INITIAL_URL, url)
+                                }
+                            }
+                            startActivity(intent)
+                        },
                     )
                 } else {
                     Box(
@@ -370,7 +381,7 @@ fun HzPlayerApp(
     incomingMimeType: String? = null,
     incomingMediaTitle: String? = null,
     onIncomingMediaConsumed: () -> Unit = {},
-    onOpenBrowser: () -> Unit = {},
+    onOpenBrowser: (String?) -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -622,8 +633,8 @@ fun HzPlayerApp(
                                         playerViewModel.playVideoPlaylist(playlist)
                                         navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                     },
-                                    onOpenBrowser = {
-                                        onOpenBrowser()
+                                    onOpenBrowser = { url ->
+                                        onOpenBrowser(url)
                                     },
                                 )
                                 4 -> SettingsScreen(

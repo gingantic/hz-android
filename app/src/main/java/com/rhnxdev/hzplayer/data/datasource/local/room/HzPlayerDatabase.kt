@@ -4,10 +4,12 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.rhnxdev.hzplayer.data.datasource.local.room.dao.BrowserHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlaybackPositionDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.ServerConfigDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.StreamHistoryDao
+import com.rhnxdev.hzplayer.data.datasource.local.room.entities.BrowserHistoryEntity
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.MediaEntity
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.PlaybackPositionEntity
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.ServerConfigEntity
@@ -19,8 +21,9 @@ import com.rhnxdev.hzplayer.data.datasource.local.room.entities.StreamHistoryEnt
         ServerConfigEntity::class,
         StreamHistoryEntity::class,
         PlaybackPositionEntity::class,
+        BrowserHistoryEntity::class,
     ],
-    version = 4,
+    version = 5,
     // Schema exported to app/schemas so versioned Migrations can be authored and
     // reviewed in source control. exportSchema=false + fallbackToDestructiveMigration()
     // silently wiped all saved servers / resume positions / history on every bump.
@@ -31,6 +34,7 @@ abstract class HzPlayerDatabase : RoomDatabase() {
     abstract fun serverConfigDao(): ServerConfigDao
     abstract fun streamHistoryDao(): StreamHistoryDao
     abstract fun playbackPositionDao(): PlaybackPositionDao
+    abstract fun browserHistoryDao(): BrowserHistoryDao
 
     companion object {
         /** Migration 3→4: add indices on media and stream_history tables. */
@@ -44,6 +48,22 @@ abstract class HzPlayerDatabase : RoomDatabase() {
                 // stream_history table indices
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_stream_history_url` ON `stream_history` (`url`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_stream_history_isFavorite` ON `stream_history` (`isFavorite`)")
+            }
+        }
+
+        /** Migration 4→5: add browser_history table. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `browser_history` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `url` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `timestamp` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_browser_history_url` ON `browser_history` (`url`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_browser_history_timestamp` ON `browser_history` (`timestamp`)")
             }
         }
     }

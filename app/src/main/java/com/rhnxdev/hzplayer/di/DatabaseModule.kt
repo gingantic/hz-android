@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.di
 import android.content.Context
 import androidx.room.Room
 import com.rhnxdev.hzplayer.data.datasource.local.room.HzPlayerDatabase
+import com.rhnxdev.hzplayer.data.datasource.local.room.dao.BrowserHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlaybackPositionDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.ServerConfigDao
@@ -30,7 +31,10 @@ object DatabaseModule {
         // Only wipe on a *downgrade* (illegal). An *upgrade* with no matching
         // Migration now fails loudly instead of silently destroying user data,
         // forcing a real Migration to be written. Schema files live in app/schemas.
-        .addMigrations(HzPlayerDatabase.MIGRATION_3_4)
+        .addMigrations(
+            HzPlayerDatabase.MIGRATION_3_4,
+            HzPlayerDatabase.MIGRATION_4_5,
+        )
         .fallbackToDestructiveMigrationOnDowngrade()
         // TODO: add Migration(1,2), Migration(2,3), … as the schema evolves.
         .build()
@@ -47,4 +51,8 @@ object DatabaseModule {
     @Provides
     fun providePlaybackPositionDao(database: HzPlayerDatabase): PlaybackPositionDao =
         database.playbackPositionDao()
+
+    @Provides
+    fun provideBrowserHistoryDao(database: HzPlayerDatabase): BrowserHistoryDao =
+        database.browserHistoryDao()
 }

@@ -1,0 +1,541 @@
+package com.rhnxdev.hzplayer.browser.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.PlayCircleOutline
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Tab
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.browser.BrowserCacheMode
+import com.rhnxdev.hzplayer.browser.BrowserSettings
+import com.rhnxdev.hzplayer.browser.UserAgentMode
+import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
+import com.rhnxdev.hzplayer.core.designsystem.Spacing
+
+/**
+ * Solid full-screen settings window for the browser.
+ * Uses [HzPlayerTopBar] and solid surface background to match SettingsScreen.
+ */
+@Composable
+fun BrowserSettingsScreen(
+    visible: Boolean,
+    settings: BrowserSettings,
+    onSave: (BrowserSettings) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (!visible) return
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        // Toolbar with back navigation
+        HzPlayerTopBar(
+            title = "Browser Settings",
+            showBack = true,
+            onBack = onDismiss,
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(vertical = Spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            // ── JavaScript ──────────────────────────────────────
+            item { SettingsSectionHeader(title = "JavaScript", icon = Icons.Default.Code) }
+
+            item {
+                BrowserSettingsToggleCard(
+                    title = "Enable JavaScript",
+                    subtitle = "Required for most modern websites",
+                    checked = settings.javaScriptEnabled,
+                    onCheckedChange = { onSave(settings.copy(javaScriptEnabled = it)) },
+                )
+            }
+            item {
+                AnimatedVisibility(
+                    visible = settings.javaScriptEnabled,
+                    enter = expandVertically(),
+                    exit = shrinkVertically(),
+                ) {
+                    BrowserSettingsToggleCard(
+                        title = "Allow pop-up windows",
+                        subtitle = "JS can open new windows automatically",
+                        checked = settings.javaScriptCanOpenWindows,
+                        onCheckedChange = { onSave(settings.copy(javaScriptCanOpenWindows = it)) },
+                    )
+                }
+            }
+
+            // ── Privacy & Security ──────────────────────────────
+            item { SettingsSectionHeader(title = "Privacy & Security", icon = Icons.Default.Security) }
+
+            item {
+                BrowserSettingsToggleCard(
+                    title = "Enable Cookies",
+                    subtitle = "Store cookies from websites",
+                    checked = settings.cookiesEnabled,
+                    onCheckedChange = { onSave(settings.copy(cookiesEnabled = it)) },
+                    icon = Icons.Default.Cookie,
+                )
+            }
+            item {
+                AnimatedVisibility(
+                    visible = settings.cookiesEnabled,
+                    enter = expandVertically(),
+                    exit = shrinkVertically(),
+                ) {
+                    BrowserSettingsToggleCard(
+                        title = "Allow Third-Party Cookies",
+                        subtitle = "Cookies from sites other than current page",
+                        checked = settings.thirdPartyCookiesEnabled,
+                        onCheckedChange = { onSave(settings.copy(thirdPartyCookiesEnabled = it)) },
+                    )
+                }
+            }
+            item {
+                BrowserSettingsToggleCard(
+                    title = "Block Mixed Content",
+                    subtitle = "Block HTTP on HTTPS pages",
+                    checked = settings.blockMixedContent,
+                    onCheckedChange = { onSave(settings.copy(blockMixedContent = it)) },
+                    icon = Icons.Default.Lock,
+                )
+            }
+            item {
+                BrowserSettingsToggleCard(
+                    title = "Safe Browsing",
+                    subtitle = "Warn about dangerous sites",
+                    checked = settings.safeBrowsingEnabled,
+                    onCheckedChange = { onSave(settings.copy(safeBrowsingEnabled = it)) },
+                    icon = Icons.Default.Security,
+                )
+            }
+
+            // ── User Agent ──────────────────────────────────────
+            item { SettingsSectionHeader(title = "User Agent", icon = Icons.Default.PhoneAndroid) }
+
+            item {
+                BrowserSettingsSelectorCard(
+                    title = "User Agent Mode",
+                    subtitle = "Browser identity sent to websites",
+                    options = UserAgentMode.entries,
+                    selectedOption = settings.userAgentMode,
+                    optionLabel = { it.label },
+                    onSelect = { onSave(settings.copy(userAgentMode = it)) },
+                    icon = Icons.Default.PhoneAndroid,
+                    extraContent = {
+                        AnimatedVisibility(
+                            visible = settings.userAgentMode == UserAgentMode.CUSTOM,
+                            enter = expandVertically(),
+                            exit = shrinkVertically(),
+                        ) {
+                            var draftUa by remember(settings.customUserAgent) {
+                                mutableStateOf(settings.customUserAgent)
+                            }
+                            OutlinedTextField(
+                                value = draftUa,
+                                onValueChange = {
+                                    draftUa = it
+                                    onSave(settings.copy(customUserAgent = it))
+                                },
+                                label = { Text("Custom User-Agent String") },
+                                placeholder = { Text("Mozilla/5.0 …", style = MaterialTheme.typography.bodySmall) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = Spacing.sm),
+                                singleLine = false,
+                                maxLines = 3,
+                                textStyle = MaterialTheme.typography.bodySmall.copy(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                ),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                ),
+                            )
+                        }
+                    }
+                )
+            }
+
+            // ── Content ─────────────────────────────────────────
+            item { SettingsSectionHeader(title = "Content", icon = Icons.Default.TextFields) }
+
+            item {
+                BrowserSettingsToggleCard(
+                    title = "DOM Storage",
+                    subtitle = "LocalStorage & SessionStorage for web apps",
+                    checked = settings.domStorageEnabled,
+                    onCheckedChange = { onSave(settings.copy(domStorageEnabled = it)) },
+                    icon = Icons.Default.Storage,
+                )
+            }
+            item {
+                BrowserSettingsToggleCard(
+                    title = "Load Images",
+                    subtitle = "Download and display images",
+                    checked = settings.loadImagesAutomatically,
+                    onCheckedChange = { onSave(settings.copy(loadImagesAutomatically = it)) },
+                    icon = Icons.Default.Image,
+                )
+            }
+            item {
+                BrowserSettingsToggleCard(
+                    title = "Autoplay Media",
+                    subtitle = "Allow video/audio to play without tapping",
+                    checked = !settings.mediaPlaybackRequiresGesture,
+                    onCheckedChange = { onSave(settings.copy(mediaPlaybackRequiresGesture = !it)) },
+                    icon = Icons.Default.PlayCircleOutline,
+                )
+            }
+            item {
+                BrowserSettingsSliderCard(
+                    title = "Text Zoom",
+                    subtitle = "Adjust web page font scaling",
+                    formattedValue = "${settings.textZoom}%",
+                    value = settings.textZoom.toFloat(),
+                    onValueChange = { onSave(settings.copy(textZoom = it.toInt())) },
+                    valueRange = 50f..200f,
+                    steps = 14,
+                    icon = Icons.Default.ZoomIn,
+                )
+            }
+
+            // ── Cache ───────────────────────────────────────────
+            item { SettingsSectionHeader(title = "Cache", icon = Icons.Default.Storage) }
+
+            item {
+                BrowserSettingsSelectorCard(
+                    title = "Cache Mode",
+                    subtitle = "Controls how web pages are cached",
+                    options = BrowserCacheMode.entries,
+                    selectedOption = settings.cacheMode,
+                    optionLabel = { it.label },
+                    onSelect = { onSave(settings.copy(cacheMode = it)) },
+                    icon = Icons.Default.Storage,
+                )
+            }
+
+            // ── Tabs & Session ──────────────────────────────────
+            item { SettingsSectionHeader(title = "Tabs & Session", icon = Icons.Default.Tab) }
+
+            item {
+                BrowserSettingsToggleCard(
+                    title = "Restore Tabs on Startup",
+                    subtitle = "Automatically reopen tabs from your previous session",
+                    checked = settings.restoreTabsOnStartup,
+                    onCheckedChange = { onSave(settings.copy(restoreTabsOnStartup = it)) },
+                    icon = Icons.Default.Tab,
+                )
+            }
+
+            item { Spacer(Modifier.height(Spacing.xxl)) }
+        }
+    }
+}
+
+// ── Reusable internal components matching app/player settings design ──
+
+@Composable
+private fun SettingsSectionHeader(
+    title: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg)
+            .padding(top = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(Spacing.sm))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
+private fun BrowserSettingsToggleCard(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+) {
+    Card(
+        onClick = { if (enabled) onCheckedChange(!checked) },
+        enabled = enabled,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg),
+        shape = RoundedCornerShape(Spacing.sm),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        val alpha = if (enabled) 1f else 0.38f
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Spacing.md, horizontal = Spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(Spacing.md))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                )
+                if (subtitle != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                    )
+                }
+            }
+            Spacer(Modifier.width(Spacing.sm))
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                enabled = enabled,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrowserSettingsSliderCard(
+    title: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int = 0,
+    formattedValue: String? = null,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg),
+        shape = RoundedCornerShape(Spacing.sm),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Spacing.md, horizontal = Spacing.md),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(Spacing.md))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (subtitle != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (formattedValue != null) {
+                    Text(
+                        text = formattedValue,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(Spacing.xs))
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = valueRange,
+                steps = steps,
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun <T> BrowserSettingsSelectorCard(
+    title: String,
+    subtitle: String,
+    options: List<T>,
+    selectedOption: T,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    extraContent: (@Composable () -> Unit)? = null,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.lg),
+        shape = RoundedCornerShape(Spacing.sm),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Spacing.md, horizontal = Spacing.md),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(Spacing.md))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                options.forEach { option ->
+                    val isSelected = option == selectedOption
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onSelect(option) },
+                        label = {
+                            Text(
+                                text = optionLabel(option),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                    )
+                }
+            }
+            extraContent?.invoke()
+        }
+    }
+}
