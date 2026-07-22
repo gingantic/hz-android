@@ -61,10 +61,48 @@ class BrowserViewModel @Inject constructor(
     private var lastRecordedUrl = ""
     private var lastRecordedTime = 0L
 
+    var popupWarningMessage by mutableStateOf<String?>(null)
+        private set
+
+    var pendingPopupRequest by mutableStateOf<PendingPopupRequest?>(null)
+        private set
+
+    fun clearPopupWarning() {
+        popupWarningMessage = null
+    }
+
+    fun allowPendingPopup() {
+        val req = pendingPopupRequest ?: return
+        val newTabId = tabManager.createTab(req.targetUrl)
+        if (req.tempWebView != null) {
+            tabManager.registerWebView(newTabId, req.tempWebView)
+        }
+        tabManager.switchTab(newTabId)
+        saveSessionIfEnabled()
+        pendingPopupRequest = null
+    }
+
+    fun denyPendingPopup() {
+        val req = pendingPopupRequest ?: return
+        try {
+            req.tempWebView?.stopLoading()
+            req.tempWebView?.destroy()
+        } catch (_: Exception) {}
+        pendingPopupRequest = null
+    }
+
     init {
         tabManager.onTabSwitched = { saveSessionIfEnabled() }
         // Apply cookie settings from persisted prefs on startup
         tabManager.applyCookieSettings(settings)
+
+        tabManager.onCrossDomainPopupBlocked = { _, blockedDomain ->
+            popupWarningMessage = "Blocked cross-domain pop-up ($blockedDomain)"
+        }
+
+        tabManager.onCrossDomainPopupRequested = { request ->
+            pendingPopupRequest = request
+        }
 
         tabManager.onPageVisited = { url, title ->
             val now = System.currentTimeMillis()

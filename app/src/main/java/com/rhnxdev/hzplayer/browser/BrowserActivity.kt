@@ -22,6 +22,8 @@ class BrowserActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        AdBlockEngine.init(this)
+
         val themeModeName = intent.getStringExtra(THEME_MODE) ?: ThemeMode.DARK.name
         val themeMode = try { ThemeMode.valueOf(themeModeName) } catch (_: Exception) { ThemeMode.DARK }
         val appColorArgb = intent.getIntExtra(APP_COLOR, 0xFFE85E00.toInt())

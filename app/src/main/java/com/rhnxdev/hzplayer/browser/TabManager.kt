@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.getValue
@@ -95,6 +96,8 @@ class TabManager(
 
     var onTabSwitched: ((tabId: String) -> Unit)? = null
     var onPageVisited: ((url: String, title: String) -> Unit)? = null
+    var onCrossDomainPopupBlocked: ((blockedUrl: String, blockedDomain: String) -> Unit)? = null
+    var onCrossDomainPopupRequested: ((PendingPopupRequest) -> Unit)? = null
 
     fun navigate(tabId: String, url: String) {
         val safeUrl = sanitizeUrl(url)
@@ -140,6 +143,19 @@ class TabManager(
         applySettingsToView(wv, settings)
 
         wv.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                if (settings.adBlockEnabled) {
+                    val urlStr = request.url?.toString() ?: ""
+                    if (AdBlockEngine.shouldBlockUrl(urlStr, settings.blockTrackersEnabled)) {
+                        return AdBlockEngine.createDummyResponse()
+                    }
+                }
+                return super.shouldInterceptRequest(view, request)
+            }
+
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 val id = resolveTabId(view) ?: return
                 updateTab(id) {
@@ -159,6 +175,9 @@ class TabManager(
                         title = view.title ?: "", isLoading = false,
                         canGoBack = view.canGoBack(), canGoForward = view.canGoForward(),
                     )
+                }
+                if (settings.adBlockEnabled && settings.cosmeticFilteringEnabled) {
+                    AdBlockEngine.injectCosmeticFilter(view)
                 }
                 if (url.isNotBlank() && url != "about:blank") {
                     val pageTitle = view.title?.ifBlank { url } ?: url
@@ -214,13 +233,85 @@ class TabManager(
             ): Boolean {
                 if (!settings.javaScriptEnabled || !settings.javaScriptCanOpenWindows) return false
                 if (resultMsg == null) return false
-                val newTabId = createTab(url = "")
-                val newWebView = WebView(view.context)
-                registerWebView(newTabId, newWebView)
+                val parentUrl = view.url ?: ""
+
+                val tempWebView = WebView(view.context)
+                applySettingsToView(tempWebView, settings)
+
+                var isEvaluated = false
+
+                tempWebView.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
+                        val popupUrl = request.url?.toString() ?: ""
+                        if (!isEvaluated && settings.blockCrossDomainPopups && isCrossDomain(parentUrl, popupUrl)) {
+                            isEvaluated = true
+                            v.stopLoading()
+                            val domain = getRootDomain(popupUrl)
+                            onCrossDomainPopupRequested?.invoke(
+                                PendingPopupRequest(
+                                    tempWebView = v,
+                                    parentUrl = parentUrl,
+                                    targetUrl = popupUrl,
+                                    targetDomain = domain,
+                                )
+                            )
+                            return true
+                        }
+                        if (!isEvaluated) {
+                            isEvaluated = true
+                            val newTabId = createTab(popupUrl)
+                            registerWebView(newTabId, v)
+                        }
+                        return false
+                    }
+
+                    override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
+                        if (!isEvaluated && settings.blockCrossDomainPopups && isCrossDomain(parentUrl, url)) {
+                            isEvaluated = true
+                            v.stopLoading()
+                            val domain = getRootDomain(url)
+                            onCrossDomainPopupRequested?.invoke(
+                                PendingPopupRequest(
+                                    tempWebView = v,
+                                    parentUrl = parentUrl,
+                                    targetUrl = url,
+                                    targetDomain = domain,
+                                )
+                            )
+                            return
+                        }
+                        if (!isEvaluated) {
+                            isEvaluated = true
+                            val newTabId = createTab(url)
+                            registerWebView(newTabId, v)
+                        }
+                    }
+
+                    override fun shouldInterceptRequest(v: WebView, request: WebResourceRequest): WebResourceResponse? {
+                        val popupUrl = request.url?.toString() ?: ""
+                        if (!isEvaluated && settings.blockCrossDomainPopups && isCrossDomain(parentUrl, popupUrl)) {
+                            isEvaluated = true
+                            v.post {
+                                v.stopLoading()
+                                val domain = getRootDomain(popupUrl)
+                                onCrossDomainPopupRequested?.invoke(
+                                    PendingPopupRequest(
+                                        tempWebView = v,
+                                        parentUrl = parentUrl,
+                                        targetUrl = popupUrl,
+                                        targetDomain = domain,
+                                    )
+                                )
+                            }
+                            return AdBlockEngine.createDummyResponse()
+                        }
+                        return super.shouldInterceptRequest(v, request)
+                    }
+                }
 
                 val transport = resultMsg.obj as? WebView.WebViewTransport
                 if (transport != null) {
-                    transport.webView = newWebView
+                    transport.webView = tempWebView
                     resultMsg.sendToTarget()
                     return true
                 }
@@ -369,5 +460,21 @@ class TabManager(
         }
 
         return "https://$trimmed"
+    }
+
+    private fun getRootDomain(urlStr: String): String {
+        val host = try { android.net.Uri.parse(urlStr).host?.lowercase() ?: "" } catch (_: Exception) { "" }
+        val parts = host.split(".")
+        return if (parts.size >= 2) {
+            parts.takeLast(2).joinToString(".")
+        } else host
+    }
+
+    private fun isCrossDomain(url1: String, url2: String): Boolean {
+        if (url1.isBlank() || url2.isBlank()) return false
+        val d1 = getRootDomain(url1)
+        val d2 = getRootDomain(url2)
+        if (d1.isBlank() || d2.isBlank()) return false
+        return d1 != d2
     }
 }

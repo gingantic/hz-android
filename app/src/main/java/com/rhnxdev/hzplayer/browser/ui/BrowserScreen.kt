@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.browser.ui
 
 import android.app.Activity
+import android.widget.Toast
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -53,6 +54,14 @@ fun BrowserScreen(
 
     LaunchedEffect(Unit) {
         viewModel.initialize()
+    }
+
+    val popupWarning = viewModel.popupWarningMessage
+    LaunchedEffect(popupWarning) {
+        if (!popupWarning.isNullOrBlank()) {
+            Toast.makeText(context, popupWarning, Toast.LENGTH_SHORT).show()
+            viewModel.clearPopupWarning()
+        }
     }
 
     // Nav bar gets solid surfaceContainerHigh to match bottom toolbar
@@ -153,6 +162,13 @@ fun BrowserScreen(
             settings = viewModel.settings,
             onSave = { viewModel.updateSettings(it) },
             onDismiss = { showSettings = false },
+        )
+
+        // Cross-domain pop-up permission bottom sheet modal
+        PopupPermissionBottomSheet(
+            request = viewModel.pendingPopupRequest,
+            onAllow = { viewModel.allowPendingPopup() },
+            onDeny = { viewModel.denyPendingPopup() },
         )
     }
 }

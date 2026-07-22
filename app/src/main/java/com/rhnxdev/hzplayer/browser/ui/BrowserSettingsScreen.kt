@@ -20,12 +20,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayCircleOutline
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tab
@@ -44,6 +47,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,8 +56,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.browser.AdBlockEngine
 import com.rhnxdev.hzplayer.browser.BrowserCacheMode
 import com.rhnxdev.hzplayer.browser.BrowserSettings
 import com.rhnxdev.hzplayer.browser.UserAgentMode
@@ -114,6 +120,113 @@ fun BrowserSettingsScreen(
                         checked = settings.javaScriptCanOpenWindows,
                         onCheckedChange = { onSave(settings.copy(javaScriptCanOpenWindows = it)) },
                     )
+                }
+            }
+
+            // ── Ad Blocker (uBlock Engine) ──────────────────────
+            item { SettingsSectionHeader(title = "Ad Blocker (uBlock Engine)", icon = Icons.Default.Block) }
+
+            item {
+                BrowserSettingsToggleCard(
+                    title = "Enable Ad Blocker",
+                    subtitle = "Block ads and unwanted popups",
+                    checked = settings.adBlockEnabled,
+                    onCheckedChange = { onSave(settings.copy(adBlockEnabled = it)) },
+                    icon = Icons.Default.Block,
+                )
+            }
+            item {
+                AnimatedVisibility(
+                    visible = settings.adBlockEnabled,
+                    enter = expandVertically(),
+                    exit = shrinkVertically(),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        BrowserSettingsToggleCard(
+                            title = "Block Trackers & Analytics",
+                            subtitle = "Prevent telemetry and tracking scripts",
+                            checked = settings.blockTrackersEnabled,
+                            onCheckedChange = { onSave(settings.copy(blockTrackersEnabled = it)) },
+                        )
+                        BrowserSettingsToggleCard(
+                            title = "Cosmetic Element Hiding",
+                            subtitle = "Collapse empty ad container placeholders",
+                            checked = settings.cosmeticFilteringEnabled,
+                            onCheckedChange = { onSave(settings.copy(cosmeticFilteringEnabled = it)) },
+                        )
+                        BrowserSettingsToggleCard(
+                            title = "Block Cross-Domain Pop-ups",
+                            subtitle = "Deny pop-up windows opening from external domains",
+                            checked = settings.blockCrossDomainPopups,
+                            onCheckedChange = { onSave(settings.copy(blockCrossDomainPopups = it)) },
+                        )
+                        val context = LocalContext.current
+                        val blockedCount = remember { AdBlockEngine.totalBlockedCount.get() }
+                        val rulesCount = remember { AdBlockEngine.totalRulesLoaded.get() }
+                        var isUpdating by remember { mutableStateOf(false) }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(Spacing.md),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "uBlock Engine Protection",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Text(
+                                            text = "$blockedCount blocked • $rulesCount active uBlock uAssets rules",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+
+                                    TextButton(
+                                        enabled = !isUpdating,
+                                        onClick = {
+                                            isUpdating = true
+                                            Toast.makeText(context, "Updating uBlock uAssets rules...", Toast.LENGTH_SHORT).show()
+                                            AdBlockEngine.updateRulesOnline(context) { success ->
+                                                isUpdating = false
+                                                val msg = if (success) {
+                                                    "uBlock rules updated successfully! (${AdBlockEngine.totalRulesLoaded.get()} rules loaded)"
+                                                } else {
+                                                    "Failed to update uBlock rules online."
+                                                }
+                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Update uBlock Lists",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(Spacing.xs))
+                                        Text(if (isUpdating) "Updating..." else "Update uAssets")
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
