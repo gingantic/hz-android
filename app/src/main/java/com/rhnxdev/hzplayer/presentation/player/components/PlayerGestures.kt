@@ -86,6 +86,12 @@ class PlayerGestureCallbacks(
     val uiState: () -> PlayerUiState,
     /** Current playback position in ms (viewModel.position.value). */
     val position: () -> Long,
+    /**
+     * Called when a brightness or volume slide gesture ends so the final value
+     * can be persisted. [type] is [SlideType.BRIGHTNESS] or [SlideType.VOLUME];
+     * [value] is normalised 0.0–1.0.
+     */
+    val onSlideDone: (type: SlideType, value: Float) -> Unit = { _, _ -> },
 )
 
 /**
@@ -286,6 +292,10 @@ fun Modifier.playerGestures(
             if (seekConsumed && state.seekDelta != 0L) callbacks.onSeekBy(state.seekDelta)
             state.isDragSeeking = false
             state.seekDelta = 0L
+            // Persist volume/brightness when a slide gesture ends.
+            if (adjustInitialized && dominantDirection == DragDirection.ADJUST) {
+                callbacks.onSlideDone(state.slideType, state.slideValue)
+            }
             if (!holdTriggered && dominantDirection == null && !inControlsZone) {
                 // Pure tap → double-tap seek / single-tap toggle
                 val now = System.currentTimeMillis()

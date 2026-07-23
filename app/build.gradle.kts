@@ -165,6 +165,10 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
         }
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 // Room schema export destination (referenced by @Database(exportSchema = true)).

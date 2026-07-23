@@ -33,6 +33,11 @@ interface UserPreferencesRepository {
     /** Show the YouTube-style watched-progress line on video thumbnails. */
     val showWatchProgress: Flow<Boolean>
 
+    /** Last player volume level (0.0–1.0). Restored when the player opens. */
+    val lastVolume: Flow<Float>
+    /** Last screen brightness level (0.0–1.0). -1f means "use system brightness". */
+    val lastBrightness: Flow<Float>
+
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setAppColorArgb(argb: Int)
     suspend fun setDynamicColors(enabled: Boolean)
@@ -52,6 +57,8 @@ interface UserPreferencesRepository {
     suspend fun setDebugMode(enabled: Boolean)
     suspend fun setBackgroundPlay(enabled: Boolean)
     suspend fun setShowWatchProgress(enabled: Boolean)
+    suspend fun setLastVolume(volume: Float)
+    suspend fun setLastBrightness(brightness: Float)
 
     val selectedTabIndex: Flow<Int>
 

@@ -34,6 +34,7 @@ object DatabaseModule {
         .addMigrations(
             HzPlayerDatabase.MIGRATION_3_4,
             HzPlayerDatabase.MIGRATION_4_5,
+            HzPlayerDatabase.MIGRATION_5_6,
         )
         .fallbackToDestructiveMigrationOnDowngrade()
         // TODO: add Migration(1,2), Migration(2,3), … as the schema evolves.

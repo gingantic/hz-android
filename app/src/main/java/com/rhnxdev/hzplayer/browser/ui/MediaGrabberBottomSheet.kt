@@ -100,7 +100,7 @@ fun MediaGrabberBottomSheet(
                 MediaFilter.ALL -> true
                 MediaFilter.VIDEO -> item.mediaType == MediaType.VIDEO
                 MediaFilter.AUDIO -> item.mediaType == MediaType.AUDIO
-                MediaFilter.STREAMS -> item.mediaType == MediaType.STREAM_HLS || item.mediaType == MediaType.STREAM_DASH
+                MediaFilter.STREAMS -> item.mediaType == MediaType.STREAM_HLS || item.mediaType == MediaType.STREAM_DASH || item.isMasterStream
             }
             val matchesSearch = searchQuery.isBlank() ||
                     item.title.contains(searchQuery, ignoreCase = true) ||
@@ -108,7 +108,11 @@ fun MediaGrabberBottomSheet(
                     item.displayQuality.contains(searchQuery, ignoreCase = true)
 
             matchesFilter && matchesSearch
-        }
+        }.sortedWith(
+            compareByDescending<DetectedMediaItem> { it.isMasterStream }
+                .thenByDescending { it.subQualities.size }
+                .thenByDescending { it.timestamp }
+        )
     }
 
     ModalBottomSheet(
@@ -183,7 +187,7 @@ fun MediaGrabberBottomSheet(
                         MediaFilter.ALL -> mediaItems.size
                         MediaFilter.VIDEO -> mediaItems.count { it.mediaType == MediaType.VIDEO }
                         MediaFilter.AUDIO -> mediaItems.count { it.mediaType == MediaType.AUDIO }
-                        MediaFilter.STREAMS -> mediaItems.count { it.mediaType == MediaType.STREAM_HLS || it.mediaType == MediaType.STREAM_DASH }
+                        MediaFilter.STREAMS -> mediaItems.count { it.mediaType == MediaType.STREAM_HLS || it.mediaType == MediaType.STREAM_DASH || it.isMasterStream }
                     }
                     FilterChip(
                         selected = selectedFilter == filter,
@@ -295,14 +299,14 @@ private fun MinimalistMediaItemCard(
                     modifier = Modifier.weight(1f)
                 ) {
                     Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = if (item.isMasterStream) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
                             text = item.displayQuality,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = if (item.isMasterStream) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -383,6 +387,59 @@ private fun MinimalistMediaItemCard(
                                     showQualityMenu = false
                                 }
                             )
+                        }
+                    }
+                }
+            }
+
+            // Stream Tree Unity (Child Variants grouped under Master Parent)
+            if (item.childVariants.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                var showTreeBranch by remember { mutableStateOf(false) }
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(6.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showTreeBranch = !showTreeBranch }
+                        ) {
+                            Text(
+                                text = "Stream Tree Unity (${item.childVariants.size} Index Variants Grouped)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        if (showTreeBranch) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            item.childVariants.forEach { child ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp, horizontal = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "└─ ${child.title} (${child.extension.ifBlank { "index" }})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -540,10 +597,11 @@ private fun MinimalistMediaItemCard(
 
 private fun launchNativePlayer(context: Context, item: DetectedMediaItem) {
     try {
-        val displayUrlLower = item.displayUrl.lowercase(java.util.Locale.ROOT)
+        val playTargetUrl = item.playUrl
+        val displayUrlLower = playTargetUrl.lowercase(java.util.Locale.ROOT)
         val mimeLower = item.mimeType.lowercase(java.util.Locale.ROOT)
         val targetMime = when {
-            item.mediaType == MediaType.STREAM_HLS || displayUrlLower.contains(".m3u8") || displayUrlLower.contains("/hls/") || displayUrlLower.contains("m3u8") || mimeLower.contains("mpegurl") -> "application/x-mpegURL"
+            item.mediaType == MediaType.STREAM_HLS || item.isMasterStream || displayUrlLower.contains(".m3u8") || displayUrlLower.contains("/hls/") || displayUrlLower.contains("m3u8") || mimeLower.contains("mpegurl") -> "application/x-mpegURL"
             item.mediaType == MediaType.STREAM_DASH || displayUrlLower.contains(".mpd") || displayUrlLower.contains("/dash/") || mimeLower.contains("dash") -> "application/dash+xml"
             else -> item.mimeType.ifBlank { "video/*" }
         }
@@ -555,7 +613,7 @@ private fun launchNativePlayer(context: Context, item: DetectedMediaItem) {
 
         // Merge live session cookies and page referer for smooth CDN auth
         val mergedHeaders = item.headers.toMutableMap()
-        val targetPage = item.pageUrl.ifBlank { item.displayUrl }
+        val targetPage = item.pageUrl.ifBlank { playTargetUrl }
         val liveCookies = runCatching {
             android.webkit.CookieManager.getInstance().getCookie(targetPage)
         }.getOrNull()
@@ -568,8 +626,9 @@ private fun launchNativePlayer(context: Context, item: DetectedMediaItem) {
 
         val intent = Intent(context, targetActivity).apply {
             action = Intent.ACTION_VIEW
-            setDataAndType(Uri.parse(item.displayUrl), targetMime)
+            setDataAndType(Uri.parse(playTargetUrl), targetMime)
             putExtra("extra_media_title", item.title)
+            putExtra("extra_page_url", targetPage)
             putExtra("from_browser", true)
             val headersList = mutableListOf<String>()
             val headersBundle = android.os.Bundle()
@@ -583,6 +642,9 @@ private fun launchNativePlayer(context: Context, item: DetectedMediaItem) {
             if (headersList.isNotEmpty()) {
                 putExtra("headers", headersList.toTypedArray())
                 putExtra("android.media.intent.extra.HTTP_HEADERS", headersBundle)
+                try {
+                    putExtra("extra_headers_json", org.json.JSONObject(mergedHeaders as Map<*, *>).toString())
+                } catch (_: Exception) {}
             }
         }
 

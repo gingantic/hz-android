@@ -89,6 +89,14 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         prefs[PrefKey.ShowWatchProgress.key] ?: true
     }.distinctUntilChanged()
 
+    override val lastVolume: Flow<Float> = dataStore.data.map { prefs ->
+        prefs[PrefKey.LastVolume.key] ?: -1f
+    }.distinctUntilChanged()
+
+    override val lastBrightness: Flow<Float> = dataStore.data.map { prefs ->
+        prefs[PrefKey.LastBrightness.key] ?: -1f
+    }.distinctUntilChanged()
+
     override fun getViewMode(key: String): Flow<ViewMode> =
         enumPreference(stringPreferencesKey("view_mode_$key"), ViewMode.GRID)
 
@@ -202,6 +210,14 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override suspend fun setShowWatchProgress(enabled: Boolean) {
         dataStore.edit { prefs -> prefs[PrefKey.ShowWatchProgress.key] = enabled }
+    }
+
+    override suspend fun setLastVolume(volume: Float) {
+        dataStore.edit { prefs -> prefs[PrefKey.LastVolume.key] = volume }
+    }
+
+    override suspend fun setLastBrightness(brightness: Float) {
+        dataStore.edit { prefs -> prefs[PrefKey.LastBrightness.key] = brightness }
     }
 
     override val dismissedUpdateVersionCode: Flow<Int> = dataStore.data.map { prefs ->
@@ -321,5 +337,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object DismissedUpdateVersionCode : PrefKey<Int>(intPreferencesKey("dismissed_update_version_code"))
         object ArchivePasswords : PrefKey<String>(stringPreferencesKey("archive_passwords"))
         object QuickAccessFolders : PrefKey<String>(stringPreferencesKey("quick_access_folders"))
+        object LastVolume : PrefKey<Float>(floatPreferencesKey("last_volume"))
+        object LastBrightness : PrefKey<Float>(floatPreferencesKey("last_brightness"))
     }
 }

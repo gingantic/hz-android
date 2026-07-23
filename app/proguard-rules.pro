@@ -47,3 +47,24 @@
 
 # FlagKit — country flag ImageVectors resolved at runtime via FlagKit.getFlag()
 -keep class dev.carlsen.flagkit.** { *; }
+
+# WebView & JavaScript Interfaces (Required for Release builds with minification)
+-keepattributes AnnotationDefault, *Annotation*, Signature, InnerClasses, EnclosingMethod
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Preserve JNI native method signatures for Rust/C dynamic linkage
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# Preserve AdBlocker engine, rule models, and JS bridge
+-keep class com.rhnxdev.hzplayer.browser.adblock.** { *; }
+-keep class com.rhnxdev.hzplayer.browser.media.MediaSnifferBridge { *; }
+-keep class com.rhnxdev.hzplayer.browser.media.MediaSnifferEngine { *; }
+-keep class com.rhnxdev.hzplayer.browser.media.MediaStreamDecoder { *; }
+
+# Keep custom WebViewClient / WebChromeClient callbacks intact
+-keep class * extends android.webkit.WebViewClient { *; }
+-keep class * extends android.webkit.WebChromeClient { *; }

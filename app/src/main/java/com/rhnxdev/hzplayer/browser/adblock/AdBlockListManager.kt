@@ -75,58 +75,31 @@ object AdBlockListManager {
     }
 
     /**
-     * Reads all active filter files (builtin enabled lists + custom URLs + custom user rules)
-     * and compiles them into a merged [CompiledRuleSet].
+     * Reads raw text contents of all active filter list files and custom rules
+     * for passing directly to native adblock-rust engine parser.
      */
-    fun compileActiveRules(
+    fun readActiveFilterContents(
         context: Context,
         enabledListIds: Set<String>,
         customRules: String = "",
-    ): CompiledRuleSet {
+    ): List<String> {
         ensureDefaultAssets(context)
+        val contents = mutableListOf<String>()
 
-        val mergedBlockedDomains = mutableSetOf<String>()
-        val mergedExceptionDomains = mutableSetOf<String>()
-        val mergedNetBlockRules = mutableListOf<NetworkRule>()
-        val mergedNetExceptionRules = mutableListOf<NetworkRule>()
-        val mergedGlobalCosmetic = mutableSetOf<String>()
-        val mergedDomainCosmeticMap = mutableMapOf<String, MutableList<CosmeticRule>>()
-
-        fun mergeSet(set: CompiledRuleSet) {
-            mergedBlockedDomains.addAll(set.exactBlockedDomains)
-            mergedExceptionDomains.addAll(set.exactExceptionDomains)
-            mergedNetBlockRules.addAll(set.networkBlockRules)
-            mergedNetExceptionRules.addAll(set.networkExceptionRules)
-            mergedGlobalCosmetic.addAll(set.globalCosmeticSelectors)
-
-            set.domainCosmeticRules.forEach { (domain, rules) ->
-                mergedDomainCosmeticMap.getOrPut(domain) { mutableListOf() }.addAll(rules)
-            }
-        }
-
-        // 1. Process active builtin/custom list files
         BUILTIN_LISTS.filter { enabledListIds.contains(it.id) }.forEach { descriptor ->
             val file = getListFile(context, descriptor.id)
             if (file.exists()) {
                 val content = try { file.readText() } catch (_: Exception) { "" }
                 if (content.isNotBlank()) {
-                    mergeSet(AdBlockRuleParser.parseRules(content))
+                    contents.add(content)
                 }
             }
         }
 
-        // 2. Process custom user manual rules string
         if (customRules.isNotBlank()) {
-            mergeSet(AdBlockRuleParser.parseRules(customRules))
+            contents.add(customRules)
         }
 
-        return CompiledRuleSet(
-            exactBlockedDomains = mergedBlockedDomains,
-            exactExceptionDomains = mergedExceptionDomains,
-            networkBlockRules = mergedNetBlockRules,
-            networkExceptionRules = mergedNetExceptionRules,
-            globalCosmeticSelectors = mergedGlobalCosmetic,
-            domainCosmeticRules = mergedDomainCosmeticMap,
-        )
+        return contents
     }
 }

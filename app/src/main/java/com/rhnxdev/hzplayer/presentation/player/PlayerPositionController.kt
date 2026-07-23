@@ -33,7 +33,7 @@ internal class PlayerPositionController(
 ) {
     /**
      * High-frequency playback position (ms). Emitted every 250 ms by
-     * [startPositionUpdates]. Kept separate from the UI state so the 250 ms tick
+     * [start]. Kept separate from the UI state so the 250 ms tick
      * only recomposes the seek bar, not the entire player UI.
      */
     private val _position = MutableStateFlow(0L)
@@ -49,6 +49,13 @@ internal class PlayerPositionController(
     private var lastSeekTimestamp = 0L
     private var seekTargetPosition = 0L
 
+    /**
+     * True while the app is in the foreground (ON_START…ON_STOP lifecycle).
+     * The position loop suspends itself when false so we don't burn CPU/IO
+     * in the background.
+     */
+    @Volatile private var isForegrounded = true
+
     companion object {
         private const val SEEK_DEBOUNCE_MS = 150L
     }
@@ -58,6 +65,11 @@ internal class PlayerPositionController(
         positionUpdateJob = scope.launch {
             while (isActive) {
                 delay(250)
+
+                // Suspend cheaply while backgrounded — loop wakes every 250 ms but
+                // skips all engine calls and saves until the app returns to the foreground.
+                if (!isForegrounded) continue
+
                 val engine = playerRepository.activeEngine
                 val duration = engine.getDuration()
                 val position = engine.getCurrentPosition()
@@ -76,7 +88,6 @@ internal class PlayerPositionController(
                     val uriChanged = state.currentPlaybackUri != currentUri
                     if (uriChanged || state.duration != duration || state.bufferedPercentage != bufferedPct) {
                         state.copy(
-
                             duration = duration,
                             bufferedPercentage = bufferedPct,
                             currentPlaybackUri = currentUri,
@@ -84,15 +95,41 @@ internal class PlayerPositionController(
                     } else state
                 }
 
-                // Persist progress every ~5s so a crash/kill can still resume.
-                if (!isSeeking && ++saveTick >= 20) {
-                    saveTick = 0
-                    if (currentUri != null && position > 0 && duration > 0) {
-                        saveScope.launch { resumeProgress.saveProgress(currentUri, position, duration) }
+                // Persist progress every ~5 s — but ONLY while actually playing.
+                // When paused, saveTick is reset so the next save is a full 5 s
+                // after the user resumes, not immediately on the first tick.
+                val isPlaying = uiState.value.isPlaying
+                if (!isSeeking && isPlaying) {
+                    if (++saveTick >= 20) {
+                        saveTick = 0
+                        if (currentUri != null && position > 0 && duration > 0) {
+                            saveScope.launch {
+                                resumeProgress.saveProgress(currentUri, position, duration)
+                            }
+                        }
                     }
+                } else if (!isPlaying) {
+                    saveTick = 0
                 }
             }
         }
+    }
+
+    /**
+     * Call from the lifecycle observer (ON_RESUME / ON_START) to resume the tick loop.
+     */
+    fun onForeground() {
+        isForegrounded = true
+    }
+
+    /**
+     * Call from the lifecycle observer (ON_STOP) to suspend the tick loop.
+     * Prevents CPU use and unnecessary DB writes while the app is backgrounded.
+     * Also resets the save counter so the first foreground save is a full 5 s away.
+     */
+    fun onBackground() {
+        isForegrounded = false
+        saveTick = 0
     }
 
     /** Read engine position on the current (main) thread, persist off-thread. */

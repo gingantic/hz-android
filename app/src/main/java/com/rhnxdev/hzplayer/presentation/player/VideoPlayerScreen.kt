@@ -121,6 +121,8 @@ fun VideoPlayerScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val orientationMode by viewModel.orientationMode.collectAsStateWithLifecycle()
     val floatingEnabled by viewModel.backgroundPlay.collectAsStateWithLifecycle()
+    val lastVolume by viewModel.lastVolume.collectAsStateWithLifecycle()
+    val lastBrightness by viewModel.lastBrightness.collectAsStateWithLifecycle()
     val view = LocalView.current
     val context = view.context
     val activity = remember(view) { context as? android.app.Activity }
@@ -130,6 +132,18 @@ fun VideoPlayerScreen(
     // Apply the user's orientation preference on enter (AUTO / portrait / landscape).
     LaunchedEffect(activity, orientationMode) {
         activity?.let { viewModel.applyOrientationMode(it, orientationMode) }
+    }
+
+    // Restore last-saved volume and brightness once (when the saved values become available).
+    LaunchedEffect(lastVolume, lastBrightness) {
+        if (lastVolume >= 0f) {
+            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val vol = (lastVolume * maxVol).toInt().coerceIn(0, maxVol)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
+        }
+        if (lastBrightness >= 0f) {
+            window?.attributes = window?.attributes?.apply { screenBrightness = lastBrightness }
+        }
     }
 
     var isExiting by remember { mutableStateOf(false) }
@@ -169,6 +183,12 @@ fun VideoPlayerScreen(
             onPlayPause = viewModel::onPlayPause,
             uiState = { viewModel.uiState.value },
             position = { viewModel.position.value },
+            onSlideDone = { type, value ->
+                when (type) {
+                    SlideType.VOLUME -> viewModel.saveLastVolume(value)
+                    SlideType.BRIGHTNESS -> viewModel.saveLastBrightness(value)
+                }
+            },
         )
     }
     val renderViewRef = remember { mutableStateOf<View?>(null) }
@@ -212,15 +232,18 @@ fun VideoPlayerScreen(
                     // the engine is a singleton and must keep running so the mini
                     // player can take over the surface.
                     if (viewModel.isMinimizing) return@LifecycleEventObserver
-                    // App is truly fully backgrounded — pause playback now.
+                    // App is truly fully backgrounded — pause playback and suspend
+                    // the position / save tick so we don't write to DB in background.
                     pauseRenderView(viewModel.getActiveEngine(), renderViewRef.value)
                     viewModel.pause()
+                    viewModel.onAppBackground()
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_START -> {
                     // App is returning from background — onResume below handles reconnect.
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
                     resumeRenderView(viewModel.getActiveEngine(), renderViewRef.value)
+                    viewModel.onAppForeground()
                 }
                 else -> {}
             }

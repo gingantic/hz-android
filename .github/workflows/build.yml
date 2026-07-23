@@ -95,8 +95,9 @@ jobs:
             app/src/main/jniLibs/arm64-v8a/libfreetype.so
             app/src/main/jniLibs/arm64-v8a/libfribidi.so
             app/src/main/jniLibs/arm64-v8a/libharfbuzz.so
+            app/src/main/jniLibs/arm64-v8a/libadblock_jni.so
             app/src/main/cpp/include
-          key: native-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh') }}
+          key: native-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh','build_adblock_rust.sh') }}
 
       # Cache the FFmpeg source tree WITH its in-tree .o files so `make` is
       # incremental across runs (the script no longer `make clean`s).
@@ -135,6 +136,12 @@ jobs:
         run: |
           chmod +x build_libarchive.sh
           ./build_libarchive.sh --abi arm64-v8a --ndk-path "$ANDROID_NDK_ROOT"
+
+      - name: Build adblock-rust
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        run: |
+          chmod +x build_adblock_rust.sh
+          ./build_adblock_rust.sh
 
       # Incremental CMake/Ninja tree for YOUR cpp (thumbnail-extractor/assrender).
       # Keyed only on OS + NDK: let Ninja decide which files to recompile. AGP
