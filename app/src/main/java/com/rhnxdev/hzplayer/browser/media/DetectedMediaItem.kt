@@ -20,6 +20,7 @@ data class DetectedMediaQuality(
 data class DetectedMediaItem(
     val id: String = UUID.randomUUID().toString().take(8),
     val url: String,
+    val masterUrl: String? = null,
     val pageUrl: String = "",
     val title: String = "",
     val mimeType: String = "",
@@ -32,15 +33,27 @@ data class DetectedMediaItem(
     val detectedTokens: Map<String, String> = emptyMap(),
     val timestamp: Long = System.currentTimeMillis(),
     val subQualities: List<DetectedMediaQuality> = emptyList(),
+    val childVariants: List<DetectedMediaItem> = emptyList(),
     val selectedQualityUrl: String? = null,
 ) {
+    val isMasterStream: Boolean
+        get() = subQualities.isNotEmpty() ||
+                mediaType == MediaType.STREAM_HLS ||
+                mediaType == MediaType.STREAM_DASH ||
+                MediaStreamDecoder.isMasterStreamUrl(url, mimeType) ||
+                masterUrl != null
+
+    val playUrl: String
+        get() = masterUrl ?: selectedQualityUrl ?: url
+
     val displayUrl: String
-        get() = selectedQualityUrl ?: url
+        get() = playUrl
 
     val displayQuality: String
         get() = when {
+            subQualities.isNotEmpty() -> "MASTER (${subQualities.size} Qualities)"
+            isMasterStream -> "MASTER STREAM"
             !qualityLabel.isNullOrBlank() -> qualityLabel
-            subQualities.isNotEmpty() -> "${subQualities.size} Qualities"
             mediaType == MediaType.STREAM_HLS -> "HLS Stream"
             mediaType == MediaType.STREAM_DASH -> "DASH Stream"
             else -> extension.uppercase().ifBlank { "MEDIA" }

@@ -83,4 +83,24 @@ class PlaybackErrorMapperTest {
         assertFalse(mapped.sanitizedDetail.contains("user:"))
         assertFalse(mapped.sanitizedDetail.contains("server.example.com"))
     }
+
+    @Test
+    fun manifestMalformedErrorCode_mapsToFormatUnsupported() {
+        val mapped = PlaybackErrorMapper.map(
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+            null,
+        )
+        assertEquals(PlaybackErrorKind.FORMAT_UNSUPPORTED, mapped.kind)
+        assertEquals("player_error_format", mapped.stringResName)
+    }
+
+    @Test
+    fun hlsExtm3uParserCause_mapsToFormatUnsupported() {
+        val cause = Exception(
+            "androidx.media3.common.ParserException: Input does not start with the #EXTM3U header.",
+        )
+        val mapped = PlaybackErrorMapper.map(PlaybackException.ERROR_CODE_UNSPECIFIED, cause)
+        assertEquals(PlaybackErrorKind.FORMAT_UNSUPPORTED, mapped.kind)
+        assertEquals("player_error_format", mapped.stringResName)
+    }
 }

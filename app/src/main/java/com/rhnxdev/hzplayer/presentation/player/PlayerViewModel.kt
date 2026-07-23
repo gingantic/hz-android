@@ -94,6 +94,14 @@ class PlayerViewModel @Inject constructor(
     val backgroundPlay: StateFlow<Boolean> = userPreferencesRepository.backgroundPlay
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    /** Last saved player volume (0.0–1.0), or -1f if never saved. */
+    val lastVolume: StateFlow<Float> = userPreferencesRepository.lastVolume
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1f)
+
+    /** Last saved screen brightness (0.0–1.0), or -1f meaning use system brightness. */
+    val lastBrightness: StateFlow<Float> = userPreferencesRepository.lastBrightness
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1f)
+
     /**
      * Set when minimizing to the floating window so the full-screen surface's
      * ON_STOP (fired by the NavBackStackEntry when the route is popped) does NOT
@@ -643,9 +651,15 @@ class PlayerViewModel @Inject constructor(
 
     fun onSeekBy(deltaMs: Long) = positionController.onSeekBy(deltaMs)
 
-    fun playNetworkUri(uri: String, title: String, isVideo: Boolean, mimeType: String? = null) {
-        android.util.Log.i(TAG, "playNetworkUri: scheme=${uri.substringBefore("://")} uri=$uri")
-        playUri(uri, title, isVideo, mimeType = mimeType)
+    /** Notify the position controller that the app returned to the foreground. */
+    fun onAppForeground() = positionController.onForeground()
+
+    /** Notify the position controller that the app moved to the background. */
+    fun onAppBackground() = positionController.onBackground()
+
+    fun playNetworkUri(uri: String, title: String, isVideo: Boolean, mimeType: String? = null, headers: Map<String, String> = emptyMap()) {
+        android.util.Log.i(TAG, "playNetworkUri: scheme=${uri.substringBefore("://")} uri=$uri (headersCount=${headers.size})")
+        playUri(uri, title, isVideo, mimeType = mimeType, headers = headers)
     }
 
     fun playVideoPlaylist(items: List<VideoItem>, startIndex: Int = 0) =
@@ -686,6 +700,20 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onToggleDebugOverlay() = debugController.onToggleDebugOverlay()
+
+    /** Persist the current volume level so it can be restored next session. */
+    fun saveLastVolume(volume: Float) {
+        viewModelScope.launch {
+            userPreferencesRepository.setLastVolume(volume)
+        }
+    }
+
+    /** Persist the current brightness level so it can be restored next session. */
+    fun saveLastBrightness(brightness: Float) {
+        viewModelScope.launch {
+            userPreferencesRepository.setLastBrightness(brightness)
+        }
+    }
 
     private fun observeSeekSensitivity() {
         viewModelScope.launch {

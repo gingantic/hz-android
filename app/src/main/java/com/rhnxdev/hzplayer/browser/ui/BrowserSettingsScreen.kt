@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tab
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -134,14 +135,43 @@ fun BrowserSettingsScreen(
             // ── Ad Blocker Engine ──────────────────────
             item { SettingsSectionHeader(title = "Ad Blocker Engine (uBlock-style)", icon = Icons.Default.Block) }
 
-            item {
-                BrowserSettingsToggleCard(
-                    title = "Enable Ad Blocker",
-                    subtitle = "Block network ads and unwanted trackers",
-                    checked = settings.adBlockEnabled,
-                    onCheckedChange = { onSave(settings.copy(adBlockEnabled = it)) },
-                    icon = Icons.Default.Block,
-                )
+            if (!AdBlockEngine.isAvailable) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(Spacing.md),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Text(
+                                text = AdBlockEngine.unavailableReason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
+            } else {
+                item {
+                    BrowserSettingsToggleCard(
+                        title = "Enable Ad Blocker",
+                        subtitle = "Block network ads and unwanted trackers using native adblock-rust",
+                        checked = settings.adBlockEnabled,
+                        onCheckedChange = { onSave(settings.copy(adBlockEnabled = it)) },
+                        icon = Icons.Default.Block,
+                    )
+                }
             }
             item {
                 AnimatedVisibility(

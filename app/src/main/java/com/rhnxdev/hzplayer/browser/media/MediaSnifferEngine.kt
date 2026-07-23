@@ -54,20 +54,23 @@ object MediaSnifferEngine {
         val lowerUrl = url.lowercase(Locale.ROOT)
         if (IGNORED_DOMAINS.any { lowerUrl.contains(it) }) return false
 
-        // Check if disguised HLS stream (.txt playlist, master URL, mpegurl mime)
-        val contentTypeHeader = headers?.get("content-type") ?: ""
-        val isDisguisedHls = MediaStreamDecoder.isDisguisedHlsStream(url, contentTypeHeader)
+        // Check headers if present
+        val contentTypeHeader = headers?.get("content-type") ?: headers?.get("Content-Type") ?: ""
+        val acceptHeader = headers?.get("accept") ?: headers?.get("Accept") ?: ""
 
-        // Check file extension
-        val ext = getExtension(url).lowercase(Locale.ROOT)
-        if (STATIC_ASSET_EXTENSIONS.contains(ext) && !isDisguisedHls) return false
+        val isMasterStream = MediaStreamDecoder.isMasterStreamUrl(url, contentTypeHeader)
+        val isDisguisedHls = isMasterStream || MediaStreamDecoder.isDisguisedHlsStream(url, contentTypeHeader)
+        val matchesRegex = MEDIA_REGEX_PATTERNS.any { it.containsMatchIn(url) }
 
-        if (VIDEO_EXTENSIONS.contains(ext) || AUDIO_EXTENSIONS.contains(ext) || isDisguisedHls) {
+        if (isDisguisedHls || matchesRegex || isMasterStream) {
             return true
         }
 
-        // Check regex stream patterns
-        if (MEDIA_REGEX_PATTERNS.any { it.containsMatchIn(url) }) {
+        // Check file extension
+        val ext = getExtension(url).lowercase(Locale.ROOT)
+        if (STATIC_ASSET_EXTENSIONS.contains(ext)) return false
+
+        if (VIDEO_EXTENSIONS.contains(ext) || AUDIO_EXTENSIONS.contains(ext)) {
             return true
         }
 
@@ -76,13 +79,12 @@ object MediaSnifferEngine {
             return true
         }
 
-        // Check headers if present
-        headers?.let { map ->
-            val contentType = map["content-type"]?.lowercase(Locale.ROOT) ?: ""
-            if (contentType.startsWith("video/") || contentType.startsWith("audio/") ||
-                contentType.contains("application/x-mpegurl") ||
-                contentType.contains("application/vnd.apple.mpegurl") ||
-                contentType.contains("application/dash+xml")
+        if (contentTypeHeader.isNotBlank() || acceptHeader.isNotBlank()) {
+            val typeStr = (contentTypeHeader + " " + acceptHeader).lowercase(Locale.ROOT)
+            if (typeStr.contains("video/") || typeStr.contains("audio/") ||
+                typeStr.contains("application/x-mpegurl") ||
+                typeStr.contains("application/vnd.apple.mpegurl") ||
+                typeStr.contains("application/dash+xml")
             ) {
                 return true
             }
@@ -191,6 +193,7 @@ object MediaSnifferEngine {
 
     /**
      * Asynchronously parse HLS `.m3u8` master playlist to extract multi-resolution streams.
+     * If a variant playlist was captured, attempts to probe network candidate master playlist URLs.
      */
     suspend fun parseHlsQualities(item: DetectedMediaItem): DetectedMediaItem = withContext(Dispatchers.IO) {
         val lowerUrl = item.url.lowercase(Locale.ROOT)
@@ -223,12 +226,77 @@ object MediaSnifferEngine {
                     selectedQualityUrl = bestQuality?.url ?: item.url,
                     qualityLabel = bestQuality?.resolution ?: item.qualityLabel
                 )
+            } else {
+                // If body has #EXTM3U but no variant streams (#EXT-X-STREAM-INF), it's a media playlist.
+                // Attempt to probe network candidate master playlist URLs to resolve master stream.
+                val candidateMasterUrls = generateCandidateMasterUrls(item.url)
+                for (candidateUrl in candidateMasterUrls) {
+                    try {
+                        val candidateReq = Request.Builder().url(candidateUrl)
+                        item.headers.forEach { (k, v) ->
+                            if (k.isNotBlank() && v.isNotBlank()) candidateReq.header(k, v)
+                        }
+                        val candidateResp = httpClient.newCall(candidateReq.build()).execute()
+                        if (candidateResp.isSuccessful) {
+                            val candidateBody = candidateResp.body?.string() ?: ""
+                            if (candidateBody.contains("#EXT-X-STREAM-INF:")) {
+                                val masterQualities = parseM3u8Content(candidateBody, candidateUrl)
+                                if (masterQualities.isNotEmpty()) {
+                                    val sorted = masterQualities.sortedByDescending { it.bitrate }
+                                    val best = sorted.firstOrNull()
+                                    Log.d(TAG, "Successfully resolved master playlist on network: $candidateUrl")
+                                    return@withContext item.copy(
+                                        url = candidateUrl,
+                                        selectedQualityUrl = best?.url ?: candidateUrl,
+                                        subQualities = sorted,
+                                        qualityLabel = best?.resolution ?: "Master Stream"
+                                    )
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse M3U8 playlist: ${e.message}")
         }
 
         return@withContext item
+    }
+
+    private fun generateCandidateMasterUrls(url: String): List<String> {
+        val candidates = mutableListOf<String>()
+        val lower = url.lowercase(Locale.ROOT)
+        if (lower.contains("master")) return emptyList()
+
+        return try {
+            val javaUri = java.net.URI(url)
+            val scheme = javaUri.scheme ?: "https"
+            val host = javaUri.host ?: url.substringAfter("://", "").substringBefore('/')
+            if (host.isBlank()) return emptyList()
+            val portStr = if (javaUri.port != -1) ":${javaUri.port}" else ""
+            val path = javaUri.path ?: ("/" + url.substringAfter("://", "").substringAfter('/', ""))
+            val queryStr = if (!javaUri.query.isNullOrBlank()) "?${javaUri.query}" else ""
+
+            val pathSegments = path.split('/').filter { it.isNotBlank() }
+            if (pathSegments.isNotEmpty()) {
+                val dirPath = path.substringBeforeLast('/')
+                candidates.add("$scheme://$host$portStr$dirPath/master.m3u8$queryStr")
+                candidates.add("$scheme://$host$portStr$dirPath/playlist.m3u8$queryStr")
+                candidates.add("$scheme://$host$portStr$dirPath/master.txt$queryStr")
+
+                if (pathSegments.size > 1) {
+                    val parentDirPath = "/" + pathSegments.dropLast(2).joinToString("/")
+                    val cleanParent = if (parentDirPath == "/") "" else parentDirPath
+                    candidates.add("$scheme://$host$portStr$cleanParent/master.m3u8$queryStr")
+                    candidates.add("$scheme://$host$portStr$cleanParent/playlist.m3u8$queryStr")
+                    candidates.add("$scheme://$host$portStr$cleanParent/index.m3u8$queryStr")
+                }
+            }
+            candidates.distinct().filter { it != url }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private fun parseM3u8Content(body: String, baseUrl: String): List<DetectedMediaQuality> {
@@ -347,16 +415,25 @@ object MediaSnifferEngine {
     }
 
     private fun deriveTitle(url: String, pageTitle: String): String {
+        val cleanPageTitle = pageTitle.trim()
+        if (cleanPageTitle.isNotBlank() &&
+            !cleanPageTitle.equals("about:blank", ignoreCase = true) &&
+            !cleanPageTitle.startsWith("http://", ignoreCase = true) &&
+            !cleanPageTitle.startsWith("https://", ignoreCase = true)
+        ) {
+            return cleanPageTitle
+        }
+
         try {
             val cleanUrl = url.substringBefore('?').substringBefore('#')
             val fileName = cleanUrl.substringAfterLast('/')
             val decoded = URLDecoder.decode(fileName, "UTF-8")
-            if (decoded.isNotBlank() && decoded.length > 3 && !decoded.startsWith("index.")) {
+            if (decoded.isNotBlank() && decoded.length > 3 && !decoded.startsWith("index.") && !decoded.startsWith("master.")) {
                 return decoded
             }
         } catch (_: Exception) {}
 
-        return pageTitle.ifBlank { "Media Stream" }
+        return "Media Stream"
     }
 
     fun formatFileSize(bytes: Long): String {
@@ -370,5 +447,77 @@ object MediaSnifferEngine {
             mb >= 1.0 -> String.format(Locale.ROOT, "%.1f MB", mb)
             else -> String.format(Locale.ROOT, "%.0f KB", kb)
         }
+    }
+
+    /**
+     * Consolidate media items into a tree structure.
+     * Groups related variant index playlists under their corresponding Master stream parent.
+     * Guarantees that playback always uses the Master playlist URL.
+     */
+    fun consolidateMediaTree(items: List<DetectedMediaItem>): List<DetectedMediaItem> {
+        if (items.size <= 1) return items
+
+        val masterNodes = mutableListOf<DetectedMediaItem>()
+        // True master nodes are items that have parsed subQualities, match master stream keywords, or have masterUrl set
+        val (masters, nonMasters) = items.partition {
+            it.subQualities.isNotEmpty() || MediaStreamDecoder.isMasterStreamUrl(it.url, it.mimeType) || it.masterUrl != null
+        }
+        val unassignedChildren = nonMasters.toMutableList()
+
+        for (master in masters) {
+            val masterStem = getStreamStem(master.url)
+            val matchedChildren = mutableListOf<DetectedMediaItem>()
+
+            val iterator = unassignedChildren.iterator()
+            while (iterator.hasNext()) {
+                val child = iterator.next()
+                if (areInSameStreamUnity(master.url, child.url, masterStem)) {
+                    matchedChildren.add(child.copy(masterUrl = master.url))
+                    iterator.remove()
+                }
+            }
+
+            val existingChildUrls = master.childVariants.map { it.url }.toSet()
+            val newUniqueChildren = matchedChildren.filter { it.url !in existingChildUrls }
+
+            masterNodes.add(
+                master.copy(
+                    masterUrl = master.url,
+                    childVariants = master.childVariants + newUniqueChildren
+                )
+            )
+        }
+
+        return (masterNodes + unassignedChildren).sortedWith(
+            compareByDescending<DetectedMediaItem> { it.isMasterStream }
+                .thenByDescending { it.childVariants.size }
+                .thenByDescending { it.subQualities.size }
+                .thenByDescending { it.timestamp }
+        )
+    }
+
+    private fun getStreamStem(url: String): String {
+        return try {
+            val clean = url.substringBefore('?').substringBefore('#')
+            val javaUri = java.net.URI(clean)
+            val host = javaUri.host ?: clean.substringAfter("://", "").substringBefore('/')
+            val path = javaUri.path ?: clean.substringAfter("://", "").substringAfter('/', "")
+            val parentPath = if (path.contains('/')) path.substringBeforeLast('/') else path
+            "$host/$parentPath"
+        } catch (_: Exception) {
+            val clean = url.substringBefore('?').substringBefore('#')
+            clean.substringAfter("://", "").substringBeforeLast('/')
+        }
+    }
+
+    private fun areInSameStreamUnity(masterUrl: String, childUrl: String, masterStem: String): Boolean {
+        if (masterUrl == childUrl) return true
+        val childStem = getStreamStem(childUrl)
+        if (masterStem.isNotBlank() && childStem.isNotBlank()) {
+            val masterRoot = masterStem.substringBeforeLast('/')
+            val childRoot = childStem.substringBeforeLast('/')
+            if (masterRoot.isNotBlank() && childRoot.startsWith(masterRoot)) return true
+        }
+        return false
     }
 }

@@ -62,13 +62,22 @@ class NetworkRepositoryImpl @Inject constructor(
             entities.map { it.toDomain() }
         }
 
-    override suspend fun addStreamToHistory(url: String, title: String) {
+    override suspend fun addStreamToHistory(
+        url: String,
+        title: String,
+        headersJson: String?,
+        pageUrl: String?,
+        mimeType: String?,
+    ) {
         val existing = streamHistoryDao.findByUrl(url)
         if (existing != null) {
             streamHistoryDao.update(
                 existing.copy(
                     title = title,
                     lastPlayedAt = System.currentTimeMillis(),
+                    headersJson = headersJson ?: existing.headersJson,
+                    pageUrl = pageUrl ?: existing.pageUrl,
+                    mimeType = mimeType ?: existing.mimeType,
                 ),
             )
         } else {
@@ -77,6 +86,9 @@ class NetworkRepositoryImpl @Inject constructor(
                     url = url,
                     title = title,
                     lastPlayedAt = System.currentTimeMillis(),
+                    headersJson = headersJson,
+                    pageUrl = pageUrl,
+                    mimeType = mimeType,
                 ),
             )
         }

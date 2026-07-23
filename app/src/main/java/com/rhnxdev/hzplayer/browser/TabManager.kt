@@ -194,19 +194,17 @@ class TabManager(
         val currentMedia = tab.detectedMedia
         if (currentMedia.any { it.url == item.url }) return
 
-        val updatedList = currentMedia + item
+        val updatedList = MediaSnifferEngine.consolidateMediaTree(currentMedia + item)
         updateTab(tabId) { it.copy(detectedMedia = updatedList) }
 
-        if (item.mediaType == com.rhnxdev.hzplayer.browser.media.MediaType.STREAM_HLS || item.url.contains(".m3u8")) {
+        if (item.mediaType == com.rhnxdev.hzplayer.browser.media.MediaType.STREAM_HLS || item.url.contains(".m3u8") || item.isMasterStream) {
             scope.launch {
                 val parsedItem = MediaSnifferEngine.parseHlsQualities(item)
-                if (parsedItem.subQualities.isNotEmpty()) {
-                    updateTab(tabId) { t ->
-                        val newList = t.detectedMedia.map { m ->
-                            if (m.id == item.id) parsedItem else m
-                        }
-                        t.copy(detectedMedia = newList)
+                updateTab(tabId) { t ->
+                    val newList = t.detectedMedia.map { m ->
+                        if (m.id == item.id) parsedItem else m
                     }
+                    t.copy(detectedMedia = MediaSnifferEngine.consolidateMediaTree(newList))
                 }
             }
         }
@@ -257,7 +255,22 @@ class TabManager(
                         ?: (if (tabId != null) _tabs.value.find { it.id == tabId }?.url else null)
                         ?: ""
 
-                    if (AdBlockEngine.shouldBlockRequest(requestUrl = urlStr, pageUrl = pageUrl, settings = settings)) {
+                    val resourceType = when {
+                        request.isForMainFrame -> "main_frame"
+                        reqHeaders["Sec-Fetch-Dest"]?.equals("script", ignoreCase = true) == true -> "script"
+                        reqHeaders["Sec-Fetch-Dest"]?.equals("image", ignoreCase = true) == true -> "image"
+                        reqHeaders["Sec-Fetch-Dest"]?.equals("style", ignoreCase = true) == true -> "stylesheet"
+                        reqHeaders["Sec-Fetch-Dest"]?.equals("document", ignoreCase = true) == true -> "subdocument"
+                        reqHeaders["Sec-Fetch-Dest"]?.equals("empty", ignoreCase = true) == true -> "xmlhttprequest"
+                        else -> "other"
+                    }
+
+                    if (AdBlockEngine.shouldBlockRequest(
+                            requestUrl = urlStr,
+                            pageUrl = pageUrl,
+                            settings = settings,
+                            resourceType = resourceType
+                        )) {
                         return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
                     }
 

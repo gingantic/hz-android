@@ -23,7 +23,7 @@ import com.rhnxdev.hzplayer.data.datasource.local.room.entities.StreamHistoryEnt
         PlaybackPositionEntity::class,
         BrowserHistoryEntity::class,
     ],
-    version = 5,
+    version = 6,
     // Schema exported to app/schemas so versioned Migrations can be authored and
     // reviewed in source control. exportSchema=false + fallbackToDestructiveMigration()
     // silently wiped all saved servers / resume positions / history on every bump.
@@ -64,6 +64,15 @@ abstract class HzPlayerDatabase : RoomDatabase() {
                 """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_browser_history_url` ON `browser_history` (`url`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_browser_history_timestamp` ON `browser_history` (`timestamp`)")
+            }
+        }
+
+        /** Migration 5→6: add headersJson, pageUrl, mimeType columns to stream_history. */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stream_history` ADD COLUMN `headersJson` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `stream_history` ADD COLUMN `pageUrl` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `stream_history` ADD COLUMN `mimeType` TEXT DEFAULT NULL")
             }
         }
     }

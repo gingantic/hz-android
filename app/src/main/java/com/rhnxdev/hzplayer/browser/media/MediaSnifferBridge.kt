@@ -79,12 +79,14 @@ class MediaSnifferBridge(
                         if (!url || typeof url !== 'string') return false;
                         var lower = url.toLowerCase();
 
-                        // Disguised HLS playlists (cl-master, master, playlist, index-f, stream-f)
+                        // Disguised HLS playlists and master streams
                         var isDisguisedHls = lower.indexOf('cl-master') !== -1 || lower.indexOf('master') !== -1 ||
-                                             lower.indexOf('playlist') !== -1 || lower.indexOf('index-f') !== -1 || lower.indexOf('stream-f') !== -1;
+                                             lower.indexOf('playlist') !== -1 || lower.indexOf('manifest') !== -1 ||
+                                             lower.indexOf('index-f') !== -1 || lower.indexOf('stream-f') !== -1 ||
+                                             lower.indexOf('vnd.apple.mpegurl') !== -1;
 
-                        // Discard static text and font files unless matching a disguised stream pattern
-                        if (!isDisguisedHls && (lower.indexOf('.txt') !== -1 || lower.indexOf('.woff') !== -1 || lower.indexOf('.woff2') !== -1 ||
+                        // Discard static non-media assets UNLESS matching a master stream pattern
+                        if (!isDisguisedHls && (lower.indexOf('.woff') !== -1 || lower.indexOf('.woff2') !== -1 ||
                             lower.indexOf('.css') !== -1 || lower.indexOf('.png') !== -1 || lower.indexOf('.jpg') !== -1 || lower.indexOf('.ttf') !== -1)) {
                             return false;
                         }
@@ -102,7 +104,21 @@ class MediaSnifferBridge(
                                (lower.indexOf('format=') !== -1 && (lower.indexOf('m3u8') !== -1 || lower.indexOf('mp4') !== -1));
                     }
 
-                    // 1. Scan existing <video>, <audio>, <source> elements and <iframe> embeds
+                    // 1. Scan existing <video>, <audio>, <source> elements, <iframe> embeds, and network performance resources
+                    function scanPerformanceResources() {
+                        try {
+                            if (window.performance && typeof window.performance.getEntriesByType === 'function') {
+                                var resources = window.performance.getEntriesByType('resource');
+                                for (var r = 0; r < resources.length; r++) {
+                                    var resName = resources[r].name;
+                                    if (resName && isMediaCandidateUrl(resName)) {
+                                        notifyMedia(resName, '');
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
                     function scanMediaElements() {
                         try {
                             var elements = document.querySelectorAll('video, audio, source');
@@ -135,6 +151,8 @@ class MediaSnifferBridge(
                                 } catch(err) {}
                             }
                         } catch(e) {}
+
+                        scanPerformanceResources();
                     }
 
                     // 2. Intercept HTMLMediaElement property setters & lifecycle methods
@@ -186,7 +204,28 @@ class MediaSnifferBridge(
                         }
                     } catch(e) {}
 
-                    // 3. Intercept fetch API for .m3u8 / .mpd / media URLs
+                    // Helper to scan text/JSON response bodies for embedded video stream URLs or manifest signatures
+                    function sniffResponseContent(text, baseUrl, headersObj) {
+                        if (!text || typeof text !== 'string') return;
+                        try {
+                            // 1. If response body contains HLS manifest header (#EXTM3U) or DASH MPD header (<MPD)
+                            if (text.indexOf('#EXTM3U') !== -1 || text.indexOf('#EXT-X-STREAM-INF') !== -1 || text.indexOf('<MPD') !== -1) {
+                                notifyMedia(baseUrl, text.indexOf('<MPD') !== -1 ? 'application/dash+xml' : 'application/x-mpegURL', headersObj);
+                            }
+
+                            // 2. Scan response text/JSON for embedded video URLs (e.g. "https://.../master.m3u8", "file": "...", "url": "...")
+                            var streamUrlRegex = /https?:\/\/[^\s"'<>\\]+\.(m3u8|mpd|mp4|webm|mkv)(\?[^\s"'<>]*)?/gi;
+                            var match;
+                            while ((match = streamUrlRegex.exec(text)) !== null) {
+                                var foundUrl = match[0];
+                                if (foundUrl) {
+                                    notifyMedia(foundUrl, '', headersObj);
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
+                    // 3. Intercept fetch API for request and response body sniffing
                     var origFetch = window.fetch;
                     if (origFetch) {
                         window.fetch = function() {
@@ -204,11 +243,26 @@ class MediaSnifferBridge(
                             if (reqUrl && isMediaCandidateUrl(reqUrl)) {
                                 notifyMedia(reqUrl, '', reqHeaders);
                             }
-                            return origFetch.apply(this, arguments);
+
+                            return origFetch.apply(this, arguments).then(function(response) {
+                                try {
+                                    if (response && response.clone) {
+                                        var cType = (response.headers && response.headers.get('content-type')) || '';
+                                        if (cType.indexOf('video') !== -1 || cType.indexOf('mpegurl') !== -1 || cType.indexOf('dash') !== -1) {
+                                            notifyMedia(response.url || reqUrl, cType, reqHeaders);
+                                        } else {
+                                            response.clone().text().then(function(text) {
+                                                sniffResponseContent(text, response.url || reqUrl, reqHeaders);
+                                            }).catch(function(){});
+                                        }
+                                    }
+                                } catch(e) {}
+                                return response;
+                            });
                         };
                     }
 
-                    // 4. Intercept XMLHttpRequest
+                    // 4. Intercept XMLHttpRequest for request and response body sniffing
                     var origOpen = XMLHttpRequest.prototype.open;
                     var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
                     XMLHttpRequest.prototype.open = function(method, url) {
@@ -224,9 +278,27 @@ class MediaSnifferBridge(
 
                     var origSend = XMLHttpRequest.prototype.send;
                     XMLHttpRequest.prototype.send = function() {
-                        if (typeof this.__hzUrl === 'string' && isMediaCandidateUrl(this.__hzUrl)) {
-                            notifyMedia(this.__hzUrl, '', this.__hzHeaders || {});
+                        var xhr = this;
+                        if (typeof xhr.__hzUrl === 'string' && isMediaCandidateUrl(xhr.__hzUrl)) {
+                            notifyMedia(xhr.__hzUrl, '', xhr.__hzHeaders || {});
                         }
+                        try {
+                            var origOnReady = xhr.onreadystatechange;
+                            xhr.onreadystatechange = function() {
+                                if (xhr.readyState === 4) {
+                                    try {
+                                        var cType = xhr.getResponseHeader('content-type') || '';
+                                        if (cType.indexOf('video') !== -1 || cType.indexOf('mpegurl') !== -1 || cType.indexOf('dash') !== -1) {
+                                            notifyMedia(xhr.__hzUrl, cType, xhr.__hzHeaders || {});
+                                        }
+                                        if (xhr.responseText) {
+                                            sniffResponseContent(xhr.responseText, xhr.__hzUrl, xhr.__hzHeaders || {});
+                                        }
+                                    } catch(e) {}
+                                }
+                                if (origOnReady) return origOnReady.apply(this, arguments);
+                            };
+                        } catch(e) {}
                         return origSend.apply(this, arguments);
                     };
 
@@ -268,7 +340,10 @@ class MediaSnifferBridge(
                         setTimeout(cleanupPopunderOverlays, 100);
                         setTimeout(scanMediaElements, 300);
                     }, true);
-                    setInterval(cleanupPopunderOverlays, 1500);
+                    setInterval(function() {
+                        cleanupPopunderOverlays();
+                        scanMediaElements();
+                    }, 1500);
 
                     // Initial scan & dynamic mutation observer & media event listeners
                     scanMediaElements();

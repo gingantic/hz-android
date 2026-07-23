@@ -602,8 +602,8 @@ fun HzPlayerApp(
                                 3 -> NetworkScreen(
                                     fullScreenOverlay = isFullScreen,
                                     isActive = pagerState.currentPage == page,
-                                    onPlayStream = { url, title, isVideo, mimeType ->
-                                        playerViewModel.playNetworkUri(url, title, isVideo, mimeType)
+                                    onPlayStream = { url, title, isVideo, mimeType, headers ->
+                                        playerViewModel.playNetworkUri(url, title, isVideo, mimeType, headers)
                                         if (isVideo) {
                                             navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                         } else {

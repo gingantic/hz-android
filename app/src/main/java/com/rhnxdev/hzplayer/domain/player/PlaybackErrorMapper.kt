@@ -58,6 +58,12 @@ object PlaybackErrorMapper {
             PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
             PlaybackException.ERROR_CODE_IO_NO_PERMISSION ->
                 PlaybackErrorKind.FILE_NOT_FOUND to "player_error_not_found"
+            // Manifest / Container parsing errors (Media3 3001..3004)
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ->
+                PlaybackErrorKind.FORMAT_UNSUPPORTED to "player_error_format"
             // DRM errors (Media3 range 0x3000..)
             PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED,
             PlaybackException.ERROR_CODE_DRM_LICENSE_EXPIRED,
@@ -108,7 +114,11 @@ object PlaybackErrorMapper {
                     PlaybackErrorKind.NETWORK to "player_error_server"
                 msg.contains("unsupported", ignoreCase = true) ||
                     msg.contains("no decoder", ignoreCase = true) ||
-                    msg.contains("codec", ignoreCase = true) ->
+                    msg.contains("codec", ignoreCase = true) ||
+                    msg.contains("#EXTM3U", ignoreCase = true) ||
+                    msg.contains("manifest", ignoreCase = true) ||
+                    msg.contains("playlist", ignoreCase = true) ||
+                    msg.contains("ParserException", ignoreCase = true) ->
                     PlaybackErrorKind.FORMAT_UNSUPPORTED to "player_error_format"
                 else -> null
             }

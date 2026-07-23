@@ -15,7 +15,13 @@ interface NetworkRepository {
 
     fun getStreamHistory(): Flow<List<StreamHistoryItem>>
     fun getFavoriteStreams(): Flow<List<StreamHistoryItem>>
-    suspend fun addStreamToHistory(url: String, title: String)
+    suspend fun addStreamToHistory(
+        url: String,
+        title: String,
+        headersJson: String? = null,
+        pageUrl: String? = null,
+        mimeType: String? = null,
+    )
     suspend fun toggleFavorite(id: Long)
     suspend fun deleteHistoryItem(id: Long)
     suspend fun clearHistory()

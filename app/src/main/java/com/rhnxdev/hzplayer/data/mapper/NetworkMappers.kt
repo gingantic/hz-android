@@ -37,6 +37,9 @@ fun StreamHistoryEntity.toDomain(): StreamHistoryItem = StreamHistoryItem(
     title = title,
     isFavorite = isFavorite,
     lastPlayedAt = lastPlayedAt,
+    headersJson = headersJson,
+    pageUrl = pageUrl,
+    mimeType = mimeType,
 )
 
 fun StreamHistoryItem.toEntity(): StreamHistoryEntity = StreamHistoryEntity(
@@ -45,4 +48,7 @@ fun StreamHistoryItem.toEntity(): StreamHistoryEntity = StreamHistoryEntity(
     title = title,
     isFavorite = isFavorite,
     lastPlayedAt = lastPlayedAt,
+    headersJson = headersJson,
+    pageUrl = pageUrl,
+    mimeType = mimeType,
 )

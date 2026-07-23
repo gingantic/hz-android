@@ -44,7 +44,7 @@ import com.rhnxdev.hzplayer.presentation.network.components.ServerConfigDialog
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NetworkScreen(
-    onPlayStream: (url: String, title: String, isVideo: Boolean, mimeType: String?) -> Unit = { _, _, _, _ -> },
+    onPlayStream: (url: String, title: String, isVideo: Boolean, mimeType: String?, headers: Map<String, String>) -> Unit = { _, _, _, _, _ -> },
     onPlayRemoteFile: (uri: String, title: String, isVideo: Boolean, mimeType: String?) -> Unit = { _, _, _, _ -> },
     onPlayAllVideos: (List<VideoItem>) -> Unit = {},
     onOpenBrowser: (String?) -> Unit = {},
@@ -181,7 +181,7 @@ fun NetworkScreen(
                     val title = url.substringAfterLast("/").ifEmpty { url }
                     scope.launch {
                         val res = viewModel.resolveStreamMedia(url)
-                        onPlayStream(url, title, res.isVideo, res.mimeType)
+                        onPlayStream(url, title, res.isVideo, res.mimeType, emptyMap())
                     }
                 },
                 onScanNetwork = viewModel::onScanNetwork,
@@ -195,7 +195,19 @@ fun NetworkScreen(
                 onDismissDiscoveredServer = viewModel::onDismissDiscoveredServer,
                 onPlayHistoryItem = { item ->
                     val url = viewModel.onPlayHistoryItem(item)
-                    onPlayStream(url, item.title, isVideoOrStreamDefault(url), null)
+                    val headersMap = item.headersMap.toMutableMap()
+                    val pageUrl = item.pageUrl.orEmpty()
+                    val liveCookies = runCatching {
+                        if (pageUrl.isNotBlank()) android.webkit.CookieManager.getInstance().getCookie(pageUrl) else null
+                    }.getOrNull()
+                    if (!liveCookies.isNullOrBlank() && headersMap.keys.none { it.equals("Cookie", ignoreCase = true) }) {
+                        headersMap["Cookie"] = liveCookies
+                    }
+                    if (pageUrl.isNotBlank() && headersMap.keys.none { it.equals("Referer", ignoreCase = true) }) {
+                        headersMap["Referer"] = pageUrl
+                    }
+                    val mime = item.mimeType?.ifBlank { null }
+                    onPlayStream(url, item.title, isVideoOrStreamDefault(url), mime, headersMap)
                 },
                 onToggleFavorite = viewModel::onToggleFavorite,
                 onDeleteHistoryItem = viewModel::onDeleteHistoryItem,

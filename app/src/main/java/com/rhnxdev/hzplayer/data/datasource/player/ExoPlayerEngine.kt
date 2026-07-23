@@ -307,10 +307,14 @@ class ExoPlayerEngine @Inject constructor(
         val lowerUri = uri.lowercase(java.util.Locale.ROOT)
         val lowerMime = mimeType?.lowercase(java.util.Locale.ROOT) ?: ""
         val isDisguisedHls = com.rhnxdev.hzplayer.browser.media.MediaStreamDecoder.isDisguisedHlsStream(uri, lowerMime)
+        val uriPath = lowerUri.substringBefore('?').substringBefore('#')
+        val isExplicitHls = isDisguisedHls || uriPath.endsWith(".m3u8") || lowerMime.contains("mpegurl") || lowerMime.contains("m3u8")
+        val isExplicitDash = uriPath.endsWith(".mpd") || lowerMime.contains("dash")
+
         val effectiveMimeType = when {
             !mimeType.isNullOrBlank() && mimeType != "video/*" && mimeType != "*/*" -> mimeType
-            isDisguisedHls || lowerUri.contains(".m3u8") || lowerUri.contains("/hls/") || lowerUri.contains("m3u8") || lowerMime.contains("mpegurl") -> MimeTypes.APPLICATION_M3U8
-            lowerUri.contains(".mpd") || lowerUri.contains("/dash/") || lowerMime.contains("dash") -> MimeTypes.APPLICATION_MPD
+            isExplicitHls -> MimeTypes.APPLICATION_M3U8
+            isExplicitDash -> MimeTypes.APPLICATION_MPD
             else -> mimeType
         }
         if (!effectiveMimeType.isNullOrBlank()) {

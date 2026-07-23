@@ -17,4 +17,7 @@ data class StreamHistoryEntity(
     val title: String,
     val isFavorite: Boolean = false,
     val lastPlayedAt: Long,
+    val headersJson: String? = null,
+    val pageUrl: String? = null,
+    val mimeType: String? = null,
 )
