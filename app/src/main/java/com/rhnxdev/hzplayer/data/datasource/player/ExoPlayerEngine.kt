@@ -1,4 +1,4 @@
-﻿package com.rhnxdev.hzplayer.data.datasource.player
+package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.content.Context
 import android.net.Uri
@@ -303,11 +303,20 @@ class ExoPlayerEngine @Inject constructor(
     ): MediaItem {
         val builder = MediaItem.Builder()
         builder.setUri(uri)
-        // When we know the type (e.g. a server Content-Type probe), set it explicitly
-        // so ExoPlayer doesn't have to rely solely on container sniffing.
-        if (!mimeType.isNullOrBlank()) {
-            builder.setMimeType(mimeType)
+        // Infer explicit MIME type for HLS / DASH or custom probe to avoid container sniffing failures
+        val lowerUri = uri.lowercase(java.util.Locale.ROOT)
+        val lowerMime = mimeType?.lowercase(java.util.Locale.ROOT) ?: ""
+        val isDisguisedHls = com.rhnxdev.hzplayer.browser.media.MediaStreamDecoder.isDisguisedHlsStream(uri, lowerMime)
+        val effectiveMimeType = when {
+            !mimeType.isNullOrBlank() && mimeType != "video/*" && mimeType != "*/*" -> mimeType
+            isDisguisedHls || lowerUri.contains(".m3u8") || lowerUri.contains("/hls/") || lowerUri.contains("m3u8") || lowerMime.contains("mpegurl") -> MimeTypes.APPLICATION_M3U8
+            lowerUri.contains(".mpd") || lowerUri.contains("/dash/") || lowerMime.contains("dash") -> MimeTypes.APPLICATION_MPD
+            else -> mimeType
         }
+        if (!effectiveMimeType.isNullOrBlank()) {
+            builder.setMimeType(effectiveMimeType)
+        }
+
 
         builder.setMediaMetadata(
                 androidx.media3.common.MediaMetadata.Builder()

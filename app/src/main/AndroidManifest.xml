@@ -55,6 +55,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- General browser-style http(s) URL handler -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+        </activity>
+
+        <!-- Dedicated Video Player Activity -->
+        <activity
+            android:name=".VideoPlayerActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:label="@string/video_player_title"
+            android:theme="@style/Theme.HzPlayer">
+
             <!-- Register as a video player -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -65,17 +86,7 @@
                 <data android:mimeType="video/*" />
             </intent-filter>
 
-            <!-- Register as an audio player -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="content" />
-                <data android:scheme="file" />
-                <data android:mimeType="audio/*" />
-            </intent-filter>
-
-            <!-- Specific video container MIME types not always covered by video/* -->
+            <!-- Specific video container MIME types -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -97,32 +108,7 @@
                 <data android:mimeType="video/ogg" />
             </intent-filter>
 
-            <!-- Audio formats that may not resolve to audio/* on all file managers -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="content" />
-                <data android:scheme="file" />
-                <data android:mimeType="audio/x-flac" />
-                <data android:mimeType="audio/flac" />
-                <data android:mimeType="audio/x-matroska" />
-                <data android:mimeType="audio/x-wav" />
-                <data android:mimeType="audio/ogg" />
-                <data android:mimeType="audio/opus" />
-                <data android:mimeType="audio/x-aiff" />
-                <data android:mimeType="audio/mpeg" />
-                <data android:mimeType="audio/mp4" />
-                <data android:mimeType="audio/x-m4a" />
-                <data android:mimeType="audio/x-ms-wma" />
-                <data android:mimeType="audio/midi" />
-            </intent-filter>
-
-            <!-- Register as a network stream player: HLS (.m3u8), DASH (.mpd),
-                 progressive media over HTTP(S), and RTSP. Matches intents that
-                 carry an explicit media MIME type. MIME matching is CASE-SENSITIVE,
-                 so both casings of the HLS types are listed; octet-stream is common
-                 for streams/downloads served without a specific type. -->
+            <!-- Register as a video stream player -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -131,20 +117,15 @@
                 <data android:scheme="https" />
                 <data android:scheme="rtsp" />
                 <data android:mimeType="video/*" />
-                <data android:mimeType="audio/*" />
                 <data android:mimeType="application/x-mpegURL" />
                 <data android:mimeType="application/x-mpegurl" />
                 <data android:mimeType="application/vnd.apple.mpegurl" />
                 <data android:mimeType="application/mpegurl" />
-                <data android:mimeType="audio/mpegurl" />
-                <data android:mimeType="audio/x-mpegurl" />
                 <data android:mimeType="application/dash+xml" />
                 <data android:mimeType="video/mp2t" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
 
-            <!-- Bare RTSP links carry no MIME type and no file extension, and the
-                 scheme is inherently streaming media, so claim all of it. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -152,14 +133,7 @@
                 <data android:scheme="rtsp" />
             </intent-filter>
 
-            <!-- Match streaming / media URLs by file extension when the sender
-                 supplies no MIME type (browsers tapping a link, share sheets).
-                 pathPattern works on all API levels but is fragile: its .* is lazy
-                 and never backtracks, so it misses paths with a dot BEFORE the
-                 extension (e.g. /live/1.5/index.m3u8) — hence the extra two-dot
-                 variants for the key streaming types. pathSuffix (API 31+) matches
-                 the end of the path exactly and is immune to that bug. A host
-                 wildcard is required for any path attribute to apply. -->
+            <!-- Match video URLs by file extension -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -181,13 +155,6 @@
                 <data android:pathPattern=".*\\.mov" />
                 <data android:pathPattern=".*\\.flv" />
                 <data android:pathPattern=".*\\.ts" />
-                <data android:pathPattern=".*\\.mp3" />
-                <data android:pathPattern=".*\\.flac" />
-                <data android:pathPattern=".*\\.aac" />
-                <data android:pathPattern=".*\\.ogg" />
-                <data android:pathPattern=".*\\.opus" />
-                <data android:pathPattern=".*\\.wav" />
-                <data android:pathPattern=".*\\.m4a" />
                 <data android:pathSuffix=".m3u8" />
                 <data android:pathSuffix=".m3u" />
                 <data android:pathSuffix=".mpd" />
@@ -199,6 +166,79 @@
                 <data android:pathSuffix=".mov" />
                 <data android:pathSuffix=".flv" />
                 <data android:pathSuffix=".ts" />
+            </intent-filter>
+        </activity>
+
+        <!-- Dedicated Music / Audio Player Activity -->
+        <activity
+            android:name=".AudioPlayerActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+            android:resizeableActivity="true"
+            android:label="@string/music_player_title"
+            android:theme="@style/Theme.HzPlayer">
+
+            <!-- Register as an audio player -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+
+            <!-- Specific audio MIME types -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="audio/x-flac" />
+                <data android:mimeType="audio/flac" />
+                <data android:mimeType="audio/x-matroska" />
+                <data android:mimeType="audio/x-wav" />
+                <data android:mimeType="audio/ogg" />
+                <data android:mimeType="audio/opus" />
+                <data android:mimeType="audio/x-aiff" />
+                <data android:mimeType="audio/mpeg" />
+                <data android:mimeType="audio/mp4" />
+                <data android:mimeType="audio/x-m4a" />
+                <data android:mimeType="audio/x-ms-wma" />
+                <data android:mimeType="audio/midi" />
+                <data android:mimeType="audio/mpegurl" />
+                <data android:mimeType="audio/x-mpegurl" />
+            </intent-filter>
+
+            <!-- Audio network streams -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="audio/mpegurl" />
+                <data android:mimeType="audio/x-mpegurl" />
+            </intent-filter>
+
+            <!-- Audio file extensions -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.mp3" />
+                <data android:pathPattern=".*\\.flac" />
+                <data android:pathPattern=".*\\.aac" />
+                <data android:pathPattern=".*\\.ogg" />
+                <data android:pathPattern=".*\\.opus" />
+                <data android:pathPattern=".*\\.wav" />
+                <data android:pathPattern=".*\\.m4a" />
                 <data android:pathSuffix=".mp3" />
                 <data android:pathSuffix=".flac" />
                 <data android:pathSuffix=".aac" />
@@ -206,20 +246,6 @@
                 <data android:pathSuffix=".opus" />
                 <data android:pathSuffix=".wav" />
                 <data android:pathSuffix=".m4a" />
-            </intent-filter>
-
-            <!-- Browser-style: claim EVERY http(s) URL, even type-less ones (plain
-                 web page links), the way a browser registers. A filter that
-                 declares a mimeType only matches typed intents, so this scheme-only
-                 filter is what catches links with no MIME type at all. This makes
-                 the app appear in the chooser for essentially any link tapped
-                 anywhere. Delete this single filter to stop behaving like a browser. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
             </intent-filter>
         </activity>
 

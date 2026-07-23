@@ -59,12 +59,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.rhnxdev.hzplayer.browser.AdBlockEngine
 import com.rhnxdev.hzplayer.browser.BrowserCacheMode
 import com.rhnxdev.hzplayer.browser.BrowserSettings
 import com.rhnxdev.hzplayer.browser.UserAgentMode
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+
+import androidx.compose.material3.CircularProgressIndicator
+import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
+import com.rhnxdev.hzplayer.browser.adblock.AdBlockListManager
 
 /**
  * Solid full-screen settings window for the browser.
@@ -76,6 +79,11 @@ fun BrowserSettingsScreen(
     settings: BrowserSettings,
     onSave: (BrowserSettings) -> Unit,
     onDismiss: () -> Unit,
+    isAdBlockUpdating: Boolean = false,
+    adBlockStatusMessage: String? = null,
+    onUpdateAdBlockFilters: () -> Unit = {},
+    denyAllCrossDomainPopupsThisSession: Boolean = false,
+    onToggleDenyAllThisSession: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     if (!visible) return
@@ -123,13 +131,13 @@ fun BrowserSettingsScreen(
                 }
             }
 
-            // ── Ad Blocker (uBlock Engine) ──────────────────────
-            item { SettingsSectionHeader(title = "Ad Blocker (uBlock Engine)", icon = Icons.Default.Block) }
+            // ── Ad Blocker Engine ──────────────────────
+            item { SettingsSectionHeader(title = "Ad Blocker Engine (uBlock-style)", icon = Icons.Default.Block) }
 
             item {
                 BrowserSettingsToggleCard(
                     title = "Enable Ad Blocker",
-                    subtitle = "Block ads and unwanted popups",
+                    subtitle = "Block network ads and unwanted trackers",
                     checked = settings.adBlockEnabled,
                     onCheckedChange = { onSave(settings.copy(adBlockEnabled = it)) },
                     icon = Icons.Default.Block,
@@ -141,91 +149,144 @@ fun BrowserSettingsScreen(
                     enter = expandVertically(),
                     exit = shrinkVertically(),
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                        BrowserSettingsToggleCard(
-                            title = "Block Trackers & Analytics",
-                            subtitle = "Prevent telemetry and tracking scripts",
-                            checked = settings.blockTrackersEnabled,
-                            onCheckedChange = { onSave(settings.copy(blockTrackersEnabled = it)) },
-                        )
+                    Column(
+                        modifier = Modifier.padding(horizontal = Spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    ) {
+                        // Dynamic Cosmetic Element Hiding toggle
                         BrowserSettingsToggleCard(
                             title = "Cosmetic Element Hiding",
-                            subtitle = "Collapse empty ad container placeholders",
+                            subtitle = "Inject CSS to hide empty ad placeholders dynamically",
                             checked = settings.cosmeticFilteringEnabled,
                             onCheckedChange = { onSave(settings.copy(cosmeticFilteringEnabled = it)) },
                         )
+
+                        // Block Cross Domain Popups toggle
                         BrowserSettingsToggleCard(
                             title = "Block Cross-Domain Pop-ups",
-                            subtitle = "Deny pop-up windows opening from external domains",
+                            subtitle = "Prompt or block pop-up windows opening from external domains",
                             checked = settings.blockCrossDomainPopups,
                             onCheckedChange = { onSave(settings.copy(blockCrossDomainPopups = it)) },
                         )
-                        val context = LocalContext.current
-                        val blockedCount = remember { AdBlockEngine.totalBlockedCount.get() }
-                        val rulesCount = remember { AdBlockEngine.totalRulesLoaded.get() }
-                        var isUpdating by remember { mutableStateOf(false) }
 
+                        if (settings.blockCrossDomainPopups) {
+                            BrowserSettingsToggleCard(
+                                title = "Auto-Deny All (This Session)",
+                                subtitle = "Automatically deny all cross-domain pop-ups without prompting",
+                                checked = denyAllCrossDomainPopupsThisSession,
+                                onCheckedChange = { onToggleDenyAllThisSession(it) },
+                            )
+                        }
+
+                        // Status Card & Update Button
                         Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                            modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                             ),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(Spacing.md),
-                                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                                modifier = Modifier.padding(Spacing.md),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "uBlock Engine Protection",
+                                            text = "Filter Lists Status",
                                             style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
-                                            text = "$blockedCount blocked • $rulesCount active uBlock uAssets rules",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            text = "${AdBlockEngine.totalRuleCount} active rules in memory",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
+                                        if (!adBlockStatusMessage.isNullOrBlank()) {
+                                            Text(
+                                                text = adBlockStatusMessage,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
                                     }
 
                                     TextButton(
-                                        enabled = !isUpdating,
-                                        onClick = {
-                                            isUpdating = true
-                                            Toast.makeText(context, "Updating uBlock uAssets rules...", Toast.LENGTH_SHORT).show()
-                                            AdBlockEngine.updateRulesOnline(context) { success ->
-                                                isUpdating = false
-                                                val msg = if (success) {
-                                                    "uBlock rules updated successfully! (${AdBlockEngine.totalRulesLoaded.get()} rules loaded)"
-                                                } else {
-                                                    "Failed to update uBlock rules online."
-                                                }
-                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                                            }
-                                        }
+                                        onClick = onUpdateAdBlockFilters,
+                                        enabled = !isAdBlockUpdating
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Update uBlock Lists",
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                        Spacer(modifier = Modifier.width(Spacing.xs))
-                                        Text(if (isUpdating) "Updating..." else "Update uAssets")
+                                        if (isAdBlockUpdating) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(modifier = Modifier.width(Spacing.xs))
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = "Update Filter Lists",
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(Spacing.xs))
+                                        }
+                                        Text("Update Now")
                                     }
                                 }
                             }
                         }
+
+                        // Filter Subscriptions Toggles
+                        Text(
+                            text = "Filter Subscriptions",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = Spacing.xs)
+                        )
+
+                        AdBlockListManager.BUILTIN_LISTS.forEach { list ->
+                            val isEnabled = settings.enabledFilterLists.contains(list.id)
+                            BrowserSettingsToggleCard(
+                                title = list.name,
+                                subtitle = list.description,
+                                checked = isEnabled,
+                                onCheckedChange = { checked ->
+                                    val newLists = if (checked) {
+                                        settings.enabledFilterLists + list.id
+                                    } else {
+                                        settings.enabledFilterLists - list.id
+                                    }
+                                    onSave(settings.copy(enabledFilterLists = newLists))
+                                }
+                            )
+                        }
+
+                        // Custom Rules Input
+                        Text(
+                            text = "Custom User Filter Rules",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = Spacing.xs)
+                        )
+
+                        OutlinedTextField(
+                            value = settings.customAdBlockRules,
+                            onValueChange = { onSave(settings.copy(customAdBlockRules = it)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("e.g. ||example.com^\n##.custom-ad-class") },
+                            maxLines = 5,
+                            singleLine = false,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
                     }
                 }
             }

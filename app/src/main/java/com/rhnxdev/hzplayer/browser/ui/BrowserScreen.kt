@@ -4,6 +4,7 @@ import android.app.Activity
 import android.widget.Toast
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -37,13 +39,18 @@ fun BrowserScreen(
     var showTabSidebar by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showMediaGrabber by remember { mutableStateOf(false) }
 
     val historyItems by viewModel.historyItems.collectAsStateWithLifecycle()
     val historySearchQuery by viewModel.historySearchQuery.collectAsStateWithLifecycle()
 
-    // Back: close overlays first (history → settings → sidebar), then navigate back or exit
+    val customView = viewModel.tabManager.customView
+
+    // Back: close overlays first (custom video view → media grabber → history → settings → sidebar), then navigate back or exit
     BackHandler(enabled = true) {
         when {
+            customView != null -> viewModel.tabManager.hideCustomView()
+            showMediaGrabber -> showMediaGrabber = false
             showHistory    -> showHistory = false
             showSettings   -> showSettings = false
             showTabSidebar -> showTabSidebar = false
@@ -51,6 +58,7 @@ fun BrowserScreen(
             else -> (context as? Activity)?.finish()
         }
     }
+
 
     LaunchedEffect(Unit) {
         viewModel.initialize()
@@ -129,7 +137,22 @@ fun BrowserScreen(
                 onMenuClick = { /* Handled inside bottom bar 3-dot dropdown */ },
                 onHistoryClick = { showHistory = true },
                 onSettingsClick = { showSettings = true },
+                onPlayerClick = { (context as? Activity)?.finish() },
+                mediaCount = viewModel.activeTabMediaCount,
+                onMediaGrabberClick = { showMediaGrabber = true },
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // 1DM+ Media Grabber Bottom Sheet modal
+        if (showMediaGrabber) {
+            MediaGrabberBottomSheet(
+                mediaItems = viewModel.activeTabMediaItems,
+                onDismissRequest = { showMediaGrabber = false },
+                onClearAll = { viewModel.clearActiveTabMedia() },
+                onQualitySelected = { itemId, qualityUrl ->
+                    viewModel.updateMediaQuality(itemId, qualityUrl)
+                }
             )
         }
 
@@ -162,6 +185,11 @@ fun BrowserScreen(
             settings = viewModel.settings,
             onSave = { viewModel.updateSettings(it) },
             onDismiss = { showSettings = false },
+            isAdBlockUpdating = viewModel.isAdBlockUpdating,
+            adBlockStatusMessage = viewModel.adBlockStatusMessage,
+            onUpdateAdBlockFilters = { viewModel.refreshAdBlockFilters() },
+            denyAllCrossDomainPopupsThisSession = viewModel.denyAllCrossDomainPopupsThisSession,
+            onToggleDenyAllThisSession = { viewModel.setDenyAllPopupsThisSession(it) },
         )
 
         // Cross-domain pop-up permission bottom sheet modal
@@ -169,9 +197,24 @@ fun BrowserScreen(
             request = viewModel.pendingPopupRequest,
             onAllow = { viewModel.allowPendingPopup() },
             onDeny = { viewModel.denyPendingPopup() },
+            onDenyAllThisSession = { viewModel.denyPendingPopupAndBlockSession() },
         )
+
+        // Fullscreen custom video view overlay
+        if (customView != null) {
+            AndroidView(
+                factory = {
+                    (customView.parent as? android.view.ViewGroup)?.removeView(customView)
+                    customView
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            )
+        }
     }
 }
+
 
 @Composable
 private fun BrowserWebView(

@@ -1,0 +1,37 @@
+! Title: EasyList Default Core Filters
+! Description: Core network and cosmetic rules for blocking ads
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||adservice.google.com^
+||pagead2.googlesyndication.com^
+||adnxs.com^
+||amazon-adsystem.com^
+||adbrite.com^
+||exponential.com^
+||quantserve.com^
+||scorecardresearch.com^
+||zedo.com^
+||taboola.com^
+||outbrain.com^
+||popads.net^
+||popcash.net^
+||exoclick.com^
+||juicyads.com^
+||propellerads.com^
+||adsterra.com^
+/adserver/*
+/ad-framework/*
+/ads/*$script,image
+##.ad-box
+##.ad-container
+##.ad-slot
+##.ad-wrapper
+##.ad_box
+##.ad_container
+##.ad_wrapper
+##.adsbygoogle
+##.sponsor-banner
+##[id^="google_ads"]
+##[id^="div-gpt-ad"]
+##[class*="sponsored-post"]

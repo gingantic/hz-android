@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Security
@@ -44,6 +45,7 @@ fun PopupPermissionBottomSheet(
     request: PendingPopupRequest?,
     onAllow: () -> Unit,
     onDeny: () -> Unit,
+    onDenyAllThisSession: () -> Unit = {},
 ) {
     if (request == null) return
 
@@ -130,32 +132,49 @@ fun PopupPermissionBottomSheet(
                 )
             }
 
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    OutlinedButton(
+                        onClick = onDeny,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                    ) {
+                        Icon(imageVector = Icons.Default.Close, contentDescription = null)
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text("Deny")
+                    }
+
+                    Button(
+                        onClick = onAllow,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                    ) {
+                        Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null)
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text("Allow")
+                    }
+                }
+
                 OutlinedButton(
-                    onClick = onDeny,
-                    modifier = Modifier.weight(1f),
+                    onClick = onDenyAllThisSession,
+                    modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     ),
                 ) {
-                    Icon(imageVector = Icons.Default.Close, contentDescription = null)
+                    Icon(imageVector = Icons.Default.Block, contentDescription = null)
                     Spacer(modifier = Modifier.width(Spacing.xs))
-                    Text("Deny")
-                }
-
-                Button(
-                    onClick = onAllow,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ),
-                ) {
-                    Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null)
-                    Spacer(modifier = Modifier.width(Spacing.xs))
-                    Text("Allow")
+                    Text("Deny All for This Session")
                 }
             }
         }

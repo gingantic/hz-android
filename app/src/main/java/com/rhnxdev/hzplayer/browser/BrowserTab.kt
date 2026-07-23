@@ -3,6 +3,8 @@ package com.rhnxdev.hzplayer.browser
 import android.graphics.Bitmap
 import android.os.Bundle
 
+import com.rhnxdev.hzplayer.browser.media.DetectedMediaItem
+
 data class BrowserTab(
     val id: String,
     val title: String = "",
@@ -14,4 +16,7 @@ data class BrowserTab(
     val canGoForward: Boolean = false,
     /** Saved WebView state for freeze/thaw. */
     val savedState: Bundle? = null,
+    /** Sniffed media items for this tab. */
+    val detectedMedia: List<DetectedMediaItem> = emptyList(),
 )
+

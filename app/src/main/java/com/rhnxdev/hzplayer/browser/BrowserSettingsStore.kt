@@ -18,6 +18,9 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         blockTrackersEnabled       = p.getBoolean(KEY_TRACKERS, true),
         cosmeticFilteringEnabled   = p.getBoolean(KEY_COSMETIC, true),
         blockCrossDomainPopups     = p.getBoolean(KEY_CROSS_DOMAIN_POPUPS, true),
+        enabledFilterLists         = p.getStringSet(KEY_FILTER_LISTS, setOf("easylist", "easyprivacy", "peter_lowe", "ublock_filters")) ?: setOf("easylist", "easyprivacy", "peter_lowe", "ublock_filters"),
+        customAdBlockRules         = p.getString(KEY_CUSTOM_RULES, "") ?: "",
+        lastAdBlockUpdateTimestamp = p.getLong(KEY_LAST_UPDATE, 0L),
         cookiesEnabled             = p.getBoolean(KEY_COOKIES, true),
         thirdPartyCookiesEnabled   = p.getBoolean(KEY_3P_COOKIES, false),
         blockMixedContent          = p.getBoolean(KEY_BLOCK_MIXED, false),
@@ -47,6 +50,9 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
             .putBoolean(KEY_TRACKERS,        s.blockTrackersEnabled)
             .putBoolean(KEY_COSMETIC,        s.cosmeticFilteringEnabled)
             .putBoolean(KEY_CROSS_DOMAIN_POPUPS, s.blockCrossDomainPopups)
+            .putStringSet(KEY_FILTER_LISTS,  s.enabledFilterLists)
+            .putString( KEY_CUSTOM_RULES,    s.customAdBlockRules)
+            .putLong(   KEY_LAST_UPDATE,     s.lastAdBlockUpdateTimestamp)
             .putBoolean(KEY_COOKIES,         s.cookiesEnabled)
             .putBoolean(KEY_3P_COOKIES,      s.thirdPartyCookiesEnabled)
             .putBoolean(KEY_BLOCK_MIXED,     s.blockMixedContent)
@@ -73,6 +79,9 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         private const val KEY_TRACKERS       = "trackers_enabled"
         private const val KEY_COSMETIC       = "cosmetic_enabled"
         private const val KEY_CROSS_DOMAIN_POPUPS = "cross_domain_popups"
+        private const val KEY_FILTER_LISTS   = "filter_lists"
+        private const val KEY_CUSTOM_RULES   = "custom_adblock_rules"
+        private const val KEY_LAST_UPDATE    = "last_adblock_update"
         private const val KEY_COOKIES        = "cookies"
         private const val KEY_3P_COOKIES     = "third_party_cookies"
         private const val KEY_BLOCK_MIXED    = "block_mixed"
