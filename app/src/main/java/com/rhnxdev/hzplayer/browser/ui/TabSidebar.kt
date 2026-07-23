@@ -48,12 +48,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.browser.BrowserTab
 
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 
 /**
- * A calm, refined left-side vertical tab panel that slides in over the content.
+ * A calm, refined left-side vertical tab panel that snaps in over the content without animation.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TabSidebar(
     visible: Boolean,
@@ -75,36 +79,24 @@ fun TabSidebar(
                     .clickable(onClick = onDismiss),
             )
 
-            // Smooth slide-in panel
-            AnimatedVisibility(
-                visible = true,
-                enter = slideInHorizontally(
-                    initialOffsetX = { -it },
-                    animationSpec = tween(durationMillis = 240),
-                ),
-                exit = slideOutHorizontally(
-                    targetOffsetX = { -it },
-                    animationSpec = tween(durationMillis = 200),
-                ),
-            ) {
-                SidebarPanel(
-                    tabs = tabs,
-                    activeTabId = activeTabId,
-                    onTabClick = { id ->
-                        onTabClick(id)
-                        onDismiss()
-                    },
-                    onTabClose = onTabClose,
-                    onNewTab = {
-                        onNewTab()
-                        onDismiss()
-                    },
-                )
-            }
+            SidebarPanel(
+                tabs = tabs,
+                activeTabId = activeTabId,
+                onTabClick = { id ->
+                    onTabClick(id)
+                    onDismiss()
+                },
+                onTabClose = onTabClose,
+                onNewTab = {
+                    onNewTab()
+                    onDismiss()
+                },
+            )
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SidebarPanel(
     tabs: List<BrowserTab>,
@@ -125,7 +117,7 @@ private fun SidebarPanel(
         modifier = Modifier
             .fillMaxHeight()
             .navigationBarsPadding()
-            .imePadding()
+            .windowInsetsPadding(WindowInsets.imeAnimationTarget)
             .width(270.dp)
             .shadow(elevation = 8.dp)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
