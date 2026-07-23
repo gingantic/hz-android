@@ -31,11 +31,18 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rhnxdev.hzplayer.browser.BrowserViewModel
 
+import android.view.MotionEvent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.platform.LocalFocusManager
+
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     var showTabSidebar by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
@@ -84,7 +91,11 @@ fun BrowserScreen(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .navigationBarsPadding()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { focusManager.clearFocus() },
+            )
     ) {
         // Main content — WebView + bottom bar
         Column(modifier = Modifier.fillMaxSize()) {
@@ -103,6 +114,7 @@ fun BrowserScreen(
                     BrowserWebView(
                         viewModel = viewModel,
                         tabId = activeId,
+                        onTouch = { focusManager.clearFocus() },
                     )
                 }
 
@@ -114,6 +126,7 @@ fun BrowserScreen(
                                 else viewModel.createTab(url)
                             }
                         },
+                        onTapBackground = { focusManager.clearFocus() },
                     )
                 }
             }
@@ -140,7 +153,10 @@ fun BrowserScreen(
                 onPlayerClick = { (context as? Activity)?.finish() },
                 mediaCount = viewModel.activeTabMediaCount,
                 onMediaGrabberClick = { showMediaGrabber = true },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding(),
             )
         }
 
@@ -220,6 +236,7 @@ fun BrowserScreen(
 private fun BrowserWebView(
     viewModel: BrowserViewModel,
     tabId: String,
+    onTouch: () -> Unit = {},
 ) {
     key(tabId) {
         val context = LocalContext.current
@@ -239,9 +256,21 @@ private fun BrowserWebView(
         AndroidView(
             factory = {
                 (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+                webView.setOnTouchListener { _, event ->
+                    if (event.action == MotionEvent.ACTION_DOWN) {
+                        onTouch()
+                    }
+                    false
+                }
                 webView
             },
             update = { wv ->
+                wv.setOnTouchListener { _, event ->
+                    if (event.action == MotionEvent.ACTION_DOWN) {
+                        onTouch()
+                    }
+                    false
+                }
                 if (targetUrl.isNotBlank() && targetUrl != "about:blank" && wv.url != targetUrl) {
                     wv.loadUrl(targetUrl)
                 }

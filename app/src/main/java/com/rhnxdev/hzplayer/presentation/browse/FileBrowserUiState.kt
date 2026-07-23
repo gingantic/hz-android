@@ -36,6 +36,7 @@ data class FileBrowserUiState(
     val mode: FileBrowserMode = FileBrowserMode.ROOTS,
     val roots: List<FolderItem> = emptyList(),
     val favorites: List<FavoriteShortcut> = emptyList(),
+    val quickAccessPaths: Set<String> = emptySet(),
     val isLoading: Boolean = false,
     val error: String? = null,
     /** Layers in order: index 0 = first directory, last = topmost visible */

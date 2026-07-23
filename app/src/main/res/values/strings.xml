@@ -52,6 +52,8 @@
     <string name="storage_empty_title">No storage found</string>
     <string name="storage_empty_subtitle">Could not detect any storage volumes.</string>
     <string name="favorites">Favorites</string>
+    <string name="quick_access">Quick Access</string>
+    <string name="menu_favorite">Favorite</string>
     <string name="item_count">%1$d items</string>
 
     <!-- Navigation destinations -->

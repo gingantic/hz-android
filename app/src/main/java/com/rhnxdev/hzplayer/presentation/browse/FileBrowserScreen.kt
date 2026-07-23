@@ -28,10 +28,12 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.Storage
+import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -86,6 +88,7 @@ fun FileBrowserScreen(
     viewModel: FileBrowserViewModel = hiltViewModel(),
     onFileClicked: (FolderItem) -> Unit = {},
     onPlayAllVideos: (List<VideoItem>) -> Unit = {},
+    onPlayAsAudio: (FolderItem) -> Unit = {},
     fullScreenOverlay: Boolean = false,
     isActive: Boolean = true,
 ) {
@@ -196,6 +199,7 @@ fun FileBrowserScreen(
                     isLoading = uiState.isLoading,
                     onRootClicked = viewModel::onStorageRootClicked,
                     onFavoriteClicked = viewModel::onFavoriteClicked,
+                    onToggleQuickAccess = viewModel::onToggleQuickAccess,
                     onRefresh = viewModel::onRefresh,
                 )
                 FileBrowserMode.BROWSING -> {
@@ -204,6 +208,7 @@ fun FileBrowserScreen(
                         searchQuery = searchQuery,
                         isSearchActive = isSearchActive,
                         mediaMode = uiState.isMediaMode,
+                        quickAccessPaths = uiState.quickAccessPaths,
                         onFolderClicked = viewModel::onFolderClicked,
                         onBreadcrumbClicked = viewModel::onBreadcrumbClicked,
                         onRetry = viewModel::onRetry,
@@ -212,6 +217,8 @@ fun FileBrowserScreen(
                         saveScrollState = viewModel::saveScrollState,
                         fullScreenOverlay = fullScreenOverlay,
                         onFileClicked = handleFileClicked,
+                        onPlayAsAudio = onPlayAsAudio,
+                        onToggleFavorite = { viewModel.onToggleQuickAccess(it.path) },
                     )
 
                     // Play All FAB
@@ -262,6 +269,7 @@ private fun StorageRootsContent(
     isLoading: Boolean,
     onRootClicked: (FolderItem) -> Unit,
     onFavoriteClicked: (FavoriteShortcut) -> Unit,
+    onToggleQuickAccess: (String) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -314,14 +322,14 @@ private fun StorageRootsContent(
                         )
                     }
 
-                    // Favorites section
+                    // Quick Access section
                     if (favorites.isNotEmpty()) {
                         item {
                             Spacer(modifier = Modifier.height(Spacing.sm))
                         }
                         item {
                             Text(
-                                text = stringResource(R.string.favorites),
+                                text = stringResource(R.string.quick_access),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(bottom = Spacing.sm),
@@ -333,6 +341,7 @@ private fun StorageRootsContent(
                                 icon = fav.icon,
                                 itemCount = fav.itemCount,
                                 onClick = { onFavoriteClicked(fav) },
+                                onRemoveClick = { onToggleQuickAccess(fav.path) },
                             )
                         }
                     }
@@ -348,6 +357,7 @@ private fun FavoriteShortcutCard(
     icon: ImageVector,
     itemCount: Int,
     onClick: () -> Unit,
+    onRemoveClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -365,7 +375,7 @@ private fun FavoriteShortcutCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Filled.Folder,
+                imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(32.dp),
                 tint = MaterialTheme.colorScheme.primary,
@@ -382,6 +392,41 @@ private fun FavoriteShortcutCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
+            }
+            if (onRemoveClick != null) {
+                var showMenu by remember { mutableStateOf(false) }
+                Box {
+                    androidx.compose.material3.IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = stringResource(R.string.media_overflow_cd),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                    ) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_favorite)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = HzPlayerIcons.Star,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onRemoveClick()
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -461,6 +506,7 @@ private fun DirectoryStackContent(
     searchQuery: String,
     isSearchActive: Boolean,
     mediaMode: Boolean,
+    quickAccessPaths: Set<String>,
     onFolderClicked: (FolderItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
     onRetry: () -> Unit,
@@ -469,6 +515,8 @@ private fun DirectoryStackContent(
     saveScrollState: (String, Int, Int, Int, Boolean) -> Unit,
     fullScreenOverlay: Boolean = false,
     onFileClicked: (FolderItem) -> Unit = {},
+    onPlayAsAudio: (FolderItem) -> Unit = {},
+    onToggleFavorite: (com.rhnxdev.hzplayer.core.components.FileItemData) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -481,6 +529,7 @@ private fun DirectoryStackContent(
         val noopAction: () -> Unit = {}
         val noopFolder: (FolderItem) -> Unit = {}
         val noopBreadcrumb: (String) -> Unit = {}
+        val noopFavorite: (com.rhnxdev.hzplayer.core.components.FileItemData) -> Unit = {}
 
         // Cap at 32 layers to prevent unbounded memory growth on deep navigation.
         // Older layers drop off the bottom — Coil auto-cancels their in-flight thumb requests.
@@ -494,6 +543,7 @@ private fun DirectoryStackContent(
                     searchQuery = if (isTop) searchQuery else "",
                     isSearchActive = if (isTop) isSearchActive else false,
                     mediaMode = mediaMode,
+                    quickAccessPaths = quickAccessPaths,
                     onFolderClicked = if (isTop) onFolderClicked else noopFolder,
                     onBreadcrumbClicked = if (isTop) onBreadcrumbClicked else noopBreadcrumb,
                     onRetry = if (isTop) onRetry else noopAction,
@@ -503,6 +553,8 @@ private fun DirectoryStackContent(
                     fullScreenOverlay = fullScreenOverlay,
                     isTopLayer = isTop,
                     onFileClicked = if (isTop) onFileClicked else noopFolder,
+                    onPlayAsAudio = if (isTop) onPlayAsAudio else noopFolder,
+                    onToggleFavorite = if (isTop) onToggleFavorite else noopFavorite,
                     modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
             }
@@ -516,6 +568,7 @@ private fun DirectoryLayerView(
     searchQuery: String,
     isSearchActive: Boolean,
     mediaMode: Boolean,
+    quickAccessPaths: Set<String>,
     onFolderClicked: (FolderItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
     onRetry: () -> Unit,
@@ -525,6 +578,8 @@ private fun DirectoryLayerView(
     fullScreenOverlay: Boolean = false,
     isTopLayer: Boolean = false,
     onFileClicked: (FolderItem) -> Unit = {},
+    onPlayAsAudio: (FolderItem) -> Unit = {},
+    onToggleFavorite: (com.rhnxdev.hzplayer.core.components.FileItemData) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val currentOrientation = LocalConfiguration.current.orientation
@@ -664,6 +719,12 @@ private fun DirectoryLayerView(
             },
             onRefresh = onRefresh,
             onRetry = onRetry,
+            onPlayAsAudio = { data ->
+                val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
+                onPlayAsAudio(item)
+            },
+            quickAccessPaths = quickAccessPaths,
+            onToggleFavorite = onToggleFavorite,
             listState = listState,
             modifier = Modifier.weight(1f).fillMaxSize(),
         )

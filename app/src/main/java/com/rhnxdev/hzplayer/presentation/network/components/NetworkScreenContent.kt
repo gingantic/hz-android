@@ -427,6 +427,7 @@ internal fun ServerBrowseStackContent(
     saveScrollState: (String, Int, Int, Boolean) -> Unit,
     fullScreenOverlay: Boolean = false,
     onPlayAllVideos: () -> Unit = {},
+    onPlayAsAudio: (RemoteFileItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -454,6 +455,7 @@ internal fun ServerBrowseStackContent(
                     saveScrollState = saveScrollState,
                     fullScreenOverlay = fullScreenOverlay,
                     isTopLayer = isTop,
+                    onPlayAsAudio = if (isTop) onPlayAsAudio else noopFolder,
                     modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
             }
@@ -502,6 +504,7 @@ private fun RemoteDirectoryLayerView(
     saveScrollState: (String, Int, Int, Boolean) -> Unit,
     fullScreenOverlay: Boolean = false,
     isTopLayer: Boolean = false,
+    onPlayAsAudio: (RemoteFileItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Only store the item *index* — pixel offsets are orientation-dependent and cause
@@ -615,6 +618,10 @@ private fun RemoteDirectoryLayerView(
             },
             onRefresh = onRefresh,
             onRetry = onRetry,
+            onPlayAsAudio = { data ->
+                val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
+                onPlayAsAudio(item)
+            },
             listState = listState,
             modifier = Modifier.weight(1f).fillMaxSize(),
         )

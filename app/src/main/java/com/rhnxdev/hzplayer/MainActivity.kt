@@ -594,6 +594,10 @@ fun HzPlayerApp(
                                         playerViewModel.playVideoPlaylist(playlist)
                                         navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                     },
+                                    onPlayAsAudio = { file ->
+                                        playerViewModel.playUri(file.path, file.name, isVideo = false)
+                                        navController.navigate(NavRoutes.AUDIO_PLAYER)
+                                    },
                                 )
                                 3 -> NetworkScreen(
                                     fullScreenOverlay = isFullScreen,

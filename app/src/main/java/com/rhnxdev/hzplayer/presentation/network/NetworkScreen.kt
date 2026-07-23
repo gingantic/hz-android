@@ -32,6 +32,7 @@ import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.util.isVideoOrStreamDefault
+import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
@@ -225,6 +226,10 @@ fun NetworkScreen(
                 onPlayAllVideos = {
                     val playlist = viewModel.collectVideoPlaylist()
                     if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
+                },
+                onPlayAsAudio = { item ->
+                    val uri = viewModel.buildPlaybackUri(item.path) ?: item.path
+                    onPlayRemoteFile(uri, item.name, false, item.mimeType)
                 },
             )
         }
