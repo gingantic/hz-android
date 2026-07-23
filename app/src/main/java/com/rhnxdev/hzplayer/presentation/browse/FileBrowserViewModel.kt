@@ -4,6 +4,8 @@ import android.content.res.Configuration
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
@@ -73,21 +75,40 @@ class FileBrowserViewModel @Inject constructor(
 
     val search = SearchDelegate()
 
-    private fun resolveFavorites(): List<FavoriteShortcut> {
+    private fun resolveFavorites(quickAccessPaths: Set<String>): List<FavoriteShortcut> {
         val ext = Environment.getExternalStorageDirectory()
-        return listOfNotNull(
-            FavoriteShortcut("Downloads", "${ext.absolutePath}/Download", HzPlayerIcons.Download),
-            FavoriteShortcut("Movies", "${ext.absolutePath}/Movies", HzPlayerIcons.VideoLibrary),
-            FavoriteShortcut("Music", "${ext.absolutePath}/Music", HzPlayerIcons.AudioBrowser),
-        ).filter { File(it.path).exists() }.map { fav ->
-            val count = File(fav.path).listFiles()?.size ?: 0
-            fav.copy(itemCount = count)
+        return quickAccessPaths.mapNotNull { path ->
+            val file = File(path)
+            if (!file.exists()) return@mapNotNull null
+            val name = when (path) {
+                "${ext.absolutePath}/Download" -> "Downloads"
+                "${ext.absolutePath}/Movies" -> "Movies"
+                "${ext.absolutePath}/Music" -> "Music"
+                else -> file.name.ifBlank { path }
+            }
+            val icon = when {
+                path == "${ext.absolutePath}/Download" || name.equals("Downloads", ignoreCase = true) -> HzPlayerIcons.Download
+                path == "${ext.absolutePath}/Movies" || name.equals("Movies", ignoreCase = true) -> HzPlayerIcons.VideoLibrary
+                path == "${ext.absolutePath}/Music" || name.equals("Music", ignoreCase = true) -> HzPlayerIcons.AudioBrowser
+                else -> Icons.Filled.Folder
+            }
+            val count = file.listFiles()?.size ?: 0
+            FavoriteShortcut(name, path, icon, count)
         }
     }
 
     init {
-        _uiState.update { it.copy(favorites = resolveFavorites()) }
         loadRoots()
+        viewModelScope.launch {
+            userPrefs.quickAccessFolders.collect { paths ->
+                _uiState.update {
+                    it.copy(
+                        favorites = resolveFavorites(paths),
+                        quickAccessPaths = paths,
+                    )
+                }
+            }
+        }
         viewModelScope.launch {
             val savedSort = userPrefs.getSortType(sortKey).first()
             val savedDir = userPrefs.getSortDirection(sortKey).first()
@@ -169,6 +190,12 @@ class FileBrowserViewModel @Inject constructor(
     fun onFavoriteClicked(shortcut: FavoriteShortcut) {
         _uiState.update { it.copy(layers = emptyList()) }
         pushLayer(shortcut.path)
+    }
+
+    fun onToggleQuickAccess(path: String) {
+        viewModelScope.launch {
+            userPrefs.toggleQuickAccessFolder(path)
+        }
     }
 
     fun collectVideoPlaylist(): List<VideoItem> {

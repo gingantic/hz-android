@@ -52,6 +52,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
@@ -85,6 +86,9 @@ fun FileItemCard(
     mediaCount: Int = -1,
     mediaMode: Boolean = false,
     onPropertiesClick: (() -> Unit)? = null,
+    onPlayAsAudioClick: (() -> Unit)? = null,
+    isFavorite: Boolean = false,
+    onFavoriteClick: (() -> Unit)? = null,
 ) {
 
     val subtitle = when {
@@ -224,7 +228,7 @@ fun FileItemCard(
                 }
             }
 
-            if (onPropertiesClick != null) {
+            if (onPropertiesClick != null || onPlayAsAudioClick != null || onFavoriteClick != null) {
                 var showMenu by remember { mutableStateOf(false) }
                 Box {
                     IconButton(
@@ -242,14 +246,42 @@ fun FileItemCard(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                     ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.media_properties)) },
-                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                            onClick = {
-                                showMenu = false
-                                onPropertiesClick()
-                            },
-                        )
+                        if (onFavoriteClick != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.menu_favorite)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isFavorite) HzPlayerIcons.Star else HzPlayerIcons.StarOutline,
+                                        contentDescription = null,
+                                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    onFavoriteClick()
+                                },
+                            )
+                        }
+                        if (onPlayAsAudioClick != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.media_play_as_audio)) },
+                                leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    onPlayAsAudioClick()
+                                },
+                            )
+                        }
+                        if (onPropertiesClick != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.media_properties)) },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    onPropertiesClick()
+                                },
+                            )
+                        }
                     }
                 }
             }

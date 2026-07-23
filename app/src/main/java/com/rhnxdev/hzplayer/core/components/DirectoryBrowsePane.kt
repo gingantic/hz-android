@@ -36,6 +36,7 @@ import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
+import com.rhnxdev.hzplayer.core.util.isVideoExtension
 
 import androidx.compose.runtime.Immutable
 
@@ -94,6 +95,9 @@ fun DirectoryBrowsePane(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     mediaMode: Boolean = false,
+    onPlayAsAudio: ((FileItemData) -> Unit)? = null,
+    quickAccessPaths: Set<String> = emptySet(),
+    onToggleFavorite: ((FileItemData) -> Unit)? = null,
     listState: androidx.compose.foundation.lazy.LazyListState? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = Spacing.sm),
     emptyTitle: String = "This folder is empty",
@@ -221,6 +225,13 @@ fun DirectoryBrowsePane(
                             resolution = if (mediaMode) item.resolution else null,
                             isNew = !item.isDirectory && item.dateAdded > 0L && (System.currentTimeMillis() / 1000L - item.dateAdded < 3600L),
                             onPropertiesClick = { propertiesItem = item },
+                            onPlayAsAudioClick = if (onPlayAsAudio != null && !item.isDirectory && (item.mimeType?.startsWith("video") == true || isVideoExtension(item.name) || item.durationMs > 0)) {
+                                { onPlayAsAudio(item) }
+                            } else null,
+                            isFavorite = quickAccessPaths.contains(item.path),
+                            onFavoriteClick = if (item.isDirectory && onToggleFavorite != null) {
+                                { onToggleFavorite(item) }
+                            } else null,
                         )
                     }
                 }

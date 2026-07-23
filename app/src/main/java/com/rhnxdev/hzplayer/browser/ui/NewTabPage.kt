@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+
 private data class QuickShortcut(
     val title: String,
     val url: String,
@@ -60,6 +62,7 @@ private val defaultShortcuts = listOf(
 @Composable
 fun NewTabPage(
     onUrlEntered: (String) -> Unit,
+    onTapBackground: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
@@ -78,6 +81,11 @@ fun NewTabPage(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onTapBackground,
+            )
             .padding(Spacing.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

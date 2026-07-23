@@ -48,6 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.browser.BrowserTab
 
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+
 /**
  * A calm, refined left-side vertical tab panel that slides in over the content.
  */
@@ -121,6 +124,8 @@ private fun SidebarPanel(
     Column(
         modifier = Modifier
             .fillMaxHeight()
+            .navigationBarsPadding()
+            .imePadding()
             .width(270.dp)
             .shadow(elevation = 8.dp)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)

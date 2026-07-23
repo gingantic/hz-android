@@ -70,4 +70,9 @@ interface UserPreferencesRepository {
     suspend fun setArchivePassword(container: String, password: String)
     suspend fun removeArchivePassword(container: String)
 
+    /** Set of folder paths attached to Quick Access in File Browser. */
+    val quickAccessFolders: Flow<Set<String>>
+    suspend fun setQuickAccessFolders(folders: Set<String>)
+    suspend fun toggleQuickAccessFolder(path: String)
+
 }

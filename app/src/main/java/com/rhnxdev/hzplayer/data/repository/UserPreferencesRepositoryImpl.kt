@@ -239,6 +239,40 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
+    override val quickAccessFolders: Flow<Set<String>> = dataStore.data.map { prefs ->
+        val raw = prefs[PrefKey.QuickAccessFolders.key]
+        if (raw == null) {
+            val ext = android.os.Environment.getExternalStorageDirectory().absolutePath
+            setOf("$ext/Download", "$ext/Movies", "$ext/Music")
+        } else if (raw.isBlank()) {
+            emptySet()
+        } else {
+            raw.split("\u001E").filter { it.isNotBlank() }.toSet()
+        }
+    }.distinctUntilChanged()
+
+    override suspend fun setQuickAccessFolders(folders: Set<String>) {
+        dataStore.edit { prefs ->
+            prefs[PrefKey.QuickAccessFolders.key] = folders.joinToString("\u001E")
+        }
+    }
+
+    override suspend fun toggleQuickAccessFolder(path: String) {
+        dataStore.edit { prefs ->
+            val raw = prefs[PrefKey.QuickAccessFolders.key]
+            val current = if (raw == null) {
+                val ext = android.os.Environment.getExternalStorageDirectory().absolutePath
+                setOf("$ext/Download", "$ext/Movies", "$ext/Music")
+            } else if (raw.isBlank()) {
+                emptySet()
+            } else {
+                raw.split("\u001E").filter { it.isNotBlank() }.toSet()
+            }
+            val updated = if (current.contains(path)) current - path else current + path
+            prefs[PrefKey.QuickAccessFolders.key] = updated.joinToString("\u001E")
+        }
+    }
+
     private fun decodeArchivePasswords(raw: String): Map<String, String> {
         if (raw.isBlank()) return emptyMap()
         return raw.split("\u001E").mapNotNull { entry ->
@@ -286,5 +320,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object SubtitleSearchHistory : PrefKey<String>(stringPreferencesKey("subtitle_search_history"))
         object DismissedUpdateVersionCode : PrefKey<Int>(intPreferencesKey("dismissed_update_version_code"))
         object ArchivePasswords : PrefKey<String>(stringPreferencesKey("archive_passwords"))
+        object QuickAccessFolders : PrefKey<String>(stringPreferencesKey("quick_access_folders"))
     }
 }
