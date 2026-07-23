@@ -99,6 +99,30 @@ jobs:
             app/src/main/cpp/include
           key: native-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh','build_adblock_rust.sh') }}
 
+      # --- Try restoring prebuilt native dependencies from R2/S3 storage if GitHub Actions cache misses ---
+      - name: Restore native deps from R2/S3 storage (fallback)
+        id: r2-restore
+        if: steps.native-cache.outputs.cache-hit != 'true' && secrets.R2_ACCESS_KEY_ID != ''
+        run: |
+          pip3 install --quiet awscli
+          aws configure set aws_access_key_id "${{ secrets.R2_ACCESS_KEY_ID }}"
+          aws configure set aws_secret_access_key "${{ secrets.R2_SECRET_ACCESS_KEY }}"
+          aws configure set default.region auto
+          ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          
+          KEY_HASH="${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh','build_adblock_rust.sh') }}"
+          ARCHIVE_NAME="native-deps-arm64-v8a-${KEY_HASH}.tar.gz"
+          
+          echo "Attempting to download $ARCHIVE_NAME from R2/S3..."
+          if aws s3 cp "s3://${{ secrets.R2_BUCKET }}/cache/${ARCHIVE_NAME}" /tmp/native-deps.tar.gz --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "Downloaded prebuilt native dependencies from R2/S3!"
+            tar -xzf /tmp/native-deps.tar.gz
+            echo "r2_hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No prebuilt native archive found in R2/S3 for current scripts."
+            echo "r2_hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Cache the FFmpeg source tree WITH its in-tree .o files so `make` is
       # incremental across runs (the script no longer `make clean`s).
       - name: Cache FFmpeg source tree
@@ -109,16 +133,16 @@ jobs:
           restore-keys: |
             ffmpeg-src-${{ runner.os }}-${{ env.NDK_VER }}-
 
-      # Only build when the prebuilt cache missed.
+      # Only build when both GitHub Actions cache and R2/S3 cache missed.
       - name: Clone FFmpeg source (cached)
-        if: steps.native-cache.outputs.cache-hit != 'true'
+        if: steps.native-cache.outputs.cache-hit != 'true' && steps.r2-restore.outputs.r2_hit != 'true'
         run: |
           if [ ! -d ffmpeg-src ]; then
             git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
           fi
 
       - name: Build FFmpeg
-        if: steps.native-cache.outputs.cache-hit != 'true'
+        if: steps.native-cache.outputs.cache-hit != 'true' && steps.r2-restore.outputs.r2_hit != 'true'
         run: |
           chmod +x ffmpeg_build_android.sh
           ./ffmpeg_build_android.sh --abi arm64-v8a
@@ -126,22 +150,38 @@ jobs:
           FFMPEG_SRC_DIR: ffmpeg-src
 
       - name: Build libass + deps
-        if: steps.native-cache.outputs.cache-hit != 'true'
+        if: steps.native-cache.outputs.cache-hit != 'true' && steps.r2-restore.outputs.r2_hit != 'true'
         run: |
           chmod +x libass_build_android.sh
           ./libass_build_android.sh --abi arm64-v8a
 
       - name: Build libarchive
-        if: steps.native-cache.outputs.cache-hit != 'true'
+        if: steps.native-cache.outputs.cache-hit != 'true' && steps.r2-restore.outputs.r2_hit != 'true'
         run: |
           chmod +x build_libarchive.sh
           ./build_libarchive.sh --abi arm64-v8a --ndk-path "$ANDROID_NDK_ROOT"
 
       - name: Build adblock-rust
-        if: steps.native-cache.outputs.cache-hit != 'true'
+        if: steps.native-cache.outputs.cache-hit != 'true' && steps.r2-restore.outputs.r2_hit != 'true'
         run: |
           chmod +x build_adblock_rust.sh
           ./build_adblock_rust.sh
+
+      # Upload newly compiled prebuilt dependencies archive to R2/S3 storage for future builds
+      - name: Upload compiled native deps to R2/S3 storage
+        if: steps.native-cache.outputs.cache-hit != 'true' && steps.r2-restore.outputs.r2_hit != 'true' && secrets.R2_ACCESS_KEY_ID != ''
+        run: |
+          KEY_HASH="${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh','build_adblock_rust.sh') }}"
+          ARCHIVE_NAME="native-deps-arm64-v8a-${KEY_HASH}.tar.gz"
+          
+          tar -czf "/tmp/${ARCHIVE_NAME}" \
+            app/src/main/jniLibs/arm64-v8a/ \
+            app/src/main/cpp/include/
+
+          ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          aws s3 cp "/tmp/${ARCHIVE_NAME}" "s3://${{ secrets.R2_BUCKET }}/cache/${ARCHIVE_NAME}" \
+            --endpoint-url "$ENDPOINT"
+          echo "Uploaded ${ARCHIVE_NAME} to R2/S3 storage!"
 
       # Incremental CMake/Ninja tree for YOUR cpp (thumbnail-extractor/assrender).
       # Keyed only on OS + NDK: let Ninja decide which files to recompile. AGP
