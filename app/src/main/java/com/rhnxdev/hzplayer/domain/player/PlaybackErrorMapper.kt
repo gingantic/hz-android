@@ -41,6 +41,11 @@ object PlaybackErrorMapper {
      */
     fun map(errorCode: Int, cause: Throwable?): MappedError {
         val errorCause = cause
+        val causeBased = classifyByCause(errorCause)
+        if (causeBased != null) {
+            return MappedError(causeBased.first, causeBased.second, sanitizeDetail(errorCause))
+        }
+
         val specific = when (errorCode) {
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
                 PlaybackErrorKind.NETWORK to "player_error_network"
@@ -48,6 +53,8 @@ object PlaybackErrorMapper {
                 PlaybackErrorKind.TIMEOUT to "player_error_timeout"
             PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED ->
                 PlaybackErrorKind.CLEARTEXT to "player_error_cleartext"
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
+                PlaybackErrorKind.NETWORK to "player_error_server"
             PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
             PlaybackException.ERROR_CODE_IO_NO_PERMISSION ->
                 PlaybackErrorKind.FILE_NOT_FOUND to "player_error_not_found"
@@ -69,12 +76,6 @@ object PlaybackErrorMapper {
         }
         if (specific != null) {
             return MappedError(specific.first, specific.second, sanitizeDetail(errorCause))
-        }
-
-        // Fallback: any unmatched code — inspect the cause chain for auth/file/format hints.
-        val causeBased = classifyByCause(errorCause)
-        if (causeBased != null) {
-            return MappedError(causeBased.first, causeBased.second, sanitizeDetail(errorCause))
         }
 
         return MappedError(PlaybackErrorKind.UNKNOWN, "player_error_unknown", sanitizeDetail(errorCause))
@@ -99,6 +100,12 @@ object PlaybackErrorMapper {
                     msg.contains("404", ignoreCase = true) ||
                     msg.contains("no such file", ignoreCase = true) ->
                     PlaybackErrorKind.FILE_NOT_FOUND to "player_error_not_found"
+                msg.contains("500", ignoreCase = true) ||
+                    msg.contains("502", ignoreCase = true) ||
+                    msg.contains("503", ignoreCase = true) ||
+                    msg.contains("504", ignoreCase = true) ||
+                    msg.contains("server error", ignoreCase = true) ->
+                    PlaybackErrorKind.NETWORK to "player_error_server"
                 msg.contains("unsupported", ignoreCase = true) ||
                     msg.contains("no decoder", ignoreCase = true) ||
                     msg.contains("codec", ignoreCase = true) ->

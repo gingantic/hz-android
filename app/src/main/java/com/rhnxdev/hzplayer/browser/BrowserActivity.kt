@@ -17,12 +17,12 @@ import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class BrowserActivity : ComponentActivity() {
+    private var browserViewModel: BrowserViewModel? = null
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        AdBlockEngine.init(this)
 
         val themeModeName = intent.getStringExtra(THEME_MODE) ?: ThemeMode.DARK.name
         val themeMode = try { ThemeMode.valueOf(themeModeName) } catch (_: Exception) { ThemeMode.DARK }
@@ -32,6 +32,7 @@ class BrowserActivity : ComponentActivity() {
 
         setContent {
             val viewModel: BrowserViewModel = hiltViewModel()
+            browserViewModel = viewModel
 
             // Set initial URL before BrowserScreen initializes
             if (initialUrl.isNotBlank() && viewModel.initialUrl.isBlank()) {
@@ -50,11 +51,14 @@ class BrowserActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        browserViewModel?.onPause()
     }
 
     override fun onResume() {
         super.onResume()
+        browserViewModel?.onResume()
     }
+
 
     companion object {
         const val THEME_MODE = "theme_mode"

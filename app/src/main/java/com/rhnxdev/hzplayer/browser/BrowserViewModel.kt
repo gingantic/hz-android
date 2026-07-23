@@ -16,7 +16,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
+import com.rhnxdev.hzplayer.browser.adblock.AdBlockUpdater
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -82,6 +86,25 @@ class BrowserViewModel @Inject constructor(
         pendingPopupRequest = null
     }
 
+    var denyAllCrossDomainPopupsThisSession by mutableStateOf(false)
+        private set
+
+    fun setDenyAllPopupsThisSession(enabled: Boolean) {
+        denyAllCrossDomainPopupsThisSession = enabled
+        tabManager.denyAllCrossDomainPopupsThisSession = enabled
+    }
+
+    fun denyPendingPopupAndBlockSession() {
+        setDenyAllPopupsThisSession(true)
+        val domain = pendingPopupRequest?.targetDomain ?: ""
+        denyPendingPopup()
+        popupWarningMessage = if (domain.isNotBlank()) {
+            "Denied all cross-domain pop-ups for this session ($domain blocked)"
+        } else {
+            "Denied all cross-domain pop-ups for this session"
+        }
+    }
+
     fun denyPendingPopup() {
         val req = pendingPopupRequest ?: return
         try {
@@ -91,10 +114,33 @@ class BrowserViewModel @Inject constructor(
         pendingPopupRequest = null
     }
 
+    var isAdBlockUpdating by mutableStateOf(false)
+        private set
+
+    var adBlockStatusMessage by mutableStateOf<String?>(null)
+        private set
+
     init {
         tabManager.onTabSwitched = { saveSessionIfEnabled() }
         // Apply cookie settings from persisted prefs on startup
         tabManager.applyCookieSettings(settings)
+
+        // Initialize AdBlock Engine with stored settings
+        AdBlockEngine.initialize(application, settings)
+
+        // Background async update filter lists on startup if adblock is enabled
+        if (settings.adBlockEnabled) {
+            viewModelScope.launch(Dispatchers.IO) {
+                AdBlockUpdater.updateLists(application, settings.enabledFilterLists)
+                val now = System.currentTimeMillis()
+                withContext(Dispatchers.Main) {
+                    val updated = settings.copy(lastAdBlockUpdateTimestamp = now)
+                    settings = updated
+                    settingsStore.save(updated)
+                    AdBlockEngine.reload(application, updated)
+                }
+            }
+        }
 
         tabManager.onCrossDomainPopupBlocked = { _, blockedDomain ->
             popupWarningMessage = "Blocked cross-domain pop-up ($blockedDomain)"
@@ -117,6 +163,27 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
+    fun refreshAdBlockFilters() {
+        if (isAdBlockUpdating) return
+        isAdBlockUpdating = true
+        adBlockStatusMessage = "Updating filter lists..."
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = AdBlockUpdater.updateLists(getApplication(), settings.enabledFilterLists)
+            val now = System.currentTimeMillis()
+            val updatedSettings = settings.copy(lastAdBlockUpdateTimestamp = now)
+            withContext(Dispatchers.Main) {
+                settings = updatedSettings
+                settingsStore.save(updatedSettings)
+                AdBlockEngine.reload(getApplication(), updatedSettings)
+                isAdBlockUpdating = false
+                adBlockStatusMessage = when (result) {
+                    is AdBlockUpdater.UpdateResult.Success -> "Updated successfully (${AdBlockEngine.totalRuleCount} active rules)"
+                    is AdBlockUpdater.UpdateResult.Error -> result.message
+                }
+            }
+        }
+    }
+
     fun updateHistorySearchQuery(query: String) {
         _historySearchQuery.value = query
     }
@@ -134,11 +201,20 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun updateSettings(newSettings: BrowserSettings) {
+        val oldSettings = settings
         settings = newSettings
         settingsStore.save(newSettings)
         tabManager.applySettings(newSettings)
         tabManager.applyCookieSettings(newSettings)
         saveSessionIfEnabled()
+
+        if (oldSettings.adBlockEnabled != newSettings.adBlockEnabled ||
+            oldSettings.enabledFilterLists != newSettings.enabledFilterLists ||
+            oldSettings.customAdBlockRules != newSettings.customAdBlockRules ||
+            oldSettings.cosmeticFilteringEnabled != newSettings.cosmeticFilteringEnabled
+        ) {
+            AdBlockEngine.reload(getApplication(), newSettings)
+        }
     }
 
     fun initialize() {
@@ -217,6 +293,21 @@ class BrowserViewModel @Inject constructor(
         get() = tabs.find { it.id == activeTabId }
 
     val tabCount: Int get() = tabs.size
+
+    val activeTabMediaItems: List<com.rhnxdev.hzplayer.browser.media.DetectedMediaItem>
+        get() = activeTab?.detectedMedia ?: emptyList()
+
+    val activeTabMediaCount: Int
+        get() = activeTabMediaItems.size
+
+    fun clearActiveTabMedia() {
+        activeTabId?.let { tabManager.clearMediaForTab(it) }
+    }
+
+    fun updateMediaQuality(itemId: String, qualityUrl: String) {
+        activeTabId?.let { tabManager.updateSelectedMediaQuality(it, itemId, qualityUrl) }
+    }
+
 
     // ── Lifecycle ────────────────────────────────────────────────
 

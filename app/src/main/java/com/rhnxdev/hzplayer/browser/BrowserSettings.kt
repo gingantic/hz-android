@@ -14,8 +14,11 @@ data class BrowserSettings(
     val blockTrackersEnabled: Boolean = true,
     val cosmeticFilteringEnabled: Boolean = true,
     val blockCrossDomainPopups: Boolean = true,
+    val enabledFilterLists: Set<String> = setOf("easylist", "easyprivacy", "peter_lowe", "ublock_filters"),
+    val customAdBlockRules: String = "",
+    val lastAdBlockUpdateTimestamp: Long = 0L,
     val cookiesEnabled: Boolean = true,
-    val thirdPartyCookiesEnabled: Boolean = false,
+    val thirdPartyCookiesEnabled: Boolean = true,
     val blockMixedContent: Boolean = false,       // false = MIXED_CONTENT_ALWAYS_ALLOW (current)
     val safeBrowsingEnabled: Boolean = true,
 

@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer
 
+import com.rhnxdev.hzplayer.core.util.extractHttpHeaders
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -124,6 +125,10 @@ class MainActivity : ComponentActivity() {
     /** Optional title override from the browser (instead of deriving from URL). */
     private var incomingMediaTitle by mutableStateOf<String?>(null)
 
+    /** Whether the incoming VIEW intent originated from HzPlayer in-app browser. */
+    private var incomingFromBrowser by mutableStateOf(false)
+
+
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grantResults ->
@@ -160,12 +165,15 @@ class MainActivity : ComponentActivity() {
                         incomingMediaHeaders = incomingMediaHeaders,
                         incomingMimeType = incomingMimeType,
                         incomingMediaTitle = incomingMediaTitle,
+                        incomingFromBrowser = incomingFromBrowser,
                         onIncomingMediaConsumed = {
                             incomingMediaUri = null
                             incomingMediaHeaders = null
                             incomingMimeType = null
                             incomingMediaTitle = null
+                            incomingFromBrowser = false
                         },
+
                         onOpenBrowser = { url ->
                             val intent = Intent(this@MainActivity, BrowserActivity::class.java).apply {
                                 putExtra(BrowserActivity.THEME_MODE, themeMode.name)
@@ -203,42 +211,17 @@ class MainActivity : ComponentActivity() {
 
     /** Extract the media URI (and any HTTP headers) from a VIEW intent. */
     private fun handleViewIntent(intent: Intent?) {
+
         if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
             incomingMediaUri = intent.data.toString()
             incomingMediaHeaders = extractHttpHeaders(intent)
             incomingMimeType = intent.type
             incomingMediaTitle = intent.getStringExtra("extra_media_title")
-            Log.i(TAG, "Received VIEW intent: $incomingMediaUri (type=${incomingMimeType}, headers=${incomingMediaHeaders?.size ?: 0})")
+            incomingFromBrowser = intent.getBooleanExtra("from_browser", false)
+            Log.i(TAG, "Received VIEW intent: $incomingMediaUri (fromBrowser=$incomingFromBrowser, type=${incomingMimeType}, headers=${incomingMediaHeaders?.size ?: 0})")
         }
     }
 
-    /**
-     * Parse HTTP headers from the conventions other apps (browsers, IPTV/players)
-     * use to forward auth tokens with a media URL:
-     *  - a `String[]` extra named `headers` of alternating key, value entries
-     *    (the de-facto standard shared by VLC / MX Player / the ExoPlayer demo), and
-     *  - a `Bundle` extra `android.media.intent.extra.HTTP_HEADERS` of string values.
-     * Returns null when no headers are present.
-     */
-    private fun extractHttpHeaders(intent: Intent): Map<String, String>? {
-        val out = LinkedHashMap<String, String>()
-        intent.getStringArrayExtra("headers")?.let { arr ->
-            var i = 0
-            while (i + 1 < arr.size) {
-                val key = arr[i]?.trim().orEmpty()
-                val value = arr[i + 1] ?: ""
-                if (key.isNotEmpty()) out[key] = value
-                i += 2
-            }
-        }
-        intent.getBundleExtra("android.media.intent.extra.HTTP_HEADERS")?.let { bundle ->
-            for (key in bundle.keySet()) {
-                val value = bundle.getString(key) ?: continue
-                if (key.isNotBlank()) out[key] = value
-            }
-        }
-        return if (out.isEmpty()) null else out
-    }
 
     /**
      * Fires when the user backgrounds the app (Home / recents / app-switch) —
@@ -380,9 +363,11 @@ fun HzPlayerApp(
     incomingMediaHeaders: Map<String, String>? = null,
     incomingMimeType: String? = null,
     incomingMediaTitle: String? = null,
+    incomingFromBrowser: Boolean = false,
     onIncomingMediaConsumed: () -> Unit = {},
     onOpenBrowser: (String?) -> Unit = {},
 ) {
+
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -713,15 +698,25 @@ fun HzPlayerApp(
                         activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                         playerViewModel.isShuttingDown = true
                         playerViewModel.stop()
-                        navController.popBackStack("__main_tabs", inclusive = false)
+                        if (incomingFromBrowser) {
+                            activity?.finish()
+                        } else {
+                            navController.popBackStack("__main_tabs", inclusive = false)
+                        }
                     },
                     onMinimize = {
                         // Signal the full-screen surface's ON_STOP to keep playing
                         // (engine is a singleton; the mini player takes over).
                         playerViewModel.isMinimizing = true
-                        navController.popBackStack("__main_tabs", inclusive = false)
+                        val activity = context as? android.app.Activity
+                        if (incomingFromBrowser) {
+                            activity?.finish()
+                        } else {
+                            navController.popBackStack("__main_tabs", inclusive = false)
+                        }
                     },
                 )
+
             }
 
             composable(

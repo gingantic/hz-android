@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">Hz Player</string>
+    <string name="video_player_title">Hz Player Video</string>
+    <string name="music_player_title">Hz Player Music</string>
 
     <!-- Player error messages (mapped from PlaybackErrorKind; raw cause is never shown) -->
     <string name="player_error_network">Network connection failed. Check your internet connection and try again.</string>
@@ -10,6 +12,7 @@
     <string name="player_error_format">This file\'s format isn\'t supported by this device.</string>
     <string name="player_error_drm">This content\'s protection (DRM) isn\'t supported on this device.</string>
     <string name="player_error_decoder">Playback failed because a decoder couldn\'t be initialized.</string>
+    <string name="player_error_server">The remote server returned an error (e.g. HTTP 500). The stream or server may be down or temporary unavailable.</string>
     <string name="player_error_unknown">Something went wrong during playback.</string>
 
     <string name="player_action_retry">Retry</string>

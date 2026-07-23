@@ -45,6 +45,28 @@ class MediaPlayerHolder @Inject constructor(
     @ApplicationContext private val context: Context,
     private val assHandler: AssHandler,
 ) {
+    init {
+        if (java.net.CookieHandler.getDefault() == null) {
+            java.net.CookieHandler.setDefault(java.net.CookieManager(null, java.net.CookiePolicy.ACCEPT_ALL))
+        }
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private val customLoadErrorHandlingPolicy = object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(6) {
+        override fun getRetryDelayMsFor(loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+            val exception = loadErrorInfo.exception
+            if (exception is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                val code = exception.responseCode
+                if (code in 500..599 || code == 429 || code == 408) {
+                    return minOf(500L * (1 shl (loadErrorInfo.errorCount - 1)), 6000L)
+                }
+            }
+            return super.getRetryDelayMsFor(loadErrorInfo)
+        }
+
+        override fun getMinimumLoadableRetryCount(dataType: Int): Int = 6
+    }
+
     /** Current decoder preference. Drives the [MediaCodecSelector] used when
      *  the player is (re)built. Changing it mid-playback defers the rebuild
      *  until playback returns to idle, so it takes effect on the next play
@@ -73,17 +95,21 @@ class MediaPlayerHolder @Inject constructor(
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private val loadControl = run {
-        // ponytail: 90s max buffer holds tens of MB on a high-bitrate stream —
-        // too much for low-RAM SoCs. Halve it there to free memory under pressure.
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        val (minMs, maxMs) = if (am.isLowRamDevice) 25_000 to 45_000 else 50_000 to 90_000
+        val (minMs, maxMs) = if (am.isLowRamDevice) 20_000 to 40_000 else 30_000 to 60_000
+        val backBufferMs = if (am.isLowRamDevice) 15_000 else 30_000
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ minMs,
                 /* maxBufferMs = */ maxMs,
-                /* bufferForPlaybackMs = */ 2_500,
-                /* bufferForPlaybackAfterUserActionMs = */ 5_000
+                /* bufferForPlaybackMs = */ 1_500,
+                /* bufferForPlaybackAfterUserActionMs = */ 2_000
             )
+            .setBackBuffer(
+                /* backBufferDurationMs = */ backBufferMs,
+                /* retainBackBufferFromKeyframe = */ true
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
     }
 
@@ -99,9 +125,9 @@ class MediaPlayerHolder @Inject constructor(
     private val httpDataSourceFactory: androidx.media3.datasource.DefaultHttpDataSource.Factory =
         androidx.media3.datasource.DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(30_000)
-            .setReadTimeoutMs(30_000)
-            .setUserAgent(androidx.media3.common.util.Util.getUserAgent(context, "HzPlayer"))
+            .setConnectTimeoutMs(8_000)
+            .setReadTimeoutMs(10_000)
+            .setUserAgent(DEFAULT_USER_AGENT)
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     var player: ExoPlayer = buildPlayer()
@@ -140,6 +166,7 @@ class MediaPlayerHolder @Inject constructor(
                 DefaultMediaSourceFactory(context, AssExtractorsFactory(assHandler))
                     .setDataSourceFactory(buildCompositeDataSourceFactory())
                     .setSubtitleParserFactory(AssSubtitleParserFactory())
+                    .setLoadErrorHandlingPolicy(customLoadErrorHandlingPolicy)
             )
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
@@ -480,7 +507,7 @@ class MediaPlayerHolder @Inject constructor(
     private fun buildCompositeDataSourceFactory(): DataSource.Factory {
         val defaultFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         return DataSource.Factory {
-            ProtocolRoutingDataSource(defaultFactory)
+            ProtocolRoutingDataSource(defaultFactory, lastTransitionUri)
         }
     }
 
@@ -492,11 +519,50 @@ class MediaPlayerHolder @Inject constructor(
      */
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     fun setHttpRequestHeaders(headers: Map<String, String>) {
-        httpDataSourceFactory.setDefaultRequestProperties(headers)
+        val filtered = mutableMapOf<String, String>()
+        val forbidden = setOf(
+            "host", "content-length", "connection", "accept-encoding",
+            "content-type", "transfer-encoding", "if-modified-since", "if-none-match", "range", "sec-fetch-mode", "sec-fetch-site", "sec-fetch-dest"
+        )
+
+        headers.forEach { (rawKey, value) ->
+            val keyLower = rawKey.trim().lowercase(java.util.Locale.ROOT)
+            if (keyLower.isNotBlank() && value.isNotBlank() && !forbidden.contains(keyLower)) {
+                val normalizedKey = when (keyLower) {
+                    "referer" -> "Referer"
+                    "user-agent" -> "User-Agent"
+                    "cookie" -> "Cookie"
+                    "authorization" -> "Authorization"
+                    "origin" -> "Origin"
+                    "accept" -> "Accept"
+                    "accept-language" -> "Accept-Language"
+                    else -> rawKey.trim()
+                }
+                filtered[normalizedKey] = value
+            }
+        }
+
+        val refererVal = filtered["Referer"]
+        if (!refererVal.isNullOrBlank() && filtered["Origin"].isNullOrBlank()) {
+            try {
+                val refUri = Uri.parse(refererVal)
+                if (!refUri.scheme.isNullOrBlank() && !refUri.host.isNullOrBlank()) {
+                    val portStr = if (refUri.port != -1) ":${refUri.port}" else ""
+                    filtered["Origin"] = "${refUri.scheme}://${refUri.host}$portStr"
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (filtered.none { it.key.equals("User-Agent", ignoreCase = true) }) {
+            filtered["User-Agent"] = DEFAULT_USER_AGENT
+        }
+        httpDataSourceFactory.setDefaultRequestProperties(filtered)
     }
 
     companion object {
         private const val TAG = "MediaPlayerHolder"
+        private const val DEFAULT_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
     }
 }
 
@@ -512,12 +578,27 @@ class MediaPlayerHolder @Inject constructor(
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private class ProtocolRoutingDataSource(
     private val defaultFactory: DefaultDataSource.Factory,
+    private val primaryUriString: String? = null
 ) : androidx.media3.datasource.DataSource {
 
     private var delegate: androidx.media3.datasource.DataSource? = null
 
     override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
-        val resolved = when (dataSpec.uri.scheme?.lowercase()) {
+        var spec = dataSpec
+        try {
+            val reqUri = dataSpec.uri
+            val primaryUri = primaryUriString?.let { Uri.parse(it) }
+
+            if (reqUri.scheme?.lowercase() in setOf("http", "https") && primaryUri != null) {
+                if (reqUri.query.isNullOrBlank() && !primaryUri.query.isNullOrBlank() && reqUri.host.equals(primaryUri.host, ignoreCase = true)) {
+                    val connector = if (reqUri.toString().contains("?")) "&" else "?"
+                    val enrichedUri = Uri.parse("${reqUri}$connector${primaryUri.query}")
+                    spec = dataSpec.buildUpon().setUri(enrichedUri).build()
+                }
+            }
+        } catch (_: Exception) {}
+
+        val resolved = when (spec.uri.scheme?.lowercase()) {
             "smb" -> SmbDataSource()
             "ftp" -> FtpDataSource()
             "sftp" -> SftpDataSource()
@@ -527,7 +608,7 @@ private class ProtocolRoutingDataSource(
         }
         delegate = resolved
         
-        return resolved.open(dataSpec)
+        return resolved.open(spec)
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int =

@@ -60,6 +60,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+
+import androidx.compose.material.icons.filled.PlayArrow
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserBottomBar(
@@ -80,8 +86,12 @@ fun BrowserBottomBar(
     onNewTab: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    onPlayerClick: () -> Unit = {},
+    mediaCount: Int = 0,
+    onMediaGrabberClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+
     // True when the typed text differs from what is actually loaded
     val urlChanged = url.trim() != currentTabUrl.trim()
     var showMenu by remember { mutableStateOf(false) }
@@ -217,6 +227,7 @@ fun BrowserBottomBar(
                         }
                     }
                 },
+
                 textStyle = MaterialTheme.typography.bodySmall.copy(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = fontSize,
@@ -241,7 +252,38 @@ fun BrowserBottomBar(
             )
         }
 
-        // 3-bar Menu button
+        // Media Grabber button — RIGHT side bar
+        IconButton(
+            onClick = onMediaGrabberClick,
+            modifier = Modifier.size(40.dp),
+        ) {
+            if (mediaCount > 0) {
+                BadgedBox(
+                    badge = {
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ) {
+                            Text("$mediaCount")
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Movie,
+                        contentDescription = "Media Grabber",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Movie,
+                    contentDescription = "Media Grabber",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
+        }
+
+        // 3-bar Menu button — RIGHT side bar
         IconButton(
             onClick = { showMenu = true },
             modifier = Modifier.size(40.dp),
@@ -360,7 +402,20 @@ fun BrowserBottomBar(
                         },
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
+
+                    BrowserMenuItemRow(
+                        icon = Icons.Default.PlayArrow,
+                        title = "Player",
+                        onClick = {
+                            showMenu = false
+                            onPlayerClick()
+                        },
+                    )
+
                 }
             }
         }
