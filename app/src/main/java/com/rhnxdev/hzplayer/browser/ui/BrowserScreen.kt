@@ -32,11 +32,21 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.rhnxdev.hzplayer.browser.BrowserViewModel
 
 import android.view.MotionEvent
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.unit.dp
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel = hiltViewModel(),
@@ -131,6 +141,28 @@ fun BrowserScreen(
                 }
             }
 
+            // Top-of-bar linear page loading progress indicator
+            val activeTab = viewModel.activeTab
+            val isLoading = activeTab?.isLoading == true
+            val rawProgress = activeTab?.progress ?: 0
+            val targetProgress = if (isLoading) (rawProgress.coerceAtLeast(10) / 100f) else 1f
+            val animatedProgress by animateFloatAsState(
+                targetValue = targetProgress,
+                animationSpec = tween(durationMillis = 200, easing = LinearOutSlowInEasing),
+                label = "PageLoadingProgress",
+            )
+
+            if (isLoading && animatedProgress < 1f) {
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.Transparent,
+                )
+            }
+
             // Bottom toolbar
             BrowserBottomBar(
                 url = viewModel.urlInput,
@@ -156,7 +188,7 @@ fun BrowserScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .imePadding(),
+                    .windowInsetsPadding(WindowInsets.imeAnimationTarget),
             )
         }
 

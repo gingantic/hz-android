@@ -66,6 +66,10 @@ import androidx.compose.material3.BadgedBox
 
 import androidx.compose.material.icons.filled.PlayArrow
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.text.font.FontWeight
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserBottomBar(
@@ -110,16 +114,30 @@ fun BrowserBottomBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        // Tab count button — LEFT side
+        // Tab count button — LEFT side with square logo icon outline
         IconButton(
             onClick = onTabsClick,
             modifier = Modifier.size(40.dp),
         ) {
-            Text(
-                text = "$tabCount",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .border(
+                        width = 2.dp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        shape = RoundedCornerShape(5.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "$tabCount",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
 
         // URL bar — auto-sizing text proportional to bar width
@@ -133,7 +151,7 @@ fun BrowserBottomBar(
                     } else false
                 },
         ) {
-            val fontSize = (maxWidth.value / 21f).coerceIn(11f, 15f).sp
+            val fontSize = (maxWidth.value / 16f).coerceIn(15f, 18f).sp
 
             val isHttps = url.startsWith("https://", ignoreCase = true)
             val isHttp = url.startsWith("http://", ignoreCase = true)
@@ -164,7 +182,7 @@ fun BrowserBottomBar(
                 placeholder = {
                     Text(
                         "Search or enter URL",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = fontSize),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = fontSize),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -228,7 +246,7 @@ fun BrowserBottomBar(
                     }
                 },
 
-                textStyle = MaterialTheme.typography.bodySmall.copy(
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = fontSize,
                 ),
