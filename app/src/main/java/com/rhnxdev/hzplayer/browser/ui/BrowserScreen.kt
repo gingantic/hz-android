@@ -107,8 +107,21 @@ fun BrowserScreen(
                 onClick = { focusManager.clearFocus() },
             )
     ) {
-        // Main content — WebView + bottom bar
+        // Main content — Top Bar + WebView + Bottom Bar
         Column(modifier = Modifier.fillMaxSize()) {
+            // Top URL Address Bar
+            BrowserTopBar(
+                url = viewModel.urlInput,
+                currentTabUrl = viewModel.activeTab?.url ?: "",
+                isLoading = viewModel.activeTab?.isLoading == true,
+                progress = viewModel.activeTab?.progress ?: 0,
+                onUrlChange = { viewModel.urlInput = it },
+                onUrlSubmit = { viewModel.navigate(viewModel.urlInput) },
+                onReload = { viewModel.reload() },
+                onStopLoading = { viewModel.stopLoading() },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             // WebView content (always visible for active tab)
             Box(
                 modifier = Modifier
@@ -139,28 +152,6 @@ fun BrowserScreen(
                         onTapBackground = { focusManager.clearFocus() },
                     )
                 }
-            }
-
-            // Top-of-bar linear page loading progress indicator
-            val activeTab = viewModel.activeTab
-            val isLoading = activeTab?.isLoading == true
-            val rawProgress = activeTab?.progress ?: 0
-            val targetProgress = if (isLoading) (rawProgress.coerceAtLeast(10) / 100f) else 1f
-            val animatedProgress by animateFloatAsState(
-                targetValue = targetProgress,
-                animationSpec = tween(durationMillis = 200, easing = LinearOutSlowInEasing),
-                label = "PageLoadingProgress",
-            )
-
-            if (isLoading && animatedProgress < 1f) {
-                LinearProgressIndicator(
-                    progress = { animatedProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.5.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = Color.Transparent,
-                )
             }
 
             // Bottom toolbar

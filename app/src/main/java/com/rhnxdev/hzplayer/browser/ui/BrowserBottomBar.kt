@@ -96,25 +96,56 @@ fun BrowserBottomBar(
     modifier: Modifier = Modifier,
 ) {
 
-    // True when the typed text differs from what is actually loaded
-    val urlChanged = url.trim() != currentTabUrl.trim()
     var showMenu by remember { mutableStateOf(false) }
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-    val submitUrl = {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-        onUrlSubmit()
-    }
 
     Row(
         modifier = modifier
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(horizontal = 4.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        // Tab count button — LEFT side with square logo icon outline
+        // Back button
+        IconButton(
+            onClick = onBack,
+            enabled = canGoBack,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = if (canGoBack) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            )
+        }
+
+        // Forward button
+        IconButton(
+            onClick = onForward,
+            enabled = canGoForward,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Forward",
+                tint = if (canGoForward) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            )
+        }
+
+        // New Tab button
+        IconButton(
+            onClick = onNewTab,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "New Tab",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+
+        // Tab count button
         IconButton(
             onClick = onTabsClick,
             modifier = Modifier.size(40.dp),
@@ -140,137 +171,7 @@ fun BrowserBottomBar(
             }
         }
 
-        // URL bar — auto-sizing text proportional to bar width
-        BoxWithConstraints(
-            modifier = Modifier
-                .weight(1f)
-                .onKeyEvent { event ->
-                    if ((event.key == Key.Enter || event.key == Key.NumPadEnter) && event.type == KeyEventType.KeyUp) {
-                        submitUrl()
-                        true
-                    } else false
-                },
-        ) {
-            val fontSize = (maxWidth.value / 16f).coerceIn(15f, 18f).sp
-
-            val isHttps = url.startsWith("https://", ignoreCase = true)
-            val isHttp = url.startsWith("http://", ignoreCase = true)
-
-            // Display URL purging http:// and https:// prefixes
-            val displayUrl = when {
-                url == "about:blank" -> ""
-                isHttps -> url.substring(8)
-                isHttp -> url.substring(7)
-                else -> url
-            }
-
-            OutlinedTextField(
-                value = displayUrl,
-                onValueChange = { newDisplay: String ->
-                    val updatedUrl = when {
-                        newDisplay.isBlank() -> ""
-                        newDisplay.startsWith("https://", ignoreCase = true) ||
-                            newDisplay.startsWith("http://", ignoreCase = true) -> newDisplay
-                        isHttps -> "https://$newDisplay"
-                        isHttp -> "http://$newDisplay"
-                        else -> newDisplay
-                    }
-                    onUrlChange(updatedUrl)
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                placeholder = {
-                    Text(
-                        "Search or enter URL",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = fontSize),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                leadingIcon = {
-                    val leadingIcon = when {
-                        isHttps -> Icons.Default.Lock
-                        isHttp -> Icons.Default.LockOpen
-                        else -> Icons.Default.Search
-                    }
-                    val leadingIconTint = when {
-                        isHttps -> MaterialTheme.colorScheme.primary
-                        isHttp -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    val leadingIconDesc = when {
-                        isHttps -> "Secure connection (HTTPS)"
-                        isHttp -> "Insecure connection (HTTP)"
-                        else -> "Search or enter URL"
-                    }
-                    Icon(
-                        imageVector = leadingIcon,
-                        contentDescription = leadingIconDesc,
-                        tint = leadingIconTint,
-                        modifier = Modifier.size(16.dp),
-                    )
-                },
-                trailingIcon = {
-                    when {
-                        isLoading -> IconButton(
-                            onClick = onStopLoading,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Stop",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                        urlChanged && url.isNotBlank() -> IconButton(
-                            onClick = submitUrl,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "Go",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        url.isNotBlank() -> IconButton(
-                            onClick = onReload,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Reload",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                },
-
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = fontSize,
-                ),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Go,
-                ),
-                keyboardActions = KeyboardActions(
-                    onGo = { submitUrl() },
-                    onDone = { submitUrl() },
-                    onSearch = { submitUrl() },
-                    onSend = { submitUrl() },
-                ),
-                shape = RoundedCornerShape(Spacing.sm),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                ),
-            )
-        }
-
-        // Media Grabber button — RIGHT side bar
+        // Media Grabber button
         IconButton(
             onClick = onMediaGrabberClick,
             modifier = Modifier.size(40.dp),
@@ -301,7 +202,7 @@ fun BrowserBottomBar(
             }
         }
 
-        // 3-bar Menu button — RIGHT side bar
+        // Menu button
         IconButton(
             onClick = { showMenu = true },
             modifier = Modifier.size(40.dp),
@@ -312,6 +213,7 @@ fun BrowserBottomBar(
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
+    }
 
         // Floating Modal Bottom Sheet rising from bottom bar
         if (showMenu) {
@@ -427,7 +329,7 @@ fun BrowserBottomBar(
 
                     BrowserMenuItemRow(
                         icon = Icons.Default.PlayArrow,
-                        title = "Player",
+                        title = "Exit to player",
                         onClick = {
                             showMenu = false
                             onPlayerClick()
@@ -438,7 +340,6 @@ fun BrowserBottomBar(
             }
         }
     }
-}
 
 @Composable
 private fun BrowserMenuItemRow(
