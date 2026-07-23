@@ -124,6 +124,10 @@ popd
 echo "=== [2/6] Building freetype $FREETYPE_VER ==="
 if [ ! -f "freetype-${FREETYPE_VER}.tar.gz" ]; then
   curl -fLo "freetype-${FREETYPE_VER}.tar.gz" \
+    "https://downloads.sourceforge.net/project/freetype/freetype2/${FREETYPE_VER}/freetype-${FREETYPE_VER}.tar.gz" || \
+  curl -fLo "freetype-${FREETYPE_VER}.tar.gz" \
+    "https://ftpmirror.gnu.org/freetype/freetype-${FREETYPE_VER}.tar.gz" || \
+  curl -fLo "freetype-${FREETYPE_VER}.tar.gz" \
     "https://download.savannah.gnu.org/releases/freetype/freetype-${FREETYPE_VER}.tar.gz"
 fi
 tar -xzf "freetype-${FREETYPE_VER}.tar.gz"
