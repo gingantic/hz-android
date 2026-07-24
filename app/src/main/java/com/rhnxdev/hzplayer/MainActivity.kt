@@ -96,11 +96,14 @@ import com.rhnxdev.hzplayer.presentation.settings.components.UpdateDialog
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 import com.rhnxdev.hzplayer.browser.BrowserActivity
 import com.rhnxdev.hzplayer.presentation.video.VideoLibraryScreen
+import androidx.compose.ui.platform.LocalContext
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    private val playerViewModel: PlayerViewModel by viewModels()
 
     /** Tracks whether any permission was denied on the last attempt. */
     private var permissionDenied by mutableStateOf(false)
@@ -195,10 +198,51 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipReceiver, android.content.IntentFilter(ACTION_PIP_PLAY_PAUSE), RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipReceiver, android.content.IntentFilter(ACTION_PIP_PLAY_PAUSE))
+        }
+    }
+
+    private val pipReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action == ACTION_PIP_PLAY_PAUSE) {
+                playerViewModel.onPlayPause()
+            }
+        }
+    }
+
+    fun buildPipParams(isPlaying: Boolean): android.app.PictureInPictureParams? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+        val actions = ArrayList<android.app.RemoteAction>()
+        val actionIntent = Intent(ACTION_PIP_PLAY_PAUSE).setPackage(packageName)
+        val pendingIntent = android.app.PendingIntent.getBroadcast(
+            this,
+            0,
+            actionIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val title = if (isPlaying) "Pause" else "Play"
+        val action = android.app.RemoteAction(
+            android.graphics.drawable.Icon.createWithResource(this, iconRes),
+            title,
+            title,
+            pendingIntent
+        )
+        actions.add(action)
+        return android.app.PictureInPictureParams.Builder()
+            .setAspectRatio(android.util.Rational(16, 9))
+            .setActions(actions)
+            .build()
     }
 
     override fun onDestroy() {
-        val playerViewModel: PlayerViewModel by viewModels()
+        try {
+            unregisterReceiver(pipReceiver)
+        } catch (_: Exception) {}
         playerViewModel.isShuttingDown = true
         super.onDestroy()
     }
@@ -230,9 +274,8 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (pipEligible && !isInPictureInPictureMode && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = android.app.PictureInPictureParams.Builder()
-                .setAspectRatio(android.util.Rational(16, 9))
-                .build()
+            val params = buildPipParams(playerViewModel.uiState.value.isPlaying)
+                ?: android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()
             enterPictureInPictureMode(params)
         }
     }
@@ -417,6 +460,16 @@ fun HzPlayerApp(
         playerState.currentTitle != null
     LaunchedEffect(pipEligibleNow) {
         onPipEligibilityChange(pipEligibleNow)
+    }
+
+    val context = LocalContext.current
+    LaunchedEffect(playerState.isPlaying, pipEligibleNow) {
+        val activity = context as? MainActivity
+        if (pipEligibleNow && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
+            activity.buildPipParams(playerState.isPlaying)?.let { params ->
+                activity.setPictureInPictureParams(params)
+            }
+        }
     }
 
     // Handle incoming media URI from external VIEW intents (file chooser / share / browser).
@@ -846,3 +899,6 @@ private fun isVideoExtension(name: String): Boolean = com.rhnxdev.hzplayer.core.
 
 /** Common audio file extensions for file-browser detection. */
 private fun isAudioExtension(name: String): Boolean = com.rhnxdev.hzplayer.core.util.isAudioExtension(name)
+
+private const val TAG = "MainActivity"
+private const val ACTION_PIP_PLAY_PAUSE = "com.rhnxdev.hzplayer.ACTION_PIP_PLAY_PAUSE"
