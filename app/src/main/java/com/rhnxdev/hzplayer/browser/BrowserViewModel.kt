@@ -142,6 +142,8 @@ class BrowserViewModel @Inject constructor(
             }
             saveSessionIfEnabled()
         }
+
+        initialize()
     }
 
     fun refreshAdBlockFilters() {
@@ -254,6 +256,26 @@ class BrowserViewModel @Inject constructor(
 
     fun switchTab(id: String) {
         tabManager.switchTab(id)
+        saveSessionIfEnabled()
+    }
+
+    fun switchToNextTab() {
+        val tabList = tabManager.tabs
+        if (tabList.size <= 1) return
+        val currentIdx = tabList.indexOfFirst { it.id == tabManager.activeTabId }
+        if (currentIdx < 0) return
+        val nextIdx = (currentIdx + 1) % tabList.size
+        tabManager.switchTab(tabList[nextIdx].id)
+        saveSessionIfEnabled()
+    }
+
+    fun switchToPreviousTab() {
+        val tabList = tabManager.tabs
+        if (tabList.size <= 1) return
+        val currentIdx = tabList.indexOfFirst { it.id == tabManager.activeTabId }
+        if (currentIdx < 0) return
+        val prevIdx = if (currentIdx == 0) tabList.size - 1 else currentIdx - 1
+        tabManager.switchTab(tabList[prevIdx].id)
         saveSessionIfEnabled()
     }
 

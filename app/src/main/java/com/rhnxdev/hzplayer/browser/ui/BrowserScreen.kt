@@ -4,7 +4,13 @@ import android.app.Activity
 import android.widget.Toast
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -25,7 +32,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -34,7 +43,6 @@ import com.rhnxdev.hzplayer.browser.BrowserViewModel
 import android.view.MotionEvent
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -97,6 +105,40 @@ fun BrowserScreen(
         window.navigationBarColor = navColor
     }
 
+    // Track tab switch direction for slide animation
+    var tabSlideDirection by remember { mutableIntStateOf(0) } // -1 = prev (slide right), 1 = next (slide left)
+    val swipeThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
+
+    val onSwipeNext: () -> Unit = {
+        if (viewModel.tabCount > 1) {
+            tabSlideDirection = 1
+            viewModel.switchToNextTab()
+        }
+    }
+    val onSwipePrev: () -> Unit = {
+        if (viewModel.tabCount > 1) {
+            tabSlideDirection = -1
+            viewModel.switchToPreviousTab()
+        }
+    }
+
+    // Swipe-to-switch-tab modifier for toolbars (Chrome-style)
+    val toolbarSwipeModifier = Modifier.pointerInput(Unit) {
+        var totalX = 0f
+        var triggered = false
+        detectDragGestures(
+            onDragStart = { totalX = 0f; triggered = false },
+            onDrag = { change, dragAmount ->
+                totalX += dragAmount.x
+                if (!triggered && kotlin.math.abs(totalX) > swipeThresholdPx) {
+                    triggered = true
+                    change.consume()
+                    if (totalX < 0) onSwipeNext() else onSwipePrev()
+                }
+            },
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -114,45 +156,70 @@ fun BrowserScreen(
             val showNewTab = activeId == null || activeTab == null ||
                     activeTab.url.isBlank() || activeTab.url == "about:blank"
 
-            // Top URL Address Bar (hidden on homepage / start screen)
-            if (!showNewTab) {
-                BrowserTopBar(
-                    url = viewModel.urlInput,
-                    currentTabUrl = viewModel.activeTab?.url ?: "",
-                    isLoading = viewModel.activeTab?.isLoading == true,
-                    progress = viewModel.activeTab?.progress ?: 0,
-                    onUrlChange = { viewModel.urlInput = it },
-                    onUrlSubmit = { viewModel.navigate(viewModel.urlInput) },
-                    onReload = { viewModel.reload() },
-                    onStopLoading = { viewModel.stopLoading() },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            // Top URL Address Bar — always intact and visible across all tabs
+            BrowserTopBar(
+                url = viewModel.urlInput,
+                currentTabUrl = viewModel.activeTab?.url ?: "",
+                isLoading = viewModel.activeTab?.isLoading == true,
+                progress = viewModel.activeTab?.progress ?: 0,
+                onUrlChange = { viewModel.urlInput = it },
+                onUrlSubmit = { viewModel.navigate(viewModel.urlInput) },
+                onReload = { viewModel.reload() },
+                onStopLoading = { viewModel.stopLoading() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(toolbarSwipeModifier),
+            )
 
-            // WebView content (always visible for active tab)
+            // Isolated content container (WebView + NewTabPage)
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background),
             ) {
-                if (activeId != null) {
-                    BrowserWebView(
-                        viewModel = viewModel,
-                        tabId = activeId,
-                        onTouch = { focusManager.clearFocus() },
-                    )
-                }
+                // WebView content with slide animation on tab switch
+                AnimatedContent(
+                    targetState = activeId,
+                    transitionSpec = {
+                        val direction = tabSlideDirection
+                        (slideInHorizontally(
+                            animationSpec = tween(250),
+                            initialOffsetX = { fullWidth -> fullWidth * direction },
+                        ) togetherWith slideOutHorizontally(
+                            animationSpec = tween(250),
+                            targetOffsetX = { fullWidth -> -fullWidth * direction },
+                        ))
+                    },
+                    label = "TabSwitchAnimation",
+                    modifier = Modifier.fillMaxSize(),
+                ) { targetTabId ->
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (targetTabId != null) {
+                            BrowserWebView(
+                                viewModel = viewModel,
+                                tabId = targetTabId,
+                                onTouch = { focusManager.clearFocus() },
+                            )
+                        }
 
-                if (showNewTab) {
-                    NewTabPage(
-                        onUrlEntered = { url ->
-                            if (url.isNotBlank()) {
-                                if (activeId != null) viewModel.navigate(url)
-                                else viewModel.createTab(url)
-                            }
-                        },
-                        onTapBackground = { focusManager.clearFocus() },
-                    )
+                        val isTargetNewTab = targetTabId == null ||
+                                viewModel.tabs.find { it.id == targetTabId }?.let {
+                                    it.url.isBlank() || it.url == "about:blank"
+                                } == true
+
+                        if (isTargetNewTab) {
+                            NewTabPage(
+                                onUrlEntered = { url ->
+                                    if (url.isNotBlank()) {
+                                        if (targetTabId != null) viewModel.navigate(url)
+                                        else viewModel.createTab(url)
+                                    }
+                                },
+                                onTapBackground = { focusManager.clearFocus() },
+                            )
+                        }
+                    }
                 }
             }
 
@@ -181,7 +248,8 @@ fun BrowserScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .windowInsetsPadding(WindowInsets.imeAnimationTarget),
+                    .windowInsetsPadding(WindowInsets.imeAnimationTarget)
+                    .then(toolbarSwipeModifier),
             )
         }
 
@@ -268,6 +336,7 @@ private fun BrowserWebView(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             )
+            wv.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             viewModel.tabManager.registerWebView(tabId, wv)
             viewModel.tabManager.trimPool(tabId)
             wv
