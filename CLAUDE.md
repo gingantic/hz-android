@@ -492,7 +492,7 @@ VLC source is in `vlc-android-master/`. **UX reference only — do not copy code
 | HDR→SDR colour correction (`GlEffect` / custom GLSL) | 🔧 In progress — pref wired, pipeline no-op |
 | Custom `SubtitleOverlay` (replace built-in PlayerView subtitles) | ⏸ Parked — built-in active for reliability |
 | ASS/SSA animated subtitles (libass or VLC subtitle renderer) | ✅ Implemented — native libass pipeline with SRT/VTT conversion |
-| Remove unused `vlc-android-master/` directory | 🧹 Low priority cleanup |
+| Remove unused `vlc-android-master/` directory | ✅ Done |
 
 ---
 
