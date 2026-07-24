@@ -1,8 +1,8 @@
 # Hz Player — Player Architecture
 
 > Media3 ExoPlayer behind the `IPlayerEngine` contract, rendered through `PlayerSurface`.
-> Last refreshed: 2026-07-21. Reflects the libass subtitle pipeline, position controller
-> split, audio queue, floating video player, and resume-mode support.
+> Last refreshed: 2026-07-24. Reflects the libass subtitle pipeline, position controller
+> split, audio queue, floating video player, resume-mode support, and in-app browser.
 
 ---
 

@@ -37,6 +37,8 @@ interface UserPreferencesRepository {
     val lastVolume: Flow<Float>
     /** Last screen brightness level (0.0–1.0). -1f means "use system brightness". */
     val lastBrightness: Flow<Float>
+    /** Whether to remember and restore last brightness & volume state. */
+    val saveVolumeBrightnessState: Flow<Boolean>
 
     suspend fun setThemeMode(mode: ThemeMode)
     suspend fun setAppColorArgb(argb: Int)
@@ -59,6 +61,7 @@ interface UserPreferencesRepository {
     suspend fun setShowWatchProgress(enabled: Boolean)
     suspend fun setLastVolume(volume: Float)
     suspend fun setLastBrightness(brightness: Float)
+    suspend fun setSaveVolumeBrightnessState(enabled: Boolean)
 
     val selectedTabIndex: Flow<Int>
 

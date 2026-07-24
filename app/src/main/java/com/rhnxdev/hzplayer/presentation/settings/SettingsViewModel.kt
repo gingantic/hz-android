@@ -85,6 +85,9 @@ class SettingsViewModel @Inject constructor(
     val showWatchProgress: StateFlow<Boolean> = prefs.showWatchProgress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    val saveVolumeBrightnessState: StateFlow<Boolean> = prefs.saveVolumeBrightnessState
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val orientationMode: StateFlow<OrientationMode> = prefs.orientationMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrientationMode.AUTO)
 
@@ -148,6 +151,10 @@ class SettingsViewModel @Inject constructor(
 
     fun saveShowWatchProgress(enabled: Boolean) {
         viewModelScope.launch { prefs.setShowWatchProgress(enabled) }
+    }
+
+    fun saveSaveVolumeBrightnessState(enabled: Boolean) {
+        viewModelScope.launch { prefs.setSaveVolumeBrightnessState(enabled) }
     }
 
     fun saveOrientationMode(mode: OrientationMode) {

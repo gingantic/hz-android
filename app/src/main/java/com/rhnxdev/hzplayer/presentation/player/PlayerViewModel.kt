@@ -102,6 +102,10 @@ class PlayerViewModel @Inject constructor(
     val lastBrightness: StateFlow<Float> = userPreferencesRepository.lastBrightness
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1f)
 
+    /** Toggle state for saving/restoring brightness & volume. */
+    val saveVolumeBrightnessState: StateFlow<Boolean> = userPreferencesRepository.saveVolumeBrightnessState
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     /**
      * Set when minimizing to the floating window so the full-screen surface's
      * ON_STOP (fired by the NavBackStackEntry when the route is popped) does NOT
@@ -348,11 +352,11 @@ class PlayerViewModel @Inject constructor(
     fun applyOrientationMode(activity: android.app.Activity, mode: com.rhnxdev.hzplayer.domain.model.OrientationMode) {
         activity.requestedOrientation = when (mode) {
             com.rhnxdev.hzplayer.domain.model.OrientationMode.AUTO ->
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
             com.rhnxdev.hzplayer.domain.model.OrientationMode.PORTRAIT ->
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             com.rhnxdev.hzplayer.domain.model.OrientationMode.LANDSCAPE ->
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
     }
 
@@ -703,6 +707,7 @@ class PlayerViewModel @Inject constructor(
 
     /** Persist the current volume level so it can be restored next session. */
     fun saveLastVolume(volume: Float) {
+        if (!saveVolumeBrightnessState.value) return
         viewModelScope.launch {
             userPreferencesRepository.setLastVolume(volume)
         }
@@ -710,6 +715,7 @@ class PlayerViewModel @Inject constructor(
 
     /** Persist the current brightness level so it can be restored next session. */
     fun saveLastBrightness(brightness: Float) {
+        if (!saveVolumeBrightnessState.value) return
         viewModelScope.launch {
             userPreferencesRepository.setLastBrightness(brightness)
         }

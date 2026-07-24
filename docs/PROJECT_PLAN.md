@@ -3,9 +3,9 @@
 > **Project**: Hz Player — VLC-inspired Android media player
 > **Root**: `C:\Users\reihan\Desktop\Rhvn-player\hz-android`
 > **Package**: `com.rhnxdev.hzplayer`
-> **Last refreshed**: 2026-07-21. All original phases complete; six net-new
+> **Last refreshed**: 2026-07-24. All original phases complete; seven net-new
 > work streams (network streaming, native thumbnails, modular engine, libass
-> subtitles, archive support, OTA updates) since then.
+> subtitles, archive support, OTA updates, in-app browser) since then.
 
 ---
 
@@ -27,6 +27,8 @@ six additional subsystems have been added on top:
   streaming from inside archives (no extraction to disk).
 - **OTA updates** — Cloudflare R2 update checker with startup reminder, About dialog,
   and open-source licenses screen (AboutLibraries).
+- **In-app browser** — WebView-based browser with native ad blocking (JNI), media
+  sniffing, tab management, browser history, and popup permissions.
 
 ### What exists
 - ✅ Compose + M3, 5-tab `NavigationSuiteScaffold`, M3 dynamic theme (`presentation/theme`)
@@ -43,7 +45,7 @@ six additional subsystems have been added on top:
 - ✅ OTA update checker + startup reminder + About/Licenses
 - ✅ Full i18n (strings.xml; `DEBUG`-gated preview data only)
 - ✅ Native FFmpeg thumbnail pipeline (`cpp/ThumbnailExtractor.cpp`)
-- ✅ Web landing page (Svelte + Vite in `web/`)
+- ✅ In-app browser (WebView + ad block + media sniffing + tabs + history)
 
 ### What is missing / deferred
 - ⏸ `MainActivity` extraction to `presentation/navigation/HzPlayerApp` (heavy cross-file)
@@ -102,6 +104,7 @@ do not copy. Mapping table in the original plan remains accurate; notable update
 | + Archive support | libarchive + virtual nav + play-in-place | ✅ 100% |
 | + OTA updates | R2 checker + startup reminder + About/Licenses | ✅ 100% |
 | + Audio queue / Floating player | Queue sheet + PiP-style overlay | ✅ 100% |
+| + In-app browser | WebView + ad block + media sniffing + tabs + history | ✅ 100% |
 | Cleanup/i18n pass | 27-item bug/reliability/i18n | ✅ 100% |
 
 **Overall: foundation + all subsystems complete.**
@@ -115,3 +118,4 @@ do not copy. Mapping table in the original plan remains accurate; notable update
 | 2026-06-29 | Initial plan created | Claude |
 | 2026-07-11 | Docs synced to current codebase (architecture, roadmap, data flow, player, UI, engine, cleanup) | Claude |
 | 2026-07-21 | Docs synced: libass pipeline, archive support, OTA updates, audio queue, floating player, render seam on interface | Claude |
+| 2026-07-24 | Docs synced: in-app browser, 11 repositories, 5 Room tables, 27 player components, 20 domain models, corrected counts throughout | Claude |

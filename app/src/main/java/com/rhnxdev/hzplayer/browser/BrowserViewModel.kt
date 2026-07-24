@@ -86,25 +86,6 @@ class BrowserViewModel @Inject constructor(
         pendingPopupRequest = null
     }
 
-    var denyAllCrossDomainPopupsThisSession by mutableStateOf(false)
-        private set
-
-    fun setDenyAllPopupsThisSession(enabled: Boolean) {
-        denyAllCrossDomainPopupsThisSession = enabled
-        tabManager.denyAllCrossDomainPopupsThisSession = enabled
-    }
-
-    fun denyPendingPopupAndBlockSession() {
-        setDenyAllPopupsThisSession(true)
-        val domain = pendingPopupRequest?.targetDomain ?: ""
-        denyPendingPopup()
-        popupWarningMessage = if (domain.isNotBlank()) {
-            "Denied all cross-domain pop-ups for this session ($domain blocked)"
-        } else {
-            "Denied all cross-domain pop-ups for this session"
-        }
-    }
-
     fun denyPendingPopup() {
         val req = pendingPopupRequest ?: return
         try {
