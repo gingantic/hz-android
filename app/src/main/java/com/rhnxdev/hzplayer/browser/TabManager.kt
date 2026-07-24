@@ -502,6 +502,7 @@ class TabManager(
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun applySettingsToView(wv: WebView, s: BrowserSettings) {
+        wv.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         wv.settings.javaScriptEnabled                  = s.javaScriptEnabled
         wv.settings.javaScriptCanOpenWindowsAutomatically = s.javaScriptCanOpenWindows
         wv.settings.setSupportMultipleWindows(s.javaScriptEnabled && s.javaScriptCanOpenWindows)
