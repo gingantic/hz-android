@@ -53,7 +53,13 @@ class VideoFrameKeyer : Keyer<VideoFrame> {
         "${data.path}:${data.dateModified}"
 }
 
-private val THUMBNAIL_SEMAPHORE = Semaphore(permits = 3)
+private val THUMBNAIL_SEMAPHORE = Semaphore(
+    permits = Runtime.getRuntime().availableProcessors().coerceIn(4, 8)
+)
+
+private val knownExistFiles = java.util.Collections.newSetFromMap(
+    java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+)
 
 /**
  * Generates (and disk-caches as WebP) a frame ~40% into a video.
@@ -65,16 +71,17 @@ class VideoFrameFetcher(
 
     override suspend fun fetch(): FetchResult? = withContext(Dispatchers.IO) {
         val cacheFile = cacheFileFor(data)
+        val cachePath = cacheFile.absolutePath
 
         // ── Fast path: thumbnail already on disk ──────────────────────────
         // Skip the semaphore entirely for cache hits so scrolling through a
-        // folder of already-extracted videos isn't gated behind the 3-permit
-        // extraction concurrency cap.  A single file-existence check + ImageSource
-        // creation is ~0 ms compared to extraction.
-        if (cacheFile.exists()) {
+        // folder of already-extracted videos isn't gated behind the extraction
+        // concurrency cap.  In-memory set skips repeated disk stat calls.
+        if (knownExistFiles.contains(cachePath) || cacheFile.exists()) {
+            knownExistFiles.add(cachePath)
             return@withContext SourceFetchResult(
                 source = ImageSource(
-                    file = cacheFile.absolutePath.toPath(),
+                    file = cachePath.toPath(),
                     fileSystem = FileSystem.SYSTEM,
                 ),
                 mimeType = "image/webp",
@@ -104,6 +111,7 @@ class VideoFrameFetcher(
             cacheFile.outputStream().use { out ->
                 bitmap.compress(webpFormat(), 75, out)
             }
+            knownExistFiles.add(cachePath)
         } finally {
             bitmap.recycle()
         }

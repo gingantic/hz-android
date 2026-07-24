@@ -4,6 +4,7 @@ import jcifs.smb.SmbFile
 import jcifs.smb.SmbRandomAccessFile
 import kotlinx.coroutines.*
 import java.io.IOException
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Semaphore
 import java.util.concurrent.locks.ReentrantLock
 
@@ -20,7 +21,7 @@ import java.util.concurrent.locks.ReentrantLock
 class RandomAccessBridge(
     private val file: SmbFile,
     private val fileSize: Long,
-    lightweight: Boolean = false,
+    private val lightweight: Boolean = false,
 ) : ThumbnailSource {
     companion object {
         private const val BLOCK_SIZE_FULL = 1024 * 1024   // 1 MB
@@ -36,8 +37,11 @@ class RandomAccessBridge(
 
     @Volatile private var closed = false
 
-    // Cache of block index -> async loading job
-    private val cache = mutableMapOf<Long, Deferred<BlockData>>()
+    // Buffer pool to avoid frequent 256 KB / 1 MB allocations
+    private val bufferPool = java.util.ArrayDeque<ByteArray>()
+
+    // Cache of block index -> Future loading job (no runBlocking required)
+    private val cache = mutableMapOf<Long, CompletableFuture<BlockData>>()
     private var lastReadBlockIdx = -1L
 
     // Persistent file handle pool
@@ -59,6 +63,22 @@ class RandomAccessBridge(
 
     class BlockData(val bytes: ByteArray, val length: Int)
 
+    private fun obtainBuffer(): ByteArray {
+        synchronized(bufferPool) {
+            return if (bufferPool.isNotEmpty()) bufferPool.removeLast() else ByteArray(blockSize)
+        }
+    }
+
+    private fun recycleBuffer(buffer: ByteArray) {
+        if (buffer.size == blockSize) {
+            synchronized(bufferPool) {
+                if (bufferPool.size < 4) {
+                    bufferPool.addLast(buffer)
+                }
+            }
+        }
+    }
+
     /** Read up to [size] bytes at [position] into [buffer]. */
     @Throws(IOException::class)
     override fun readAt(position: Long, buffer: ByteArray, size: Int): Int {
@@ -78,11 +98,10 @@ class RandomAccessBridge(
             val remainingInBlock = blockSize - offsetInBlock
             val chunkToCopy = (bytesToRead - bytesCopied).coerceAtMost(remainingInBlock)
 
-            // Fetch current block
+            // Fetch current block synchronously without runBlocking
             val blockData = try {
                 getBlock(blockIdx)
-            } catch (_: CancellationException) {
-                // Close raced with an in-flight prefetch; stop reading.
+            } catch (_: Exception) {
                 return -1
             }
 
@@ -113,16 +132,16 @@ class RandomAccessBridge(
     }
 
     private fun getBlock(blockIdx: Long): BlockData {
-        val deferred = synchronized(cache) {
+        val future = synchronized(cache) {
             cache.getOrPut(blockIdx) {
-                scope.async {
-                    readBlockFromFile(blockIdx)
+                if (lightweight) {
+                    CompletableFuture.completedFuture(readBlockFromFile(blockIdx))
+                } else {
+                    CompletableFuture.supplyAsync({ readBlockFromFile(blockIdx) }, Dispatchers.IO.asExecutor())
                 }
             }
         }
-        return runBlocking {
-            deferred.await()
-        }
+        return future.get()
     }
 
     private fun triggerPrefetches(currentBlockIdx: Long) {
@@ -130,7 +149,9 @@ class RandomAccessBridge(
             // Evict older blocks that are behind the active window to save memory
             val keysToRemove = cache.keys.filter { it < currentBlockIdx - 1 }
             for (key in keysToRemove) {
-                cache.remove(key)
+                cache.remove(key)?.thenAccept { blockData ->
+                    recycleBuffer(blockData.bytes)
+                }
             }
 
             // Start prefetching next N blocks concurrently
@@ -139,9 +160,7 @@ class RandomAccessBridge(
                 val nextOffset = nextBlockIdx * blockSize
                 if (nextOffset < fileSize) {
                     cache.getOrPut(nextBlockIdx) {
-                        scope.async {
-                            readBlockFromFile(nextBlockIdx)
-                        }
+                        CompletableFuture.supplyAsync({ readBlockFromFile(nextBlockIdx) }, Dispatchers.IO.asExecutor())
                     }
                 }
             }
@@ -150,7 +169,7 @@ class RandomAccessBridge(
 
     private fun readBlockFromFile(blockIdx: Long): BlockData {
         val offset = blockIdx * blockSize
-        val data = ByteArray(blockSize)
+        val data = obtainBuffer()
         var total = 0
 
         // Block on semaphore until a handle is available — avoids busy-wait.
@@ -198,6 +217,16 @@ class RandomAccessBridge(
 
     fun close() {
         closed = true
+        synchronized(cache) {
+            cache.values.forEach { future ->
+                if (future.isDone) {
+                    runCatching { recycleBuffer(future.get().bytes) }
+                } else {
+                    future.cancel(true)
+                }
+            }
+            cache.clear()
+        }
         for (i in handles.indices) {
             try {
                 handles[i].close()
@@ -208,3 +237,4 @@ class RandomAccessBridge(
         scope.cancel()
     }
 }
+

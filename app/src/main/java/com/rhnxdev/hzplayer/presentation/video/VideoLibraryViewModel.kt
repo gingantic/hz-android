@@ -15,15 +15,18 @@ import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
 import com.rhnxdev.hzplayer.BuildConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class VideoLibraryViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
@@ -36,6 +39,8 @@ class VideoLibraryViewModel @Inject constructor(
     val uiState: StateFlow<VideoLibraryUiState> = _uiState.asStateFlow()
 
     val search = SearchDelegate()
+
+    private val parentFolderCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     companion object {
         /** Pseudo-folder key for the Recent category, used in selectedFolder. */
@@ -71,6 +76,17 @@ class VideoLibraryViewModel @Inject constructor(
     init {
         loadVideos()
         observePreferences()
+        observeSearchQuery()
+    }
+
+    private fun observeSearchQuery() {
+        viewModelScope.launch {
+            search.searchQuery
+                .debounce(300)
+                .collect { query ->
+                    applyFilter(query)
+                }
+        }
     }
 
     private fun loadVideos(forceRefresh: Boolean = false) {
@@ -222,7 +238,6 @@ class VideoLibraryViewModel @Inject constructor(
 
     fun onSearchQueryChanged(query: String) {
         search.queryChanged(query)
-        applyFilter(query)
     }
 
     fun onClearSearch() {
@@ -292,6 +307,10 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     private fun applyFilter(query: String) {
+        if (query.isEmpty()) {
+            _uiState.update { it.copy(filteredVideos = it.allVideos) }
+            return
+        }
         val filtered = _uiState.value.allVideos.filter {
             it.title.contains(query, ignoreCase = true)
         }
@@ -299,28 +318,44 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     private fun getParentFolderName(uri: String): String {
-        try {
-            val cleanPath = uri.removePrefix("file://")
-            if (cleanPath.startsWith("/")) {
-                val file = java.io.File(cleanPath)
-                val parentName = file.parentFile?.name
-                if (!parentName.isNullOrEmpty() && parentName != "0") {
-                    return parentName
-                }
-            } else if (cleanPath.startsWith("http://") || cleanPath.startsWith("https://")) {
-                val urlPath = android.net.Uri.parse(cleanPath).path
-                if (!urlPath.isNullOrEmpty()) {
-                    val file = java.io.File(urlPath)
-                    val parentName = file.parentFile?.name
-                    if (!parentName.isNullOrEmpty() && parentName != "sample") {
-                        return parentName
+        return parentFolderCache.getOrPut(uri) {
+            try {
+                val cleanPath = uri.removePrefix("file://")
+                if (cleanPath.startsWith("/")) {
+                    val lastSlash = cleanPath.lastIndexOf('/')
+                    if (lastSlash > 0) {
+                        val prevSlash = cleanPath.lastIndexOf('/', lastSlash - 1)
+                        val parentName = if (prevSlash >= 0) {
+                            cleanPath.substring(prevSlash + 1, lastSlash)
+                        } else {
+                            cleanPath.substring(0, lastSlash)
+                        }
+                        if (parentName.isNotEmpty() && parentName != "0") {
+                            return@getOrPut parentName
+                        }
+                    }
+                } else if (cleanPath.startsWith("http://") || cleanPath.startsWith("https://")) {
+                    val urlPath = android.net.Uri.parse(cleanPath).path
+                    if (!urlPath.isNullOrEmpty()) {
+                        val lastSlash = urlPath.lastIndexOf('/')
+                        if (lastSlash > 0) {
+                            val prevSlash = urlPath.lastIndexOf('/', lastSlash - 1)
+                            val parentName = if (prevSlash >= 0) {
+                                urlPath.substring(prevSlash + 1, lastSlash)
+                            } else {
+                                urlPath.substring(0, lastSlash)
+                            }
+                            if (parentName.isNotEmpty() && parentName != "sample") {
+                                return@getOrPut parentName
+                            }
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                // ignore
             }
-        } catch (e: Exception) {
-            // ignore
+            "Internal Storage"
         }
-        return "Internal Storage"
     }
 
     private fun groupVideosIntoCategories(videos: List<VideoItem>, recentVideos: List<VideoItem> = emptyList()): List<VideoCategory> {
