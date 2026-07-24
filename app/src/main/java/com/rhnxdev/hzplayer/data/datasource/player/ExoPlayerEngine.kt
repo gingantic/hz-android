@@ -1,48 +1,48 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
-import android.annotation.SuppressLint
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
+import androidx.annotation.OptIn
 import androidx.media3.common.C
-import androidx.media3.common.ColorInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
-import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleFormat
-import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.SubtitleConverters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.SubtitleConverters
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleFormat
 import com.rhnxdev.hzplayer.domain.model.AudioItem
+import com.rhnxdev.hzplayer.domain.model.DebugStats
+import com.rhnxdev.hzplayer.domain.model.DecoderMode
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
+import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
-import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.lang.ref.WeakReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-// Media3's playback/UI APIs are marked @UnstableApi. The Kotlin compiler requires
-// @androidx.annotation.OptIn to use them; lint's UnsafeOptInUsageError only honors a
-// different (compiler-rejected) annotation, so the lint warning is suppressed here.
-// This is a known AndroidX/Kotlin opt-in friction, not a real issue.
 @SuppressLint("UnsafeOptInUsageError")
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@OptIn(UnstableApi::class)
 class ExoPlayerEngine @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val playerHolder: MediaPlayerHolder,
@@ -53,6 +53,8 @@ class ExoPlayerEngine @Inject constructor(
     override val engineType: EngineType = EngineType.EXO_PLAYER
 
     val player: Player get() = playerHolder.player
+
+    private val debugStatsHelper = ExoDebugStatsHelper()
 
     init {
         // External subtitle tracks live outside ExoPlayer; surface their changes
@@ -67,56 +69,30 @@ class ExoPlayerEngine @Inject constructor(
 
     /** Apply a decoder preference. Forwards to the holder, which rebuilds the
      *  underlying ExoPlayer so the choice takes effect on the next play. */
-    @OptIn(androidx.media3.common.util.UnstableApi::class)
-    override fun setDecoderMode(mode: com.rhnxdev.hzplayer.domain.model.DecoderMode) {
+    override fun setDecoderMode(mode: DecoderMode) {
         playerHolder.decoderMode = mode
     }
 
-    private var lastRenderedFrames: Long = 0
-    private var lastFrameTimestamp: Long = 0L
-
     /** Compute instant rendered FPS from DecoderCounters. Call each polling interval. */
-    fun pollRenderedFps(): Float {
-        val (rendered, _) = playerHolder.readFrameCounters()
-        val now = System.nanoTime()
-        val fps = if (lastFrameTimestamp > 0 && lastRenderedFrames > 0) {
-            val dt = (now - lastFrameTimestamp) / 1_000_000_000f
-            val df = rendered - lastRenderedFrames
-            if (dt > 0f && df >= 0) df / dt else 0f
-        } else 0f
-        lastRenderedFrames = rendered
-        lastFrameTimestamp = now
-        return fps
-    }
+    fun pollRenderedFps(): Float = debugStatsHelper.pollRenderedFps(playerHolder)
 
     /** Get absolute dropped frame count. */
-    fun pollDroppedFrames(): Long {
-        val (_, dropped) = playerHolder.readFrameCounters()
-        return dropped
-    }
+    fun pollDroppedFrames(): Long = debugStatsHelper.pollDroppedFrames(playerHolder)
 
     override val playbackState: StateFlow<PlayerStateInfo>
         get() = playerHolder.playbackStateInfo
 
     private var currentMediaUri: String? = null
     private var currentMediaTitle: String? = null
-    private var currentPlaylist: List<androidx.media3.common.MediaItem>? = null
+    private var currentPlaylist: List<MediaItem>? = null
     private val subtitleDiscoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?, resumePositionMs: Long, headers: Map<String, String>) {
-        // Apply (or clear, when empty) HTTP headers before prepare so an auth token
-        // forwarded from a VIEW intent reaches the network requests for this URI.
         playerHolder.setHttpRequestHeaders(headers)
         playerHolder.prepareForUri(uri)
         currentPlaylist = null
-        // Set the current-uri fields up front: addExternalSubtitle reads them on
-        // the main thread and would otherwise see null during the (async) discovery
-        // window, silently no-op'ing the add.
         currentMediaUri = uri
         currentMediaTitle = title
-        // Subtitle discovery (disk/network scan) runs off the main thread; the
-        // player calls below must run on the main thread (Media3 requirement), so
-        // we hop back to Dispatchers.Main after discovery completes.
         subtitleDiscoveryScope.launch {
             val subs = neighborSubtitleDiscoverer.discover(uri)
             withContext(Dispatchers.Main) {
@@ -124,7 +100,7 @@ class ExoPlayerEngine @Inject constructor(
                 subtitleConfigs.addAll(subs)
                 playerHolder.clearError()
                 playerHolder.flushPendingDecoderRebuild()
-                player.setMediaItem(buildMediaItemWithSubtitles(uri, title, artist, mimeType, subs = subs))
+                player.setMediaItem(ExoMediaItemHelper.buildMediaItemWithSubtitles(uri, title, artist, mimeType, subs = subs))
                 player.prepare()
                 if (resumePositionMs > 0) player.seekTo(resumePositionMs)
                 player.play()
@@ -139,11 +115,8 @@ class ExoPlayerEngine @Inject constructor(
         currentPlaylist = null
         subtitleConfigs.clear()
         val startTitle = items[startIndex].second
-        // Set before the async discovery window so addExternalSubtitle (main-thread)
-        // never sees a null current uri.
         currentMediaUri = startUri
         currentMediaTitle = startTitle
-        // Neighbor-subtitle discovery only for the start item; others get plain items.
         subtitleDiscoveryScope.launch {
             val subs = neighborSubtitleDiscoverer.discover(startUri)
             withContext(Dispatchers.Main) {
@@ -151,10 +124,8 @@ class ExoPlayerEngine @Inject constructor(
                 subtitleConfigs.addAll(subs)
                 val mediaItems = items.map { (uri, title) ->
                     val itemSubs = if (uri == startUri) subs else emptyList()
-                    buildMediaItemWithSubtitles(uri, title, subs = itemSubs)
+                    ExoMediaItemHelper.buildMediaItemWithSubtitles(uri, title, subs = itemSubs)
                 }
-                // ponytail: populate currentPlaylist so retry()/addExternalSubtitle()
-                // see the real list instead of null (which collapsed to 1 item).
                 currentPlaylist = mediaItems
                 playerHolder.clearError()
                 playerHolder.flushPendingDecoderRebuild()
@@ -171,8 +142,6 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.prepareForUri(startItem.uri)
         currentPlaylist = null
         subtitleConfigs.clear()
-        // Set before the async discovery window so addExternalSubtitle (main-thread)
-        // never sees a null current uri.
         currentMediaUri = startItem.uri
         currentMediaTitle = startItem.title
         subtitleDiscoveryScope.launch {
@@ -182,7 +151,7 @@ class ExoPlayerEngine @Inject constructor(
                 subtitleConfigs.addAll(subs)
                 val mediaItems = items.map { audio ->
                     val itemSubs = if (audio.uri == startItem.uri) subs else emptyList()
-                    buildMediaItemWithSubtitles(audio.uri, audio.title, audio.artist, subs = itemSubs)
+                    ExoMediaItemHelper.buildMediaItemWithSubtitles(audio.uri, audio.title, audio.artist, subs = itemSubs)
                 }
                 currentPlaylist = mediaItems
                 playerHolder.clearError()
@@ -247,21 +216,21 @@ class ExoPlayerEngine @Inject constructor(
         player.shuffleModeEnabled = enabled
     }
 
-    override fun setRepeatMode(mode: com.rhnxdev.hzplayer.domain.model.RepeatMode) {
+    override fun setRepeatMode(mode: RepeatMode) {
         player.repeatMode = when (mode) {
-            com.rhnxdev.hzplayer.domain.model.RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-            com.rhnxdev.hzplayer.domain.model.RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
             else -> Player.REPEAT_MODE_OFF
         }
     }
 
     override fun isShuffleEnabled(): Boolean = player.shuffleModeEnabled
 
-    override fun getRepeatMode(): com.rhnxdev.hzplayer.domain.model.RepeatMode =
+    override fun getRepeatMode(): RepeatMode =
         when (player.repeatMode) {
-            Player.REPEAT_MODE_ONE -> com.rhnxdev.hzplayer.domain.model.RepeatMode.ONE
-            Player.REPEAT_MODE_ALL -> com.rhnxdev.hzplayer.domain.model.RepeatMode.ALL
-            else -> com.rhnxdev.hzplayer.domain.model.RepeatMode.NONE
+            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+            else -> RepeatMode.NONE
         }
 
     override fun isPlaying(): Boolean = player.isPlaying
@@ -281,9 +250,6 @@ class ExoPlayerEngine @Inject constructor(
     private var subtitleDelayMs: Long = 0
 
     override fun setSubtitleDelay(delayMs: Long) {
-        // libass path renders via AssHandler - push the offset there.
-        // ponytail: ExoPlayer built-in text renderer has no public delay API.
-        // Non-libass embedded tracks are unaffected by this setter.
         subtitleDelayMs = delayMs
         assHandler.subtitleDelayMs = delayMs
     }
@@ -294,64 +260,14 @@ class ExoPlayerEngine @Inject constructor(
 
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
 
-    private fun buildMediaItemWithSubtitles(
-        uri: String,
-        title: String,
-        artist: String? = null,
-        mimeType: String? = null,
-        subs: List<MediaItem.SubtitleConfiguration> = emptyList(),
-    ): MediaItem {
-        val builder = MediaItem.Builder()
-        builder.setUri(uri)
-        // Infer explicit MIME type for HLS / DASH or custom probe to avoid container sniffing failures
-        val lowerUri = uri.lowercase(java.util.Locale.ROOT)
-        val lowerMime = mimeType?.lowercase(java.util.Locale.ROOT) ?: ""
-        val isDisguisedHls = com.rhnxdev.hzplayer.browser.media.MediaStreamDecoder.isDisguisedHlsStream(uri, lowerMime)
-        val uriPath = lowerUri.substringBefore('?').substringBefore('#')
-        val isExplicitHls = isDisguisedHls || uriPath.endsWith(".m3u8") || lowerMime.contains("mpegurl") || lowerMime.contains("m3u8")
-        val isExplicitDash = uriPath.endsWith(".mpd") || lowerMime.contains("dash")
-
-        val effectiveMimeType = when {
-            !mimeType.isNullOrBlank() && mimeType != "video/*" && mimeType != "*/*" -> mimeType
-            isExplicitHls -> MimeTypes.APPLICATION_M3U8
-            isExplicitDash -> MimeTypes.APPLICATION_MPD
-            else -> mimeType
-        }
-        if (!effectiveMimeType.isNullOrBlank()) {
-            builder.setMimeType(effectiveMimeType)
-        }
-
-
-        builder.setMediaMetadata(
-                androidx.media3.common.MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist(artist)
-                    .build(),
-            )
-        // Subtitles are scoped per-media-item: the global `subtitleConfigs` must not
-        // be applied to every playlist entry (it was), or all items would inherit the
-        // first item's discovered subs.
-        if (subs.isNotEmpty()) {
-            builder.setSubtitleConfigurations(subs)
-        }
-        return builder.build()
-    }
-
-    companion object {
-        private const val TAG = "ExoPlayerEngine"
-    }
-
     override fun addExternalSubtitle(uri: Uri): Boolean {
         val ext = (uri.path ?: "").substringAfterLast('.').lowercase()
-        val mimeType = inferSubtitleMimeType(uri)
+        val mimeType = ExoMediaItemHelper.inferSubtitleMimeType(uri)
         val displayName = uri.lastPathSegment ?: uri.toString()
 
-        // ASS/SSA and convertible SRT/VTT go through libass (no ExoPlayer parse).
         if (ext == "ass" || ext == "ssa" || SubtitleConverters.isConvertibleSubtitleFormat(mimeType)) {
-            // Read on IO (network/local), then load — ExoPlayer + assHandler are
-            // main-thread-only, so we hop back after the (possibly slow) read.
             subtitleDiscoveryScope.launch {
-                val data = readSubtitleUriBytes(uri)
+                val data = ExoMediaItemHelper.readSubtitleUriBytes(appContext, playerHolder, uri)
                 withContext(Dispatchers.Main) {
                     if (data == null) {
                         Log.w(TAG, "External subtitle read failed: $uri")
@@ -375,7 +291,6 @@ class ExoPlayerEngine @Inject constructor(
             return true
         }
 
-        // Fallback: let ExoPlayer's built-in renderer handle any other format.
         return try {
             val config = MediaItem.SubtitleConfiguration.Builder(uri)
                 .setMimeType(mimeType)
@@ -391,13 +306,10 @@ class ExoPlayerEngine @Inject constructor(
                 val position = player.currentPosition
                 val wasPlaying = player.isPlaying
                 val currentIndex = player.currentMediaItemIndex
-                // ponytail: never call setMediaItem here — it wipes the playlist and
-                // loses resume position. Rebuild the whole list with the updated
-                // subtitle config on the current item, then restore index+position.
                 val rebuilt = rebuildPlaylistForSubtitleSwap(
                     playlist, currentUri, currentTitle ?: "",
                     currentIndex, position, subtitleConfigs.toList()
-                ) { uri, title, s -> buildMediaItemWithSubtitles(uri, title, subs = s) }
+                ) { uriStr, titleStr, s -> ExoMediaItemHelper.buildMediaItemWithSubtitles(uriStr, titleStr, subs = s) }
                 player.setMediaItems(rebuilt.items, rebuilt.startIndex, rebuilt.startPositionMs)
                 player.prepare()
                 if (wasPlaying) player.play()
@@ -446,29 +358,20 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun getSubtitleTrackMimeTypes(): List<String?> {
-        // Since Media3 1.4, subtitles are parsed during extraction: the track's
-        // sampleMimeType becomes "application/x-media3-cues" and the original
-        // codec (e.g. text/x-ssa) is moved to Format.codecs. Prefer the original.
         val embedded = getExoTextTracks().map {
             val format = it.group.getTrackFormat(it.trackIndex)
-            if (format.sampleMimeType == androidx.media3.common.MimeTypes.APPLICATION_MEDIA3_CUES) {
+            if (format.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES) {
                 format.codecs ?: format.sampleMimeType
             } else {
                 format.sampleMimeType
             }
         }
-        // External tracks are always libass-eligible (ass/ssa/converted SRT/VTT).
-        val external = assHandler.getExternalTrackIds().map { androidx.media3.common.MimeTypes.TEXT_SSA }
+        val external = assHandler.getExternalTrackIds().map { MimeTypes.TEXT_SSA }
         return embedded + external
     }
 
     override fun getSelectedSubtitleTrack(): Int {
         val tracks = getExoTextTracks()
-        // An active external libass track is what's actually on screen (ExoPlayer's
-        // SubtitleView is hidden while libass renders), so report it regardless of
-        // ExoPlayer's embedded TEXT selection / disabled state. Without this, a
-        // downloaded subtitle that auto-loads into libass shows on screen but the
-        // dialog reports "Off" (TEXT disabled) or an embedded track as selected.
         val extIdx = assHandler.getActiveExternalTrackIndex()
         if (extIdx >= 0) return tracks.size + extIdx
         if (player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) {
@@ -484,15 +387,9 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun selectSubtitleTrack(index: Int) {
-        // Single snapshot so the embedded/external boundary and the embedded-track
-        // lookup can't diverge mid-call (a stale second query could mis-route an
-        // external index into the embedded path and wipe the libass overlay).
         val tracks = getExoTextTracks()
         val embeddedCount = tracks.size
         if (index >= embeddedCount) {
-            // External libass track — select without touching ExoPlayer, so the
-            // onTracksChanged — clearOverlay cascade (which would wipe libass)
-            // never fires. We only steer libass here.
             val extIdx = index - embeddedCount
             val extIds = assHandler.getExternalTrackIds()
             if (extIdx in extIds.indices) {
@@ -506,13 +403,8 @@ class ExoPlayerEngine @Inject constructor(
             val format = selectedTrack.group.getTrackFormat(selectedTrack.trackIndex)
             val isAss = isLibassSubtitleFormat(format)
             if (isAss) {
-                // Route embedded ASS/SSA through libass for full styling; the built-in
-                // text renderer is fed a no-op parser so it won't draw duplicates.
                 assHandler.selectTrackByFormat(format)
             } else {
-                // Switching to a non-libass embedded track: libass overlay must go AND
-                // ExoPlayer's built-in SubtitleView must be shown again (it was hidden
-                // while libass was active), otherwise the embedded subtitle is invisible.
                 assHandler.clearOverlay()
                 setExoSubtitleViewVisible(true)
             }
@@ -538,33 +430,10 @@ class ExoPlayerEngine @Inject constructor(
         }
     }
 
-    /** Load an external `.ass`/`.ssa` file into libass (bypasses ExoPlayer parsing).
-     *  Remote `smb`/`ftp`/`sftp`/`webdav` URIs are read via the player's routing
-     *  data source; only `content:`/`file:` go through [contentResolver]. */
     override fun loadExternalAss(uri: Uri) {
-        val data = readSubtitleUriBytes(uri) ?: return
+        val data = ExoMediaItemHelper.readSubtitleUriBytes(appContext, playerHolder, uri) ?: return
         assHandler.loadExternalTrack(data)
     }
-
-    /** Read a subtitle file's bytes, handling both local and remote URIs. */
-    private fun readSubtitleUriBytes(uri: Uri): ByteArray? = runCatching {
-        when (uri.scheme?.lowercase()) {
-            "content", "file" -> appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            else -> playerHolder.readUriBytes(uri)
-        }
-    }.getOrNull()
-    /** Map subtitle file extension to MIME type. */
-    private fun inferSubtitleMimeType(uri: Uri): String {
-        val ext = uri.path?.substringAfterLast('.')?.lowercase() ?: return MimeTypes.APPLICATION_SUBRIP
-        return when (ext) {
-            "vtt" -> MimeTypes.TEXT_VTT
-            "srt" -> MimeTypes.APPLICATION_SUBRIP
-            "ass", "ssa" -> MimeTypes.TEXT_SSA
-            "sub" -> MimeTypes.APPLICATION_SUBRIP
-            else -> MimeTypes.APPLICATION_SUBRIP
-        }
-    }
-
 
     // ── Audio track selection ──────────────────────────────────
 
@@ -626,7 +495,6 @@ class ExoPlayerEngine @Inject constructor(
                 )
                 .build()
         } else {
-            // Mirror selectSubtitleTrack: index == -1 disables the audio track.
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
@@ -641,7 +509,6 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun retry() {
         playerHolder.clearError()
-        // ponytail: keep playlist intact — setMediaItem wipes it and loses position.
         val playlist = currentPlaylist
         val index = player.currentMediaItemIndex
         if (playlist != null && playlist.isNotEmpty()) {
@@ -661,15 +528,9 @@ class ExoPlayerEngine @Inject constructor(
 
     // ── Rendering seam (engine-private; surfaced via PlayerSurface) ──
 
-    /**
-     * Build the Media3 [PlayerView] that renders this engine's video. The surface
-     * type (SurfaceView vs TextureView) is chosen from [useSurfaceView] and fixed at
-     * construction via the XML layout — there is no programmatic setter.
-     */
-    private var activePlayerViewRef: java.lang.ref.WeakReference<PlayerView>? = null
+    private var activePlayerViewRef: WeakReference<PlayerView>? = null
     private var currentAspectRatioMode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode = com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO
     private var listenerRegisteredPlayer: Player? = null
-    /** True once ASS renderer is active — keeps SubtitleView hidden across PlayerView recreations. */
     private var assSubtitlesActive = false
 
     private val videoSizeListener = object : Player.Listener {
@@ -684,8 +545,6 @@ class ExoPlayerEngine @Inject constructor(
 
     private fun applyAspectRatioMode(playerView: PlayerView, mode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode) {
         currentAspectRatioMode = mode
-        
-        // Ensure our video size listener is attached to the current active player instance
         val currentPlayer = player
         if (listenerRegisteredPlayer !== currentPlayer) {
             listenerRegisteredPlayer?.removeListener(videoSizeListener)
@@ -748,7 +607,7 @@ class ExoPlayerEngine @Inject constructor(
             .inflate(layoutRes, null, false) as PlayerView
         playerView.player = player
         playerView.useController = false
-        activePlayerViewRef = java.lang.ref.WeakReference(playerView)
+        activePlayerViewRef = WeakReference(playerView)
         val subtitleView = playerView.subtitleView
         if (subtitleView != null) {
             subtitleView.setStyle(
@@ -761,204 +620,40 @@ class ExoPlayerEngine @Inject constructor(
                     null,
                 )
             )
-            // Hide ExoPlayer's built-in subtitle view if ASS rendering is already active
-            // (e.g. engine re-created while handler is initialized).
             if (assSubtitlesActive) {
-                subtitleView.visibility = android.view.View.GONE
+                subtitleView.visibility = View.GONE
             }
         }
         return playerView
     }
 
-    /** Hide / show ExoPlayer's built-in SubtitleView. Call when ASS renderer takes over. */
     fun setExoSubtitleViewVisible(visible: Boolean) {
         assSubtitlesActive = !visible
         val playerView = activePlayerViewRef?.get() ?: return
         val sv = playerView.subtitleView ?: return
-        sv.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        sv.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
-    /** Apply aspect-ratio + subtitle style to an existing [PlayerView]. */
     override fun updateRenderView(view: View, config: RenderViewConfig) {
         val playerView = view as PlayerView
-        activePlayerViewRef = java.lang.ref.WeakReference(playerView)
+        activePlayerViewRef = WeakReference(playerView)
         applyAspectRatioMode(playerView, config.aspectRatioMode)
     }
 
-    /** Surface lifecycle — mirrors PlayerView.onPause/onResume. */
     override fun onRenderViewPaused(view: View) = (view as PlayerView).onPause()
     override fun onRenderViewResumed(view: View) = (view as PlayerView).onResume()
 
-    /** Backs the system MediaSession for lock-screen / media controls. */
     override fun getMedia3Player(): Player = playerHolder.player
 
     override fun setOnPlayerReplacedListener(listener: ((Player) -> Unit)?) {
         playerHolder.setOnPlayerReplacedListener(listener)
     }
 
-
-    // ── Debug stats ─────────────────────────────────────────────
-
-    override fun getDebugStats(): com.rhnxdev.hzplayer.domain.model.DebugStats? {
-        val currentTracks = player.currentTracks
-        var videoCodec = ""
-        var videoCodecMime = ""
-        var resolution = ""
-        var videoBitrate = ""
-        var frameRate = ""
-        var colorInfo = ""
-        var hdrInfo = ""
-
-        var audioCodec = ""
-        var audioCodecMime = ""
-        var audioBitrate = ""
-        var sampleRate = ""
-        var channelCount = ""
-        var audioLanguage = ""
-
-        fmt@ for (group in currentTracks.groups) {
-            for (i in 0 until group.length) {
-                if (!group.isTrackSelected(i)) continue
-                val fmt = group.getTrackFormat(i)
-                when (group.type) {
-                    C.TRACK_TYPE_VIDEO -> {
-                        videoCodec = fmt.codecs ?: ""
-                        videoCodecMime = fmt.sampleMimeType ?: ""
-                        resolution = if (fmt.width > 0 && fmt.height > 0)
-                            "${fmt.width}x${fmt.height}" else ""
-                        videoBitrate = if (fmt.bitrate > 0) fmt.bitrate.toString() else ""
-                        frameRate = if (fmt.frameRate > 0f) "${"%.2f".format(fmt.frameRate)} fps" else ""
-                        val ci = fmt.colorInfo
-                        if (ci != null) {
-                            colorInfo = buildString {
-                                append(when (ci.colorSpace) {
-                                    3 -> "BT.2020"
-                                    7 -> "BT.709"
-                                    else -> "BT.601"
-                                })
-                                append(" ")
-                                append(when (ci.colorTransfer) {
-                                    6 -> "PQ"
-                                    7 -> "HLG"
-                                    else -> "SDR"
-                                })
-                                append(" ")
-                                append(when (ci.colorRange) {
-                                    3 -> "FULL"
-                                    else -> "LIMITED"
-                                })
-                            }
-                            if (ColorInfo.isTransferHdr(ci)) {
-                                hdrInfo = "HDR (${when (ci.colorTransfer) { 6 -> "PQ/ST.2084"; 7 -> "HLG"; else -> "yes" }})"
-                            }
-                        }
-                    }
-                    C.TRACK_TYPE_AUDIO -> {
-                        audioCodec = fmt.codecs ?: ""
-                        audioCodecMime = fmt.sampleMimeType ?: ""
-                        audioBitrate = if (fmt.bitrate > 0) fmt.bitrate.toString() else ""
-                        sampleRate = if (fmt.sampleRate > 0) "${fmt.sampleRate} Hz" else ""
-                        channelCount = if (fmt.channelCount > 0) {
-                            when (fmt.channelCount) {
-                                1 -> "Mono"
-                                2 -> "Stereo"
-                                6 -> "5.1"
-                                7 -> "6.1"
-                                8 -> "7.1"
-                                else -> "${fmt.channelCount} ch"
-                            }
-                        } else ""
-                        audioLanguage = fmt.language ?: ""
-                    }
-                }
-                break@fmt  // first selected track each type
-            }
-        }
-
-        val videoDec = playerHolder.videoDecoderName.value
-        val audioDec = playerHolder.audioDecoderName.value
-        val videoDecLabel = if (videoDec.isNotEmpty()) "{${labelHwSw(videoDec)}} $videoDec" else ""
-        val audioDecLabel = if (audioDec.isNotEmpty()) "{${labelHwSw(audioDec)}} $audioDec" else ""
-        val decoderLabel = buildString {
-            append(videoDecLabel)
-            if (videoDecLabel.isNotEmpty() && audioDecLabel.isNotEmpty()) append(" | ")
-            append(audioDecLabel)
-        }.ifEmpty { "" }
-
-        val fps = pollRenderedFps()
-        return com.rhnxdev.hzplayer.domain.model.DebugStats(
-            videoCodec = videoCodec,
-            videoCodecMime = videoCodecMime,
-            resolution = resolution,
-            videoBitrate = videoBitrate,
-            frameRate = frameRate,
-            renderedFps = if (fps > 0f) "${"%.0f".format(fps)} fps" else "",
-            droppedFrames = pollDroppedFrames().let { if (it > 0) it.toString() else "" },
-            colorInfo = colorInfo,
-            hdrInfo = hdrInfo,
-            decoderName = decoderLabel,
-            videoDecoderLabel = videoDecLabel,
-            audioDecoderLabel = audioDecLabel,
-            audioCodec = audioCodec,
-            audioCodecMime = audioCodecMime,
-            audioBitrate = audioBitrate,
-            sampleRate = sampleRate,
-            channelCount = channelCount,
-            audioLanguage = audioLanguage,
-            deviceModel = android.os.Build.MODEL,
-            androidVersion = "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
-            soCInfo = if (android.os.Build.VERSION.SDK_INT >= 31) {
-                "${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}"
-            } else {
-                "${android.os.Build.HARDWARE}"
-            }.ifBlank { "${android.os.Build.HARDWARE}" },
-        )
+    override fun getDebugStats(): DebugStats? {
+        return debugStatsHelper.getDebugStats(player, playerHolder)
     }
 
-    /** Tag decoder as HW or SW by its registration name.
-     *  OMX.google.* / c2.android.* → SW (Android software).
-     *  OMX.* (not google) / c2.{qti,mediatek,exynos,ti}.* → HW.
-     *  Anything else → SW (conservative). */
-    private fun labelHwSw(decoderName: String): String = when {
-        decoderName.startsWith("c2.android.") -> "SW"
-        decoderName.startsWith("c2.") -> "HW"
-        decoderName.startsWith("OMX.") && !decoderName.contains(".google.", ignoreCase = true) -> "HW"
-        else -> "SW"
+    companion object {
+        private const val TAG = "ExoPlayerEngine"
     }
-
-    // ── External subtitle helpers ────────────────────────────────
-
-}
-
-/** Result of [rebuildPlaylistForSubtitleSwap]: rebuilt items + replay index/position. */
-internal data class PlaylistRebuild(
-    val items: List<MediaItem>,
-    val startIndex: Int,
-    val startPositionMs: Long,
-)
-
-/**
- * Rebuild a media-item list so the current item carries new [subtitleConfigs],
- * keeping every other item and the active [currentIndex]/[startPositionMs].
- *
- * ponytail: pure fn extracted so the P0 regression (setMediaItem wiping the
- * playlist on subtitle-add) is unit-testable without a real ExoPlayer.
- */
-internal fun rebuildPlaylistForSubtitleSwap(
-    playlist: List<MediaItem>?,
-    currentUri: String,
-    currentTitle: String,
-    currentIndex: Int,
-    startPositionMs: Long,
-    subtitleConfigs: List<MediaItem.SubtitleConfiguration>,
-    buildItem: (String, String, List<MediaItem.SubtitleConfiguration>) -> MediaItem,
-): PlaylistRebuild {
-    val items = playlist?.mapIndexed { idx, item ->
-        if (idx == currentIndex) {
-            buildItem(currentUri, currentTitle, subtitleConfigs)
-        } else {
-            item
-        }
-    } ?: listOf(buildItem(currentUri, currentTitle, subtitleConfigs))
-    return PlaylistRebuild(items, currentIndex, startPositionMs)
 }
