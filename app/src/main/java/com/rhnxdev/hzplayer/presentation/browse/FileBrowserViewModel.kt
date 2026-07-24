@@ -13,6 +13,7 @@ import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
 import com.rhnxdev.hzplayer.core.util.buildArchiveBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
+import com.rhnxdev.hzplayer.core.util.isSolidArchiveExtension
 import com.rhnxdev.hzplayer.core.util.sortFilesByType
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
@@ -71,6 +72,7 @@ class FileBrowserViewModel @Inject constructor(
 
     private val cache = DirectoryLruCache<FolderItem>()
     private var showHidden = false
+    private var showSolidArchiveWarning = true
     private val archivePasswords = mutableMapOf<String, String>()
 
     private val sortKey = "file_browser"
@@ -121,6 +123,11 @@ class FileBrowserViewModel @Inject constructor(
             userPrefs.archivePasswords.collect { persisted ->
                 archivePasswords.clear()
                 archivePasswords.putAll(persisted)
+            }
+        }
+        viewModelScope.launch {
+            userPrefs.showSolidArchiveWarning.collect { show ->
+                showSolidArchiveWarning = show
             }
         }
         viewModelScope.launch {
@@ -224,7 +231,26 @@ class FileBrowserViewModel @Inject constructor(
 
     /** Enter an archive container as a virtual browsing layer (in-place, no extraction). */
     fun onOpenArchive(item: FolderItem) {
-        pushLayer(ArchiveBrowsePath.build(item.path, ""))
+        if (isSolidArchiveExtension(item.name) && showSolidArchiveWarning) {
+            _uiState.update { it.copy(solidArchiveWarningContainer = item) }
+        } else {
+            pushLayer(ArchiveBrowsePath.build(item.path, ""))
+        }
+    }
+
+    fun onConfirmSolidArchiveWarning(dontShowAgain: Boolean) {
+        val item = _uiState.value.solidArchiveWarningContainer
+        _uiState.update { it.copy(solidArchiveWarningContainer = null) }
+        if (dontShowAgain) {
+            viewModelScope.launch { userPrefs.setShowSolidArchiveWarning(false) }
+        }
+        if (item != null) {
+            pushLayer(ArchiveBrowsePath.build(item.path, ""))
+        }
+    }
+
+    fun onDismissSolidArchiveWarning() {
+        _uiState.update { it.copy(solidArchiveWarningContainer = null) }
     }
 
     fun onCancelPasswordPrompt() {

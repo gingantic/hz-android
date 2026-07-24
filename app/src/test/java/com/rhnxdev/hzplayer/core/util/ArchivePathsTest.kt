@@ -80,4 +80,15 @@ class ArchivePathsTest {
         assertFalse(isArchiveExtension("movie.mkv"))
         assertFalse(isArchiveExtension("noext"))
     }
+
+    @Test
+    fun isSolidArchiveExtension_identifiesSolidFormats() {
+        assertTrue(isSolidArchiveExtension("movie.pack.7z"))
+        assertTrue(isSolidArchiveExtension("archive.rar"))
+        assertTrue(isSolidArchiveExtension("archive.tar.gz"))
+        assertTrue(isSolidArchiveExtension("archive.tar.xz"))
+        assertFalse(isSolidArchiveExtension("backup.zip"))
+        assertFalse(isSolidArchiveExtension("image.iso"))
+        assertFalse(isSolidArchiveExtension("file.cab"))
+    }
 }

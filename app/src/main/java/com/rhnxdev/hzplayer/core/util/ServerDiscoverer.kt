@@ -306,15 +306,16 @@ class ServerDiscoverer @Inject constructor(
     }
 
     private fun probeHost(host: String) {
+        val domainHost = NetworkDomainUtils.resolveDomain(null, host)
         // Probe SMB (445)
         if (isPortOpen(host, 445, 1200)) {
             Log.d(TAG, "probeHost: discovered active SMB service on $host:445")
             val resolvedName = resolveComputerName(host)
-            val displayName = if (!resolvedName.isNullOrEmpty()) resolvedName else host
+            val displayName = if (!resolvedName.isNullOrEmpty()) resolvedName else domainHost
             addDiscoveredServer(
                 name = "SMB ($displayName)",
                 protocol = NetworkProtocol.SMB,
-                host = host,
+                host = domainHost,
                 port = 445
             )
         }
@@ -322,11 +323,11 @@ class ServerDiscoverer @Inject constructor(
         if (isPortOpen(host, 21, 1200)) {
             Log.d(TAG, "probeHost: discovered active FTP service on $host:21")
             val resolvedName = resolveComputerName(host)
-            val displayName = if (!resolvedName.isNullOrEmpty()) resolvedName else host
+            val displayName = if (!resolvedName.isNullOrEmpty()) resolvedName else domainHost
             addDiscoveredServer(
                 name = "FTP ($displayName)",
                 protocol = NetworkProtocol.FTP,
-                host = host,
+                host = domainHost,
                 port = 21
             )
         }
@@ -514,12 +515,13 @@ class ServerDiscoverer @Inject constructor(
             return
         }
 
+        val domainHost = NetworkDomainUtils.resolveDomain(info.host, hostAddress)
         val displayName = name.removeSuffix(".$type").removeSuffix(".")
 
         addDiscoveredServer(
             name = displayName,
             protocol = serviceTypeToProtocol(type),
-            host = hostAddress,
+            host = domainHost,
             port = port
         )
     }
