@@ -428,16 +428,16 @@ internal object ConnectionPool {
         smbBrowserPool.clear()
         SmbPathResolver.clearCache()
 
-        webdavPool.values.forEach {
-            try { it.value.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}
-            try { it.value.connectionPool.evictAll() } catch (_: Exception) {}
-        }
+        val webdavClients = webdavPool.values.map { it.value } + webdavBrowserPool.values
         webdavPool.clear()
-        webdavBrowserPool.values.forEach {
-            try { it.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}
-            try { it.connectionPool.evictAll() } catch (_: Exception) {}
-        }
         webdavBrowserPool.clear()
+
+        java.util.concurrent.Executors.newSingleThreadExecutor().execute {
+            webdavClients.forEach { client ->
+                try { client.dispatcher.executorService.shutdownNow() } catch (_: Exception) {}
+                try { client.connectionPool.evictAll() } catch (_: Exception) {}
+            }
+        }
     }
 
 }

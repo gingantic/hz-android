@@ -27,8 +27,8 @@ object MediaInfoProbe {
 
     private const val TAG = "MediaInfoProbe"
 
-    /** Simple in-memory cache so re-opening Properties for the same file is instant. */
-    private val cache = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
+    /** Bounded LRU cache so re-opening Properties for the same file is instant. */
+    private val cache = android.util.LruCache<String, Map<String, String>>(100)
 
     /**
      * Probe [uriOrPath] on [Dispatchers.IO]. Returns null when the source can't
@@ -36,7 +36,9 @@ object MediaInfoProbe {
      */
     suspend fun probe(context: Context, uriOrPath: String): Map<String, String>? =
         withContext(Dispatchers.IO) {
-            cache[uriOrPath]?.let { return@withContext it }
+            val cachedResult = synchronized(cache) { cache.get(uriOrPath) }
+            if (cachedResult != null) return@withContext cachedResult
+
             val result = try {
                 val scheme = uriOrPath.substringBefore("://", "").lowercase()
                 when {
@@ -47,10 +49,14 @@ object MediaInfoProbe {
                     else -> null // ftp/sftp/webdav/http(s): not probed
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "probe failed for $uriOrPath: ${e.message}")
+                Log.w(TAG, "probe: failed for $uriOrPath: ${e.message}")
                 null
             }
-            result?.also { cache[uriOrPath] = it }
+
+            if (result != null) {
+                synchronized(cache) { cache.put(uriOrPath, result) }
+            }
+            result
         }
 
     /** Local filesystem path — read directly with a [RandomAccessFile]. */

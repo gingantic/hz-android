@@ -27,6 +27,8 @@ import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -330,19 +332,24 @@ class FileBrowserViewModel @Inject constructor(
         loadDirectory(path, _uiState.value.layers.lastIndex)
     }
 
-    private suspend fun enrichItemsWithPlaybackMetadata(items: List<FolderItem>): List<FolderItem> {
+    private suspend fun enrichItemsWithPlaybackMetadata(items: List<FolderItem>): List<FolderItem> = coroutineScope {
         val fileItems = items.filter { !it.isDirectory }
-        if (fileItems.isEmpty()) return items
+        if (fileItems.isEmpty()) return@coroutineScope items
 
         val paths = fileItems.map { it.path }
-        val showProgress = userPrefs.showWatchProgress.first()
-        val progressMap = resumeRepository.getPlaybackProgressList(paths)
-        val localVideos = mediaRepository.getVideosByUris(paths)
+        val showProgressDeferred = async { userPrefs.showWatchProgress.first() }
+        val progressMapDeferred = async { resumeRepository.getPlaybackProgressList(paths) }
+        val localVideosDeferred = async { mediaRepository.getVideosByUris(paths) }
+
+        val showProgress = showProgressDeferred.await()
+        val progressMap = progressMapDeferred.await()
+        val localVideos = localVideosDeferred.await()
+
         val durationMap = localVideos.associate { it.uri to it.durationMs }
         val resolutionMap = localVideos.associate { it.uri to it.resolution }
         val dateAddedMap = localVideos.associate { it.uri to it.dateAdded }
 
-        return items.map { item ->
+        items.map { item ->
             if (item.isDirectory) {
                 item
             } else {
@@ -369,24 +376,14 @@ class FileBrowserViewModel @Inject constructor(
 
             val cached = cache.get(path)
             if (cached != null) {
-                val enriched = enrichItemsWithPlaybackMetadata(cached)
-                val sorted = sortFilesByType(
-                    enriched,
-                    _uiState.value.sortType,
-                    isDirectory = { it.isDirectory },
-                    name = { it.name },
-                    dateModified = { it.dateModified },
-                    size = { it.fileSize },
-                )
                 updateLayer(layerIndex) {
-                    it.copy(items = sorted, isEmpty = cached.isEmpty(), error = null, isLoading = false)
+                    it.copy(items = cached, isEmpty = cached.isEmpty(), error = null, isLoading = false)
                 }
                 return@launch
             }
 
             try {
                 fileRepository.listDirectory(path, showHidden).collect { items ->
-                    cache.put(path, items)
                     val enriched = enrichItemsWithPlaybackMetadata(items)
                     val sorted = sortFilesByType(
                         enriched,
@@ -396,6 +393,7 @@ class FileBrowserViewModel @Inject constructor(
                         dateModified = { it.dateModified },
                         size = { it.fileSize },
                     )
+                    cache.put(path, sorted)
                     updateLayer(layerIndex) {
                         it.copy(items = sorted, isEmpty = items.isEmpty(), error = null, isLoading = false)
                     }
