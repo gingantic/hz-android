@@ -217,21 +217,21 @@ fun VideoPlayerScreen(
         }
     }
     val onPlaylistClick = remember(viewModel) { viewModel::onTogglePlaylistDrawer }
-    val onInteract = remember { { hudInteractionTick++ } }
+    val onInteract: () -> Unit = remember { { hudInteractionTick++; Unit } }
     val onMinimizeCallback = remember(floatingEnabled, onMinimize) {
         if (floatingEnabled) onMinimize else null
     }
     val onDebugClick = remember(viewModel, uiState.debugMode) {
         if (uiState.debugMode) { { viewModel.onToggleDebugOverlay() } } else null
     }
-    val onSkipToNext = remember(viewModel, uiState.videoPlaylist.isEmpty()) {
+    val onSkipToNext: (() -> Unit)? = remember(viewModel, uiState.videoPlaylist.isEmpty()) {
         if (uiState.videoPlaylist.isNotEmpty()) {
-            { viewModel.onPlaylistNext() }
+            { viewModel.onPlaylistNext(); Unit }
         } else null
     }
-    val onSkipToPrevious = remember(viewModel, uiState.videoPlaylist.isEmpty()) {
+    val onSkipToPrevious: (() -> Unit)? = remember(viewModel, uiState.videoPlaylist.isEmpty()) {
         if (uiState.videoPlaylist.isNotEmpty()) {
-            { viewModel.onPlaylistPrevious() }
+            { viewModel.onPlaylistPrevious(); Unit }
         } else null
     }
     val onUnlock = remember(viewModel) {
