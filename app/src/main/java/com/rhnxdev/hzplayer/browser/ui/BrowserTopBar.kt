@@ -43,6 +43,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 
 @Composable
@@ -66,6 +72,8 @@ fun BrowserTopBar(
         focusManager.clearFocus()
         onUrlSubmit()
     }
+
+    var isFocused by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -107,7 +115,11 @@ fun BrowserTopBar(
                     }
                     onUrlChange(updatedUrl)
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focusState ->
+                        isFocused = focusState.isFocused
+                    },
                 singleLine = true,
                 placeholder = {
                     Text(
@@ -142,36 +154,50 @@ fun BrowserTopBar(
                     )
                 },
                 trailingIcon = {
-                    when {
-                        isLoading -> IconButton(
-                            onClick = onStopLoading,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Stop",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isFocused && url.isNotBlank()) {
+                            IconButton(
+                                onClick = { onUrlChange("") },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear URL",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
-                        urlChanged && url.isNotBlank() -> IconButton(
-                            onClick = submitUrl,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "Go",
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        url.isNotBlank() -> IconButton(
-                            onClick = onReload,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Reload",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        when {
+                            isLoading -> IconButton(
+                                onClick = onStopLoading,
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Stop",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            urlChanged && url.isNotBlank() -> IconButton(
+                                onClick = submitUrl,
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = "Go",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            !isFocused && url.isNotBlank() -> IconButton(
+                                onClick = onReload,
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Reload",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 },

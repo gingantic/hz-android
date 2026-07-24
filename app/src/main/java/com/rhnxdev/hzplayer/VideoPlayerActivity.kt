@@ -58,6 +58,14 @@ class VideoPlayerActivity : ComponentActivity() {
                 pipEligible = isPipEligibleNow
             }
 
+            LaunchedEffect(playerState.isPlaying, pipEligible) {
+                if (pipEligible && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    buildPipParams(playerState.isPlaying)?.let { params ->
+                        setPictureInPictureParams(params)
+                    }
+                }
+            }
+
             HzPlayerTheme(
                 themeMode = themeMode,
                 appColorArgb = appColorArgb,
@@ -85,6 +93,45 @@ class VideoPlayerActivity : ComponentActivity() {
                 }
             }
         }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipReceiver, android.content.IntentFilter(ACTION_PIP_PLAY_PAUSE), RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipReceiver, android.content.IntentFilter(ACTION_PIP_PLAY_PAUSE))
+        }
+    }
+
+    private val pipReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action == ACTION_PIP_PLAY_PAUSE) {
+                playerViewModel.onPlayPause()
+            }
+        }
+    }
+
+    private fun buildPipParams(isPlaying: Boolean): PictureInPictureParams? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+        val actions = ArrayList<android.app.RemoteAction>()
+        val actionIntent = Intent(ACTION_PIP_PLAY_PAUSE).setPackage(packageName)
+        val pendingIntent = android.app.PendingIntent.getBroadcast(
+            this,
+            0,
+            actionIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val title = if (isPlaying) "Pause" else "Play"
+        val action = android.app.RemoteAction(
+            android.graphics.drawable.Icon.createWithResource(this, iconRes),
+            title,
+            title,
+            pendingIntent
+        )
+        actions.add(action)
+        return PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .setActions(actions)
+            .build()
     }
 
     @javax.inject.Inject
@@ -144,14 +191,16 @@ class VideoPlayerActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (pipEligible && !isInPictureInPictureMode && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9))
-                .build()
+            val params = buildPipParams(playerViewModel.uiState.value.isPlaying)
+                ?: PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
             enterPictureInPictureMode(params)
         }
     }
 
     override fun onDestroy() {
+        try {
+            unregisterReceiver(pipReceiver)
+        } catch (_: Exception) {}
         if (!pipEligible) {
             playerViewModel.isShuttingDown = true
         }
@@ -160,5 +209,6 @@ class VideoPlayerActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "VideoPlayerActivity"
+        private const val ACTION_PIP_PLAY_PAUSE = "com.rhnxdev.hzplayer.ACTION_PIP_PLAY_PAUSE"
     }
 }
