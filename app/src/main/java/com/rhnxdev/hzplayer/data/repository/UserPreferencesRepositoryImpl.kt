@@ -297,6 +297,14 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
+    override val showSolidArchiveWarning: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PrefKey.ShowSolidArchiveWarning.key] ?: true
+    }.distinctUntilChanged()
+
+    override suspend fun setShowSolidArchiveWarning(show: Boolean) {
+        dataStore.edit { prefs -> prefs[PrefKey.ShowSolidArchiveWarning.key] = show }
+    }
+
     private fun decodeArchivePasswords(raw: String): Map<String, String> {
         if (raw.isBlank()) return emptyMap()
         return raw.split("\u001E").mapNotNull { entry ->
@@ -348,5 +356,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object LastVolume : PrefKey<Float>(floatPreferencesKey("last_volume"))
         object LastBrightness : PrefKey<Float>(floatPreferencesKey("last_brightness"))
         object SaveVolumeBrightnessState : PrefKey<Boolean>(booleanPreferencesKey("save_volume_brightness_state"))
+        object ShowSolidArchiveWarning : PrefKey<Boolean>(booleanPreferencesKey("show_solid_archive_warning"))
     }
 }

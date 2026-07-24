@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.Storage
+import com.rhnxdev.hzplayer.core.components.FileOptionsBottomSheet
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -259,6 +260,13 @@ fun FileBrowserScreen(
             error = uiState.passwordError
         )
     }
+    if (uiState.solidArchiveWarningContainer != null) {
+        com.rhnxdev.hzplayer.presentation.browse.components.SolidArchiveWarningDialog(
+            archiveName = uiState.solidArchiveWarningContainer!!.name,
+            onConfirm = { dontShowAgain -> viewModel.onConfirmSolidArchiveWarning(dontShowAgain) },
+            onDismiss = viewModel::onDismissSolidArchiveWarning,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -351,6 +359,7 @@ private fun StorageRootsContent(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun FavoriteShortcutCard(
     name: String,
@@ -395,37 +404,25 @@ private fun FavoriteShortcutCard(
             }
             if (onRemoveClick != null) {
                 var showMenu by remember { mutableStateOf(false) }
-                Box {
-                    androidx.compose.material3.IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.MoreVert,
-                            contentDescription = stringResource(R.string.media_overflow_cd),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = showMenu,
+                androidx.compose.material3.IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = stringResource(R.string.media_overflow_cd),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                if (showMenu) {
+                    FileOptionsBottomSheet(
+                        name = name,
+                        isDirectory = true,
+                        isFavorite = true,
+                        onFavoriteClick = onRemoveClick,
                         onDismissRequest = { showMenu = false },
-                    ) {
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text(stringResource(R.string.menu_favorite)) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = HzPlayerIcons.Star,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            },
-                            onClick = {
-                                showMenu = false
-                                onRemoveClick()
-                            },
-                        )
-                    }
+                    )
                 }
             }
         }

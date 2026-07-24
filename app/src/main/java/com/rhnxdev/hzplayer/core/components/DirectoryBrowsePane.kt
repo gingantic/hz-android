@@ -31,6 +31,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
@@ -117,6 +118,19 @@ fun DirectoryBrowsePane(
             properties = buildFileProperties(item),
             onDismiss = { propertiesItem = null },
             probeUri = if (item.isDirectory) null else (item.playbackUri ?: item.path),
+            thumbnailContent = if (!item.isDirectory && (item.mimeType?.startsWith("video") == true || isVideoExtension(item.name))) {
+                {
+                    SubcomposeAsyncImage(
+                        model = VideoFrame(item.playbackUri ?: item.path, item.dateModified),
+                        contentDescription = item.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        error = {
+                            ThumbnailPlaceholder(mediaType = com.rhnxdev.hzplayer.domain.model.MediaType.VIDEO)
+                        }
+                    )
+                }
+            } else null
         )
     }
 

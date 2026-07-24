@@ -85,4 +85,7 @@ interface UserPreferencesRepository {
     suspend fun setQuickAccessFolders(folders: Set<String>)
     suspend fun toggleQuickAccessFolder(path: String)
 
+    /** Whether to show a warning when opening solid archives. */
+    val showSolidArchiveWarning: Flow<Boolean>
+    suspend fun setShowSolidArchiveWarning(show: Boolean)
 }

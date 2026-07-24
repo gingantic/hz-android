@@ -47,6 +47,7 @@ data class FileBrowserUiState(
     val isMediaMode: Boolean = false,
     val passwordPromptContainer: String? = null,
     val passwordError: String? = null,
+    val solidArchiveWarningContainer: FolderItem? = null,
 )
 
 enum class FileBrowserMode {

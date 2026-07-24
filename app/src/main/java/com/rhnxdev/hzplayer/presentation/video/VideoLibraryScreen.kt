@@ -51,6 +51,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.components.FileItemCard
+import com.rhnxdev.hzplayer.core.components.FileOptionsBottomSheet
 import com.rhnxdev.hzplayer.core.components.MediaCard
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaErrorState
@@ -62,14 +63,15 @@ import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.components.ViewToggleFab
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 import coil3.compose.SubcomposeAsyncImage
-import androidx.compose.ui.layout.ContentScale
-import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 
@@ -392,6 +394,7 @@ private fun FolderGridContent(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchResultsContent(
     videos: List<VideoItem>,
@@ -408,6 +411,14 @@ private fun SearchResultsContent(
             properties = buildVideoProperties(video),
             onDismiss = { propertiesVideo = null },
             probeUri = video.uri,
+            thumbnailContent = {
+                SubcomposeAsyncImage(
+                    model = VideoFrame(video.uri, video.dateModified),
+                    contentDescription = video.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            },
         )
     }
 
@@ -476,39 +487,34 @@ private fun SearchResultsContent(
                     onClick = { onVideoClicked(video) },
                     trailingContent = {
                         var showMenu by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(
-                                onClick = { showMenu = true },
-                                modifier = Modifier.size(36.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = stringResource(R.string.media_overflow_cd),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = stringResource(R.string.media_overflow_cd),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        if (showMenu) {
+                            FileOptionsBottomSheet(
+                                name = video.title,
+                                isDirectory = false,
+                                subtitle = buildSubtitle(video),
+                                leadingThumbnail = {
+                                    AsyncImage(
+                                        model = VideoFrame(video.uri, video.dateModified),
+                                        contentDescription = video.title,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                },
+                                onPlayAsAudioClick = { onPlayAsAudio(video) },
+                                onPropertiesClick = { propertiesVideo = video },
                                 onDismissRequest = { showMenu = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.media_play_as_audio)) },
-                                    leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null) },
-                                    onClick = {
-                                        showMenu = false
-                                        onPlayAsAudio(video)
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.media_properties)) },
-                                    leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                                    onClick = {
-                                        showMenu = false
-                                        propertiesVideo = video
-                                    },
-                                )
-                            }
+                            )
                         }
                     },
                 )

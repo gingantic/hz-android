@@ -41,9 +41,11 @@ import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.designsystem.CornerRadii
-import androidx.compose.ui.graphics.luminance
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.material3.ExperimentalMaterial3Api
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaCard(
     title: String,
@@ -140,43 +142,27 @@ fun MediaCard(
                     )
                     if (onPropertiesClick != null || onPlayAsAudioClick != null) {
                         var showMenu by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(
-                                onClick = { showMenu = true },
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = stringResource(R.string.media_overflow_cd),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showMenu,
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = stringResource(R.string.media_overflow_cd),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        if (showMenu) {
+                            FileOptionsBottomSheet(
+                                name = title,
+                                isDirectory = false,
+                                subtitle = subtitle,
+                                leadingThumbnail = thumbnailContent,
+                                onPlayAsAudioClick = onPlayAsAudioClick,
+                                onPropertiesClick = onPropertiesClick,
                                 onDismissRequest = { showMenu = false },
-                            ) {
-                                if (onPlayAsAudioClick != null) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.media_play_as_audio)) },
-                                        leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null) },
-                                        onClick = {
-                                            showMenu = false
-                                            onPlayAsAudioClick()
-                                        },
-                                    )
-                                }
-                                if (onPropertiesClick != null) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.media_properties)) },
-                                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                                        onClick = {
-                                            showMenu = false
-                                            onPropertiesClick()
-                                        },
-                                    )
-                                }
-                            }
+                            )
                         }
                     }
                 }

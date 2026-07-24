@@ -13,9 +13,23 @@ val ARCHIVE_EXTENSIONS = setOf(
     "gz", "tgz", "bz2", "tbz2", "xz", "txz", "cpio",
 )
 
+/** Formats that use solid/sequential stream compression where seeking requires decompressing preceding entries. */
+val SOLID_ARCHIVE_EXTENSIONS = setOf(
+    "7z", "rar", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "cpio", "zst",
+)
+
 fun isArchiveExtension(name: String): Boolean {
     val ext = name.substringAfterLast('.', "").lowercase()
     return ext in ARCHIVE_EXTENSIONS
+}
+
+fun isSolidArchiveExtension(nameOrPath: String): Boolean {
+    val lower = nameOrPath.substringAfterLast('/', nameOrPath).lowercase()
+    if (lower.endsWith(".tar.gz") || lower.endsWith(".tar.bz2") || lower.endsWith(".tar.xz") || lower.endsWith(".tar.zst")) {
+        return true
+    }
+    val ext = lower.substringAfterLast('.', "")
+    return ext in SOLID_ARCHIVE_EXTENSIONS
 }
 
 /**

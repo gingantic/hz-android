@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rhnxdev.hzplayer.core.util.NetworkDomainUtils
 import com.rhnxdev.hzplayer.core.util.SUBTITLE_EXTENSIONS
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
@@ -98,7 +99,8 @@ class SubtitleBrowserViewModel @Inject constructor(
             password = Uri.decode(parts.getOrElse(1) { "" })
         }
 
-        val host = uri.host ?: ""
+        val rawHost = uri.host ?: ""
+        val host = NetworkDomainUtils.resolveDomain(null, rawHost)
         val port = if (uri.port != -1) uri.port else {
             when (protocol) {
                 NetworkProtocol.FTP -> 21

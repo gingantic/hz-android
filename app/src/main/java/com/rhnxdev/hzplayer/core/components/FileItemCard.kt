@@ -60,12 +60,15 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.res.stringResource
 
+import androidx.compose.material3.ExperimentalMaterial3Api
+
 /**
  * Unified file/directory item card used by both local and remote file browsers.
  *
  * Replace both [com.rhnxdev.hzplayer.presentation.browse.components.FileListItem]
  * and [com.rhnxdev.hzplayer.presentation.network.components.RemoteFileListItem].
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileItemCard(
     name: String,
@@ -230,59 +233,30 @@ fun FileItemCard(
 
             if (onPropertiesClick != null || onPlayAsAudioClick != null || onFavoriteClick != null) {
                 var showMenu by remember { mutableStateOf(false) }
-                Box {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = stringResource(R.string.media_overflow_cd),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showMenu,
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.media_overflow_cd),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                if (showMenu) {
+                    FileOptionsBottomSheet(
+                        name = name,
+                        isDirectory = isDirectory,
+                        subtitle = subtitle,
+                        mimeType = mimeType,
+                        leadingThumbnail = leadingThumbnail,
+                        isFavorite = isFavorite,
+                        onFavoriteClick = onFavoriteClick,
+                        onPlayAsAudioClick = onPlayAsAudioClick,
+                        onPropertiesClick = onPropertiesClick,
                         onDismissRequest = { showMenu = false },
-                    ) {
-                        if (onFavoriteClick != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.menu_favorite)) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (isFavorite) HzPlayerIcons.Star else HzPlayerIcons.StarOutline,
-                                        contentDescription = null,
-                                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onFavoriteClick()
-                                },
-                            )
-                        }
-                        if (onPlayAsAudioClick != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.media_play_as_audio)) },
-                                leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    onPlayAsAudioClick()
-                                },
-                            )
-                        }
-                        if (onPropertiesClick != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.media_properties)) },
-                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    onPropertiesClick()
-                                },
-                            )
-                        }
-                    }
+                    )
                 }
             }
         }

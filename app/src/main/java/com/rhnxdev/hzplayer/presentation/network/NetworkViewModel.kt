@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
+import com.rhnxdev.hzplayer.core.util.NetworkDomainUtils
 import com.rhnxdev.hzplayer.core.util.ServerDiscoverer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.guessMimeType
 import com.rhnxdev.hzplayer.core.util.isAudioExtension
@@ -122,6 +125,15 @@ class NetworkViewModel @Inject constructor(
         }
     }
 
+    private suspend fun resolveServerHostDomain(server: ServerConfig): ServerConfig = withContext(Dispatchers.IO) {
+        val resolvedHost = NetworkDomainUtils.resolveDomain(null, server.host)
+        if (resolvedHost != server.host) {
+            server.copy(host = resolvedHost)
+        } else {
+            server
+        }
+    }
+
     /**
      * Show the credential dialog for [server]. Used both on first tap of a server with no
      * saved credentials and to re-prompt after a rejected login ([error] set). Applying
@@ -135,14 +147,16 @@ class NetworkViewModel @Inject constructor(
                 onProvided = { user, pass, save ->
                     val withCreds = server.copy(username = user, password = pass)
                     _uiState.update { s -> s.copy(discoveredServerCredential = null) }
-                    if (save) {
-                        viewModelScope.launch {
-                            if (withCreds.id == 0L) networkRepository.saveServer(withCreds)
-                            else networkRepository.updateServer(withCreds)
+                    viewModelScope.launch {
+                        val resolved = resolveServerHostDomain(withCreds)
+                        if (save) {
+                            if (resolved.id == 0L) networkRepository.saveServer(resolved)
+                            else networkRepository.updateServer(resolved)
                             serverDiscoverer.dismissDiscoveredServer(server.host)
+                            serverDiscoverer.dismissDiscoveredServer(resolved.host)
                         }
+                        onBrowseServer(resolved)
                     }
-                    onBrowseServer(withCreds)
                 },
             ))
         }
@@ -150,8 +164,10 @@ class NetworkViewModel @Inject constructor(
 
     fun onSaveDiscoveredServer(server: ServerConfig) {
         viewModelScope.launch {
-            networkRepository.saveServer(server)
+            val resolved = resolveServerHostDomain(server)
+            networkRepository.saveServer(resolved)
             serverDiscoverer.dismissDiscoveredServer(server.host)
+            serverDiscoverer.dismissDiscoveredServer(resolved.host)
         }
     }
 
@@ -213,8 +229,9 @@ class NetworkViewModel @Inject constructor(
 
     fun onSaveServer(server: ServerConfig) {
         viewModelScope.launch {
-            if (server.id == 0L) networkRepository.saveServer(server)
-            else networkRepository.updateServer(server)
+            val resolved = resolveServerHostDomain(server)
+            if (resolved.id == 0L) networkRepository.saveServer(resolved)
+            else networkRepository.updateServer(resolved)
             _uiState.update { it.copy(showServerDialog = false, editingServer = null) }
         }
     }
