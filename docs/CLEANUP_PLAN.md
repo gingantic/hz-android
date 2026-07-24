@@ -19,7 +19,7 @@
 | Item | Severity | Notes |
 |---|---|---|
 | Minimal test coverage | Medium | Only mapper/cache/path unit tests + Robolectric. No integration or UI tests. |
-| `vlc-android-master/` directory | Low | ~50MB of reference code in repo. Low priority to remove. |
+| `vlc-android-master/` directory | Low | ✅ Removed reference directory. |
 
 ### Deferred Features
 

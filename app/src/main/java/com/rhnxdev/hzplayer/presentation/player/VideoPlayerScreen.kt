@@ -194,6 +194,52 @@ fun VideoPlayerScreen(
             },
         )
     }
+    val onPlayPause = remember(viewModel) { viewModel::onPlayPause }
+    val onSeekTo = remember(viewModel) { viewModel::onSeekTo }
+    val onSkipForward = remember(viewModel) { viewModel::onSkipForward }
+    val onSkipBackward = remember(viewModel) { viewModel::onSkipBackward }
+    val onSpeedClick = remember { { showSpeedDialog = true } }
+    val onAudioClick = remember { { showAudioDialog = true } }
+    val onSubtitleClick = remember(viewModel) {
+        {
+            viewModel.refreshSubtitleTracks()
+            showSubtitleDialog = true
+        }
+    }
+    val onLockClick = remember(viewModel) { viewModel::onToggleLock }
+    val onAspectRatioClick = remember(viewModel, uiState.aspectRatioMode) {
+        { viewModel.onAspectRatioChange(uiState.aspectRatioMode.next()) }
+    }
+    val onOrientationClick = remember(viewModel, view) {
+        {
+            val act = view.context as? android.app.Activity
+            if (act != null) viewModel.onToggleOrientation(act)
+        }
+    }
+    val onPlaylistClick = remember(viewModel) { viewModel::onTogglePlaylistDrawer }
+    val onInteract = remember { { hudInteractionTick++ } }
+    val onMinimizeCallback = remember(floatingEnabled, onMinimize) {
+        if (floatingEnabled) onMinimize else null
+    }
+    val onDebugClick = remember(viewModel, uiState.debugMode) {
+        if (uiState.debugMode) { { viewModel.onToggleDebugOverlay() } } else null
+    }
+    val onSkipToNext = remember(viewModel, uiState.videoPlaylist.isEmpty()) {
+        if (uiState.videoPlaylist.isNotEmpty()) {
+            { viewModel.onPlaylistNext() }
+        } else null
+    }
+    val onSkipToPrevious = remember(viewModel, uiState.videoPlaylist.isEmpty()) {
+        if (uiState.videoPlaylist.isNotEmpty()) {
+            { viewModel.onPlaylistPrevious() }
+        } else null
+    }
+    val onUnlock = remember(viewModel) {
+        {
+            viewModel.onToggleLock()
+            showUnlockOverlay = false
+        }
+    }
     val renderViewRef = remember { mutableStateOf<View?>(null) }
     val gestureTimerScope = rememberCoroutineScope()
 
@@ -420,53 +466,44 @@ fun VideoPlayerScreen(
             ) {
                 // Controls overlay (hidden when locked)
                 if (uiState.showControls && !uiState.playerLocked) {
-                    PlayerControlsOverlay(
-                        uiState = uiState,
-                        positionFlow = viewModel.position,
-                        networkTrafficFlow = viewModel.networkTraffic,
-                        title = uiState.currentTitle,
-                        onBack = handleBack,
-                        onPlayPause = viewModel::onPlayPause,
-                        onSeekTo = viewModel::onSeekTo,
-                        onSkipForward = viewModel::onSkipForward,
-                        onSkipBackward = viewModel::onSkipBackward,
-                        onSpeedClick = { showSpeedDialog = true },
-                        onAudioClick = { showAudioDialog = true },
-                        onSubtitleClick = {
-                            viewModel.refreshSubtitleTracks()
-                            showSubtitleDialog = true
-                        },
-                        onLockClick = { viewModel.onToggleLock() },
-                        onAspectRatioClick = { viewModel.onAspectRatioChange(uiState.aspectRatioMode.next()) },
-                        onOrientationClick = {
-                            val act = view.context as? android.app.Activity
-                            if (act != null) viewModel.onToggleOrientation(act)
-                        },
-                        onPlaylistClick = { viewModel.onTogglePlaylistDrawer() },
-                        onMinimize = if (floatingEnabled) onMinimize else null,
-                        onDebugClick = if (uiState.debugMode) { { viewModel.onToggleDebugOverlay() } } else null,
-                        onSkipToNext = if (uiState.videoPlaylist.isNotEmpty()) {
-                            { viewModel.onPlaylistNext() }
-                        } else null,
-                        onSkipToPrevious = if (uiState.videoPlaylist.isNotEmpty()) {
-                            { viewModel.onPlaylistPrevious() }
-                        } else null,
-                        onInteract = { hudInteractionTick++ },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    key("player_controls") {
+                        PlayerControlsOverlay(
+                            uiState = uiState,
+                            positionFlow = viewModel.position,
+                            networkTrafficFlow = viewModel.networkTraffic,
+                            title = uiState.currentTitle,
+                            onBack = handleBack,
+                            onPlayPause = onPlayPause,
+                            onSeekTo = onSeekTo,
+                            onSkipForward = onSkipForward,
+                            onSkipBackward = onSkipBackward,
+                            onSpeedClick = onSpeedClick,
+                            onAudioClick = onAudioClick,
+                            onSubtitleClick = onSubtitleClick,
+                            onLockClick = onLockClick,
+                            onAspectRatioClick = onAspectRatioClick,
+                            onOrientationClick = onOrientationClick,
+                            onPlaylistClick = onPlaylistClick,
+                            onMinimize = onMinimizeCallback,
+                            onDebugClick = onDebugClick,
+                            onSkipToNext = onSkipToNext,
+                            onSkipToPrevious = onSkipToPrevious,
+                            onInteract = onInteract,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
 
                 // Unlock pill — positioned at the bottom, no semi-transparent background
                 if (uiState.playerLocked && showUnlockOverlay) {
-                    UnlockPill(
-                        onUnlock = {
-                            viewModel.onToggleLock()
-                            showUnlockOverlay = false
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(bottom = 80.dp),
-                    )
+                    key("unlock_pill") {
+                        UnlockPill(
+                            onUnlock = onUnlock,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(bottom = 80.dp),
+                        )
+                    }
                 }
 
                 // Auto-dismiss unlock overlay after 5s
@@ -479,60 +516,70 @@ fun VideoPlayerScreen(
                 }
 
                 if (showSubtitleDialog) {
-                    SubtitleSelectionDialog(
-                        subtitleTracks = uiState.subtitleTracks,
-                        selectedTrackIndex = uiState.selectedSubtitleTrack,
-                        onTrackSelected = viewModel::selectSubtitleTrack,
-                        onDismiss = { showSubtitleDialog = false },
-                        onAddExternalSubtitleClick = {
-                            showSubtitleDialog = false
-                            showSubtitleBrowser = true
-                        },
-                        subtitleDelayMs = uiState.subtitleDelayMs,
-                        onSubtitleDelayChange = viewModel::onSubtitleDelayChange,
-                        onSearchOnlineClick = {
-                            showSubtitleDialog = false
-                            showSubtitleSearchDialog = true
-                        },
-                    )
+                    key("subtitle_dialog") {
+                        SubtitleSelectionDialog(
+                            subtitleTracks = uiState.subtitleTracks,
+                            selectedTrackIndex = uiState.selectedSubtitleTrack,
+                            onTrackSelected = viewModel::selectSubtitleTrack,
+                            onDismiss = { showSubtitleDialog = false },
+                            onAddExternalSubtitleClick = {
+                                showSubtitleDialog = false
+                                showSubtitleBrowser = true
+                            },
+                            subtitleDelayMs = uiState.subtitleDelayMs,
+                            onSubtitleDelayChange = viewModel::onSubtitleDelayChange,
+                            onSearchOnlineClick = {
+                                showSubtitleDialog = false
+                                showSubtitleSearchDialog = true
+                            },
+                        )
+                    }
                 }
 
                 if (showAudioDialog) {
-                    AudioSelectionDialog(
-                        audioTracks = uiState.audioTracks,
-                        selectedTrackIndex = uiState.selectedAudioTrack,
-                        onTrackSelected = viewModel::selectAudioTrack,
-                        onDismiss = { showAudioDialog = false },
-                    )
+                    key("audio_dialog") {
+                        AudioSelectionDialog(
+                            audioTracks = uiState.audioTracks,
+                            selectedTrackIndex = uiState.selectedAudioTrack,
+                            onTrackSelected = viewModel::selectAudioTrack,
+                            onDismiss = { showAudioDialog = false },
+                        )
+                    }
                 }
 
                 if (showSubtitleBrowser) {
-                    SubtitleFileBrowserBottomSheet(
-                        videoUri = uiState.currentPlaybackUri,
-                        onDismiss = { showSubtitleBrowser = false },
-                        onSubtitleSelected = { uri, name ->
-                            showSubtitleBrowser = false
-                            viewModel.addExternalSubtitle(uri, name)
-                        }
-                    )
+                    key("subtitle_browser") {
+                        SubtitleFileBrowserBottomSheet(
+                            videoUri = uiState.currentPlaybackUri,
+                            onDismiss = { showSubtitleBrowser = false },
+                            onSubtitleSelected = { uri, name ->
+                                showSubtitleBrowser = false
+                                viewModel.addExternalSubtitle(uri, name)
+                            }
+                        )
+                    }
                 }
 
                 if (showSubtitleSearchDialog) {
-                    SubtitleSearchDialog(
-                        onDismiss = { showSubtitleSearchDialog = false },
-                        onSubtitleDownloaded = { uri ->
-                            showSubtitleSearchDialog = false
-                            viewModel.addExternalSubtitle(uri)
-                        },
-                    )
+                    key("subtitle_search") {
+                        SubtitleSearchDialog(
+                            onDismiss = { showSubtitleSearchDialog = false },
+                            onSubtitleDownloaded = { uri ->
+                                showSubtitleSearchDialog = false
+                                viewModel.addExternalSubtitle(uri)
+                            },
+                        )
+                    }
                 }
 
                 if (showSpeedDialog) {
-                    SpeedSelectionDialog(
-                        currentSpeed = uiState.playbackSpeed,
-                        onSpeedSelected = viewModel::onSetSpeed,
-                        onDismiss = { showSpeedDialog = false },
-                    )
+                    key("speed_dialog") {
+                        SpeedSelectionDialog(
+                            currentSpeed = uiState.playbackSpeed,
+                            onSpeedSelected = viewModel::onSetSpeed,
+                            onDismiss = { showSpeedDialog = false },
+                        )
+                    }
                 }
 
                 // Gesture cues: seek / slide / hold-to-speed. Reads gestureState
@@ -546,67 +593,77 @@ fun VideoPlayerScreen(
 
                 // Playlist drawer (right side overlay)
                 if (uiState.showPlaylistDrawer && uiState.videoPlaylist.isNotEmpty()) {
-                    PlaylistDrawer(
-                        playlist = uiState.videoPlaylist,
-                        currentIndex = uiState.currentPlaylistIndex,
-                        onSelect = viewModel::onPlaylistSelect,
-                        onDismiss = viewModel::onTogglePlaylistDrawer,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    key("playlist_drawer") {
+                        PlaylistDrawer(
+                            playlist = uiState.videoPlaylist,
+                            currentIndex = uiState.currentPlaylistIndex,
+                            onSelect = viewModel::onPlaylistSelect,
+                            onDismiss = viewModel::onTogglePlaylistDrawer,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
 
                 // Debug overlay (stats for nerds) — floating top-right
                 if (uiState.debugOverlayVisible) {
-                    val debugStats by viewModel.debugStats.collectAsStateWithLifecycle()
-                    DebugOverlay(
-                        stats = debugStats,
-                        onDismiss = { viewModel.onToggleDebugOverlay() },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    key("debug_overlay") {
+                        val debugStats by viewModel.debugStats.collectAsStateWithLifecycle()
+                        DebugOverlay(
+                            stats = debugStats,
+                            onDismiss = { viewModel.onToggleDebugOverlay() },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
 
                 // Buffering loader
                 if (uiState.isLoading && uiState.errorMessage == null) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                    key("buffering_loader") {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
 
-                PlaybackErrorOverlay(
-                    errorMessage = uiState.errorMessage,
-                    errorKind = uiState.errorKind,
-                    onBack = handleBack,
-                    onRetry = viewModel::retry,
-                    onDismiss = viewModel::clearError,
-                )
+                key("error_overlay") {
+                    PlaybackErrorOverlay(
+                        errorMessage = uiState.errorMessage,
+                        errorKind = uiState.errorKind,
+                        onBack = handleBack,
+                        onRetry = viewModel::retry,
+                        onDismiss = viewModel::clearError,
+                    )
+                }
 
                 // Resume confirmation prompt (shown when resume mode = ASK and a saved
                 // position exists for the opened media).
                 uiState.pendingResume?.let { pending ->
-                    AlertDialog(
-                        onDismissRequest = viewModel::dismissResume,
-                        title = { Text(stringResource(R.string.resume_dialog_title)) },
-                        text = {
-                            Text(
-                                stringResource(
-                                    R.string.resume_dialog_body,
-                                    pending.title,
-                                    com.rhnxdev.hzplayer.core.util.formatDuration(pending.resumePositionMs),
-                                ),
-                            )
-                        },
-                        confirmButton = {
-                            TextButton(onClick = viewModel::confirmResume) {
-                                Text(stringResource(R.string.resume_dialog_resume))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = viewModel::dismissResume) {
-                                Text(stringResource(R.string.resume_dialog_start_over))
-                            }
-                        },
-                    )
+                    key("resume_dialog") {
+                        AlertDialog(
+                            onDismissRequest = viewModel::dismissResume,
+                            title = { Text(stringResource(R.string.resume_dialog_title)) },
+                            text = {
+                                Text(
+                                    stringResource(
+                                        R.string.resume_dialog_body,
+                                        pending.title,
+                                        com.rhnxdev.hzplayer.core.util.formatDuration(pending.resumePositionMs),
+                                    ),
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = viewModel::confirmResume) {
+                                    Text(stringResource(R.string.resume_dialog_resume))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = viewModel::dismissResume) {
+                                    Text(stringResource(R.string.resume_dialog_start_over))
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
