@@ -109,18 +109,25 @@ fun BrowserScreen(
     ) {
         // Main content — Top Bar + WebView + Bottom Bar
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top URL Address Bar
-            BrowserTopBar(
-                url = viewModel.urlInput,
-                currentTabUrl = viewModel.activeTab?.url ?: "",
-                isLoading = viewModel.activeTab?.isLoading == true,
-                progress = viewModel.activeTab?.progress ?: 0,
-                onUrlChange = { viewModel.urlInput = it },
-                onUrlSubmit = { viewModel.navigate(viewModel.urlInput) },
-                onReload = { viewModel.reload() },
-                onStopLoading = { viewModel.stopLoading() },
-                modifier = Modifier.fillMaxWidth(),
-            )
+            val activeId = viewModel.activeTabId
+            val activeTab = viewModel.tabs.find { it.id == activeId }
+            val showNewTab = activeId == null || activeTab == null ||
+                    activeTab.url.isBlank() || activeTab.url == "about:blank"
+
+            // Top URL Address Bar (hidden on homepage / start screen)
+            if (!showNewTab) {
+                BrowserTopBar(
+                    url = viewModel.urlInput,
+                    currentTabUrl = viewModel.activeTab?.url ?: "",
+                    isLoading = viewModel.activeTab?.isLoading == true,
+                    progress = viewModel.activeTab?.progress ?: 0,
+                    onUrlChange = { viewModel.urlInput = it },
+                    onUrlSubmit = { viewModel.navigate(viewModel.urlInput) },
+                    onReload = { viewModel.reload() },
+                    onStopLoading = { viewModel.stopLoading() },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             // WebView content (always visible for active tab)
             Box(
@@ -128,11 +135,6 @@ fun BrowserScreen(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                val activeId = viewModel.activeTabId
-                val activeTab = viewModel.tabs.find { it.id == activeId }
-                val showNewTab = activeId == null || activeTab == null ||
-                        activeTab.url.isBlank() || activeTab.url == "about:blank"
-
                 if (activeId != null) {
                     BrowserWebView(
                         viewModel = viewModel,
@@ -227,8 +229,6 @@ fun BrowserScreen(
             isAdBlockUpdating = viewModel.isAdBlockUpdating,
             adBlockStatusMessage = viewModel.adBlockStatusMessage,
             onUpdateAdBlockFilters = { viewModel.refreshAdBlockFilters() },
-            denyAllCrossDomainPopupsThisSession = viewModel.denyAllCrossDomainPopupsThisSession,
-            onToggleDenyAllThisSession = { viewModel.setDenyAllPopupsThisSession(it) },
         )
 
         // Cross-domain pop-up permission bottom sheet modal
@@ -236,7 +236,6 @@ fun BrowserScreen(
             request = viewModel.pendingPopupRequest,
             onAllow = { viewModel.allowPendingPopup() },
             onDeny = { viewModel.denyPendingPopup() },
-            onDenyAllThisSession = { viewModel.denyPendingPopupAndBlockSession() },
         )
 
         // Fullscreen custom video view overlay

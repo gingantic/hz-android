@@ -83,8 +83,6 @@ fun BrowserSettingsScreen(
     isAdBlockUpdating: Boolean = false,
     adBlockStatusMessage: String? = null,
     onUpdateAdBlockFilters: () -> Unit = {},
-    denyAllCrossDomainPopupsThisSession: Boolean = false,
-    onToggleDenyAllThisSession: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     if (!visible) return
@@ -194,19 +192,10 @@ fun BrowserSettingsScreen(
                         // Block Cross Domain Popups toggle
                         BrowserSettingsToggleCard(
                             title = "Block Cross-Domain Pop-ups",
-                            subtitle = "Prompt or block pop-up windows opening from external domains",
+                            subtitle = "Automatically block pop-up windows opening from external domains",
                             checked = settings.blockCrossDomainPopups,
                             onCheckedChange = { onSave(settings.copy(blockCrossDomainPopups = it)) },
                         )
-
-                        if (settings.blockCrossDomainPopups) {
-                            BrowserSettingsToggleCard(
-                                title = "Auto-Deny All (This Session)",
-                                subtitle = "Automatically deny all cross-domain pop-ups without prompting",
-                                checked = denyAllCrossDomainPopupsThisSession,
-                                onCheckedChange = { onToggleDenyAllThisSession(it) },
-                            )
-                        }
 
                         // Status Card & Update Button
                         Card(

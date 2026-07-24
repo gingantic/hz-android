@@ -1,7 +1,7 @@
 # Hz Player — UI Component Catalog
 
 > Every reusable composable in the design system, with spec and states.
-> Last refreshed: 2026-07-21. Lists the components that actually exist today;
+> Last refreshed: 2026-07-24. Lists the components that actually exist today;
 > layouts are representative, not pixel-exact.
 
 ---

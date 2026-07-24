@@ -85,6 +85,7 @@ fun SettingsScreen(
     val debugMode by settingsViewModel.debugMode.collectAsStateWithLifecycle()
     val backgroundPlay by settingsViewModel.backgroundPlay.collectAsStateWithLifecycle()
     val showWatchProgress by settingsViewModel.showWatchProgress.collectAsStateWithLifecycle()
+    val saveVolumeBrightnessState by settingsViewModel.saveVolumeBrightnessState.collectAsStateWithLifecycle()
     val orientationMode by settingsViewModel.orientationMode.collectAsStateWithLifecycle()
     val resumeMode by settingsViewModel.resumeMode.collectAsStateWithLifecycle()
     val decoderMode by settingsViewModel.decoderMode.collectAsStateWithLifecycle()
@@ -263,6 +264,12 @@ fun SettingsScreen(
                                 subtitle = stringResource(R.string.settings_show_watch_progress_sub),
                                 checked = showWatchProgress,
                                 onCheckedChange = { settingsViewModel.saveShowWatchProgress(it) },
+                            )
+                            SettingsToggleItem(
+                                title = stringResource(R.string.settings_save_volume_brightness),
+                                subtitle = stringResource(R.string.settings_save_volume_brightness_sub),
+                                checked = saveVolumeBrightnessState,
+                                onCheckedChange = { settingsViewModel.saveSaveVolumeBrightnessState(it) },
                             )
                             SettingsItem(
                                 title = stringResource(R.string.settings_decoder_mode),

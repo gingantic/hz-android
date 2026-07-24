@@ -1,9 +1,10 @@
 # Hz Player — Implementation Roadmap
 
 > Phased delivery from foundation to a working multi-source media player.
-> Last refreshed: 2026-07-21. Original Phases 1–10 are complete; six net-new
+> Last refreshed: 2026-07-24. Original Phases 1–10 are complete; seven net-new
 > work streams shipped after the roadmap was written (network streaming, native
-> thumbnails, modular playback engine, libass subtitles, archive support, OTA updates).
+> thumbnails, modular playback engine, libass subtitles, archive support, OTA updates,
+> in-app browser).
 
 ---
 
@@ -69,6 +70,7 @@ Real `MediaRepositoryImpl` (MediaStore → Room), `MediaPlaybackService`
 | **Archive support** | libarchive JNI; virtual folder navigation in File Browser; `archive://` DataSource for play-in-place; password dialog + persistence | `data/datasource/archive/*`, `cpp/ArchiveExtractor.cpp`, `core/util/ArchivePaths.kt` |
 | **OTA updates + About** | Cloudflare R2 update checker; startup update reminder with per-version dismissal; AboutDialog; LicensesScreen (AboutLibraries) | `core/util/UpdateChecker.kt`, `presentation/settings/components/UpdateDialog.kt`, `presentation/settings/LicensesScreen.kt` |
 | **Audio queue + Floating player** | Audio queue sheet for now-playing list; draggable floating video player (PiP-style) | `presentation/player/components/AudioQueueSheet.kt`, `FloatingVideoPlayer.kt` |
+| **In-app browser** | WebView-based browser with native ad blocking (JNI), media sniffing, tab management, browser history, popup permissions, settings | `browser/` package (27 files) |
 | **Reliability / cleanup** | 27-item bug+reliability+i18n pass (player error redaction, SMB path traversal, JNI guards, connection-pool lifecycle, manifest fixes) | `docs/CLEANUP_PLAN.md` |
 
 ---
@@ -92,6 +94,7 @@ Real `MediaRepositoryImpl` (MediaStore → Room), `MediaPlaybackService`
 | Archive support (browse + play-in-place) | ✅ |
 | OTA updates + About/Licenses | ✅ |
 | Audio queue + Floating video player | ✅ |
+| In-app browser (ad block + media sniffing) | ✅ |
 | Cleanup / reliability / i18n pass | ✅ |
 
 **Overall: feature-complete foundation + all subsystems landed.**

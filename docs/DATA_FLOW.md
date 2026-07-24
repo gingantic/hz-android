@@ -1,8 +1,9 @@
 # Hz Player — Data Flow Architecture
 
 > How data moves from persistence to pixels.
-> Last refreshed: 2026-07-21. Reflects the modular `IPlayerEngine` seam, the remote
-> network stack, resumable playback, libass subtitle pipeline, and archive support.
+> Last refreshed: 2026-07-24. Reflects the modular `IPlayerEngine` seam, the remote
+> network stack, resumable playback, libass subtitle pipeline, archive support, and
+> in-app browser.
 
 ---
 
@@ -78,6 +79,19 @@ FileBrowserScreen → tap archive file
     → synthesizes virtual directory levels from entry paths
     → BreadcrumbBar shows archive layers
   → tap media entry → play via archive:// URI
+```
+
+### In-App Browser
+```
+BrowserActivity (separate activity)
+  → BrowserViewModel
+    → TabManager (manages BrowserTab stack)
+    → AdBlockEngine (JNI-based ad filtering)
+    → MediaSnifferEngine (detects video/audio on pages)
+  → BrowserScreen
+    → WebView per tab
+    → BrowserHistoryRepository (persists history)
+    → MediaGrabberBottomSheet (download detected media)
 ```
 
 ---
@@ -171,7 +185,7 @@ PlayerPositionController (250ms tick)
 
 | Source | Use | Notes |
 |---|---|---|
-| Room | Persistent cache for media index, server configs, resume positions, stream history | 4 DAOs; KSP-generated |
+| Room | Persistent cache for media index, server configs, resume positions, stream history, browser history | 5 DAOs; KSP-generated |
 | MediaStore | System media index | `MediaScanner` syncs into Room |
 | DataStore | User preferences (sort, theme, active engine, archive passwords) | Type-safe `Preferences` |
 | Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` |
@@ -179,6 +193,7 @@ PlayerPositionController (250ms tick)
 | Native FFmpeg | Video thumbnails + codec metadata probe | JNI in `core/thumbnail` + `cpp/` |
 | Native libass | ASS/SSA/SRT/VTT subtitle rendering | JNI in `data/datasource/subtitle/assrender` + `cpp/` |
 | Native libarchive | Archive listing + streaming playback | JNI in `data/datasource/archive` + `cpp/` |
+| Native ad blocker | WebView ad filtering | JNI in `browser/adblock/` |
 | Cloudflare R2 | OTA update checks + APK download | `UpdateChecker` reads `BuildConfig.R2_UPDATE_BASE_URL` |
 
 ---

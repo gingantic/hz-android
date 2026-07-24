@@ -1,9 +1,9 @@
 # Archive Support — Design & Implementation Plan
 
-**Status:** Phase 0 + Phase 1 implemented (native seam + virtual navigation + password dialog)
+**Status:** Phase 0 + Phase 1 implemented (native seam + virtual navigation + password dialog) ✅ COMPLETE
 **Decision log:** libarchive · virtual FS / play-in-place · full format set · native delivery
 **Owner:** to be assigned
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-24
 
 ---
 

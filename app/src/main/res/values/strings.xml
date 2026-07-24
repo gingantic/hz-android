@@ -170,6 +170,8 @@
     <string name="resume_dialog_start_over">Start over</string>
     <string name="settings_background_play">Floating video player</string>
     <string name="settings_background_play_sub">Keep video in a small window when you leave, or pop it out as a picture-in-picture when you go home</string>
+    <string name="settings_save_volume_brightness">Save brightness &amp; volume</string>
+    <string name="settings_save_volume_brightness_sub">Remember and restore last brightness and volume levels when opening player</string>
     <string name="minimize">Minimize to floating window</string>
     <string name="settings_gesture_sensitivity">Gesture seek sensitivity</string>
     <string name="settings_subtitles">Subtitles</string>

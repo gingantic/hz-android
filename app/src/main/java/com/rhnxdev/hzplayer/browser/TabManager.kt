@@ -120,7 +120,6 @@ class TabManager(
     var onPageVisited: ((url: String, title: String) -> Unit)? = null
     var onCrossDomainPopupBlocked: ((blockedUrl: String, blockedDomain: String) -> Unit)? = null
     var onCrossDomainPopupRequested: ((PendingPopupRequest) -> Unit)? = null
-    var denyAllCrossDomainPopupsThisSession: Boolean = false
 
     fun navigate(tabId: String, url: String) {
         val safeUrl = sanitizeUrl(url)
@@ -418,23 +417,12 @@ class TabManager(
                 tempWebView.webViewClient = object : WebViewClient() {
                     private fun handleCrossDomainPopup(v: WebView, popupUrl: String) {
                         val domain = getRootDomain(popupUrl)
-                        if (denyAllCrossDomainPopupsThisSession) {
-                            v.post {
-                                try {
-                                    v.stopLoading()
-                                    v.destroy()
-                                } catch (_: Exception) {}
-                                onCrossDomainPopupBlocked?.invoke(popupUrl, domain)
-                            }
-                        } else {
-                            onCrossDomainPopupRequested?.invoke(
-                                PendingPopupRequest(
-                                    tempWebView = v,
-                                    parentUrl = parentUrl,
-                                    targetUrl = popupUrl,
-                                    targetDomain = domain,
-                                )
-                            )
+                        v.post {
+                            try {
+                                v.stopLoading()
+                                v.destroy()
+                            } catch (_: Exception) {}
+                            onCrossDomainPopupBlocked?.invoke(popupUrl, domain)
                         }
                     }
 

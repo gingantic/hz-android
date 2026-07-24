@@ -1,7 +1,7 @@
 # Hz Player — Architecture
 
 > Clean MVVM with unidirectional data flow for a Compose-first media player.
-> Last refreshed: 2026-07-21 (libass pipeline, archive support, OTA updates, audio queue).
+> Last refreshed: 2026-07-24 (libass pipeline, archive support, OTA updates, audio queue, in-app browser).
 
 ---
 
@@ -49,6 +49,8 @@ See `docs/ENGINE_MODULARITY.md`.
 com.rhnxdev.hzplayer/
 ├── HzPlayerApplication.kt          (@HiltAndroidApp)
 ├── MainActivity.kt                 (single activity host → AppNavigation)
+├── VideoPlayerActivity.kt          (full-screen video player host)
+├── AudioPlayerActivity.kt          (full-screen audio player host)
 │
 ├── presentation/
 │   ├── navigation/
@@ -106,7 +108,7 @@ com.rhnxdev.hzplayer/
 │   │   ├── PlaybackProgress.kt DecoderMode.kt OrientationMode.kt ResumeMode.kt
 │   │   ├── NetworkProtocol.kt ServerConfig.kt RemoteFileItem.kt RemoteAuthException.kt
 │   │   ├── NetworkTraffic.kt StreamHistoryItem.kt DebugStats.kt
-│   │   ├── AspectRatioMode.kt ThemeMode.kt
+│   │   ├── AspectRatioMode.kt ThemeMode.kt BrowserHistoryItem.kt
 │   │
 │   ├── player/
 │   │   ├── EngineType.kt IPlayerEngine.kt
@@ -122,7 +124,7 @@ com.rhnxdev.hzplayer/
 │   │   ├── NetworkRepositoryImpl.kt RemoteBrowseRepositoryImpl.kt
 │   │   ├── PlayerRepositoryImpl.kt ResumeRepositoryImpl.kt
 │   │   ├── SubtitleRepositoryImpl.kt UserPreferencesRepositoryImpl.kt
-│   │   ├── ArchiveRepositoryImpl.kt
+│   │   ├── ArchiveRepositoryImpl.kt BrowserHistoryRepositoryImpl.kt
 │   │
 │   ├── datasource/
 │   │   ├── local/room/  (HzPlayerDatabase + dao/ + entities/)
@@ -156,6 +158,18 @@ com.rhnxdev.hzplayer/
 │   ├── mapper/MediaMappers.kt NetworkMappers.kt
 │   └── security/PasswordCrypto.kt     (encrypted server credentials in Room)
 │
+├── browser/                              (full in-app browser)
+│   ├── adblock/AdBlockListManager.kt / AdBlockNative.kt / AdBlockUpdater.kt
+│   ├── media/DetectedMediaItem.kt / MediaDownloader.kt / MediaSnifferBridge.kt
+│   │         / MediaSnifferEngine.kt / MediaStreamDecoder.kt
+│   ├── ui/BrowserScreen.kt / BrowserTopBar.kt / BrowserBottomBar.kt / TabStrip.kt
+│   │      / TabSidebar.kt / NewTabPage.kt / BrowserHistoryScreen.kt
+│   │      / BrowserSettingsScreen.kt / MediaGrabberBottomSheet.kt
+│   │      / PopupPermissionBottomSheet.kt
+│   ├── AdBlockEngine.kt / BrowserActivity.kt / BrowserSessionStore.kt
+│   │   BrowserSettings.kt / BrowserSettingsStore.kt / BrowserTab.kt
+│   │   BrowserViewModel.kt / PendingPopupRequest.kt / TabManager.kt
+│
 ├── core/
 │   ├── designsystem/  (HzPlayerIcons.kt Dimens.kt NavBarInsets.kt)
 │   ├── components/    (see UI_COMPONENTS.md)
@@ -163,7 +177,7 @@ com.rhnxdev.hzplayer/
 │   └── util/          (MediaTimeUtils / MediaExtensions / MimeTypeUtil /
 │                       BreadcrumbBuilder / DirectoryLruCache / PlaybackFormatters /
 │                       ServerDiscoverer / SubtitleLanguageResolver / UpdateChecker /
-│                       ArchivePaths)
+│                       ArchivePaths / IntentUtils)
 │
 └── di/
     ├── AppModule.kt RepositoryModule.kt DatabaseModule.kt
@@ -213,6 +227,7 @@ com.rhnxdev.hzplayer/
 | `SubtitleRepository` | `SubtitleRepositoryImpl` | SubDL search + local subs |
 | `ArchiveRepository` | `ArchiveRepositoryImpl` | Archive listing + entry URIs via libarchive |
 | `UserPreferencesRepository` | `UserPreferencesRepositoryImpl` | DataStore prefs + active engine |
+| `BrowserHistoryRepository` | `BrowserHistoryRepositoryImpl` | Browser history persistence |
 
 ---
 

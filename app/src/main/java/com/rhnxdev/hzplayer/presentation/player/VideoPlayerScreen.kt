@@ -123,6 +123,7 @@ fun VideoPlayerScreen(
     val floatingEnabled by viewModel.backgroundPlay.collectAsStateWithLifecycle()
     val lastVolume by viewModel.lastVolume.collectAsStateWithLifecycle()
     val lastBrightness by viewModel.lastBrightness.collectAsStateWithLifecycle()
+    val saveVolumeBrightnessState by viewModel.saveVolumeBrightnessState.collectAsStateWithLifecycle()
     val view = LocalView.current
     val context = view.context
     val activity = remember(view) { context as? android.app.Activity }
@@ -134,15 +135,17 @@ fun VideoPlayerScreen(
         activity?.let { viewModel.applyOrientationMode(it, orientationMode) }
     }
 
-    // Restore last-saved volume and brightness once (when the saved values become available).
-    LaunchedEffect(lastVolume, lastBrightness) {
-        if (lastVolume >= 0f) {
-            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            val vol = (lastVolume * maxVol).toInt().coerceIn(0, maxVol)
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
-        }
-        if (lastBrightness >= 0f) {
-            window?.attributes = window?.attributes?.apply { screenBrightness = lastBrightness }
+    // Restore last-saved volume and brightness once if saving volume/brightness state is enabled.
+    LaunchedEffect(lastVolume, lastBrightness, saveVolumeBrightnessState) {
+        if (saveVolumeBrightnessState) {
+            if (lastVolume >= 0f) {
+                val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val vol = (lastVolume * maxVol).toInt().coerceIn(0, maxVol)
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
+            }
+            if (lastBrightness >= 0f) {
+                window?.attributes = window?.attributes?.apply { screenBrightness = lastBrightness }
+            }
         }
     }
 

@@ -45,7 +45,6 @@ fun PopupPermissionBottomSheet(
     request: PendingPopupRequest?,
     onAllow: () -> Unit,
     onDeny: () -> Unit,
-    onDenyAllThisSession: () -> Unit = {},
 ) {
     if (request == null) return
 
@@ -163,18 +162,6 @@ fun PopupPermissionBottomSheet(
                         Spacer(modifier = Modifier.width(Spacing.xs))
                         Text("Allow")
                     }
-                }
-
-                OutlinedButton(
-                    onClick = onDenyAllThisSession,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    ),
-                ) {
-                    Icon(imageVector = Icons.Default.Block, contentDescription = null)
-                    Spacer(modifier = Modifier.width(Spacing.xs))
-                    Text("Deny All for This Session")
                 }
             }
         }

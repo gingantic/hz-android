@@ -97,6 +97,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         prefs[PrefKey.LastBrightness.key] ?: -1f
     }.distinctUntilChanged()
 
+    override val saveVolumeBrightnessState: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PrefKey.SaveVolumeBrightnessState.key] ?: true
+    }.distinctUntilChanged()
+
     override fun getViewMode(key: String): Flow<ViewMode> =
         enumPreference(stringPreferencesKey("view_mode_$key"), ViewMode.GRID)
 
@@ -220,6 +224,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[PrefKey.LastBrightness.key] = brightness }
     }
 
+    override suspend fun setSaveVolumeBrightnessState(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[PrefKey.SaveVolumeBrightnessState.key] = enabled }
+    }
+
     override val dismissedUpdateVersionCode: Flow<Int> = dataStore.data.map { prefs ->
         prefs[PrefKey.DismissedUpdateVersionCode.key] ?: 0
     }.distinctUntilChanged()
@@ -339,5 +347,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object QuickAccessFolders : PrefKey<String>(stringPreferencesKey("quick_access_folders"))
         object LastVolume : PrefKey<Float>(floatPreferencesKey("last_volume"))
         object LastBrightness : PrefKey<Float>(floatPreferencesKey("last_brightness"))
+        object SaveVolumeBrightnessState : PrefKey<Boolean>(booleanPreferencesKey("save_volume_brightness_state"))
     }
 }
