@@ -13,10 +13,10 @@ interface BrowserHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistory(historyEntity: BrowserHistoryEntity): Long
 
-    @Query("SELECT * FROM browser_history ORDER BY timestamp DESC")
+    @Query("SELECT * FROM browser_history ORDER BY timestamp DESC LIMIT 500")
     fun getAllHistory(): Flow<List<BrowserHistoryEntity>>
 
-    @Query("SELECT * FROM browser_history WHERE title LIKE '%' || :query || '%' OR url LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    @Query("SELECT * FROM browser_history WHERE title LIKE '%' || :query || '%' OR url LIKE '%' || :query || '%' ORDER BY timestamp DESC LIMIT 500")
     fun searchHistory(query: String): Flow<List<BrowserHistoryEntity>>
 
     @Query("DELETE FROM browser_history WHERE id = :id")
