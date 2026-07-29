@@ -1,4 +1,4 @@
-package com.rhnxdev.hzplayer.data.datasource.subtitle.assrender
+package com.rhnxdev.hzplayer.data.datasource.player
 
 import android.content.Context
 import android.os.Looper
@@ -6,19 +6,29 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.text.TextRenderer
-import com.rhnxdev.hzplayer.data.datasource.player.AudioDelaySink
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssTimeRenderer
 
 /**
- * A [DefaultRenderersFactory] that:
+ * The app's single [DefaultRenderersFactory]. Media3 allows exactly one
+ * factory per player, so every renderer/sink customization — subtitle AND
+ * audio — has to live here:
+ *
+ * Subtitles:
  * 1. Enables legacy decoding on text renderers so raw text/x-ssa data doesn't crash
  * 2. Adds [AssTimeRenderer] to sync playback time to [AssHandler]
- * 3. Wraps the audio sink in an [AudioDelaySink] for adjustable A/V audio delay
+ *
+ * Audio:
+ * 3. Injects the [TenBandEqualizerProcessor] into the audio sink's processor chain
+ * 4. Wraps the audio sink in an [AudioDelaySink] for adjustable A/V audio delay
  */
 @UnstableApi
-class AssRenderersFactory(
+class HzRenderersFactory(
     context: Context,
-    private val handler: AssHandler,
+    private val assHandler: AssHandler,
+    private val eqProcessor: TenBandEqualizerProcessor,
 ) : DefaultRenderersFactory(context) {
 
     /** The delay wrapper created for this player instance; set during build. */
@@ -30,8 +40,14 @@ class AssRenderersFactory(
         enableFloatOutput: Boolean,
         enableAudioTrackPlaybackParams: Boolean,
     ): AudioSink? {
-        val sink = super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
-            ?: return null
+        // Mirrors super.buildAudioSink() but adds the EQ processor. Custom
+        // processors only run on the PCM path, so float output stays off
+        // (the factory default) — otherwise the EQ would be silently bypassed.
+        val sink = DefaultAudioSink.Builder(context)
+            .setEnableFloatOutput(enableFloatOutput)
+            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+            .setAudioProcessors(arrayOf(eqProcessor))
+            .build()
         return AudioDelaySink(sink).also { audioDelaySink = it }
     }
 
@@ -65,6 +81,6 @@ class AssRenderersFactory(
             textRendererOutput,
             metadataRendererOutput,
         )
-        return renderers + AssTimeRenderer(handler)
+        return renderers + AssTimeRenderer(assHandler)
     }
 }

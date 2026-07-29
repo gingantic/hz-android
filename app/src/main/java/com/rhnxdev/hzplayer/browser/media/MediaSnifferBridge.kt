@@ -5,13 +5,27 @@ import android.webkit.WebView
 import android.util.Log
 
 class MediaSnifferBridge(
-    private val onMediaDetected: (url: String, title: String, mimeType: String, headers: Map<String, String>) -> Unit
+    private val onMediaDetected: (url: String, title: String, mimeType: String, headers: Map<String, String>) -> Unit,
+    private val onPlaybackStateChanged: (isPlaying: Boolean) -> Unit = {},
+    private val onPipRequested: () -> Unit = {},
 ) {
     @JavascriptInterface
     fun onMediaFound(url: String, title: String, mimeType: String) {
         if (url.isNotBlank()) {
             onMediaDetected(url, title, mimeType, emptyMap())
         }
+    }
+
+    /** Called from JS whenever a page <video> starts/stops playing. */
+    @JavascriptInterface
+    fun onVideoPlaybackChanged(isPlaying: Boolean) {
+        onPlaybackStateChanged(isPlaying)
+    }
+
+    /** Called from JS when the page invokes the web Picture-in-Picture API. */
+    @JavascriptInterface
+    fun onEnterPipRequested() {
+        onPipRequested()
     }
 
     @JavascriptInterface
@@ -347,6 +361,68 @@ class MediaSnifferBridge(
                         cleanupPopunderOverlays();
                         scanMediaElements();
                     }, 1500);
+
+                    // 7. Video playback state tracking + web PiP API bridge.
+                    //    WebView doesn't implement requestPictureInPicture(), so site
+                    //    PiP buttons silently no-op — polyfill it to enter native PiP.
+                    var hzPlayingVideos = 0;
+                    function notifyPlayback() {
+                        try {
+                            if (window.${INTERFACE_NAME} && window.${INTERFACE_NAME}.onVideoPlaybackChanged) {
+                                window.${INTERFACE_NAME}.onVideoPlaybackChanged(hzPlayingVideos > 0);
+                            }
+                        } catch(e) {}
+                    }
+                    function recountPlayingVideos() {
+                        try {
+                            var count = 0;
+                            var vids = document.querySelectorAll('video');
+                            for (var i = 0; i < vids.length; i++) {
+                                var v = vids[i];
+                                if (!v.paused && !v.ended && v.readyState > 2) count++;
+                            }
+                            hzPlayingVideos = count;
+                            notifyPlayback();
+                        } catch(e) {}
+                    }
+                    document.addEventListener('play', recountPlayingVideos, true);
+                    document.addEventListener('playing', recountPlayingVideos, true);
+                    document.addEventListener('pause', recountPlayingVideos, true);
+                    document.addEventListener('ended', recountPlayingVideos, true);
+                    document.addEventListener('emptied', recountPlayingVideos, true);
+                    setInterval(recountPlayingVideos, 2000);
+                    recountPlayingVideos();
+
+                    try {
+                        HTMLVideoElement.prototype.requestPictureInPicture = function() {
+                            var vid = this;
+                            // Fullscreen the video first (routes into onShowCustomView)
+                            // so the native PiP window shows only the video, not the page
+                            try {
+                                if (vid.requestFullscreen) {
+                                    var p = vid.requestFullscreen();
+                                    if (p && p.catch) p.catch(function(){});
+                                } else if (vid.webkitRequestFullscreen) {
+                                    vid.webkitRequestFullscreen();
+                                }
+                            } catch(e) {}
+                            try {
+                                if (window.${INTERFACE_NAME} && window.${INTERFACE_NAME}.onEnterPipRequested) {
+                                    window.${INTERFACE_NAME}.onEnterPipRequested();
+                                }
+                            } catch(e) {}
+                            return Promise.resolve({});
+                        };
+                        Object.defineProperty(document, 'pictureInPictureEnabled', {
+                            get: function() { return true; },
+                            configurable: true
+                        });
+                        Object.defineProperty(HTMLVideoElement.prototype, 'disablePictureInPicture', {
+                            get: function() { return false; },
+                            set: function(v) {},
+                            configurable: true
+                        });
+                    } catch(e) {}
 
                     // Initial scan & dynamic mutation observer & media event listeners
                     scanMediaElements();

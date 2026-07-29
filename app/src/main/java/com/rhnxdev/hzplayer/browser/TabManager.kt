@@ -73,6 +73,22 @@ class TabManager(
         customView = null
     }
 
+    // ── Video playback / PiP state ────────────────────────────
+
+    /** Tab IDs with at least one actively playing HTML5 video. */
+    private val playingTabs = mutableStateOf(setOf<String>())
+
+    /** True when the active tab has a playing video OR a fullscreen video view is showing. */
+    val isVideoPlaying: Boolean
+        get() = customView != null || activeTabId?.let { it in playingTabs.value } == true
+
+    /** Fired when the page invokes the web PiP API (site PiP button). */
+    var onPipRequested: (() -> Unit)? = null
+
+    private fun setTabPlaying(tabId: String, playing: Boolean) {
+        playingTabs.value = if (playing) playingTabs.value + tabId else playingTabs.value - tabId
+    }
+
     // ── Tab CRUD ────────────────────────────────────────────────
 
     fun restoreSession(restoredTabs: List<BrowserTab>, targetActiveTabId: String?) {
@@ -92,6 +108,7 @@ class TabManager(
     }
 
     fun closeTab(id: String) {
+        setTabPlaying(id, false)
         if (_tabs.value.size <= 1) {
             _tabs.value = emptyList()
             activeTabId = null
@@ -303,17 +320,29 @@ class TabManager(
 
         // Inject Media Sniffer JS bridge interface
         wv.addJavascriptInterface(
-            MediaSnifferBridge { mediaUrl, pageTitle, mimeType, jsHeaders ->
-                val id = resolveTabId(wv) ?: return@MediaSnifferBridge
-                val enrichedHeaders = jsHeaders.toMutableMap()
-                val cookie = android.webkit.CookieManager.getInstance().getCookie(mediaUrl)
-                if (!cookie.isNullOrBlank() && !enrichedHeaders.containsKey("Cookie")) {
-                    enrichedHeaders["Cookie"] = cookie
-                }
-                scope.launch(Dispatchers.Main) {
-                    processCapturedMedia(id, mediaUrl, pageTitle, requestHeaders = enrichedHeaders, mimeType = mimeType)
-                }
-            },
+            MediaSnifferBridge(
+                onMediaDetected = { mediaUrl, pageTitle, mimeType, jsHeaders ->
+                    val id = resolveTabId(wv) ?: return@MediaSnifferBridge
+                    val enrichedHeaders = jsHeaders.toMutableMap()
+                    val cookie = android.webkit.CookieManager.getInstance().getCookie(mediaUrl)
+                    if (!cookie.isNullOrBlank() && !enrichedHeaders.containsKey("Cookie")) {
+                        enrichedHeaders["Cookie"] = cookie
+                    }
+                    scope.launch(Dispatchers.Main) {
+                        processCapturedMedia(id, mediaUrl, pageTitle, requestHeaders = enrichedHeaders, mimeType = mimeType)
+                    }
+                },
+                onPlaybackStateChanged = { playing ->
+                    scope.launch(Dispatchers.Main) {
+                        resolveTabId(wv)?.let { setTabPlaying(it, playing) }
+                    }
+                },
+                onPipRequested = {
+                    scope.launch(Dispatchers.Main) {
+                        if (resolveTabId(wv) == activeTabId) onPipRequested?.invoke()
+                    }
+                },
+            ),
             MediaSnifferBridge.INTERFACE_NAME
         )
 
@@ -672,6 +701,7 @@ class TabManager(
 
     private fun freezeTab(id: String) {
         val wv = liveViews[id] ?: return
+        setTabPlaying(id, false)
         val bundle = android.os.Bundle()
         wv.saveState(bundle)
         updateTab(id) { it.copy(savedState = bundle) }
