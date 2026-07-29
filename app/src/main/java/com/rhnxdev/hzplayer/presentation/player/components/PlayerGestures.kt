@@ -292,6 +292,10 @@ fun Modifier.playerGestures(
             if (seekConsumed && state.seekDelta != 0L) callbacks.onSeekBy(state.seekDelta)
             state.isDragSeeking = false
             state.seekDelta = 0L
+            // ponytail: hide the seek cue on drag release ourselves — the auto-hide
+            // effect is keyed on seekShowTick and skips while isDragSeeking is true,
+            // so after the last tick it never re-runs and the cue would stay stuck.
+            if (seekConsumed) state.seekVisible = false
             // Persist volume/brightness when a slide gesture ends.
             if (adjustInitialized && dominantDirection == DragDirection.ADJUST) {
                 callbacks.onSlideDone(state.slideType, state.slideValue)
