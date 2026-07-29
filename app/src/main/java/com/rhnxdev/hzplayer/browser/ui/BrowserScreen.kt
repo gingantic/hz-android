@@ -71,7 +71,8 @@ fun BrowserScreen(
 
     val customView = viewModel.tabManager.customView
 
-    // Back: close overlays first (custom video view → media grabber → history → settings → sidebar), then navigate back or exit
+    // Back: close overlays first (custom video view → media grabber → history → settings → sidebar),
+    // then navigate back in the tab; popup tabs close and return to their opener tab; else exit
     BackHandler(enabled = true) {
         when {
             customView != null -> viewModel.tabManager.hideCustomView()
@@ -79,7 +80,8 @@ fun BrowserScreen(
             showHistory    -> showHistory = false
             showSettings   -> showSettings = false
             showTabSidebar -> showTabSidebar = false
-            viewModel.activeTab?.canGoBack == true -> viewModel.goBack()
+            viewModel.activeTab?.canGoBack == true ||
+                viewModel.canReturnToParentTab -> viewModel.goBackOrClosePopup()
             else -> (context as? Activity)?.finish()
         }
     }
@@ -227,11 +229,11 @@ fun BrowserScreen(
             BrowserBottomBar(
                 url = viewModel.urlInput,
                 currentTabUrl = viewModel.activeTab?.url ?: "",
-                canGoBack = viewModel.activeTab?.canGoBack == true,
+                canGoBack = viewModel.activeTab?.canGoBack == true || viewModel.canReturnToParentTab,
                 canGoForward = viewModel.activeTab?.canGoForward == true,
                 tabCount = viewModel.tabCount,
                 isLoading = viewModel.activeTab?.isLoading == true,
-                onBack = { viewModel.goBack() },
+                onBack = { viewModel.goBackOrClosePopup() },
                 onForward = { viewModel.goForward() },
                 onReload = { viewModel.reload() },
                 onStopLoading = { viewModel.stopLoading() },
@@ -245,6 +247,8 @@ fun BrowserScreen(
                 onPlayerClick = { (context as? Activity)?.finish() },
                 mediaCount = viewModel.activeTabMediaCount,
                 onMediaGrabberClick = { showMediaGrabber = true },
+                isDesktopSite = viewModel.isDesktopMode,
+                onToggleDesktopSite = { viewModel.toggleDesktopMode() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()

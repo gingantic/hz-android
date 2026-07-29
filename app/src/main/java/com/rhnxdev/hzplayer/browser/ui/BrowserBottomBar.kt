@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -93,6 +95,8 @@ fun BrowserBottomBar(
     onPlayerClick: () -> Unit = {},
     mediaCount: Int = 0,
     onMediaGrabberClick: () -> Unit = {},
+    isDesktopSite: Boolean = false,
+    onToggleDesktopSite: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
 
@@ -313,6 +317,30 @@ fun BrowserBottomBar(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                     )
 
+                    // Desktop site toggle (Chrome-style) — reloads the page in desktop mode
+                    BrowserMenuItemRow(
+                        icon = Icons.Default.Computer,
+                        title = "Desktop site",
+                        onClick = {
+                            showMenu = false
+                            onToggleDesktopSite()
+                        },
+                        trailing = {
+                            Checkbox(
+                                checked = isDesktopSite,
+                                onCheckedChange = {
+                                    showMenu = false
+                                    onToggleDesktopSite()
+                                },
+                            )
+                        },
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
+
                     BrowserMenuItemRow(
                         icon = Icons.Default.Settings,
                         title = "Settings",
@@ -346,13 +374,14 @@ private fun BrowserMenuItemRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     onClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = if (trailing != null) 4.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -366,6 +395,8 @@ private fun BrowserMenuItemRow(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
         )
+        trailing?.invoke()
     }
 }

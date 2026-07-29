@@ -77,7 +77,7 @@ class BrowserViewModel @Inject constructor(
 
     fun allowPendingPopup() {
         val req = pendingPopupRequest ?: return
-        val newTabId = tabManager.createTab(req.targetUrl)
+        val newTabId = tabManager.createTab(req.targetUrl, parentTabId = req.sourceTabId)
         if (req.tempWebView != null) {
             tabManager.registerWebView(newTabId, req.tempWebView)
         }
@@ -200,6 +200,16 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
+    /** True when the browser renders pages with full desktop mode. */
+    val isDesktopMode: Boolean
+        get() = settings.userAgentMode == UserAgentMode.DESKTOP
+
+    /** Chrome-style "Desktop site" toggle — switches rendering mode and reloads live tabs. */
+    fun toggleDesktopMode() {
+        val newMode = if (isDesktopMode) UserAgentMode.MOBILE else UserAgentMode.DESKTOP
+        updateSettings(settings.copy(userAgentMode = newMode))
+    }
+
     fun initialize() {
         if (tabManager.tabs.isNotEmpty()) return
 
@@ -291,6 +301,29 @@ class BrowserViewModel @Inject constructor(
     fun goForward() = tabManager.goForward()
     fun reload() = tabManager.reload()
     fun stopLoading() = tabManager.stopLoading()
+
+    /** True when the active tab is a popup whose opener tab is still alive. */
+    val canReturnToParentTab: Boolean
+        get() {
+            val parentId = activeTab?.parentTabId ?: return false
+            return tabs.any { it.id == parentId }
+        }
+
+    /**
+     * Chrome-like back: navigate the WebView history if possible; otherwise,
+     * if this tab was opened as a popup, close it and return to the opener tab.
+     */
+    fun goBackOrClosePopup() {
+        val tab = activeTab ?: return
+        if (tab.canGoBack) {
+            tabManager.goBack()
+            return
+        }
+        if (canReturnToParentTab) {
+            tabManager.closeTab(tab.id)   // closeTab switches back to the parent
+            saveSessionIfEnabled()
+        }
+    }
 
     val activeTab: BrowserTab?
         get() = tabs.find { it.id == activeTabId }

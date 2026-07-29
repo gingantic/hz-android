@@ -11,4 +11,6 @@ data class PendingPopupRequest(
     val parentUrl: String,
     val targetUrl: String,
     val targetDomain: String,
+    /** Tab that requested the pop-up — becomes the new tab's parent when allowed. */
+    val sourceTabId: String? = null,
 )

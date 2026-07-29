@@ -19,6 +19,7 @@ class BrowserSessionStore private constructor(prefs: SharedPreferences) {
                 put("id", tab.id)
                 put("url", tab.url)
                 put("title", tab.title)
+                tab.parentTabId?.let { put("parentTabId", it) }
             }
             array.put(obj)
         }
@@ -43,8 +44,9 @@ class BrowserSessionStore private constructor(prefs: SharedPreferences) {
                 val id = obj.optString("id", "")
                 val url = obj.optString("url", "")
                 val title = obj.optString("title", "")
+                val parentTabId = obj.optString("parentTabId", "").ifBlank { null }
                 if (id.isNotBlank()) {
-                    tabs.add(BrowserTab(id = id, url = url, title = title))
+                    tabs.add(BrowserTab(id = id, url = url, title = title, parentTabId = parentTabId))
                 }
             }
         } catch (_: Exception) {
