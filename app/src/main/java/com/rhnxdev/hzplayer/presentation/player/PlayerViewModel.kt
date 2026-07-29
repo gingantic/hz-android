@@ -620,14 +620,42 @@ class PlayerViewModel @Inject constructor(
         android.util.Log.i(TAG, "stop() called")
         positionController.saveProgressNow()
         playerRepository.stop()
+        positionController.reset()
+        subtitlePreferenceAppliedForUri = null
+        // Reset every per-session field so the next video starts from a clean
+        // slate immediately, not only when new media replaces the old one.
+        // Preference-driven fields (seekSensitivity, useSurfaceView, debugMode,
+        // activeEngineType, ...) are intentionally kept.
         _uiState.update { it.copy(
-            currentTitle = null, 
-            currentArtist = null, 
-            isPlaying = false, 
-            currentPlaybackUri = null, 
-            videoPlaylist = emptyList(),
+            currentTitle = null,
+            currentArtist = null,
+            currentPlaybackUri = null,
+            currentArtworkUri = null,
+            isPlaying = false,
+            isLoading = false,
+            duration = 0,
+            bufferedPercentage = 0,
+            playbackSpeed = 1.0f,
+            subtitleTracks = emptyList(),
+            audioTracks = emptyList(),
+            selectedSubtitleTrack = -1,
+            selectedAudioTrack = -1,
+            showControls = true,
+            externalSubtitles = emptyList(),
+            subtitleDelayMs = 0,
+            playerLocked = false,
             errorMessage = null,
+            errorKind = null,
+            aspectRatioMode = com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO,
+            videoPlaylist = emptyList(),
+            currentPlaylistIndex = 0,
+            showPlaylistDrawer = false,
+            audioQueue = emptyList(),
+            audioQueueIndex = 0,
+            showAudioQueue = false,
+            debugOverlayVisible = false,
             isVideoSurfaceActive = false,
+            pendingResume = null,
         ) }
     }
 

@@ -141,6 +141,14 @@ internal class PlayerPositionController(
         saveScope.launch { resumeProgress.saveProgress(uri, pos, dur) }
     }
 
+    /** Reset position bookkeeping when playback is stopped (player closed). */
+    fun reset() {
+        _position.value = 0L
+        isSeeking = false
+        seekTargetPosition = 0L
+        saveTick = 0
+    }
+
     /** Clears the seeking flag once the engine settles out of BUFFERING. */
     fun onPlaybackState(state: PlayerState) {
         if (isSeeking && state != PlayerState.BUFFERING) {

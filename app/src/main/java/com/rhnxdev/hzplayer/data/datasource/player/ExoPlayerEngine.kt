@@ -173,7 +173,17 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun stop() {
         player.stop()
+        // Fully reset the singleton player so nothing from this session (last
+        // frame, position, tracks, speed) leaks into the next one. Without
+        // clearMediaItems() the old media stays loaded after the screen closes
+        // and only gets replaced when the next video starts.
+        player.clearMediaItems()
+        player.setPlaybackSpeed(1f)
         currentPlaylist = null
+        currentMediaUri = null
+        currentMediaTitle = null
+        subtitleConfigs.clear()
+        assHandler.reset()
         playerHolder.clearError()
     }
 
