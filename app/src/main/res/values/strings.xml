@@ -55,6 +55,7 @@
     <string name="quick_access">Quick Access</string>
     <string name="menu_favorite">Favorite</string>
     <string name="menu_unfavorite">Remove from Favorites</string>
+    <string name="menu_play_all_playlist">Play all as playlist</string>
     <string name="item_count">%1$d items</string>
     <string name="solid_archive_warning_title">Solid Archive Notice</string>
     <string name="solid_archive_warning_message">\"%1$s\" uses solid compression. Playing media or seeking/scrubbing inside this archive may be slower and use higher CPU because prior data must be decompressed.</string>

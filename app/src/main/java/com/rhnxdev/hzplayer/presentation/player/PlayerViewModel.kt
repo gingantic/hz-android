@@ -239,6 +239,27 @@ class PlayerViewModel @Inject constructor(
                     } else {
                         state.chapters
                     }
+                    // Keep the video playlist index in sync when the engine
+                    // auto-advances (including while played as background audio),
+                    // so reopening as video lands on the right item / drawer row.
+                    val newPlaylistIndex = if (uriChanged && state.videoPlaylist.isNotEmpty()) {
+                        state.videoPlaylist.indexOfFirst { it.uri == info.currentUri }
+                            .takeIf { it >= 0 } ?: state.currentPlaylistIndex
+                    } else {
+                        state.currentPlaylistIndex
+                    }
+                    // "Play as audio" survives track changes within a playlist so the
+                    // mini player keeps offering "Open as video" for every item; it
+                    // only ends when playback goes idle or a non-playlist URI loads.
+                    val stillPlaylistAudio = state.playingVideoAsAudio &&
+                        state.videoPlaylist.isNotEmpty() &&
+                        info.currentUri != null &&
+                        state.videoPlaylist.any { it.uri == info.currentUri }
+                    val playingVideoAsAudio = when {
+                        isIdle -> false
+                        uriChanged -> stillPlaylistAudio
+                        else -> state.playingVideoAsAudio
+                    }
                     state.copy(
                         isPlaying = info.isPlaying,
                         isLoading = newIsLoading,
@@ -252,6 +273,7 @@ class PlayerViewModel @Inject constructor(
                         currentPlaybackUri = if (isIdle) null else (info.currentUri ?: state.currentPlaybackUri),
                         currentArtworkUri = if (isIdle) null else (artworkUri ?: if (info.currentUri != state.currentPlaybackUri) null else state.currentArtworkUri),
                         audioQueueIndex = newQueueIndex,
+                        currentPlaylistIndex = newPlaylistIndex,
                         // Track DRM status — exposed in `drmSessionActive` for any
                         // future pipeline that needs it; not currently driving the
                         // surface selection while HDR/SDR colour-correction is in
@@ -262,8 +284,8 @@ class PlayerViewModel @Inject constructor(
                         // A new media item ends any A-B loop from the previous one.
                         abLoopStartMs = if (uriChanged || isIdle) null else state.abLoopStartMs,
                         abLoopEndMs = if (uriChanged || isIdle) null else state.abLoopEndMs,
-                        // A new media item ends the "video as audio" session.
-                        playingVideoAsAudio = if (uriChanged || isIdle) false else state.playingVideoAsAudio,
+                        // Survives track changes within a playlist (see above).
+                        playingVideoAsAudio = playingVideoAsAudio,
                     )
                 }
                 // Refresh track cache once ExoPlayer finishes preparing (state == READY).

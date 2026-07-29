@@ -1,9 +1,9 @@
 # Hz Player — Data Flow Architecture
 
 > How data moves from persistence to pixels.
-> Last refreshed: 2026-07-24. Reflects the modular `IPlayerEngine` seam, the remote
-> network stack, resumable playback, libass subtitle pipeline, archive support, and
-> in-app browser.
+> Last refreshed: 2026-07-29. Reflects the modular `IPlayerEngine` seam, the remote
+> network stack, resumable playback, libass subtitle pipeline, archive support,
+> in-app browser, sleep timer, chapters, A-B repeat, audio delay, and play-as-audio mode.
 
 ---
 
@@ -85,13 +85,15 @@ FileBrowserScreen → tap archive file
 ```
 BrowserActivity (separate activity)
   → BrowserViewModel
-    → TabManager (manages BrowserTab stack)
-    → AdBlockEngine (JNI-based ad filtering)
+    → TabManager (manages BrowserTab stack; swipe-to-switch with slide animation)
+    → AdBlockEngine (Rust-based ad filtering via JNI, filter list updates)
     → MediaSnifferEngine (detects video/audio on pages)
   → BrowserScreen
-    → WebView per tab
+    → WebView per tab (pooled via BrowserSessionStore)
     → BrowserHistoryRepository (persists history)
-    → MediaGrabberBottomSheet (download detected media)
+    → MediaGrabberBottomSheet (stream detected media to player)
+    → PopupPermissionBottomSheet (cross-domain popup approval)
+    → Real desktop mode toggle (desktop UA + wide viewport)
 ```
 
 ---
@@ -101,12 +103,61 @@ BrowserActivity (separate activity)
 ### Play (local or remote, identical call path)
 ```
 Screen → ViewModel.onPlay(item)
-  → PlayerRepository.playVideo / playAudio / playUri(uri, title, isVideo, mimeType, resumePositionMs)
-    → activeEngine.play(uri, …)        // IPlayerEngine — no Media3 in caller
+  → PlayerRepository.playVideo / playAudio / playUri(uri, title, isVideo, mimeType, resumePositionMs, headers)
+    → activeEngine.play(uri, …, headers)   // IPlayerEngine — no Media3 in caller
       → ExoPlayerEngine → MediaPlayerHolder.player.setMediaItem + prepare + play
     → NeighborSubtitleDiscoverer auto-loads sibling .srt/.ass files
     → startTrafficPolling() if uri is remote
   → playbackStateInfo Flow updates PlayerUiState
+```
+
+### Play-as-audio (video played as audio-only)
+```
+VideoPlayerScreen → onPlayAsAudio()
+  → PlayerViewModel sets isVideo=false, playingVideoAsAudio=true
+  → engine continues playback; video surface hidden
+  → MiniPlayerBar takes over UI (no full-screen video surface)
+  → User can return to video via FloatingVideoPlayer or navigating back
+```
+
+### Sleep timer
+```
+PlayerMoreOptionsSheet → onSleepTimerClick
+  → SleepTimerDialog (preset minutes / end-of-video / off)
+  → PlayerViewModel.setSleepTimer(durationMs)
+    → -1 = end of video (auto-stop when state == ENDED)
+    → >0 = countdown; on expiry → viewModel.pause() + reset timer
+    → 0 = cancel timer
+  → sleepTimerRemainingFlow (1 Hz countdown) drives the label in PlayerMoreOptionsSheet
+```
+
+### A-B repeat loop
+```
+PlayerMoreOptionsSheet → onCycleAbRepeat
+  → First tap: set point A (abLoopStartMs = currentPosition)
+  → Second tap: set point B (abLoopEndMs = currentPosition) → loop active
+  → Third tap: clear both points → loop off
+  → PlayerPositionController monitors position; when position >= abLoopEndMs
+    → seekTo(abLoopStartMs) automatically
+```
+
+### Chapter navigation
+```
+MediaPlayerHolder probes chapters via native FFmpeg demuxer on READY
+  → List<ChapterInfo> (startMs, endMs, title) surfaced via PlayerStateInfo
+    → PlayerViewModel maps → PlayerUiState.chapters
+      → ChapterSelectionDialog shows chapter list with current-position highlight
+        → tap chapter → seekTo(chapter.startMs)
+```
+
+### Audio delay (A/V sync offset)
+```
+PlayerMoreOptionsSheet / settings → onAudioDelayChanged(ms)
+  → PlayerViewModel.setAudioDelay(ms)
+    → engine.setAudioDelay(ms)
+      → ExoPlayerEngine → AudioDelaySink.delayUs = ms * 1000
+        → ForwardingAudioSink shifts getCurrentPositionUs
+          → ExoPlayer syncs video to shifted audio clock (no pipeline change)
 ```
 
 ### Switch playback engine
@@ -185,7 +236,7 @@ PlayerPositionController (250ms tick)
 
 | Source | Use | Notes |
 |---|---|---|
-| Room | Persistent cache for media index, server configs, resume positions, stream history, browser history | 5 DAOs; KSP-generated |
+| Room | Persistent cache for media index, server configs, resume positions, stream history, browser history | 5 DAOs; KSP-generated; v6 (headersJson, pageUrl, mimeType on stream_history) |
 | MediaStore | System media index | `MediaScanner` syncs into Room |
 | DataStore | User preferences (sort, theme, active engine, archive passwords) | Type-safe `Preferences` |
 | Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` |
@@ -193,7 +244,7 @@ PlayerPositionController (250ms tick)
 | Native FFmpeg | Video thumbnails + codec metadata probe | JNI in `core/thumbnail` + `cpp/` |
 | Native libass | ASS/SSA/SRT/VTT subtitle rendering | JNI in `data/datasource/subtitle/assrender` + `cpp/` |
 | Native libarchive | Archive listing + streaming playback | JNI in `data/datasource/archive` + `cpp/` |
-| Native ad blocker | WebView ad filtering | JNI in `browser/adblock/` |
+| Native ad blocker | WebView ad filtering | Rust-based engine in `browser/adblock/` (JNI) |
 | Cloudflare R2 | OTA update checks + APK download | `UpdateChecker` reads `BuildConfig.R2_UPDATE_BASE_URL` |
 
 ---

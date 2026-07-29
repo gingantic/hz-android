@@ -97,6 +97,7 @@ fun DirectoryBrowsePane(
     modifier: Modifier = Modifier,
     mediaMode: Boolean = false,
     onPlayAsAudio: ((FileItemData) -> Unit)? = null,
+    onPlayAllFolder: ((FileItemData) -> Unit)? = null,
     quickAccessPaths: Set<String> = emptySet(),
     onToggleFavorite: ((FileItemData) -> Unit)? = null,
     listState: androidx.compose.foundation.lazy.LazyListState? = null,
@@ -239,6 +240,9 @@ fun DirectoryBrowsePane(
                             resolution = if (mediaMode) item.resolution else null,
                             isNew = !item.isDirectory && item.dateAdded > 0L && (System.currentTimeMillis() / 1000L - item.dateAdded < 3600L),
                             onPropertiesClick = { propertiesItem = item },
+                            onPlayAllClick = if (onPlayAllFolder != null && item.isDirectory) {
+                                { onPlayAllFolder(item) }
+                            } else null,
                             onPlayAsAudioClick = if (onPlayAsAudio != null && !item.isDirectory && (item.mimeType?.startsWith("video") == true || isVideoExtension(item.name) || item.durationMs > 0)) {
                                 { onPlayAsAudio(item) }
                             } else null,

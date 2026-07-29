@@ -1,8 +1,9 @@
 # Hz Player — Player Architecture
 
 > Media3 ExoPlayer behind the `IPlayerEngine` contract, rendered through `PlayerSurface`.
-> Last refreshed: 2026-07-24. Reflects the libass subtitle pipeline, position controller
-> split, audio queue, floating video player, resume-mode support, and in-app browser.
+> Last refreshed: 2026-07-29. Reflects the libass subtitle pipeline, position controller
+> split, audio queue, floating video player, resume-mode support, in-app browser,
+> sleep timer, chapters, A-B repeat, audio delay, and play-as-audio mode.
 
 ---
 
@@ -52,8 +53,11 @@ Owns the single `ExoPlayer`. Configured for this app:
 - `DefaultTrackSelector` with **tunneling disabled** (4K HDR HEVC tunneled seek stall).
 - `DefaultLoadControl` with larger buffers (50s/90s) for smoother remote streaming.
 - `DefaultRenderersFactory` with `EXTENSION_RENDERER_MODE_ON` (FFmpeg extension decoders).
+- `AudioDelaySink` wrapping the default audio sink for A/V sync offset.
+- Chapter probing via native FFmpeg demuxer on READY → `List<ChapterInfo>`.
 - Exposes `PlayerStateInfo` via `playbackState: StateFlow`.
 - `onPlayerError` routes through `PlaybackErrorMapper` → redacted `(kind, message)`.
+- Debug stats extracted via `ExoDebugStatsHelper` (FPS, decoder labels, HDR, SoC).
 
 ```kotlin
 @Singleton
@@ -156,6 +160,7 @@ data class PlayerStateInfo(
     val currentArtist: String? = null,
     val currentUri: String? = null,
     val drmSessionActive: Boolean = false,
+    val chapters: List<ChapterInfo> = emptyList(),  // container chapters from FFmpeg
 )
 ```
 
@@ -170,8 +175,8 @@ The ViewModel is split into focused controllers to keep each class small:
 
 | Controller | Responsibility |
 |---|---|
-| `PlayerViewModel` | Orchestrates controllers, maps `PlayerStateInfo` → `PlayerUiState` |
-| `PlayerPositionController` | 250ms position tick (`StateFlow<Long>`), periodic resume-save |
+| `PlayerViewModel` | Orchestrates controllers, maps `PlayerStateInfo` → `PlayerUiState`, sleep timer, A-B repeat loop |
+| `PlayerPositionController` | 250ms position tick (`StateFlow<Long>`), periodic resume-save, A-B loop boundary check |
 | `PlayerTrackCache` | Caches subtitle/audio track lists; refreshes on READY |
 | `PlayerPlaylistController` | Video playlist + audio queue management |
 | `PlayerDebugController` | Debug stats polling |
@@ -268,6 +273,59 @@ is managed by `PlayerPlaylistController` and exposed via `PlayerUiState.audioQue
 
 ---
 
+## Sleep Timer
+
+`SleepTimerDialog` offers fixed presets (15/30/45/60/90/120 min), "end of video" mode
+(-1), and Off. The timer is managed by `PlayerViewModel`:
+- Countdown displayed via `sleepTimerRemainingFlow` (1 Hz `StateFlow<Long>`).
+- "End of video" auto-stops when `PlayerState.ENDED` is reached.
+- On expiry, playback pauses and the timer resets.
+
+---
+
+## A-B Repeat Loop
+
+Cycled via `PlayerMoreOptionsSheet.onCycleAbRepeat`:
+1. First tap → `abLoopStartMs = currentPosition` (point A set).
+2. Second tap → `abLoopEndMs = currentPosition` (loop active).
+3. Third tap → both cleared (loop off).
+
+`PlayerPositionController` monitors the 250ms tick: when `position >= abLoopEndMs`,
+it calls `seekTo(abLoopStartMs)` automatically.
+
+---
+
+## Chapter Navigation
+
+Chapters are probed from the media container (MKV chapters, MP4 chpl, OGG chapters)
+via the native FFmpeg demuxer when the player reaches READY state. The resulting
+`List<ChapterInfo>` (startMs, endMs, title) flows through `PlayerStateInfo` →
+`PlayerUiState.chapters`. `ChapterSelectionDialog` shows the list with the current
+chapter highlighted; tapping a row seeks to its `startMs`.
+
+---
+
+## Audio Delay (A/V Sync Offset)
+
+`AudioDelaySink` (a `ForwardingAudioSink`) shifts the audio clock reported to
+ExoPlayer. Since ExoPlayer syncs video to the audio renderer's clock, offsetting
+`getCurrentPositionUs` shifts A/V sync without touching the audio pipeline.
+- Positive delay → audio heard later (video renders ahead).
+- Controlled via `IPlayerEngine.setAudioDelay(delayMs)`.
+- Persisted in `PlayerUiState.audioDelayMs`.
+
+---
+
+## Play-as-Audio Mode
+
+From the video player, users can tap "Play as audio" (`PlayerMoreOptionsSheet`)
+to hide the video surface and continue playback as audio-only. The ViewModel sets
+`isVideo=false` + `playingVideoAsAudio=true`; the engine keeps playing. The mini
+player bar takes over the UI. Users can return to the video surface via the
+floating player or navigating back to the full-screen player.
+
+---
+
 ## ExoPlayer Integration Points
 
 | Feature | Media3 Implementation |
@@ -280,6 +338,9 @@ is managed by `PlayerPlaylistController` and exposed via `PlayerUiState.audioQue
 | Audio tracks | `getCurrentTracks().getGroups()` |
 | Decoder mode | `setDecoderMode()` → rebuilds renderers (SW/HW) |
 | DRM | `drmSessionActive` flag → TextureView for secure decode |
-| ABRepeat | manual (not native) |
+| ABRepeat | manual (not native) — `PlayerPositionController` loops A→B |
+| Sleep timer | manual — `PlayerViewModel` countdown + auto-pause |
+| Chapters | probed via native FFmpeg demuxer → `List<ChapterInfo>` |
+| Audio delay | `AudioDelaySink` (ForwardingAudioSink clock shift) |
 
 Subtitle timing offset is exposed via `IPlayerEngine.setSubtitleDelay/getSubtitleDelay`.

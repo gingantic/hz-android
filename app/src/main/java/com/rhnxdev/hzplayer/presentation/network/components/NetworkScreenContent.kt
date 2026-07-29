@@ -2,6 +2,11 @@ package com.rhnxdev.hzplayer.presentation.network.components
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -435,6 +440,9 @@ internal fun ServerBrowseStackContent(
         val noopAction: () -> Unit = {}
         val noopFolder: (RemoteFileItem) -> Unit = {}
         val noopBreadcrumb: (String) -> Unit = {}
+        val noopAtEnd: (Boolean) -> Unit = {}
+        var isListAtEnd by remember { mutableStateOf(false) }
+        val topLayerAtEnd: (Boolean) -> Unit = { isListAtEnd = it }
 
         uiState.remoteLayers.forEachIndexed { index, layer ->
             val isTop = index == topIndex
@@ -456,6 +464,7 @@ internal fun ServerBrowseStackContent(
                     fullScreenOverlay = fullScreenOverlay,
                     isTopLayer = isTop,
                     onPlayAsAudio = if (isTop) onPlayAsAudio else noopFolder,
+                    onListAtEndChanged = if (isTop) topLayerAtEnd else noopAtEnd,
                     modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
             }
@@ -466,22 +475,29 @@ internal fun ServerBrowseStackContent(
             !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name))
         } == true
         if (hasVideos && !isSearchActive) {
-            FloatingActionButton(
-                onClick = onPlayAllVideos,
+            // Hide the FAB at the bottom of the list so it doesn't cover the last item
+            AnimatedVisibility(
+                visible = !isListAtEnd,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(16.dp),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                elevation = FloatingActionButtonDefaults.elevation(
-                    defaultElevation = 6.dp,
-                    pressedElevation = 12.dp
-                )
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = stringResource(R.string.play_all_cd),
-                )
+                FloatingActionButton(
+                    onClick = onPlayAllVideos,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    elevation = FloatingActionButtonDefaults.elevation(
+                        defaultElevation = 6.dp,
+                        pressedElevation = 12.dp
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = stringResource(R.string.play_all_cd),
+                    )
+                }
             }
         }
     }
@@ -505,6 +521,7 @@ private fun RemoteDirectoryLayerView(
     fullScreenOverlay: Boolean = false,
     isTopLayer: Boolean = false,
     onPlayAsAudio: (RemoteFileItem) -> Unit = {},
+    onListAtEndChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Only store the item *index* — pixel offsets are orientation-dependent and cause
@@ -549,6 +566,15 @@ private fun RemoteDirectoryLayerView(
             }
             wasScrolling = isScrolling
         }
+    }
+
+    // Report when the list is scrolled to the very end so the Play All FAB
+    // can hide instead of covering the last item. Lists too short to scroll
+    // never report true, keeping the FAB available.
+    androidx.compose.runtime.LaunchedEffect(listState, layer.path) {
+        androidx.compose.runtime.snapshotFlow {
+            listState.canScrollBackward && !listState.canScrollForward
+        }.collect { onListAtEndChanged(it) }
     }
 
     // When the full-screen overlay (video/audio player) closes, the underlying
