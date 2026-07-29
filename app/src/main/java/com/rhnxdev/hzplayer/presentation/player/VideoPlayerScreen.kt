@@ -99,6 +99,10 @@ import com.rhnxdev.hzplayer.presentation.player.components.PlayerGestureCallback
 import com.rhnxdev.hzplayer.presentation.player.components.playerGestures
 import com.rhnxdev.hzplayer.presentation.player.components.SpeedSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSelectionDialog
+import com.rhnxdev.hzplayer.presentation.player.components.PlayerMoreOptionsSheet
+import com.rhnxdev.hzplayer.presentation.player.components.SleepTimerDialog
+import com.rhnxdev.hzplayer.presentation.player.components.JumpToTimeDialog
+import com.rhnxdev.hzplayer.presentation.player.components.ChapterSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.PlaylistDrawer
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSearchDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleFileBrowserBottomSheet
@@ -117,6 +121,7 @@ fun VideoPlayerScreen(
     assHandler: AssHandler,
     onBack: () -> Unit,
     onMinimize: () -> Unit = {},
+    onPlayAsAudio: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val orientationMode by viewModel.orientationMode.collectAsStateWithLifecycle()
@@ -174,6 +179,10 @@ fun VideoPlayerScreen(
     var showSubtitleSearchDialog by remember { mutableStateOf(false) }
     var showAudioDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
+    var showMoreSheet by remember { mutableStateOf(false) }
+    var showSleepDialog by remember { mutableStateOf(false) }
+    var showJumpDialog by remember { mutableStateOf(false) }
+    var showChapterDialog by remember { mutableStateOf(false) }
     var showUnlockOverlay by remember { mutableStateOf(false) }
     var hudInteractionTick by remember { mutableLongStateOf(0L) }
     val gestureCallbacks = remember(viewModel) {
@@ -217,6 +226,8 @@ fun VideoPlayerScreen(
         }
     }
     val onPlaylistClick = remember(viewModel) { viewModel::onTogglePlaylistDrawer }
+    val onMoreClick = remember { { showMoreSheet = true } }
+    val onCycleAbRepeat = remember(viewModel) { viewModel::onCycleAbRepeat }
     val onInteract: () -> Unit = remember { { hudInteractionTick++; Unit } }
     val onMinimizeCallback = remember(floatingEnabled, onMinimize) {
         if (floatingEnabled) onMinimize else null
@@ -260,6 +271,24 @@ fun VideoPlayerScreen(
         }
     }
 
+    // ── Brightness consistency across PiP ─────────────────────────────────
+    // The player's brightness is a *window override*; in PiP that override
+    // would keep forcing the whole screen's brightness from a tiny window.
+    // Drop it on PiP entry and re-apply the exact value when expanding back.
+    var pipSavedBrightness by remember { mutableFloatStateOf(-1f) }
+    LaunchedEffect(isInPip) {
+        val w = window ?: return@LaunchedEffect
+        if (isInPip) {
+            pipSavedBrightness = w.attributes.screenBrightness
+            w.attributes = w.attributes.apply {
+                screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            }
+        } else if (pipSavedBrightness >= 0f) {
+            w.attributes = w.attributes.apply { screenBrightness = pipSavedBrightness }
+            pipSavedBrightness = -1f
+        }
+    }
+
     // Surface lifecycle: pause/cleanup on background, reconnect on resume.
     //
     // IMPORTANT: We hook ON_STOP / ON_START instead of ON_PAUSE / ON_RESUME so that
@@ -291,6 +320,9 @@ fun VideoPlayerScreen(
                     // App is returning from background — onResume below handles reconnect.
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    // Clear a stale minimize flag from a previous minimize /
+                    // play-as-audio hand-off so backgrounding pauses again.
+                    viewModel.isMinimizing = false
                     resumeRenderView(viewModel.getActiveEngine(), renderViewRef.value)
                     viewModel.onAppForeground()
                 }
@@ -371,6 +403,11 @@ fun VideoPlayerScreen(
                 window.attributes = attrs
             }
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            // Drop the player's brightness override so the rest of the app (and
+            // the next player session) starts from system brightness again.
+            window.attributes = window.attributes.apply {
+                screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            }
             window.navigationBarColor = originalNavColor
             window.statusBarColor = originalStatusColor
             WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -484,6 +521,7 @@ fun VideoPlayerScreen(
                             onAspectRatioClick = onAspectRatioClick,
                             onOrientationClick = onOrientationClick,
                             onPlaylistClick = onPlaylistClick,
+                            onMoreClick = onMoreClick,
                             onMinimize = onMinimizeCallback,
                             onDebugClick = onDebugClick,
                             onSkipToNext = onSkipToNext,
@@ -543,6 +581,8 @@ fun VideoPlayerScreen(
                             selectedTrackIndex = uiState.selectedAudioTrack,
                             onTrackSelected = viewModel::selectAudioTrack,
                             onDismiss = { showAudioDialog = false },
+                            audioDelayMs = uiState.audioDelayMs,
+                            onAudioDelayChange = viewModel::onAudioDelayChange,
                         )
                     }
                 }
@@ -578,6 +618,69 @@ fun VideoPlayerScreen(
                             currentSpeed = uiState.playbackSpeed,
                             onSpeedSelected = viewModel::onSetSpeed,
                             onDismiss = { showSpeedDialog = false },
+                        )
+                    }
+                }
+
+                if (showMoreSheet) {
+                    key("more_options_sheet") {
+                        PlayerMoreOptionsSheet(
+                            repeatMode = uiState.repeatMode,
+                            sleepTimerRemainingFlow = viewModel.sleepTimerRemainingMs,
+                            chapterCount = uiState.chapters.size,
+                            onSleepTimerClick = {
+                                showMoreSheet = false
+                                showSleepDialog = true
+                            },
+                            onJumpToClick = {
+                                showMoreSheet = false
+                                showJumpDialog = true
+                            },
+                            onChaptersClick = {
+                                showMoreSheet = false
+                                showChapterDialog = true
+                            },
+                            onCycleRepeat = viewModel::onCycleRepeatMode,
+                            abLoopStartMs = uiState.abLoopStartMs,
+                            abLoopEndMs = uiState.abLoopEndMs,
+                            onCycleAbRepeat = onCycleAbRepeat,
+                            onPlayAsAudio = {
+                                showMoreSheet = false
+                                viewModel.onPlayAsAudio()
+                                onPlayAsAudio()
+                            },
+                            onDismiss = { showMoreSheet = false },
+                        )
+                    }
+                }
+
+                if (showSleepDialog) {
+                    key("sleep_timer_dialog") {
+                        SleepTimerDialog(
+                            sleepTimerRemainingFlow = viewModel.sleepTimerRemainingMs,
+                            onSetTimer = viewModel::onSetSleepTimer,
+                            onDismiss = { showSleepDialog = false },
+                        )
+                    }
+                }
+
+                if (showJumpDialog) {
+                    key("jump_to_dialog") {
+                        JumpToTimeDialog(
+                            durationMs = uiState.duration,
+                            onJump = viewModel::onSeekTo,
+                            onDismiss = { showJumpDialog = false },
+                        )
+                    }
+                }
+
+                if (showChapterDialog && uiState.chapters.isNotEmpty()) {
+                    key("chapter_dialog") {
+                        ChapterSelectionDialog(
+                            chapters = uiState.chapters,
+                            positionFlow = viewModel.position,
+                            onChapterSelected = { viewModel.onSeekTo(it.startMs) },
+                            onDismiss = { showChapterDialog = false },
                         )
                     }
                 }

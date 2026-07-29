@@ -266,6 +266,12 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun getSubtitleDelay(): Long = subtitleDelayMs
 
+    override fun setAudioDelay(delayMs: Long) {
+        playerHolder.audioDelayMs = delayMs
+    }
+
+    override fun getAudioDelay(): Long = playerHolder.audioDelayMs
+
     // ── External subtitles ─────────────────────────────────────────────────
 
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()

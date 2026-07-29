@@ -847,6 +847,76 @@ static std::string probeCodecLongName(const AVCodecParameters* par) {
     return "";
 }
 
+// ─── Chapter probe ──────────────────────────────────────────────────
+// Reads container-level chapter markers (MKV chapters, MP4 chpl, …) and
+// returns a flat String[] of [startMs, endMs, title] triples in playback
+// order, or null when the source has no chapters / can't be parsed.
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeChapters(
+    JNIEnv* env, jclass /*clazz*/, jobject bridge) {
+
+    if (!bridge) { LOGE("chapters: bridge is null"); return nullptr; }
+    JniFile file(env, bridge);
+    if (!file.ok()) { LOGE("chapters: JniFile init failed"); return nullptr; }
+
+    IOStats stats;
+    IOBridge ioBridge{&file, &stats};
+    uint8_t* ioBuf = static_cast<uint8_t*>(av_malloc(g_avioBufSize));
+    if (!ioBuf) return nullptr;
+    AVIOContext* avio = avio_alloc_context(ioBuf, g_avioBufSize, 0,
+                                           &ioBridge, io_read, nullptr, io_seek);
+    AVFormatContext* fmtCtx = avformat_alloc_context();
+    fmtCtx->pb = avio;
+    // Chapters live in the container header — no stream analysis needed.
+    fmtCtx->probesize = 1024 * 1024;
+    fmtCtx->max_analyze_duration = 500000;
+
+    if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
+        av_freep(&avio->buffer);
+        avio_context_free(&avio);
+        fmtCtx->pb = nullptr;
+        avformat_free_context(fmtCtx);
+        LOGE("chapters: avformat_open_input failed");
+        return nullptr;
+    }
+
+    unsigned nb = fmtCtx->nb_chapters;
+    if (nb == 0) {
+        avformat_close_input(&fmtCtx);
+        return nullptr;
+    }
+
+    std::vector<std::string> kv;
+    kv.reserve(nb * 3);
+    for (unsigned i = 0; i < nb; i++) {
+        AVChapter* ch = fmtCtx->chapters[i];
+        int64_t startMs = av_rescale_q(ch->start, ch->time_base, AVRational{1, 1000});
+        int64_t endMs   = av_rescale_q(ch->end,   ch->time_base, AVRational{1, 1000});
+        AVDictionaryEntry* t = av_dict_get(ch->metadata, "title", nullptr, 0);
+        kv.push_back(std::to_string(startMs));
+        kv.push_back(std::to_string(endMs));
+        kv.emplace_back(t && t->value ? t->value : "");
+    }
+
+    avformat_close_input(&fmtCtx);
+
+    jclass strCls = env->FindClass("java/lang/String");
+    jobjectArray arr = env->NewObjectArray(static_cast<jsize>(kv.size()),
+                                           strCls, nullptr);
+    env->DeleteLocalRef(strCls);
+    if (!arr) return nullptr;
+
+    for (size_t i = 0; i < kv.size(); i++) {
+        jstring js = env->NewStringUTF(kv[i].c_str());
+        env->SetObjectArrayElement(arr, static_cast<jsize>(i), js);
+        env->DeleteLocalRef(js);
+    }
+
+    LOGD("chapters: %u found", nb);
+    return arr;
+}
+
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMediaInfo(
     JNIEnv* env, jclass /*clazz*/, jobject bridge) {

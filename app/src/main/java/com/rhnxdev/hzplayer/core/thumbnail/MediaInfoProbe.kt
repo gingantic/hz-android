@@ -8,6 +8,7 @@ import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.rhnxdev.hzplayer.domain.model.ChapterInfo
 import java.io.FileInputStream
 import java.io.RandomAccessFile
 
@@ -40,13 +41,8 @@ object MediaInfoProbe {
             if (cachedResult != null) return@withContext cachedResult
 
             val result = try {
-                val scheme = uriOrPath.substringBefore("://", "").lowercase()
-                when {
-                    scheme == "smb" -> probeSmb(uriOrPath)
-                    scheme == "content" -> probeContent(context, uriOrPath)
-                    scheme == "file" -> probeLocal(Uri.parse(uriOrPath).path ?: return@withContext null)
-                    scheme.isEmpty() -> probeLocal(uriOrPath)
-                    else -> null // ftp/sftp/webdav/http(s): not probed
+                withSource(context, uriOrPath) { bridge ->
+                    NativeThumbnailExtractor.probeMediaInfo(bridge)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "probe: failed for $uriOrPath: ${e.message}")
@@ -59,18 +55,69 @@ object MediaInfoProbe {
             result
         }
 
+    /** Bounded LRU cache of probed chapter lists, keyed by URI/path. */
+    private val chapterCache = android.util.LruCache<String, List<ChapterInfo>>(50)
+
+    /**
+     * Probe container chapters of [uriOrPath] on [Dispatchers.IO]. Returns an
+     * empty list when the source has no chapters, can't be opened, or the
+     * native lib is unavailable. Same scheme support as [probe].
+     */
+    suspend fun probeChapters(context: Context, uriOrPath: String): List<ChapterInfo> =
+        withContext(Dispatchers.IO) {
+            val cached = synchronized(chapterCache) { chapterCache.get(uriOrPath) }
+            if (cached != null) return@withContext cached
+
+            val result = try {
+                withSource(context, uriOrPath) { bridge ->
+                    NativeThumbnailExtractor.probeChapters(bridge)
+                        ?.map { (start, end, title) -> ChapterInfo(start, end, title) }
+                } ?: emptyList()
+            } catch (e: Exception) {
+                Log.w(TAG, "probeChapters: failed for $uriOrPath: ${e.message}")
+                emptyList()
+            }
+
+            synchronized(chapterCache) { chapterCache.put(uriOrPath, result) }
+            result
+        }
+
+    /**
+     * Opens [uriOrPath] as a [ThumbnailSource] (scheme-dispatched: local path,
+     * `file://`, `content://`, `smb://`) and runs [block] with it, closing the
+     * source afterwards. Returns null for unsupported schemes.
+     */
+    private fun <T> withSource(
+        context: Context,
+        uriOrPath: String,
+        block: (ThumbnailSource) -> T?,
+    ): T? {
+        val scheme = uriOrPath.substringBefore("://", "").lowercase()
+        return when {
+            scheme == "smb" -> withSmbSource(uriOrPath, block)
+            scheme == "content" -> withContentSource(context, uriOrPath, block)
+            scheme == "file" -> Uri.parse(uriOrPath).path?.let { withLocalSource(it, block) }
+            scheme.isEmpty() -> withLocalSource(uriOrPath, block)
+            else -> null // ftp/sftp/webdav/http(s): not probed
+        }
+    }
+
     /** Local filesystem path — read directly with a [RandomAccessFile]. */
-    private fun probeLocal(path: String): Map<String, String>? {
+    private fun <T> withLocalSource(path: String, block: (ThumbnailSource) -> T?): T? {
         val bridge = LocalRandomAccessBridge(path)
         return try {
-            NativeThumbnailExtractor.probeMediaInfo(bridge)
+            block(bridge)
         } finally {
             bridge.close()
         }
     }
 
     /** `content://` URI — open a seekable fd via the [android.content.ContentResolver]. */
-    private fun probeContent(context: Context, uriString: String): Map<String, String>? {
+    private fun <T> withContentSource(
+        context: Context,
+        uriString: String,
+        block: (ThumbnailSource) -> T?,
+    ): T? {
         val uri = Uri.parse(uriString)
         val pfd: ParcelFileDescriptor =
             context.contentResolver.openFileDescriptor(uri, "r") ?: return null
@@ -80,13 +127,13 @@ object MediaInfoProbe {
                        else runCatching { channel.size() }.getOrDefault(0L)
             val bridge = ChannelRandomAccessBridge(channel, size) { runCatching { pfd.close() } }
             try {
-                NativeThumbnailExtractor.probeMediaInfo(bridge)
+                block(bridge)
             } finally {
                 bridge.close()
             }
         } catch (e: Exception) {
             runCatching { pfd.close() }
-            Log.w(TAG, "probeContent failed: ${e.message}")
+            Log.w(TAG, "withContentSource failed: ${e.message}")
             null
         }
     }
@@ -96,7 +143,7 @@ object MediaInfoProbe {
      * through a lightweight [RandomAccessBridge]. The context stays borrowed for
      * the whole probe because the bridge reads lazily.
      */
-    private fun probeSmb(remoteUri: String): Map<String, String>? {
+    private fun <T> withSmbSource(remoteUri: String, block: (ThumbnailSource) -> T?): T? {
         val androidUri = Uri.parse(remoteUri)
         val username = Uri.decode(androidUri.userInfo?.substringBefore(':') ?: "")
         val password = Uri.decode(androidUri.userInfo?.substringAfter(':', "") ?: "")
@@ -113,7 +160,7 @@ object MediaInfoProbe {
                 val size = file.length()
                 val bridge = RandomAccessBridge(file, size, lightweight = true)
                 try {
-                    NativeThumbnailExtractor.probeMediaInfo(bridge)
+                    block(bridge)
                 } finally {
                     bridge.close()
                 }
@@ -121,7 +168,7 @@ object MediaInfoProbe {
                 ConnectionPool.returnSmbThumbnailContext(host, port, username, password)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "probeSmb failed: ${e.message}")
+            Log.w(TAG, "withSmbSource failed: ${e.message}")
             null
         }
     }

@@ -100,6 +100,17 @@ fun MainNavHost(
                         navController.popBackStack("__main_tabs", inclusive = false)
                     }
                 },
+                onPlayAsAudio = {
+                    // ViewModel already flipped isVideo off + set isMinimizing;
+                    // just leave the screen so the mini player takes over.
+                    val activity = context as? Activity
+                    activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    if (incomingFromBrowser) {
+                        activity?.finish()
+                    } else {
+                        navController.popBackStack("__main_tabs", inclusive = false)
+                    }
+                },
             )
         }
 

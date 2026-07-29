@@ -18,6 +18,7 @@ fun MiniPlayerSection(
     playerViewModel: PlayerViewModel,
     isFullScreen: Boolean,
     onNavigateToPlayer: () -> Unit,
+    onNavigateToVideoPlayer: () -> Unit,
 ) {
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val currentPosition by playerViewModel.position.collectAsStateWithLifecycle()
@@ -39,5 +40,12 @@ fun MiniPlayerSection(
         onDismiss = { playerViewModel.stop() },
         visible = playerState.currentTitle != null && !playerState.isVideo && !isFullScreen,
         artworkUri = playerState.currentArtworkUri,
+        // Video playing audio-only ("Play as audio") — offer reopening it as video.
+        onOpenAsVideo = if (playerState.playingVideoAsAudio) {
+            {
+                playerViewModel.onResumeAsVideo()
+                onNavigateToVideoPlayer()
+            }
+        } else null,
     )
 }

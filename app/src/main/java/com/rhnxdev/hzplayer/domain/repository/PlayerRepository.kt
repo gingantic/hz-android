@@ -44,6 +44,8 @@ interface PlayerRepository {
     fun addExternalSubtitle(uri: Uri): Boolean
     fun setSubtitleDelay(delayMs: Long)
     fun getSubtitleDelay(): Long
+    fun setAudioDelay(delayMs: Long)
+    fun getAudioDelay(): Long
     fun getAudioTracks(): List<String>
     fun getSelectedAudioTrack(): Int
     fun selectAudioTrack(index: Int)
