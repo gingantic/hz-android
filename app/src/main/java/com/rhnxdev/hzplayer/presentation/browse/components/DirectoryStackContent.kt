@@ -50,7 +50,9 @@ fun DirectoryStackContent(
     fullScreenOverlay: Boolean = false,
     onFileClicked: (FolderItem) -> Unit = {},
     onPlayAsAudio: (FolderItem) -> Unit = {},
+    onPlayAllFolder: ((FolderItem) -> Unit)? = null,
     onToggleFavorite: (FileItemData) -> Unit = {},
+    onListAtEndChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -72,7 +74,9 @@ fun DirectoryStackContent(
                 isTopLayer = true,
                 onFileClicked = onFileClicked,
                 onPlayAsAudio = onPlayAsAudio,
+                onPlayAllFolder = onPlayAllFolder,
                 onToggleFavorite = onToggleFavorite,
+                onListAtEndChanged = onListAtEndChanged,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -96,7 +100,9 @@ private fun DirectoryLayerView(
     isTopLayer: Boolean = false,
     onFileClicked: (FolderItem) -> Unit = {},
     onPlayAsAudio: (FolderItem) -> Unit = {},
+    onPlayAllFolder: ((FolderItem) -> Unit)? = null,
     onToggleFavorite: (FileItemData) -> Unit = {},
+    onListAtEndChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val currentOrientation = LocalConfiguration.current.orientation
@@ -138,6 +144,14 @@ private fun DirectoryLayerView(
                     isAtEnd,
                 )
             }
+    }
+
+    // Report when the list is scrolled to the very end so the Play All FAB
+    // can hide instead of covering the last item. Lists too short to scroll
+    // never report true, keeping the FAB available.
+    LaunchedEffect(listState, layer.path) {
+        snapshotFlow { listState.canScrollBackward && !listState.canScrollForward }
+            .collect { onListAtEndChanged(it) }
     }
 
     LaunchedEffect(fullScreenOverlay) {
@@ -208,6 +222,11 @@ private fun DirectoryLayerView(
             onPlayAsAudio = { data ->
                 val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
                 onPlayAsAudio(item)
+            },
+            onPlayAllFolder = onPlayAllFolder?.let { callback ->
+                { data ->
+                    layer.items.find { it.path == data.path }?.let(callback)
+                }
             },
             quickAccessPaths = quickAccessPaths,
             onToggleFavorite = onToggleFavorite,

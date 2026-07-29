@@ -1,10 +1,11 @@
 # Hz Player — Implementation Roadmap
 
 > Phased delivery from foundation to a working multi-source media player.
-> Last refreshed: 2026-07-24. Original Phases 1–10 are complete; seven net-new
+> Last refreshed: 2026-07-29. Original Phases 1–10 are complete; eight net-new
 > work streams shipped after the roadmap was written (network streaming, native
 > thumbnails, modular playback engine, libass subtitles, archive support, OTA updates,
-> in-app browser).
+> in-app browser, and player enhancements: sleep timer, chapters, A-B repeat,
+> audio delay, play-as-audio, app shell extraction, bottom-sheet menus).
 
 ---
 
@@ -70,7 +71,9 @@ Real `MediaRepositoryImpl` (MediaStore → Room), `MediaPlaybackService`
 | **Archive support** | libarchive JNI; virtual folder navigation in File Browser; `archive://` DataSource for play-in-place; password dialog + persistence | `data/datasource/archive/*`, `cpp/ArchiveExtractor.cpp`, `core/util/ArchivePaths.kt` |
 | **OTA updates + About** | Cloudflare R2 update checker; startup update reminder with per-version dismissal; AboutDialog; LicensesScreen (AboutLibraries) | `core/util/UpdateChecker.kt`, `presentation/settings/components/UpdateDialog.kt`, `presentation/settings/LicensesScreen.kt` |
 | **Audio queue + Floating player** | Audio queue sheet for now-playing list; draggable floating video player (PiP-style) | `presentation/player/components/AudioQueueSheet.kt`, `FloatingVideoPlayer.kt` |
-| **In-app browser** | WebView-based browser with native ad blocking (JNI), media sniffing, tab management, browser history, popup permissions, settings | `browser/` package (27 files) |
+| **In-app browser** | WebView-based browser with native ad blocking (Rust engine via JNI), media sniffing, tab management (swipe-to-switch), browser history, popup permissions, real desktop mode, settings | `browser/` package (27 files) |
+| **Player enhancements** | Sleep timer (presets + end-of-video), container chapter navigation (MKV/MP4/OGG), A-B repeat loop, audio delay (A/V sync via AudioDelaySink), play-as-audio mode, hold-to-speed cue with real skipped time | `presentation/player/components/PlayerMoreOptionsSheet.kt`, `data/datasource/player/AudioDelaySink.kt`, `domain/model/ChapterInfo.kt` |
+| **App shell & UI overhaul** | Extracted `HzPlayerApp` composable, `MainTabPager` + `MainNavHost` split, `MiniPlayerSection` isolation, `FileOptionsBottomSheet` menus, `SolidArchiveWarningDialog`, `StorageRootsContent`, `DirectoryStackContent`, favorites→quick access rename | `presentation/main/HzPlayerApp.kt`, `presentation/main/components/`, `core/components/FileOptionsBottomSheet.kt` |
 | **Reliability / cleanup** | 27-item bug+reliability+i18n pass (player error redaction, SMB path traversal, JNI guards, connection-pool lifecycle, manifest fixes) | `docs/CLEANUP_PLAN.md` |
 
 ---
@@ -95,7 +98,8 @@ Real `MediaRepositoryImpl` (MediaStore → Room), `MediaPlaybackService`
 | OTA updates + About/Licenses | ✅ |
 | Audio queue + Floating video player | ✅ |
 | In-app browser (ad block + media sniffing) | ✅ |
+| Player enhancements (sleep timer, chapters, A-B repeat, audio delay, play-as-audio) | ✅ |
+| App shell extraction & UI overhaul | ✅ |
 | Cleanup / reliability / i18n pass | ✅ |
 
 **Overall: feature-complete foundation + all subsystems landed.**
-Remaining items are polish/deferred cross-file refactors (see `CLEANUP_PLAN.md` "Known debt").

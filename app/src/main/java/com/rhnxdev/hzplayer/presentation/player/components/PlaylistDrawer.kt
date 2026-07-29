@@ -155,11 +155,13 @@ fun PlaylistDrawer(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Text(
-                                    text = formatDuration(item.durationMs),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.5f),
-                                )
+                                if (item.durationMs > 0) {
+                                    Text(
+                                        text = formatDuration(item.durationMs),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.5f),
+                                    )
+                                }
                             }
 
                             if (isCurrent) {

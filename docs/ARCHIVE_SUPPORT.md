@@ -1,9 +1,9 @@
 # Archive Support — Design & Implementation Plan
 
-**Status:** Phase 0 + Phase 1 implemented (native seam + virtual navigation + password dialog) ✅ COMPLETE
+**Status:** Phase 0 + Phase 1 implemented (native seam + virtual navigation + password dialog + solid archive warnings) ✅ COMPLETE
 **Decision log:** libarchive · virtual FS / play-in-place · full format set · native delivery
 **Owner:** to be assigned
-**Last updated:** 2026-07-24
+**Last updated:** 2026-07-29
 
 ---
 
@@ -196,6 +196,7 @@ Solid = files share one compression stream; entry N needs entries 1..N-1 decompr
 ## 7. UI / UX behavior
 
 - **File browser:** detect archive by extension (`.zip .7z .rar .tar .tar.gz .tgz .tar.xz .txz .iso .cab`). Tapping an archive pushes a **virtual path** into the existing `BreadcrumbBar` / `DirectoryBrowsePane` (reuse, don't rebuild).
+- **Solid archive warning:** `SolidArchiveWarningDialog` warns the user that scrubbing in solid archives is CPU-heavy, with a "don't show again" checkbox (persisted via DataStore).
 - **Inside archive:** render entries as `FolderItem`-like rows; nested archives can be opened as a new virtual level (virtual path stacks — cheap).
 - **Media entry tap:** `buildEntryUri` → `PlayerRepository.play`. No extraction UI, no progress dialog.
 - **Password:** dialog on encrypted/list-fail; breadcrumb shows a lock chip when inside an encrypted archive.
@@ -445,4 +446,10 @@ media entries play via `archive://`. No extraction. Wiring:
 the user when an encrypted archive fails to list. Passwords are persisted via
 `UserPreferencesRepository.archivePasswords` (keyed by container path) so re-opening
 the same archive doesn't re-prompt.
+
+### Solid archive warning — DONE ✅ (2026-07-29)
+
+`SolidArchiveWarningDialog` (`presentation/browse/components/SolidArchiveWarningDialog.kt`)
+warns the user that seeking/scrubbing inside solid archives (rar, 7z) is CPU-intensive.
+Includes a "don't show again" checkbox whose state is persisted via DataStore.
 

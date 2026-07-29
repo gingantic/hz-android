@@ -209,11 +209,50 @@ class FileBrowserViewModel @Inject constructor(
 
     fun collectVideoPlaylist(): List<VideoItem> {
         val currentLayer = _uiState.value.layers.lastOrNull() ?: return emptyList()
-        var idCounter = 0L
-        return currentLayer.items
-            .filter { !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name)) }
+        return currentLayer.items.toVideoPlaylist()
+    }
+
+    /**
+     * Collect the videos directly inside [folder] (without navigating into it) and
+     * deliver them sorted with the current sort settings as a playable playlist.
+     * Supports both real directories and virtual archive folders.
+     */
+    fun collectFolderVideoPlaylist(folder: FolderItem, onReady: (List<VideoItem>) -> Unit) {
+        if (!folder.isDirectory) return
+        viewModelScope.launch {
+            val children = cache.get(folder.path) ?: try {
+                if (ArchiveBrowsePath.isArchiveBrowsePath(folder.path)) {
+                    val (container, prefix) = ArchiveBrowsePath.parse(folder.path)
+                    archiveRepository.listEntries(container, archivePasswords[container])
+                        .getOrNull()
+                        ?.let { archiveChildren(container, prefix, it) }
+                        ?: emptyList()
+                } else {
+                    fileRepository.listDirectory(folder.path, showHidden).first()
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+            // Fresh listings carry no durations — enrich like loadDirectory does so
+            // the playlist drawer can show them (cached items are already enriched;
+            // re-enriching is harmless and refreshes stale progress).
+            val enriched = enrichItemsWithPlaybackMetadata(children)
+            val sorted = sortFilesByType(
+                enriched,
+                _uiState.value.sortType,
+                isDirectory = { it.isDirectory },
+                name = { it.name },
+                dateModified = { it.dateModified },
+                size = { it.fileSize },
+                descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
+            )
+            onReady(sorted.toVideoPlaylist())
+        }
+    }
+
+    private fun List<FolderItem>.toVideoPlaylist(): List<VideoItem> =
+        filter { !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name)) }
             .map { item ->
-                idCounter++
                 VideoItem(
                     id = item.id,
                     title = item.name.substringBeforeLast('.'),
@@ -223,7 +262,6 @@ class FileBrowserViewModel @Inject constructor(
                     mimeType = item.mimeType,
                 )
             }
-    }
 
     fun onFolderClicked(item: FolderItem) {
         if (item.isDirectory) pushLayer(item.path)

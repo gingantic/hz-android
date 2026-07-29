@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,6 +55,7 @@ fun FileOptionsBottomSheet(
     leadingThumbnail: (@Composable () -> Unit)? = null,
     isFavorite: Boolean = false,
     onFavoriteClick: (() -> Unit)? = null,
+    onPlayAllClick: (() -> Unit)? = null,
     onPlayAsAudioClick: (() -> Unit)? = null,
     onPropertiesClick: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -187,6 +189,17 @@ fun FileOptionsBottomSheet(
                         onClick = {
                             onDismissRequest()
                             onFavoriteClick()
+                        }
+                    )
+                }
+
+                if (onPlayAllClick != null) {
+                    FileOptionItem(
+                        icon = Icons.Default.PlaylistPlay,
+                        label = stringResource(R.string.menu_play_all_playlist),
+                        onClick = {
+                            onDismissRequest()
+                            onPlayAllClick()
                         }
                     )
                 }

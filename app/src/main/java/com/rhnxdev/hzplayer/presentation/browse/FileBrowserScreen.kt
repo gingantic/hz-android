@@ -1,5 +1,10 @@
 package com.rhnxdev.hzplayer.presentation.browse
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -11,7 +16,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -94,6 +101,8 @@ fun FileBrowserScreen(
                     onRefresh = viewModel::onRefresh,
                 )
                 FileBrowserMode.BROWSING -> {
+                    var isListAtEnd by remember { mutableStateOf(false) }
+
                     DirectoryStackContent(
                         layers = uiState.layers,
                         searchQuery = searchQuery,
@@ -109,7 +118,13 @@ fun FileBrowserScreen(
                         fullScreenOverlay = fullScreenOverlay,
                         onFileClicked = handleFileClicked,
                         onPlayAsAudio = onPlayAsAudio,
+                        onPlayAllFolder = { folder ->
+                            viewModel.collectFolderVideoPlaylist(folder) { playlist ->
+                                if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
+                            }
+                        },
                         onToggleFavorite = { viewModel.onToggleQuickAccess(it.path) },
+                        onListAtEndChanged = { isListAtEnd = it },
                     )
 
                     // Play All FAB (memoized video check)
@@ -121,7 +136,9 @@ fun FileBrowserScreen(
                     }
 
                     if (hasVideos && !isSearchActive) {
-                        FloatingActionButton(
+                        // Hidden at the bottom of the list so it doesn't cover the last item
+                        PlayAllFab(
+                            visible = !isListAtEnd,
                             onClick = {
                                 val playlist = viewModel.collectVideoPlaylist()
                                 if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
@@ -129,18 +146,7 @@ fun FileBrowserScreen(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(16.dp),
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            elevation = FloatingActionButtonDefaults.elevation(
-                                defaultElevation = 6.dp,
-                                pressedElevation = 12.dp
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = stringResource(R.string.play_all_cd),
-                            )
-                        }
+                        )
                     }
                 }
             }
@@ -161,6 +167,35 @@ fun FileBrowserScreen(
             onConfirm = { dontShowAgain -> viewModel.onConfirmSolidArchiveWarning(dontShowAgain) },
             onDismiss = viewModel::onDismissSolidArchiveWarning,
         )
+    }
+}
+
+@Composable
+private fun PlayAllFab(
+    visible: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn() + scaleIn(),
+        exit = fadeOut() + scaleOut(),
+        modifier = modifier,
+    ) {
+        FloatingActionButton(
+            onClick = onClick,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            elevation = FloatingActionButtonDefaults.elevation(
+                defaultElevation = 6.dp,
+                pressedElevation = 12.dp
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = stringResource(R.string.play_all_cd),
+            )
+        }
     }
 }
 

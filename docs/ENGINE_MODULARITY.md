@@ -8,7 +8,8 @@
 >
 > **Status: IMPLEMENTED.** The refactor landed in commit `57e66db`. This doc
 > describes the design that is now in code; the "implementation phases" below are
-> historical and complete. Last refreshed: 2026-07-21.
+> historical and complete. Last refreshed: 2026-07-29 (audio delay, HTTP headers
+> on play, expanded interface contract).
 
 ---
 
@@ -87,7 +88,7 @@ interface IPlayerEngine {
     val playbackState: StateFlow<PlayerStateInfo>
 
     // playback
-    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0)
+    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0, headers: Map<String, String> = emptyMap())
     fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long)
     fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int)
     fun pause()
@@ -118,7 +119,7 @@ interface IPlayerEngine {
     fun getRepeatMode(): RepeatMode = RepeatMode.NONE
     fun setDecoderMode(mode: DecoderMode) {}
 
-    // tracks
+    // tracks — subtitles
     fun getSubtitleTracks(): List<String>
     fun getSelectedSubtitleTrack(): Int
     fun selectSubtitleTrack(index: Int)
@@ -128,9 +129,13 @@ interface IPlayerEngine {
     var subtitleTrackChangeListener: (() -> Unit)?
     fun setSubtitleDelay(delayMs: Long)
     fun getSubtitleDelay(): Long = 0
+
+    // tracks — audio
     fun getAudioTracks(): List<String>
     fun getSelectedAudioTrack(): Int
     fun selectAudioTrack(index: Int)
+    fun setAudioDelay(delayMs: Long) {}      // NEW: A/V sync offset
+    fun getAudioDelay(): Long = 0             // NEW: A/V sync offset
 
     // engine-specific extras (nullable → engine may not support)
     fun getDebugStats(): DebugStats? = null
@@ -359,6 +364,11 @@ are all engine-agnostic by construction — **zero** changes needed.
   carries `errorKind`/`errorMessage`; `PlaybackErrorOverlay` consumes it.
 - **libass subtitle pipeline** intercepts embedded tracks and renders them natively;
   `loadExternalAss(uri)` and `getSubtitleTrackMimeTypes()` are on the interface.
+- **`setAudioDelay(delayMs)` / `getAudioDelay()`** on the interface — ExoPlayer
+  implements via `AudioDelaySink` (a `ForwardingAudioSink` that shifts the audio
+  clock). Non-Media3 engines can leave the default no-op.
+- **`play(uri, …, headers)`** accepts HTTP headers for network requests (e.g.
+  `Authorization` / stream tokens forwarded from VIEW intents).
 - **`EngineType` currently has only `EXO_PLAYER`.** `PlayerRepositoryImpl` falls back to
   `EXO_PLAYER` if a persisted engine isn't in the binding map, so stale prefs are safe.
 

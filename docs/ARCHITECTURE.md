@@ -1,7 +1,8 @@
 # Hz Player — Architecture
 
 > Clean MVVM with unidirectional data flow for a Compose-first media player.
-> Last refreshed: 2026-07-24 (libass pipeline, archive support, OTA updates, audio queue, in-app browser).
+> Last refreshed: 2026-07-29 (sleep timer, chapters, A-B repeat, audio delay, play-as-audio,
+> app shell extraction, bottom-sheet menus, solid archive warnings, Rust adblock engine).
 
 ---
 
@@ -54,13 +55,18 @@ com.rhnxdev.hzplayer/
 │
 ├── presentation/
 │   ├── navigation/
-│   │   ├── AppDestinations.kt      (sealed class of 5 bottom-nav tabs)
-│   │   └── AppNavigation.kt        (NavRoutes + NavHost route builder)
+│   │   ├── AppDestinations.kt      (sealed class of 5 bottom-nav tabs + bottomNavDestinations list)
+│   │   ├── AppNavigation.kt        (NavRoutes + route builder helpers)
+│   │   └── MainNavHost.kt          (full-screen NavHost overlay: search, player, album/artist detail)
 │   │
 │   ├── theme/                      (Color.kt / Type.kt / Theme.kt — M3 dynamic)
 │   │
 │   ├── main/
-│   │   └── MainViewModel.kt        (shared "now playing" / active-tab state)
+│   │   ├── HzPlayerApp.kt          (extracted top-level app composable shell)
+│   │   ├── MainViewModel.kt        (shared "now playing" / active-tab state)
+│   │   └── components/
+│   │       ├── MainTabPager.kt     (HorizontalPager + NavigationSuiteScaffold)
+│   │       └── MiniPlayerSection.kt (scoped mini-player isolating position recomposition)
 │   │
 │   ├── video/
 │   │   └── VideoLibraryScreen.kt / VideoLibraryViewModel.kt / VideoLibraryUiState.kt
@@ -72,7 +78,12 @@ com.rhnxdev.hzplayer/
 │   │
 │   ├── browse/
 │   │   ├── FileBrowserScreen.kt / FileBrowserViewModel.kt / FileBrowserUiState.kt
-│   │   └── components/ArchivePasswordDialog.kt
+│   │   └── components/
+│   │       ├── ArchivePasswordDialog.kt
+│   │       ├── SolidArchiveWarningDialog.kt  (solid archive perf warning + dont-show-again)
+│   │       ├── DirectoryStackContent.kt      (directory listing with breadcrumb + scroll save)
+│   │       ├── StorageRootsContent.kt         (storage root picker + pull-to-refresh)
+│   │       └── FileBrowserTopBarActions.kt    (sort/view/media-mode top bar buttons)
 │   │
 │   ├── network/
 │   │   ├── NetworkScreen.kt / NetworkViewModel.kt / NetworkUiState.kt
@@ -87,6 +98,7 @@ com.rhnxdev.hzplayer/
 │   │   ├── PlayerTrackCache.kt       (cached subtitle/audio track lists)
 │   │   ├── PlayerPlaylistController.kt / PlayerDebugController.kt
 │   │   ├── SubtitleBrowserViewModel.kt / SubtitleSearchViewModel.kt ( + UiState files)
+│   │   ├── PlayerMoreOptionsSheet.kt  (sleep timer, jump-to, chapters, A-B repeat, play-as-audio)
 │   │   └── components/   (see UI_COMPONENTS.md — overlay, seek, sheets, dialogs, …)
 │   │
 │   ├── search/
@@ -109,10 +121,12 @@ com.rhnxdev.hzplayer/
 │   │   ├── NetworkProtocol.kt ServerConfig.kt RemoteFileItem.kt RemoteAuthException.kt
 │   │   ├── NetworkTraffic.kt StreamHistoryItem.kt DebugStats.kt
 │   │   ├── AspectRatioMode.kt ThemeMode.kt BrowserHistoryItem.kt
+│   │   ├── ChapterInfo.kt (container chapter markers: MKV/MP4/OGG)
 │   │
 │   ├── player/
 │   │   ├── EngineType.kt IPlayerEngine.kt
 │   │   ├── RenderViewConfig.kt PlaybackErrorMapper.kt
+│   │   // IPlayerEngine now includes setAudioDelay/getAudioDelay, play(headers)
 │   │
 │   ├── repository/   (one interface per domain area — see below)
 │   │
@@ -139,6 +153,9 @@ com.rhnxdev.hzplayer/
 │   │   ├── player/
 │   │   │   ├── MediaPlayerHolder.kt     (owns the single ExoPlayer)
 │   │   │   ├── ExoPlayerEngine.kt       (IPlayerEngine impl)
+│   │   │   ├── ExoDebugStats.kt         (frame rate / decoder labeling / stats extraction)
+│   │   │   ├── ExoMediaItemHelper.kt    (MediaItem building + subtitle MIME inference)
+│   │   │   ├── AudioDelaySink.kt        (ForwardingAudioSink for A/V sync offset)
 │   │   │   ├── NeighborSubtitleDiscoverer.kt (auto-loads neighbor .srt/.ass)
 │   │   │   ├── ConnectionPool.kt        (SMB/FTP/SSH pooling)
 │   │   │   ├── RemoteDataSourceBase.kt  (shared base for protocol DataSources)
@@ -160,6 +177,7 @@ com.rhnxdev.hzplayer/
 │
 ├── browser/                              (full in-app browser)
 │   ├── adblock/AdBlockListManager.kt / AdBlockNative.kt / AdBlockUpdater.kt
+│   │         (Rust adblock engine integration via JNI)
 │   ├── media/DetectedMediaItem.kt / MediaDownloader.kt / MediaSnifferBridge.kt
 │   │         / MediaSnifferEngine.kt / MediaStreamDecoder.kt
 │   ├── ui/BrowserScreen.kt / BrowserTopBar.kt / BrowserBottomBar.kt / TabStrip.kt
@@ -172,12 +190,13 @@ com.rhnxdev.hzplayer/
 │
 ├── core/
 │   ├── designsystem/  (HzPlayerIcons.kt Dimens.kt NavBarInsets.kt)
+│   │   // Dimens.kt also exports Spacing, CornerRadii, CardSizes, BrowserDimens, HzPlayerShapes
 │   ├── components/    (see UI_COMPONENTS.md)
 │   ├── thumbnail/     (native FFmpeg extractor + Coil fetcher + MediaInfoProbe)
 │   └── util/          (MediaTimeUtils / MediaExtensions / MimeTypeUtil /
 │                       BreadcrumbBuilder / DirectoryLruCache / PlaybackFormatters /
 │                       ServerDiscoverer / SubtitleLanguageResolver / UpdateChecker /
-│                       ArchivePaths / IntentUtils)
+│                       ArchivePaths / IntentUtils / NetworkDomainUtils)
 │
 └── di/
     ├── AppModule.kt RepositoryModule.kt DatabaseModule.kt
@@ -228,6 +247,20 @@ com.rhnxdev.hzplayer/
 | `ArchiveRepository` | `ArchiveRepositoryImpl` | Archive listing + entry URIs via libarchive |
 | `UserPreferencesRepository` | `UserPreferencesRepositoryImpl` | DataStore prefs + active engine |
 | `BrowserHistoryRepository` | `BrowserHistoryRepositoryImpl` | Browser history persistence |
+
+---
+
+## Room Database
+
+`HzPlayerDatabase` (version 6) holds 5 entities with KSP-generated DAOs:
+
+| Entity | DAO | Key columns |
+|---|---|---|
+| `MediaEntity` | `MediaDao` | uri, mediaType, title, album, artist + indices |
+| `ServerConfigEntity` | `ServerConfigDao` | protocol, host, port, credentials (encrypted via `PasswordCrypto`) |
+| `StreamHistoryEntity` | `StreamHistoryDao` | url, headersJson, pageUrl, mimeType, isFavorite |
+| `PlaybackPositionEntity` | `PlaybackPositionDao` | mediaId, positionMs, durationMs |
+| `BrowserHistoryEntity` | `BrowserHistoryDao` | url, title, timestamp |
 
 ---
 

@@ -1,7 +1,7 @@
 # Hz Player — UI Component Catalog
 
 > Every reusable composable in the design system, with spec and states.
-> Last refreshed: 2026-07-24. Lists the components that actually exist today;
+> Last refreshed: 2026-07-29. Lists the components that actually exist today;
 > layouts are representative, not pixel-exact.
 
 ---
@@ -21,6 +21,7 @@
 | `ThumbnailPlaceholder` | `core/components/ThumbnailPlaceholder.kt` | Theme-aware gradient placeholder by `MediaType` |
 | `MediaPropertiesDialog` | `core/components/MediaPropertiesDialog.kt` | File/codec properties dialog (FFmpeg probe) |
 | `FileItemCard` | `core/components/FileItemCard.kt` | File/folder card for browse (3-dot menu) |
+| `FileOptionsBottomSheet` | `core/components/FileOptionsBottomSheet.kt` | Modal bottom sheet for file/folder context actions (thumbnail, favorite, play all, play as audio, properties) |
 | `BreadcrumbBar` | `core/components/BreadcrumbBar.kt` | Directory breadcrumb navigation |
 | `DirectoryBrowsePane` | `core/components/DirectoryBrowsePane.kt` | Shared browse listing (grid/list) |
 | `HzPlayerTopBar` | `core/components/HzPlayerTopBar.kt` | App top bar |
@@ -46,6 +47,10 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `AudioQueueSheet` | `AudioQueueSheet.kt` | Audio "now playing" queue list |
 | `AudioSelectionDialog` | `AudioSelectionDialog.kt` | Audio-track picker |
 | `PlaylistDrawer` | `PlaylistDrawer.kt` | Video queue/playlist drawer |
+| `PlayerMoreOptionsSheet` | `PlayerMoreOptionsSheet.kt` | Sleep timer, jump-to-time, chapters, A-B repeat, play-as-audio options sheet |
+| `SleepTimerDialog` | `PlayerMoreOptionsSheet.kt` | Sleep timer preset picker (15/30/45/60/90/120 min + end-of-video + off) |
+| `JumpToTimeDialog` | `PlayerMoreOptionsSheet.kt` | Numpad-based jump-to-position (HH:MM:SS) |
+| `ChapterSelectionDialog` | `PlayerMoreOptionsSheet.kt` | Chapter list with current-position highlight |
 | `SpeedSelectionDialog` | `SpeedSelectionDialog.kt` | Playback speed picker |
 | `SubtitleSelectionDialog` | `SubtitleSelectionDialog.kt` | Subtitle-track picker (with flag icons) |
 | `SubtitleSearchDialog` | `SubtitleSearchDialog.kt` | SubDL search |
@@ -71,6 +76,10 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `AlbumCard` | `presentation/audio/components/AlbumCard.kt` |
 | `AudioDetailHeader` | `presentation/audio/components/AudioDetailHeader.kt` |
 | `ArchivePasswordDialog` | `presentation/browse/components/ArchivePasswordDialog.kt` |
+| `SolidArchiveWarningDialog` | `presentation/browse/components/SolidArchiveWarningDialog.kt` |
+| `DirectoryStackContent` | `presentation/browse/components/DirectoryStackContent.kt` |
+| `StorageRootsContent` | `presentation/browse/components/StorageRootsContent.kt` |
+| `FileBrowserTopBarActions` | `presentation/browse/components/FileBrowserTopBarActions.kt` |
 | `NetworkScreenContent` | `presentation/network/components/NetworkScreenContent.kt` |
 | `ServerCard` | `presentation/network/components/ServerCard.kt` |
 | `ServerConfigDialog` | `presentation/network/components/ServerConfigDialog.kt` |
@@ -86,8 +95,8 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 ---
 
 ## Design system (`core/designsystem/`)
-- `HzPlayerIcons.kt` — media-player icon constants (shuffle, repeat, prev/next, play/pause, folder, video, audio, search, settings, more).
-- `Dimens.kt` — 8dp spacing system + M3 shape constants.
+- `HzPlayerIcons.kt` — media-player icon constants (shuffle, repeat, prev/next, play/pause, folder, video, audio, search, settings, more, star/favorite, network, browser).
+- `Dimens.kt` — exports `Spacing` (4/8/12/16/24/32/48dp), `CornerRadii`, `CardSizes`, `BrowserDimens`, `HzPlayerShapes` (M3 shapes).
 - `NavBarInsets.kt` — navigation-bar inset helpers.
 
 Theme (M3 dynamic, dark/light) lives in `presentation/theme/` (`Color.kt`, `Type.kt`,
