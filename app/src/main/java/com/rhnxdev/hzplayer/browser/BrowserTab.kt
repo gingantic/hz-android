@@ -14,6 +14,8 @@ data class BrowserTab(
     val isLoading: Boolean = false,
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
+    /** Tab that opened this one via popup — back returns here when history is empty. */
+    val parentTabId: String? = null,
     /** Saved WebView state for freeze/thaw. */
     val savedState: Bundle? = null,
     /** Sniffed media items for this tab. */

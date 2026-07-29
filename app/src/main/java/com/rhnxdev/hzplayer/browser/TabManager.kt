@@ -47,6 +47,9 @@ class TabManager(
     companion object {
         private const val MAX_LIVE = 6
 
+        /** Layout width (CSS px) forced on pages in desktop mode — mirrors Chrome's "Desktop site". */
+        private const val DESKTOP_VIEWPORT_WIDTH = 1024
+
         private const val DESKTOP_UA =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/125.0.0.0 Safari/537.36"
@@ -80,9 +83,9 @@ class TabManager(
         switchTab(targetId)
     }
 
-    fun createTab(url: String = ""): String {
+    fun createTab(url: String = "", parentTabId: String? = null): String {
         val id = UUID.randomUUID().toString().take(8)
-        val tab = BrowserTab(id = id, url = url)
+        val tab = BrowserTab(id = id, url = url, parentTabId = parentTabId)
         _tabs.value = _tabs.value + tab
         switchTab(id)
         return id
@@ -97,8 +100,19 @@ class TabManager(
             return
         }
         val idx = _tabs.value.indexOfFirst { it.id == id }
+        val closedTab = _tabs.value.getOrNull(idx)
+        val wasActive = activeTabId == id
         _tabs.value = _tabs.value.filter { it.id != id }
         liveViews.remove(id)?.destroy()
+
+        // If the active popup tab is closed, return to the tab that opened it
+        val parentId = closedTab?.parentTabId?.takeIf { pid ->
+            wasActive && _tabs.value.any { it.id == pid }
+        }
+        if (parentId != null) {
+            switchTab(parentId)
+            return
+        }
 
         val newIdx = if (idx < _tabs.value.size) idx else _tabs.value.size - 1
         if (newIdx >= 0) {
@@ -120,6 +134,68 @@ class TabManager(
     var onPageVisited: ((url: String, title: String) -> Unit)? = null
     var onCrossDomainPopupBlocked: ((blockedUrl: String, blockedDomain: String) -> Unit)? = null
     var onCrossDomainPopupRequested: ((PendingPopupRequest) -> Unit)? = null
+
+    /** True when settings request full desktop rendering (viewport + JS spoofing, not just UA). */
+    private val isDesktopMode: Boolean
+        get() = settings.userAgentMode == UserAgentMode.DESKTOP
+
+    /**
+     * Real desktop mode: a desktop UA alone doesn't stop pages with
+     * `<meta name="viewport" content="width=device-width">` from rendering their
+     * mobile layout. Override the viewport meta to force desktop layout width,
+     * keep re-applying it if the site rewrites it, and spoof the touch/platform
+     * hints sites use for JS device detection.
+     */
+    private fun injectDesktopModeJs(view: WebView) {
+        val js = """
+            (function() {
+                if (window.__hzDesktopModeInjected) return;
+                window.__hzDesktopModeInjected = true;
+
+                // Spoof desktop JS environment for device-detection scripts
+                try {
+                    Object.defineProperty(Navigator.prototype, 'platform', { get: function() { return 'Win32'; } });
+                    Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: function() { return 0; } });
+                    Object.defineProperty(window.screen, 'width',  { get: function() { return $DESKTOP_VIEWPORT_WIDTH; } });
+                    Object.defineProperty(window.screen, 'availWidth', { get: function() { return $DESKTOP_VIEWPORT_WIDTH; } });
+                } catch (e) {}
+
+                var want = 'width=$DESKTOP_VIEWPORT_WIDTH';
+                function forceViewport() {
+                    try {
+                        var meta = document.querySelector('meta[name=viewport]');
+                        if (!meta) {
+                            if (!document.head) return;
+                            meta = document.createElement('meta');
+                            meta.name = 'viewport';
+                            document.head.appendChild(meta);
+                        }
+                        if (meta.getAttribute('content') !== want) {
+                            meta.setAttribute('content', want);
+                        }
+                    } catch (e) {}
+                }
+                forceViewport();
+
+                // Re-apply if the site injects or rewrites its own viewport meta
+                function startObserver() {
+                    if (!document.documentElement) return;
+                    new MutationObserver(forceViewport).observe(document.documentElement, {
+                        childList: true, subtree: true,
+                        attributes: true, attributeFilter: ['content'],
+                    });
+                    forceViewport();
+                }
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', startObserver);
+                    startObserver();
+                } else {
+                    startObserver();
+                }
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js, null)
+    }
 
     fun navigate(tabId: String, url: String) {
         val safeUrl = sanitizeUrl(url)
@@ -307,6 +383,7 @@ class TabManager(
                 }
                 urlInput = url
                 MediaSnifferBridge.injectSnifferJs(view)
+                if (isDesktopMode) injectDesktopModeJs(view)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -318,6 +395,7 @@ class TabManager(
                     )
                 }
                 MediaSnifferBridge.injectSnifferJs(view)
+                if (isDesktopMode) injectDesktopModeJs(view)
 
                 if (settings.adBlockEnabled && settings.cosmeticFilteringEnabled && url.isNotBlank()) {
                     val cosmeticCss = AdBlockEngine.getCosmeticCss(url, settings)
@@ -396,6 +474,7 @@ class TabManager(
                 updateTab(id) { it.copy(progress = newProgress) }
                 if (newProgress == 30 || newProgress == 60) {
                     MediaSnifferBridge.injectSnifferJs(view)
+                    if (isDesktopMode) injectDesktopModeJs(view)
                 }
             }
 
@@ -413,6 +492,8 @@ class TabManager(
                 if (!settings.javaScriptEnabled || !settings.javaScriptCanOpenWindows) return false
                 if (resultMsg == null) return false
                 val parentUrl = view.url ?: ""
+                // Remember opener tab so back can return to it when the popup closes
+                val openerTabId = resolveTabId(view)
 
                 val tempWebView = WebView(view.context)
                 applySettingsToView(tempWebView, settings)
@@ -441,7 +522,7 @@ class TabManager(
                         }
                         if (!isEvaluated) {
                             isEvaluated = true
-                            val newTabId = createTab(popupUrl)
+                            val newTabId = createTab(popupUrl, parentTabId = openerTabId)
                             registerWebView(newTabId, v)
                         }
                         return false
@@ -456,7 +537,7 @@ class TabManager(
                         }
                         if (!isEvaluated) {
                             isEvaluated = true
-                            val newTabId = createTab(url)
+                            val newTabId = createTab(url, parentTabId = openerTabId)
                             registerWebView(newTabId, v)
                         }
                     }
@@ -501,8 +582,16 @@ class TabManager(
     /** Apply new settings to every live WebView and remember for future registrations. */
     @SuppressLint("SetJavaScriptEnabled")
     fun applySettings(newSettings: BrowserSettings) {
+        // Like Chrome's "Desktop site" toggle, a UA/rendering mode change only
+        // takes effect after the page is re-fetched — reload live views
+        val renderModeChanged = settings.userAgentMode != newSettings.userAgentMode ||
+            (newSettings.userAgentMode == UserAgentMode.CUSTOM &&
+                settings.customUserAgent != newSettings.customUserAgent)
         settings = newSettings
         liveViews.values.forEach { applySettingsToView(it, newSettings) }
+        if (renderModeChanged) {
+            liveViews.values.forEach { it.reload() }
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -516,8 +605,17 @@ class TabManager(
         wv.settings.mediaPlaybackRequiresUserGesture   = s.mediaPlaybackRequiresGesture
         wv.settings.loadsImagesAutomatically           = s.loadImagesAutomatically
         wv.settings.textZoom                           = s.textZoom
-        wv.settings.loadWithOverviewMode               = s.loadWithOverviewMode
-        wv.settings.useWideViewPort                    = s.useWideViewPort
+        // Desktop mode needs wide viewport + overview so the forced 1024px
+        // layout is zoomed out to fit the screen, regardless of user layout prefs
+        val desktop = s.userAgentMode == UserAgentMode.DESKTOP
+        wv.settings.loadWithOverviewMode               = desktop || s.loadWithOverviewMode
+        wv.settings.useWideViewPort                    = desktop || s.useWideViewPort
+        if (desktop) {
+            val screenWidthPx = wv.resources.displayMetrics.widthPixels
+            wv.setInitialScale((screenWidthPx * 100) / DESKTOP_VIEWPORT_WIDTH)
+        } else {
+            wv.setInitialScale(0)   // WebView default
+        }
         wv.settings.builtInZoomControls                = s.builtInZoomEnabled
         wv.settings.displayZoomControls                = false
         wv.settings.setSupportZoom(true)
