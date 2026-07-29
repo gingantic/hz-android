@@ -259,6 +259,11 @@ class TabManager(
                         reqHeaders["Sec-Fetch-Dest"]?.equals("script", ignoreCase = true) == true -> "script"
                         reqHeaders["Sec-Fetch-Dest"]?.equals("image", ignoreCase = true) == true -> "image"
                         reqHeaders["Sec-Fetch-Dest"]?.equals("style", ignoreCase = true) == true -> "stylesheet"
+                        // Chromium sends "iframe"/"frame" for embedded frames (captcha
+                        // widgets live in these) — map to subdocument so $subdocument
+                        // filter rules AND their exceptions match instead of "other".
+                        reqHeaders["Sec-Fetch-Dest"]?.equals("iframe", ignoreCase = true) == true -> "subdocument"
+                        reqHeaders["Sec-Fetch-Dest"]?.equals("frame", ignoreCase = true) == true -> "subdocument"
                         reqHeaders["Sec-Fetch-Dest"]?.equals("document", ignoreCase = true) == true -> "subdocument"
                         reqHeaders["Sec-Fetch-Dest"]?.equals("empty", ignoreCase = true) == true -> "xmlhttprequest"
                         else -> "other"

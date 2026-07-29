@@ -324,11 +324,14 @@ class MediaSnifferBridge(
                                 var style = window.getComputedStyle(el);
                                 if (style.position === 'fixed' || style.position === 'absolute') {
                                     var opacity = parseFloat(style.opacity);
-                                    var zIndex = parseInt(style.zIndex, 10);
                                     var w = el.offsetWidth || 0;
                                     var h = el.offsetHeight || 0;
                                     var isFullScreen = (w >= window.innerWidth * 0.8 && h >= window.innerHeight * 0.8);
-                                    if (isFullScreen && (opacity <= 0.05 || zIndex >= 9999)) {
+                                    // Only strip near-invisible click-catchers (popunder traps).
+                                    // Visible fullscreen overlays with high z-index are legit UI
+                                    // (site captchas, cookie banners, login modals) — removing
+                                    // them made custom captchas vanish right after a click.
+                                    if (isFullScreen && opacity <= 0.05) {
                                         if (el.parentNode) el.parentNode.removeChild(el);
                                     }
                                 }
