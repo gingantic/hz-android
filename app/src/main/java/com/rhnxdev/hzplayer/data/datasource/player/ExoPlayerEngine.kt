@@ -63,7 +63,22 @@ class ExoPlayerEngine @Inject constructor(
         assHandler.onExternalTrackListChanged = {
             subtitleTrackChangeListener?.invoke()
         }
+        // Re-point the live PlayerView when the holder swaps its ExoPlayer
+        // (deferred decoder-mode / engine-preference rebuild fires inside
+        // play(), after the view was already bound). Without this the view
+        // keeps the released player and video stays blank until app restart.
+        // Forwards to the external (MediaSession) listener afterwards.
+        playerHolder.setOnPlayerReplacedListener { newPlayer ->
+            activePlayerViewRef?.get()?.let { playerView ->
+                playerView.player = newPlayer
+                applyAspectRatioMode(playerView, currentAspectRatioMode)
+            }
+            externalPlayerReplacedListener?.invoke(newPlayer)
+        }
     }
+
+    /** MediaSession's replaced-player callback; chained after the engine's own view re-bind. */
+    private var externalPlayerReplacedListener: ((Player) -> Unit)? = null
 
     /** Fired when subtitle tracks change (embedded via ExoPlayer, external via libass). */
     override var subtitleTrackChangeListener: (() -> Unit)? = null
@@ -72,6 +87,12 @@ class ExoPlayerEngine @Inject constructor(
      *  underlying ExoPlayer so the choice takes effect on the next play. */
     override fun setDecoderMode(mode: DecoderMode) {
         playerHolder.decoderMode = mode
+    }
+
+    /** Toggle FFmpeg-first renderer ordering (the "FFmpeg" engine selection).
+     *  Forwards to the holder; rebuilt player applies it on the next play. */
+    override fun setFfmpegPreferred(preferred: Boolean) {
+        playerHolder.ffmpegPreferred = preferred
     }
 
     /** Compute instant rendered FPS from DecoderCounters. Call each polling interval. */
@@ -681,7 +702,9 @@ class ExoPlayerEngine @Inject constructor(
     override fun getMedia3Player(): Player = playerHolder.player
 
     override fun setOnPlayerReplacedListener(listener: ((Player) -> Unit)?) {
-        playerHolder.setOnPlayerReplacedListener(listener)
+        // The holder's single listener slot is owned by the engine (init) so the
+        // render view survives player swaps; external listeners are chained.
+        externalPlayerReplacedListener = listener
     }
 
     override fun getDebugStats(): DebugStats? {

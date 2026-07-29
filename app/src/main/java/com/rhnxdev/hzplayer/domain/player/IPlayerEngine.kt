@@ -119,6 +119,11 @@ interface IPlayerEngine {
      *  Default no-op — only engines with selectable decoders override it. */
     fun setDecoderMode(mode: com.rhnxdev.hzplayer.domain.model.DecoderMode) {}
 
+    /** Prefer the FFmpeg software renderers over platform decoders (the
+     *  [EngineType.FFMPEG] selection). Default no-op — only engines with an
+     *  FFmpeg fallback pipeline override it. */
+    fun setFfmpegPreferred(preferred: Boolean) {}
+
     // ── Subtitle / CC track selection ───────────────────────────
 
     /** Get the list of subtitle track names/languages. */

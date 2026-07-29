@@ -35,6 +35,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -44,6 +46,7 @@ class MediaPlayerHolder @Inject constructor(
     @ApplicationContext private val context: Context,
     private val assHandler: AssHandler,
     private val eqProcessor: TenBandEqualizerProcessor,
+    userPreferencesRepository: com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository,
 ) {
     init {
         if (java.net.CookieHandler.getDefault() == null) {
@@ -72,6 +75,31 @@ class MediaPlayerHolder @Inject constructor(
      *  until playback returns to idle, so it takes effect on the next play
      *  without disturbing the current media. */
     @Volatile var decoderMode: DecoderMode = DecoderMode.AUTO
+        set(value) {
+            if (field == value) return
+            field = value
+            requestDecoderRebuild()
+        }
+
+    /** When true (the "FFmpeg" engine selection), the FFmpeg software renderers
+     *  are indexed before the MediaCodec ones, forcing every FFmpeg-supported
+     *  codec through software decode. Same deferred-rebuild semantics as
+     *  [decoderMode]: applied on the next play.
+     *
+     *  Seeded synchronously from the persisted engine preference: the async
+     *  collector in PlayerRepositoryImpl loses the race against the eager
+     *  [player] build below on cold start (e.g. VIEW-intent playback), which
+     *  would silently fall back to MediaCodec-first ordering. The initializer
+     *  writes the backing field directly, so no rebuild is scheduled. */
+    @Volatile var ffmpegPreferred: Boolean = try {
+        runBlocking {
+            userPreferencesRepository.activeEngine.first() ==
+                com.rhnxdev.hzplayer.domain.player.EngineType.FFMPEG
+        }
+    } catch (e: Exception) {
+        android.util.Log.w(TAG, "Failed to read engine preference, defaulting to MediaCodec-first", e)
+        false
+    }
         set(value) {
             if (field == value) return
             field = value
@@ -166,7 +194,8 @@ class MediaPlayerHolder @Inject constructor(
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildPlayer(): ExoPlayer {
-        val renderersFactory = HzRenderersFactory(context, assHandler, eqProcessor)
+        android.util.Log.d(TAG, "buildPlayer: ffmpegPreferred=$ffmpegPreferred decoderMode=$decoderMode")
+        val renderersFactory = HzRenderersFactory(context, assHandler, eqProcessor, ffmpegPreferred)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             .setEnableDecoderFallback(true)
             .setMediaCodecSelector(buildCodecSelector()) as HzRenderersFactory

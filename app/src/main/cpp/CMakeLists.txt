@@ -20,6 +20,7 @@ add_ffmpeg_lib(avformat)
 add_ffmpeg_lib(avcodec)
 add_ffmpeg_lib(avutil)
 add_ffmpeg_lib(swscale)
+add_ffmpeg_lib(swresample)
 
 # Dependency libs for the assrender native lib (all prebuilt, in jniLibs/<abi>/).
 # libass is the fontconfig-enabled build; fontconfig pulls in expat; libass pulls
@@ -48,6 +49,7 @@ set_target_properties(archive PROPERTIES
 
 find_library(JNIGRAPHICS jnigraphics)
 find_library(LOG log)
+find_library(ANDROID_LIB android)
 
 add_library(thumbnail-extractor SHARED ThumbnailExtractor.cpp)
 target_include_directories(thumbnail-extractor PRIVATE
@@ -78,4 +80,16 @@ target_include_directories(archive-extractor PRIVATE
 target_link_libraries(archive-extractor
     archive
     ${LOG}
+)
+
+# FFmpeg software decode fallback for ExoPlayer (audio + video): decodes
+# codecs MediaCodec can't handle (ProRes, DNxHD, MJPEG, CineForm, DTS, ALAC,
+# …) and blits video frames into the Surface via ANativeWindow.
+add_library(ffcodec SHARED FfmpegDecoder.cpp)
+target_include_directories(ffcodec PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(ffcodec
+    avcodec avutil swscale swresample
+    ${ANDROID_LIB} ${LOG}
 )

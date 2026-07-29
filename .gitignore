@@ -45,3 +45,6 @@ native/src/shaderc/
 native/vulkan-headers/
 
 graphify-out/
+
+# Temporary media3 source checkout used to vendor the MP4 extractor fork
+.vendor-tmp-media3/

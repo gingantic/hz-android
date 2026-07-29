@@ -128,7 +128,7 @@ echo "=== Configuring FFmpeg for $ABI ==="
   --target-os=android --arch=$TARGET_ARCH \
   --enable-shared --disable-static \
   --disable-programs --disable-doc \
-  --disable-avdevice --disable-avfilter --disable-swresample --disable-network \
+  --disable-avdevice --disable-avfilter --disable-network \
   --enable-small \
   --disable-encoders --disable-hwaccels --disable-muxers \
   --enable-decoder=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1 \
@@ -148,7 +148,7 @@ make -j$(nproc) 2>&1 || true
 # Ensure unversioned .so files exist (FFmpeg make creates symlinks;
 # Android packager needs real files, and WSL can't follow symlinks).
 echo "=== Ensuring unversioned .so files ==="
-for libdir in libavutil libavcodec libavformat libswscale; do
+for libdir in libavutil libavcodec libavformat libswscale libswresample; do
   # Find the most recent versioned .so file (e.g. libavutil.so.60)
   ver_so=$(ls -t "$libdir"/lib*.so.* 2>/dev/null | head -1)
   if [[ -n "$ver_so" && ! -f "$libdir/lib$(basename $libdir).so" ]]; then
@@ -162,7 +162,8 @@ JNILIBS_DIR="$SCRIPT_DIR/app/src/main/jniLibs/$ABI"
 mkdir -p "$JNILIBS_DIR"
 
 for lib in libavutil/libavutil.so libavcodec/libavcodec.so \
-           libavformat/libavformat.so libswscale/libswscale.so; do
+           libavformat/libavformat.so libswscale/libswscale.so \
+           libswresample/libswresample.so; do
   if [[ -f "$lib" ]]; then
     cp "$lib" "$JNILIBS_DIR/"
     echo "  copied $(basename $lib)"
@@ -180,7 +181,7 @@ fi
 # ----- copy headers to project include dir ------------------------------------
 echo "=== Copying FFmpeg headers ==="
 HEADERS_DIR="$SCRIPT_DIR/app/src/main/cpp/include"
-for subdir in libavformat libavcodec libavutil libswscale; do
+for subdir in libavformat libavcodec libavutil libswscale libswresample; do
   src="$FFMPEG_DIR/$subdir"
   if [[ -d "$src" ]]; then
     mkdir -p "$HEADERS_DIR/$subdir"

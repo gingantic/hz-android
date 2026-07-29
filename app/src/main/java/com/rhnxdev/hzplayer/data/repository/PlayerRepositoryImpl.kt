@@ -59,7 +59,12 @@ class PlayerRepositoryImpl @Inject constructor(
     init {
         scope.launch {
             userPreferencesRepository.activeEngine.collect { type ->
-                if (engines.containsKey(type)) _activeEngineType.value = type
+                if (engines.containsKey(type)) {
+                    _activeEngineType.value = type
+                    // FFMPEG shares the ExoPlayer pipeline; the flag reorders the
+                    // renderers (FFmpeg-first) on the next play.
+                    engine().setFfmpegPreferred(type == EngineType.FFMPEG)
+                }
             }
         }
         scope.launch {
@@ -221,6 +226,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // Stop the outgoing engine but keep its instance alive for switch-back.
         engine().stop()
         _activeEngineType.value = type
+        // Applied immediately so the next play uses the new renderer order even
+        // before the persisted preference round-trips through the collector.
+        engine().setFfmpegPreferred(type == EngineType.FFMPEG)
         scope.launch { userPreferencesRepository.setActiveEngine(type) }
     }
 

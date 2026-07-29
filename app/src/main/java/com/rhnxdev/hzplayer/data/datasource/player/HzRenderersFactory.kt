@@ -7,7 +7,11 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.text.TextRenderer
+import com.rhnxdev.hzplayer.data.datasource.player.ffmpeg.FfmpegAudioRenderer
+import com.rhnxdev.hzplayer.data.datasource.player.ffmpeg.FfmpegLibrary
+import com.rhnxdev.hzplayer.data.datasource.player.ffmpeg.FfmpegVideoRenderer
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssTimeRenderer
 
@@ -23,12 +27,23 @@ import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssTimeRenderer
  * Audio:
  * 3. Injects the [TenBandEqualizerProcessor] into the audio sink's processor chain
  * 4. Wraps the audio sink in an [AudioDelaySink] for adjustable A/V audio delay
+ *
+ * FFmpeg software fallback:
+ * 5. Appends [FfmpegVideoRenderer]/[FfmpegAudioRenderer] after the MediaCodec
+ *    renderers, so codecs without a device decoder (ProRes, DNxHD, MJPEG,
+ *    CineForm, DTS, ALAC, …) decode in software — hardware always wins when
+ *    available because renderer order breaks capability ties. When
+ *    [preferFfmpeg] is set (the "FFmpeg" engine selection), the FFmpeg
+ *    renderers are inserted *before* the MediaCodec ones instead — Media3's
+ *    extension-prefer semantics — forcing all FFmpeg-supported media through
+ *    software decode.
  */
 @UnstableApi
 class HzRenderersFactory(
     context: Context,
     private val assHandler: AssHandler,
     private val eqProcessor: TenBandEqualizerProcessor,
+    private val preferFfmpeg: Boolean = false,
 ) : DefaultRenderersFactory(context) {
 
     /** The delay wrapper created for this player instance; set during build. */
@@ -49,6 +64,71 @@ class HzRenderersFactory(
             .setAudioProcessors(arrayOf(eqProcessor))
             .build()
         return AudioDelaySink(sink).also { audioDelaySink = it }
+    }
+
+    override fun buildVideoRenderers(
+        context: Context,
+        extensionRendererMode: Int,
+        mediaCodecSelector: MediaCodecSelector,
+        enableDecoderFallback: Boolean,
+        eventHandler: android.os.Handler,
+        eventListener: androidx.media3.exoplayer.video.VideoRendererEventListener,
+        allowedVideoJoiningTimeMs: Long,
+        out: ArrayList<Renderer>,
+    ) {
+        val insertIndex = out.size
+        super.buildVideoRenderers(
+            context,
+            extensionRendererMode,
+            mediaCodecSelector,
+            enableDecoderFallback,
+            eventHandler,
+            eventListener,
+            allowedVideoJoiningTimeMs,
+            out,
+        )
+        // Appended last: only claims formats MediaCodec renderers can't handle.
+        // In preferFfmpeg mode it goes first instead, so FFmpeg wins the
+        // capability tie for every format it supports.
+        if (FfmpegLibrary.isAvailable()) {
+            val ffmpegRenderer = FfmpegVideoRenderer(
+                allowedVideoJoiningTimeMs,
+                eventHandler,
+                eventListener,
+                MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY,
+            )
+            if (preferFfmpeg) out.add(insertIndex, ffmpegRenderer) else out.add(ffmpegRenderer)
+        }
+    }
+
+    override fun buildAudioRenderers(
+        context: Context,
+        extensionRendererMode: Int,
+        mediaCodecSelector: MediaCodecSelector,
+        enableDecoderFallback: Boolean,
+        audioSink: AudioSink,
+        eventHandler: android.os.Handler,
+        eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener,
+        out: ArrayList<Renderer>,
+    ) {
+        val insertIndex = out.size
+        super.buildAudioRenderers(
+            context,
+            extensionRendererMode,
+            mediaCodecSelector,
+            enableDecoderFallback,
+            audioSink,
+            eventHandler,
+            eventListener,
+            out,
+        )
+        // Shares the factory's AudioSink, so the EQ processor and the audio
+        // delay wrapper apply to FFmpeg-decoded PCM too. Ordered like video:
+        // fallback by default, first in preferFfmpeg mode.
+        if (FfmpegLibrary.isAvailable()) {
+            val ffmpegRenderer = FfmpegAudioRenderer(eventHandler, eventListener, audioSink)
+            if (preferFfmpeg) out.add(insertIndex, ffmpegRenderer) else out.add(ffmpegRenderer)
+        }
     }
 
     override fun buildTextRenderers(

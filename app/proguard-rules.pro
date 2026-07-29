@@ -59,6 +59,15 @@
     native <methods>;
 }
 
+# FFmpeg software decode fallback (libffcodec.so): the JNI bridge resolves
+# these non-native members by name (GetMethodID/GetFieldID), so R8 must not
+# rename or strip them.
+-keep class androidx.media3.decoder.VideoDecoderOutputBuffer { *; }
+-keep class androidx.media3.decoder.SimpleDecoderOutputBuffer { *; }
+-keepclassmembers class com.rhnxdev.hzplayer.data.datasource.player.ffmpeg.FfmpegAudioDecoder {
+    java.nio.ByteBuffer growOutputBuffer(androidx.media3.decoder.SimpleDecoderOutputBuffer, int);
+}
+
 # Preserve AdBlocker engine, rule models, and JS bridge
 -keep class com.rhnxdev.hzplayer.browser.adblock.** { *; }
 -keep class com.rhnxdev.hzplayer.browser.media.MediaSnifferBridge { *; }
