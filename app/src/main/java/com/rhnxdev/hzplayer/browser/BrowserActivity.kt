@@ -1,7 +1,9 @@
 package com.rhnxdev.hzplayer.browser
 
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.os.Bundle
+import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -39,6 +41,9 @@ class BrowserActivity : ComponentActivity() {
                 viewModel.initialUrl = initialUrl
             }
 
+            // Site PiP button (web Picture-in-Picture API) → native PiP
+            viewModel.tabManager.onPipRequested = { enterBrowserPip() }
+
             HzPlayerTheme(
                 themeMode = themeMode,
                 appColorArgb = appColorArgb,
@@ -49,9 +54,50 @@ class BrowserActivity : ComponentActivity() {
         }
     }
 
+    /** Enter system PiP so the page video keeps rendering in a floating window. */
+    fun enterBrowserPip() {
+        if (isInPictureInPictureMode) return
+        val params = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .build()
+        try {
+            enterPictureInPictureMode(params)
+        } catch (_: Exception) {
+            // Device/OEM may reject PiP (e.g. disabled in system settings)
+        }
+    }
+
+    /**
+     * Home / recents while a page video is playing (or HTML5 fullscreen is
+     * active) → enter PiP instead of backgrounding into an audio-only card.
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (browserViewModel?.tabManager?.isVideoPlaying == true) {
+            enterBrowserPip()
+        }
+    }
+
     override fun onPause() {
         super.onPause()
-        browserViewModel?.onPause()
+        // In PiP the activity is paused but must keep the WebView video running
+        if (!isInPictureInPictureMode) {
+            browserViewModel?.onPause()
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        // PiP window dismissed while backgrounded → pause the WebView now,
+        // since the earlier onPause skipped it to keep the video running
+        if (!isInPictureInPictureMode &&
+            !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        ) {
+            browserViewModel?.onPause()
+        }
     }
 
     override fun onResume() {

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.MoreVert
@@ -81,6 +82,9 @@ fun PlayerMoreOptionsSheet(
     abLoopStartMs: Long?,
     abLoopEndMs: Long?,
     onCycleAbRepeat: () -> Unit,
+    /** Drives the equalizer row's On/Off label. */
+    equalizerEnabled: Boolean,
+    onEqualizerClick: () -> Unit,
     onPlayAsAudio: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -154,6 +158,18 @@ fun PlayerMoreOptionsSheet(
                     )
                 },
                 onClick = onCycleAbRepeat,
+            )
+            MoreOptionRow(
+                icon = Icons.Default.GraphicEq,
+                label = stringResource(R.string.equalizer),
+                value = {
+                    ValueText(
+                        stringResource(
+                            if (equalizerEnabled) R.string.toggle_on else R.string.toggle_off,
+                        ),
+                    )
+                },
+                onClick = onEqualizerClick,
             )
             MoreOptionRow(
                 icon = Icons.Default.Headphones,

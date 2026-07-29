@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.domain.repository
 
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
+import com.rhnxdev.hzplayer.domain.model.EqualizerSettings
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.SortDirection
@@ -88,4 +89,8 @@ interface UserPreferencesRepository {
     /** Whether to show a warning when opening solid archives. */
     val showSolidArchiveWarning: Flow<Boolean>
     suspend fun setShowSolidArchiveWarning(show: Boolean)
+
+    /** Persisted audio equalizer configuration (band levels in millibels). */
+    val equalizerSettings: Flow<EqualizerSettings>
+    suspend fun setEqualizerSettings(settings: EqualizerSettings)
 }

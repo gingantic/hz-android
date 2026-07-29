@@ -337,6 +337,14 @@
     <string name="reset">Reset</string>
     <string name="audio_track">Audio Track</string>
     <string name="audio_delay">Audio delay</string>
+    <string name="equalizer">Equalizer</string>
+    <string name="equalizer_not_available">Equalizer is not available right now</string>
+    <string name="equalizer_preset_custom">Custom</string>
+    <string name="equalizer_bands">Bands</string>
+    <string name="bass_boost">Bass boost</string>
+    <string name="loudness_enhancer">Loudness</string>
+    <string name="toggle_on">On</string>
+    <string name="toggle_off">Off</string>
     <string name="search_songs">Search songs…</string>
 
     <!-- Player controls overlay -->

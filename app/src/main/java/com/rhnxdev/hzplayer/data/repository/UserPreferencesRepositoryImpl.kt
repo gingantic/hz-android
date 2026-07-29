@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
+import com.rhnxdev.hzplayer.domain.model.EqualizerSettings
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.SortDirection
@@ -305,6 +306,35 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[PrefKey.ShowSolidArchiveWarning.key] = show }
     }
 
+    // Equalizer settings stored as one string: "enabled|preset|b0,b1,...|bass|loudness".
+    override val equalizerSettings: Flow<EqualizerSettings> = dataStore.data.map { prefs ->
+        decodeEqualizerSettings(prefs[PrefKey.EqualizerSettings.key].orEmpty())
+    }.distinctUntilChanged()
+
+    override suspend fun setEqualizerSettings(settings: EqualizerSettings) {
+        dataStore.edit { prefs ->
+            prefs[PrefKey.EqualizerSettings.key] = listOf(
+                if (settings.enabled) "1" else "0",
+                settings.preset.toString(),
+                settings.bandLevelsMb.joinToString(","),
+                settings.bassBoostStrength.toString(),
+                settings.loudnessGainMb.toString(),
+            ).joinToString("|")
+        }
+    }
+
+    private fun decodeEqualizerSettings(raw: String): EqualizerSettings {
+        if (raw.isBlank()) return EqualizerSettings()
+        val parts = raw.split("|")
+        return EqualizerSettings(
+            enabled = parts.getOrNull(0) == "1",
+            preset = parts.getOrNull(1)?.toIntOrNull() ?: -1,
+            bandLevelsMb = parts.getOrNull(2)?.split(",")?.mapNotNull { it.toIntOrNull() }.orEmpty(),
+            bassBoostStrength = parts.getOrNull(3)?.toIntOrNull() ?: 0,
+            loudnessGainMb = parts.getOrNull(4)?.toIntOrNull() ?: 0,
+        )
+    }
+
     private fun decodeArchivePasswords(raw: String): Map<String, String> {
         if (raw.isBlank()) return emptyMap()
         return raw.split("\u001E").mapNotNull { entry ->
@@ -357,5 +387,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object LastBrightness : PrefKey<Float>(floatPreferencesKey("last_brightness"))
         object SaveVolumeBrightnessState : PrefKey<Boolean>(booleanPreferencesKey("save_volume_brightness_state"))
         object ShowSolidArchiveWarning : PrefKey<Boolean>(booleanPreferencesKey("show_solid_archive_warning"))
+        object EqualizerSettings : PrefKey<String>(stringPreferencesKey("equalizer_settings"))
     }
 }

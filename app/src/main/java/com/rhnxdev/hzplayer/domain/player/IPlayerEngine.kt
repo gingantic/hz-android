@@ -7,6 +7,7 @@ import androidx.media3.common.Player
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
+import com.rhnxdev.hzplayer.domain.model.EqualizerInfo
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import kotlinx.coroutines.flow.StateFlow
@@ -176,6 +177,30 @@ interface IPlayerEngine {
 
     /** Get current audio timing offset in milliseconds, or 0 if unset. */
     fun getAudioDelay(): Long = 0
+
+    // ── Equalizer ──────────────────────────────────────────────
+    // All default to no-op/null so engines without an equalizer opt out.
+
+    /** Observable equalizer state, or `null` if this engine has no equalizer. */
+    fun getEqualizerState(): StateFlow<EqualizerInfo>? = null
+
+    /** Master switch for the equalizer and its companion effects. */
+    fun setEqualizerEnabled(enabled: Boolean) {}
+
+    /** Set one band's gain in millibels; switches the equalizer to custom mode. */
+    fun setEqualizerBandLevel(band: Int, levelMb: Int) {}
+
+    /** Apply a device preset by its index in [EqualizerInfo.presets]. */
+    fun applyEqualizerPreset(preset: Int) {}
+
+    /** Flatten all bands back to 0 dB (custom mode). */
+    fun resetEqualizerBands() {}
+
+    /** Bass boost strength, 0..1000. */
+    fun setBassBoostStrength(strength: Int) {}
+
+    /** Loudness enhancer target gain in millibels (0..1000). */
+    fun setLoudnessGain(gainMb: Int) {}
 
     // ── Engine-specific extras ──────────────────────────────────
 

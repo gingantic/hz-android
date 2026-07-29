@@ -48,6 +48,7 @@ class ExoPlayerEngine @Inject constructor(
     private val playerHolder: MediaPlayerHolder,
     private val assHandler: AssHandler,
     private val neighborSubtitleDiscoverer: NeighborSubtitleDiscoverer,
+    private val equalizerController: EqualizerController,
 ) : IPlayerEngine {
 
     override val engineType: EngineType = EngineType.EXO_PLAYER
@@ -271,6 +272,24 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun getAudioDelay(): Long = playerHolder.audioDelayMs
+
+    // ── Equalizer ──────────────────────────────────────────────────────
+
+    override fun getEqualizerState() = equalizerController.state
+
+    override fun setEqualizerEnabled(enabled: Boolean) = equalizerController.setEnabled(enabled)
+
+    override fun setEqualizerBandLevel(band: Int, levelMb: Int) =
+        equalizerController.setBandLevel(band, levelMb)
+
+    override fun applyEqualizerPreset(preset: Int) = equalizerController.applyPreset(preset)
+
+    override fun resetEqualizerBands() = equalizerController.resetBands()
+
+    override fun setBassBoostStrength(strength: Int) =
+        equalizerController.setBassBoostStrength(strength)
+
+    override fun setLoudnessGain(gainMb: Int) = equalizerController.setLoudnessGain(gainMb)
 
     // ── External subtitles ─────────────────────────────────────────────────
 

@@ -100,6 +100,7 @@ import com.rhnxdev.hzplayer.presentation.player.components.playerGestures
 import com.rhnxdev.hzplayer.presentation.player.components.SpeedSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.SubtitleSelectionDialog
 import com.rhnxdev.hzplayer.presentation.player.components.PlayerMoreOptionsSheet
+import com.rhnxdev.hzplayer.presentation.player.components.EqualizerSheet
 import com.rhnxdev.hzplayer.presentation.player.components.SleepTimerDialog
 import com.rhnxdev.hzplayer.presentation.player.components.JumpToTimeDialog
 import com.rhnxdev.hzplayer.presentation.player.components.ChapterSelectionDialog
@@ -183,6 +184,7 @@ fun VideoPlayerScreen(
     var showSleepDialog by remember { mutableStateOf(false) }
     var showJumpDialog by remember { mutableStateOf(false) }
     var showChapterDialog by remember { mutableStateOf(false) }
+    var showEqualizerSheet by remember { mutableStateOf(false) }
     var showUnlockOverlay by remember { mutableStateOf(false) }
     var hudInteractionTick by remember { mutableLongStateOf(0L) }
     val gestureCallbacks = remember(viewModel) {
@@ -624,6 +626,7 @@ fun VideoPlayerScreen(
 
                 if (showMoreSheet) {
                     key("more_options_sheet") {
+                        val equalizerInfo by viewModel.equalizerState.collectAsStateWithLifecycle()
                         PlayerMoreOptionsSheet(
                             repeatMode = uiState.repeatMode,
                             sleepTimerRemainingFlow = viewModel.sleepTimerRemainingMs,
@@ -644,6 +647,11 @@ fun VideoPlayerScreen(
                             abLoopStartMs = uiState.abLoopStartMs,
                             abLoopEndMs = uiState.abLoopEndMs,
                             onCycleAbRepeat = onCycleAbRepeat,
+                            equalizerEnabled = equalizerInfo.enabled,
+                            onEqualizerClick = {
+                                showMoreSheet = false
+                                showEqualizerSheet = true
+                            },
                             onPlayAsAudio = {
                                 showMoreSheet = false
                                 viewModel.onPlayAsAudio()
@@ -681,6 +689,21 @@ fun VideoPlayerScreen(
                             positionFlow = viewModel.position,
                             onChapterSelected = { viewModel.onSeekTo(it.startMs) },
                             onDismiss = { showChapterDialog = false },
+                        )
+                    }
+                }
+
+                if (showEqualizerSheet) {
+                    key("equalizer_sheet") {
+                        EqualizerSheet(
+                            stateFlow = viewModel.equalizerState,
+                            onEnabledChange = viewModel::onEqualizerEnabledChange,
+                            onBandChange = viewModel::onEqualizerBandChange,
+                            onPresetSelect = viewModel::onEqualizerPresetSelect,
+                            onReset = viewModel::onEqualizerReset,
+                            onBassBoostChange = viewModel::onBassBoostChange,
+                            onLoudnessChange = viewModel::onLoudnessGainChange,
+                            onDismiss = { showEqualizerSheet = false },
                         )
                     }
                 }

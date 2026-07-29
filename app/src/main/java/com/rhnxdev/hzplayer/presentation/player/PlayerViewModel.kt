@@ -374,6 +374,24 @@ class PlayerViewModel @Inject constructor(
         _uiState.update { it.copy(audioDelayMs = delayMs) }
     }
 
+    /** Live equalizer snapshot; an unavailable default when the engine has no EQ. */
+    val equalizerState: StateFlow<com.rhnxdev.hzplayer.domain.model.EqualizerInfo> =
+        playerRepository.getEqualizerState()
+            ?: MutableStateFlow(com.rhnxdev.hzplayer.domain.model.EqualizerInfo())
+
+    fun onEqualizerEnabledChange(enabled: Boolean) = playerRepository.setEqualizerEnabled(enabled)
+
+    fun onEqualizerBandChange(band: Int, levelMb: Int) =
+        playerRepository.setEqualizerBandLevel(band, levelMb)
+
+    fun onEqualizerPresetSelect(preset: Int) = playerRepository.applyEqualizerPreset(preset)
+
+    fun onEqualizerReset() = playerRepository.resetEqualizerBands()
+
+    fun onBassBoostChange(strength: Int) = playerRepository.setBassBoostStrength(strength)
+
+    fun onLoudnessGainChange(gainMb: Int) = playerRepository.setLoudnessGain(gainMb)
+
     fun onAspectRatioChange(mode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode) {
         _uiState.update { it.copy(aspectRatioMode = mode) }
     }

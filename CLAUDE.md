@@ -109,12 +109,14 @@ com.rhnxdev.hzplayer
 │   │   ├── network/         — FtpBrowserClient, SftpBrowserClient, SmbBrowserClient,
 │   │   │                      WebDavBrowserClient, RemoteBrowserClient (interface)
 │   │   ├── player/          — ExoPlayerEngine, MediaPlayerHolder, ConnectionPool,
+│   │   │                      HzRenderersFactory, TenBandEqualizerProcessor, EqualizerController,
+│   │   │                      AudioDelaySink,
 │   │   │                      FtpDataSource, SftpDataSource, SmbDataSource, WebDavDataSource,
 │   │   │                      RemoteDataSourceBase, SmbPathResolver, SftpTofuVerifier,
 │   │   │                      NeighborSubtitleDiscoverer, MediaPlaybackService
 │   │   ├── archive/         — ArchiveNative (JNI), ArchiveDataSource, ArchiveRepositoryImpl
 │   │   ├── subtitle/assrender/ — AssHandler, AssDirectBridge, AssTrackOutput,
-│   │   │                      AssExtractorOutput, AssExtractorsFactory, AssRenderersFactory,
+│   │   │                      AssExtractorOutput, AssExtractorsFactory,
 │   │   │                      AssSubtitleParserFactory, AssMatroskaExtractor, AssFormat,
 │   │   │                      AssTimeRenderer, SubtitleConverters, SubtitleOverlayView
 │   │   └── remote/          — SubdlApi

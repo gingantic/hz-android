@@ -161,12 +161,14 @@ com.rhnxdev.hzplayer/
 │   │   │   ├── RemoteDataSourceBase.kt  (shared base for protocol DataSources)
 │   │   │   ├── FtpDataSource.kt SftpDataSource.kt SmbDataSource.kt WebDavDataSource.kt
 │   │   │   ├── SmbPathResolver.kt SftpTofuVerifier.kt
+│   │   │   ├── HzRenderersFactory.kt    (single RenderersFactory: EQ + audio delay + ASS renderers)
+│   │   │   ├── TenBandEqualizerProcessor.kt AudioDelaySink.kt EqualizerController.kt
 │   │   │   └── MediaPlaybackService.kt  (Media3 MediaSessionService)
 │   │   ├── subtitle/assrender/          (native libass subtitle pipeline)
 │   │   │   ├── AssHandler.kt            (singleton coordinator: data→libass→bitmap)
 │   │   │   ├── AssDirectBridge.kt       (JNI bridge to libass)
 │   │   │   ├── AssTrackOutput.kt / AssExtractorOutput.kt / AssExtractorsFactory.kt
-│   │   │   ├── AssRenderersFactory.kt / AssSubtitleParserFactory.kt
+│   │   │   ├── AssSubtitleParserFactory.kt
 │   │   │   ├── AssMatroskaExtractor.kt / AssFormat.kt / AssTimeRenderer.kt
 │   │   │   ├── SubtitleConverters.kt    (SRT/VTT→ASS conversion)
 │   │   │   └── SubtitleOverlayView.kt   (custom View for bitmap subtitles)
@@ -219,7 +221,7 @@ com.rhnxdev.hzplayer/
 - `AssDirectBridge.kt` — JNI bridge to `cpp/ass_direct.c` (libass init/render/set-step).
 - `AssTrackOutput.kt` / `AssExtractorOutput.kt` / `AssExtractorsFactory.kt` — intercept
   embedded subtitle tracks in the ExoPlayer extractor chain.
-- `AssRenderersFactory.kt` / `AssSubtitleParserFactory.kt` — route ASS/SSA tracks to the
+- `AssSubtitleParserFactory.kt` (with `player/HzRenderersFactory.kt`) — route ASS/SSA tracks to the
   libass pipeline instead of Media3's built-in text renderer.
 - `SubtitleConverters.kt` — converts SRT/VTT to ASS on-the-fly for unified libass rendering.
 - `SubtitleOverlayView.kt` — custom Android View that displays the rendered bitmap overlay.

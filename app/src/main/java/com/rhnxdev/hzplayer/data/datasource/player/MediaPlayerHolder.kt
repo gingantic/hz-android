@@ -23,7 +23,6 @@ import androidx.media3.exoplayer.SeekParameters
 import com.rhnxdev.hzplayer.data.datasource.archive.ArchiveDataSource
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssExtractorsFactory
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
-import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssRenderersFactory
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssSubtitleParserFactory
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleFormat
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
@@ -44,6 +43,7 @@ import javax.inject.Singleton
 class MediaPlayerHolder @Inject constructor(
     @ApplicationContext private val context: Context,
     private val assHandler: AssHandler,
+    private val eqProcessor: TenBandEqualizerProcessor,
 ) {
     init {
         if (java.net.CookieHandler.getDefault() == null) {
@@ -166,10 +166,10 @@ class MediaPlayerHolder @Inject constructor(
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildPlayer(): ExoPlayer {
-        val renderersFactory = AssRenderersFactory(context, assHandler)
+        val renderersFactory = HzRenderersFactory(context, assHandler, eqProcessor)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             .setEnableDecoderFallback(true)
-            .setMediaCodecSelector(buildCodecSelector()) as AssRenderersFactory
+            .setMediaCodecSelector(buildCodecSelector()) as HzRenderersFactory
         return ExoPlayer.Builder(context)
             .setTrackSelector(buildTrackSelector())
             .setLoadControl(loadControl)

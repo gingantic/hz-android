@@ -71,6 +71,21 @@ fun BrowserScreen(
 
     val customView = viewModel.tabManager.customView
 
+    // Track system PiP — hide all browser chrome so only page content shows
+    val activity = context as? androidx.activity.ComponentActivity
+    var isInPip by remember { mutableStateOf(activity?.isInPictureInPictureMode == true) }
+    androidx.compose.runtime.DisposableEffect(activity) {
+        if (activity != null) {
+            val listener = androidx.core.util.Consumer<androidx.core.app.PictureInPictureModeChangedInfo> { info ->
+                isInPip = info.isInPictureInPictureMode
+            }
+            activity.addOnPictureInPictureModeChangedListener(listener)
+            onDispose { activity.removeOnPictureInPictureModeChangedListener(listener) }
+        } else {
+            onDispose {}
+        }
+    }
+
     // Back: close overlays first (custom video view → media grabber → history → settings → sidebar),
     // then navigate back in the tab; popup tabs close and return to their opener tab; else exit
     BackHandler(enabled = true) {
@@ -144,7 +159,7 @@ fun BrowserScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .then(if (isInPip) Modifier else Modifier.statusBarsPadding())
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -158,7 +173,8 @@ fun BrowserScreen(
             val showNewTab = activeId == null || activeTab == null ||
                     activeTab.url.isBlank() || activeTab.url == "about:blank"
 
-            // Top URL Address Bar — always intact and visible across all tabs
+            // Top URL Address Bar — always intact and visible across all tabs (hidden in PiP)
+            if (!isInPip) {
             BrowserTopBar(
                 url = viewModel.urlInput,
                 currentTabUrl = viewModel.activeTab?.url ?: "",
@@ -172,6 +188,7 @@ fun BrowserScreen(
                     .fillMaxWidth()
                     .then(toolbarSwipeModifier),
             )
+            }
 
             // Isolated content container (WebView + NewTabPage)
             Box(
@@ -225,7 +242,8 @@ fun BrowserScreen(
                 }
             }
 
-            // Bottom toolbar
+            // Bottom toolbar (hidden in PiP)
+            if (!isInPip) {
             BrowserBottomBar(
                 url = viewModel.urlInput,
                 currentTabUrl = viewModel.activeTab?.url ?: "",
@@ -255,6 +273,7 @@ fun BrowserScreen(
                     .windowInsetsPadding(WindowInsets.imeAnimationTarget)
                     .then(toolbarSwipeModifier),
             )
+            }
         }
 
         // 1DM+ Media Grabber Bottom Sheet modal
