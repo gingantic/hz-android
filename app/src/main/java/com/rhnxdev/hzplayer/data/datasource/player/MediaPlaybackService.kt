@@ -18,12 +18,14 @@ class MediaPlaybackService : MediaSessionService() {
     @Inject lateinit var playerRepository: PlayerRepository
 
     private var mediaSession: MediaSession? = null
+    private var engineRef: com.rhnxdev.hzplayer.domain.player.IPlayerEngine? = null
 
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "onCreate")
 
         val engine = playerRepository.activeEngine
+        engineRef = engine
         val player = engine.getMedia3Player()
 
         val intent = Intent(this, MainActivity::class.java)
@@ -35,6 +37,11 @@ class MediaPlaybackService : MediaSessionService() {
             MediaSession.Builder(this, it)
                 .setSessionActivity(pendingIntent)
                 .build()
+                // The UI drives the player directly and never connects a
+                // MediaController, so onGetSession is never called. The session
+                // must be registered explicitly — only added sessions get the
+                // service-managed media notification (and startForeground).
+                .also { session -> addSession(session) }
         }
 
         // When the engine swaps its underlying player (decoder rebuild), re-point
@@ -59,14 +66,19 @@ class MediaPlaybackService : MediaSessionService() {
         val shouldStop = player == null || !player.playWhenReady || player.mediaItemCount == 0
         Log.i(TAG, "onTaskRemoved: stopSelf=$shouldStop")
         if (shouldStop) {
+            player?.pause()
             stopSelf()
         }
     }
 
     override fun onDestroy() {
         Log.i(TAG, "onDestroy")
+        // Only tear down the session — the player is an app-scoped singleton
+        // owned by MediaPlayerHolder, so the service must NOT release it. The
+        // engine keeps working in-app; a new session wraps it on the next play.
+        engineRef?.setOnPlayerReplacedListener(null)
+        engineRef = null
         mediaSession?.run { release(); mediaSession = null }
-        playerRepository.release()
         super.onDestroy()
     }
 

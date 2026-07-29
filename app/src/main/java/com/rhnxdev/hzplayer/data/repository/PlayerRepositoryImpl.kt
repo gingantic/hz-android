@@ -1,9 +1,12 @@
 package com.rhnxdev.hzplayer.data.repository
 
+import android.content.Context
+import android.content.Intent
 import android.net.TrafficStats
 import android.net.Uri
 import android.util.Log
 import android.os.Process
+import com.rhnxdev.hzplayer.data.datasource.player.MediaPlaybackService
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
@@ -29,10 +32,12 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.OptIn
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerRepositoryImpl @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val engines: Map<EngineType, @JvmSuppressWildcards IPlayerEngine>,
     private val userPreferencesRepository: UserPreferencesRepository,
 ) : PlayerRepository {
@@ -71,6 +76,24 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private fun engine(): IPlayerEngine =
         engines[_activeEngineType.value] ?: engines.getValue(EngineType.EXO_PLAYER)
+
+    /**
+     * Start [MediaPlaybackService] so the system MediaSession (notification /
+     * lock-screen / Bluetooth controls) is published for this playback. Safe to
+     * call repeatedly — startService on a running service is a no-op. Play is
+     * always user-initiated with the app in the foreground, so a plain
+     * startService is allowed; Media3 promotes the service to foreground with
+     * the media notification once the player is actually playing.
+     */
+    private fun startPlaybackService() {
+        try {
+            context.startService(Intent(context, MediaPlaybackService::class.java))
+        } catch (e: IllegalStateException) {
+            // App unexpectedly in background — playback still works in-app,
+            // only the system controls are unavailable until next play.
+            Log.w(TAG, "startPlaybackService failed: ${e.message}")
+        }
+    }
 
     override val networkTraffic: Flow<NetworkTraffic> = _networkTraffic.asStateFlow()
     override val currentPlaybackUri: String? get() = savedPlaybackUri
@@ -124,6 +147,7 @@ class PlayerRepositoryImpl @Inject constructor(
         Log.i(TAG, "playVideo: title=${video.title} resumeMs=$resumePositionMs")
         savedPlaybackUri = video.uri
         startTrafficPolling()
+        startPlaybackService()
         engine().play(video.uri, video.title, isVideo = true, resumePositionMs = resumePositionMs)
     }
 
@@ -131,13 +155,15 @@ class PlayerRepositoryImpl @Inject constructor(
         Log.i(TAG, "playAudio: title=${audio.title} resumeMs=$resumePositionMs")
         savedPlaybackUri = audio.uri
         startTrafficPolling()
-        engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false, resumePositionMs = resumePositionMs)
+        startPlaybackService()
+        engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false, resumePositionMs = resumePositionMs, artworkUri = audio.albumArtUri)
     }
 
     override fun playUri(uri: String, title: String, isVideo: Boolean, mimeType: String?, resumePositionMs: Long, headers: Map<String, String>) {
         Log.i(TAG, "playUri: title=$title isVideo=$isVideo mimeType=$mimeType resumeMs=$resumePositionMs headers=${headers.size}")
         savedPlaybackUri = uri
         startTrafficPolling()
+        startPlaybackService()
         engine().play(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = resumePositionMs, headers = headers)
     }
 
@@ -145,6 +171,7 @@ class PlayerRepositoryImpl @Inject constructor(
         Log.i(TAG, "playPlaylist: items=${items.size} startIndex=$startIndex startPosMs=$startPositionMs")
         savedPlaybackUri = items.getOrNull(startIndex)?.first
         startTrafficPolling()
+        startPlaybackService()
         engine().playPlaylist(items, startIndex, startPositionMs)
     }
 
@@ -152,6 +179,7 @@ class PlayerRepositoryImpl @Inject constructor(
         Log.i(TAG, "playAudioPlaylist: items=${items.size} startIndex=$startIndex")
         savedPlaybackUri = items.getOrNull(startIndex)?.uri
         startTrafficPolling()
+        startPlaybackService()
         engine().playAudioPlaylist(items, startIndex)
     }
 

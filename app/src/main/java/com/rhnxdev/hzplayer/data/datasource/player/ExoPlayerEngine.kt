@@ -87,7 +87,7 @@ class ExoPlayerEngine @Inject constructor(
     private var currentPlaylist: List<MediaItem>? = null
     private val subtitleDiscoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?, resumePositionMs: Long, headers: Map<String, String>) {
+    override fun play(uri: String, title: String, artist: String?, isVideo: Boolean, mimeType: String?, resumePositionMs: Long, headers: Map<String, String>, artworkUri: String?) {
         playerHolder.setHttpRequestHeaders(headers)
         playerHolder.prepareForUri(uri)
         currentPlaylist = null
@@ -100,7 +100,7 @@ class ExoPlayerEngine @Inject constructor(
                 subtitleConfigs.addAll(subs)
                 playerHolder.clearError()
                 playerHolder.flushPendingDecoderRebuild()
-                player.setMediaItem(ExoMediaItemHelper.buildMediaItemWithSubtitles(uri, title, artist, mimeType, subs = subs))
+                player.setMediaItem(ExoMediaItemHelper.buildMediaItemWithSubtitles(uri, title, artist, mimeType, subs = subs, artworkUri = artworkUri))
                 player.prepare()
                 if (resumePositionMs > 0) player.seekTo(resumePositionMs)
                 player.play()
@@ -151,7 +151,7 @@ class ExoPlayerEngine @Inject constructor(
                 subtitleConfigs.addAll(subs)
                 val mediaItems = items.map { audio ->
                     val itemSubs = if (audio.uri == startItem.uri) subs else emptyList()
-                    ExoMediaItemHelper.buildMediaItemWithSubtitles(audio.uri, audio.title, audio.artist, subs = itemSubs)
+                    ExoMediaItemHelper.buildMediaItemWithSubtitles(audio.uri, audio.title, audio.artist, subs = itemSubs, artworkUri = audio.albumArtUri)
                 }
                 currentPlaylist = mediaItems
                 playerHolder.clearError()

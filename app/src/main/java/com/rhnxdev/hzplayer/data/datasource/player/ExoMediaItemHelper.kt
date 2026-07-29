@@ -33,6 +33,7 @@ internal object ExoMediaItemHelper {
         artist: String? = null,
         mimeType: String? = null,
         subs: List<MediaItem.SubtitleConfiguration> = emptyList(),
+        artworkUri: String? = null,
     ): MediaItem {
         val builder = MediaItem.Builder()
         builder.setUri(uri)
@@ -59,6 +60,8 @@ internal object ExoMediaItemHelper {
             MediaMetadata.Builder()
                 .setTitle(title)
                 .setArtist(artist)
+                // Album art for the system MediaSession notification / lock screen.
+                .apply { artworkUri?.let { setArtworkUri(Uri.parse(it)) } }
                 .build(),
         )
 

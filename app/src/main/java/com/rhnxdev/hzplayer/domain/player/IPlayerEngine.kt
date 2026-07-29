@@ -37,8 +37,10 @@ interface IPlayerEngine {
      *         seek itself once the media item is set, avoiding a race with load.
      *  @param headers HTTP request headers (e.g. `Authorization` / a stream token
      *         forwarded from a VIEW intent) applied to network requests for this
-     *         URI. An empty map clears any previously applied headers. */
-    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0, headers: Map<String, String> = emptyMap())
+     *         URI. An empty map clears any previously applied headers.
+     *  @param artworkUri optional album-art URI attached to the media metadata so
+     *         the system MediaSession notification shows the artwork. */
+    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0, headers: Map<String, String> = emptyMap(), artworkUri: String? = null)
 
     /** Load a playlist (video) and start at [startIndex] / [startPositionMs]. */
     fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int = 0, startPositionMs: Long = 0)
