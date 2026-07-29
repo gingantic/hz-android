@@ -92,11 +92,7 @@ fun UpdateDialog(
                             .padding(8.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        Text(
-                            text = updateInfo.releaseNotes,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        ChangelogText(updateInfo.releaseNotes)
                     }
                 }
 
@@ -198,4 +194,38 @@ fun UpdateDialog(
             }
         }
     )
+}
+
+/**
+ * Renders the changelog markdown produced by the release workflow.
+ * Lines starting with "### " become section headers, "- " lines become
+ * bullet items, and everything else is shown as plain text. This avoids
+ * displaying the raw "### Features" markdown syntax to the user.
+ */
+@Composable
+private fun ChangelogText(notes: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        notes.lines().forEach { rawLine ->
+            val line = rawLine.trimEnd()
+            when {
+                line.isBlank() -> Spacer(modifier = Modifier.height(4.dp))
+                line.startsWith("### ") -> Text(
+                    text = line.removePrefix("### ").trim(),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                line.startsWith("- ") -> Text(
+                    text = "\u2022 " + line.removePrefix("- ").trim(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                else -> Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }

@@ -286,22 +286,22 @@ jobs:
           # Build the changelog markdown
           CHANGELOG=""
           if [ -n "$FEATURES" ]; then
-            CHANGELOG="${CHANGELOG}### ✨ Features\n${FEATURES}\n"
+            CHANGELOG="${CHANGELOG}### Features\n${FEATURES}\n"
           fi
           if [ -n "$FIXES" ]; then
-            CHANGELOG="${CHANGELOG}### 🐛 Bug Fixes\n${FIXES}\n"
+            CHANGELOG="${CHANGELOG}### Bug Fixes\n${FIXES}\n"
           fi
           if [ -n "$PERF" ]; then
-            CHANGELOG="${CHANGELOG}### ⚡ Performance\n${PERF}\n"
+            CHANGELOG="${CHANGELOG}### Performance\n${PERF}\n"
           fi
           if [ -n "$REFACTORS" ]; then
-            CHANGELOG="${CHANGELOG}### ♻️ Refactoring\n${REFACTORS}\n"
+            CHANGELOG="${CHANGELOG}### Refactoring\n${REFACTORS}\n"
           fi
           if [ -n "$CI_CHANGES" ]; then
-            CHANGELOG="${CHANGELOG}### 🔧 CI / Build\n${CI_CHANGES}\n"
+            CHANGELOG="${CHANGELOG}### CI / Build\n${CI_CHANGES}\n"
           fi
           if [ -n "$OTHER" ]; then
-            CHANGELOG="${CHANGELOG}### 📦 Other\n${OTHER}\n"
+            CHANGELOG="${CHANGELOG}### Other\n${OTHER}\n"
           fi
 
           if [ -z "$CHANGELOG" ]; then

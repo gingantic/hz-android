@@ -26,6 +26,35 @@ object AdBlockEngine {
             "AdBlock is not available because the native engine (libadblock_jni.so) is missing or not supported on this device architecture."
         } else ""
 
+    // Never block CAPTCHA / bot-challenge providers. The filter lists (notably
+    // EasyPrivacy and hosts lists) occasionally catch their scripts or frames,
+    // and uBlock's unbreak exception list isn't loaded — a blocked challenge
+    // leaves the site stuck on a blank captcha. Mirrors uBlock's unbreak rules.
+    private val CAPTCHA_HOSTS = arrayOf(
+        "challenges.cloudflare.com",
+        "turnstile.com",
+        "hcaptcha.com",
+        "recaptcha.net",
+        "arkoselabs.com",
+        "funcaptcha.com",
+        "geetest.com",
+        "perimeterx.net",
+        "px-cdn.net",
+        "datadome.co",
+    )
+
+    private fun isCaptchaRequest(requestUrl: String): Boolean {
+        val host = try {
+            android.net.Uri.parse(requestUrl).host?.lowercase()
+        } catch (_: Exception) { null } ?: return false
+        if (CAPTCHA_HOSTS.any { host == it || host.endsWith(".$it") }) return true
+        // reCAPTCHA is served from google.com / gstatic.com under /recaptcha/
+        if ((host.endsWith("google.com") || host.endsWith("gstatic.com")) &&
+            requestUrl.contains("/recaptcha/")
+        ) return true
+        return false
+    }
+
     fun initialize(context: Context, settings: BrowserSettings) {
         reload(context, settings)
     }
@@ -86,6 +115,7 @@ object AdBlockEngine {
     ): Boolean {
         if (!isAvailable || !settings.adBlockEnabled || requestUrl.isBlank()) return false
         if (requestUrl.startsWith("data:") || requestUrl.startsWith("blob:") || requestUrl.startsWith("file:")) return false
+        if (isCaptchaRequest(requestUrl)) return false
 
         val ptr = nativeEnginePtr.get()
         if (ptr != 0L) {
