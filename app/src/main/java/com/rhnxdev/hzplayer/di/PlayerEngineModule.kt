@@ -26,4 +26,14 @@ abstract class PlayerEngineModule {
     @EngineKey(EngineType.EXO_PLAYER)
     @Singleton
     abstract fun bindExoPlayerEngine(impl: ExoPlayerEngine): IPlayerEngine
+
+    // The FFmpeg "engine" is the same ExoPlayer pipeline with FFmpeg-first
+    // renderer ordering (see HzRenderersFactory.preferFfmpeg), so it binds the
+    // same singleton — PlayerRepositoryImpl flips the ordering flag when the
+    // active engine type changes.
+    @Binds
+    @IntoMap
+    @EngineKey(EngineType.FFMPEG)
+    @Singleton
+    abstract fun bindFfmpegEngine(impl: ExoPlayerEngine): IPlayerEngine
 }

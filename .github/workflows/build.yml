@@ -89,6 +89,7 @@ jobs:
             app/src/main/jniLibs/arm64-v8a/libavformat.so
             app/src/main/jniLibs/arm64-v8a/libavutil.so
             app/src/main/jniLibs/arm64-v8a/libswscale.so
+            app/src/main/jniLibs/arm64-v8a/libswresample.so
             app/src/main/jniLibs/arm64-v8a/libass.so
             app/src/main/jniLibs/arm64-v8a/libexpat.so
             app/src/main/jniLibs/arm64-v8a/libfontconfig.so

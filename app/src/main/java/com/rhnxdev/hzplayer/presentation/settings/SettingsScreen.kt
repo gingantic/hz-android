@@ -468,6 +468,7 @@ private fun SettingsScreenPreview() {
 /** Human-readable label for an [EngineType] in the settings selector. */
 private fun engineLabel(type: EngineType): String = when (type) {
     EngineType.EXO_PLAYER -> "ExoPlayer"
+    EngineType.FFMPEG -> "FFmpeg (Software)"
     // EngineType.VLC -> "VLC"
     // EngineType.MPV -> "mpv"
 }
