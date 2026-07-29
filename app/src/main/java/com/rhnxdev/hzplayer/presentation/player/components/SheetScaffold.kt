@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,10 +90,16 @@ fun SheetScaffold(
             val statusBarHeight = with(LocalDensity.current) {
                 WindowInsets.statusBars.getTop(this).toDp()
             }
+            // ModalBottomSheet measures its content to wrap, so BoxWithConstraints'
+            // maxHeight is unbounded here; that would defeat heightIn + child
+            // weight/verticalScroll (nothing finite to scroll within). Fall back to
+            // the finite window height so content stays bounded and scrolls in landscape.
+            val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+            val sheetMaxHeight = if (maxHeight < screenHeight) maxHeight else screenHeight
             Column(
                 modifier = columnModifier
                     .fillMaxWidth()
-                    .heightIn(max = maxHeight - statusBarHeight)
+                    .heightIn(max = sheetMaxHeight - statusBarHeight)
             ) {
                 // Header Row
                 Row(

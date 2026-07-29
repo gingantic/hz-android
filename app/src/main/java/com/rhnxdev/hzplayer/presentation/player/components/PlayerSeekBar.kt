@@ -45,6 +45,8 @@ fun PlayerSeekBar(
     onSeekStart: () -> Unit,
     onSeekEnd: () -> Unit,
     modifier: Modifier = Modifier,
+    abLoopStartMs: Long? = null,
+    abLoopEndMs: Long? = null,
 ) {
     // Bug 5 fix: when duration <= 0 (live stream or unknown), show position at 0
     // and disable seek gestures entirely. Without this guard, tap/drag computes
@@ -64,6 +66,11 @@ fun PlayerSeekBar(
     val bufferedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
     val activeColor = MaterialTheme.colorScheme.primary
     val thumbColor = MaterialTheme.colorScheme.primary
+    val abMarkerColor = Color(0xFF4CAF50)
+
+    // A-B loop fractions along the track (null until each point is marked).
+    val abStartFraction = abLoopStartMs?.let { if (duration > 0) (it.toFloat() / duration).coerceIn(0f, 1f) else null }
+    val abEndFraction = abLoopEndMs?.let { if (duration > 0) (it.toFloat() / duration).coerceIn(0f, 1f) else null }
 
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = Spacing.sm),
@@ -156,6 +163,27 @@ fun PlayerSeekBar(
                     radius = thumbR,
                     center = Offset(thumbX, trackH / 2f),
                 )
+
+                // A-B loop: shade the region and draw a tick at each marked point.
+                val markerH = thumbR * 2.4f
+                if (abStartFraction != null && abEndFraction != null) {
+                    val xa = size.width * abStartFraction
+                    val xb = size.width * abEndFraction
+                    drawRect(
+                        color = abMarkerColor.copy(alpha = 0.25f),
+                        topLeft = Offset(xa, trackH / 2f - markerH / 2f),
+                        size = Size((xb - xa).coerceAtLeast(0f), markerH),
+                    )
+                }
+                listOfNotNull(abStartFraction, abEndFraction).forEach { f ->
+                    val x = (size.width * f).coerceIn(0f, size.width)
+                    drawRoundRect(
+                        color = abMarkerColor,
+                        topLeft = Offset(x - 1.5f.dp.toPx(), trackH / 2f - markerH / 2f),
+                        size = Size(3f.dp.toPx(), markerH),
+                        cornerRadius = CornerRadius(1.5f.dp.toPx()),
+                    )
+                }
             }
         }
 

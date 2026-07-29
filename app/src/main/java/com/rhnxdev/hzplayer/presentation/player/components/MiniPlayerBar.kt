@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -82,6 +83,8 @@ fun MiniPlayerBar(
     visible: Boolean,
     modifier: Modifier = Modifier,
     artworkUri: String? = null,
+    /** Non-null when the session is a video playing audio-only; shows a button to reopen it as video. */
+    onOpenAsVideo: (() -> Unit)? = null,
 ) {
     var isSwiped by remember { mutableStateOf(false) }
     var lastNonEmptyTitle by remember { mutableStateOf("") }
@@ -246,6 +249,15 @@ fun MiniPlayerBar(
                         }
 
                         // Controls
+                        if (onOpenAsVideo != null) {
+                            IconButton(onClick = onOpenAsVideo) {
+                                Icon(
+                                    imageVector = Icons.Default.OndemandVideo,
+                                    contentDescription = stringResource(R.string.open_as_video),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                         IconButton(onClick = onPlayPause) {
                             Icon(
                                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,

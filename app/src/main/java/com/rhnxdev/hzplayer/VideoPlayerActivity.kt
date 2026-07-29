@@ -88,6 +88,11 @@ class VideoPlayerActivity : ComponentActivity() {
                         onMinimize = {
                             playerViewModel.isMinimizing = true
                             finish()
+                        },
+                        onPlayAsAudio = {
+                            // ViewModel flipped isVideo off + set isMinimizing; the
+                            // MediaSession notification keeps the audio controllable.
+                            finish()
                         }
                     )
                 }
@@ -204,7 +209,7 @@ class VideoPlayerActivity : ComponentActivity() {
         try {
             unregisterReceiver(pipReceiver)
         } catch (_: Exception) {}
-        if (!pipEligible) {
+        if (!pipEligible && !playerViewModel.isMinimizing) {
             playerViewModel.isShuttingDown = true
         }
         super.onDestroy()

@@ -133,6 +133,19 @@ class MediaPlayerHolder @Inject constructor(
     var player: ExoPlayer = buildPlayer()
         private set
 
+    /** Delay wrapper of the current player's audio sink; refreshed on rebuild. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private var audioDelaySink: AudioDelaySink? = null
+
+    /** Audio timing offset in ms (positive = audio heard later); survives player rebuilds. */
+    @get:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    @set:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    var audioDelayMs: Long = 0
+        set(value) {
+            field = value
+            audioDelaySink?.delayUs = value * 1000
+        }
+
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildCodecSelector(): MediaCodecSelector = when (decoderMode) {
         DecoderMode.AUTO -> MediaCodecSelector.DEFAULT
@@ -153,15 +166,14 @@ class MediaPlayerHolder @Inject constructor(
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun buildPlayer(): ExoPlayer {
+        val renderersFactory = AssRenderersFactory(context, assHandler)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            .setEnableDecoderFallback(true)
+            .setMediaCodecSelector(buildCodecSelector()) as AssRenderersFactory
         return ExoPlayer.Builder(context)
             .setTrackSelector(buildTrackSelector())
             .setLoadControl(loadControl)
-            .setRenderersFactory(
-                AssRenderersFactory(context, assHandler)
-                    .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-                    .setEnableDecoderFallback(true)
-                    .setMediaCodecSelector(buildCodecSelector())
-            )
+            .setRenderersFactory(renderersFactory)
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context, AssExtractorsFactory(assHandler))
                     .setDataSourceFactory(buildCompositeDataSourceFactory())
@@ -171,6 +183,10 @@ class MediaPlayerHolder @Inject constructor(
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true)
             .build().also { exo ->
+                // Renderers (and thus the audio sink) are created during build;
+                // re-apply the stored delay so it survives player rebuilds.
+                audioDelaySink = renderersFactory.audioDelaySink
+                audioDelaySink?.delayUs = audioDelayMs * 1000
                 exo.setSeekParameters(SeekParameters.CLOSEST_SYNC)
                 assHandler.player = exo
                 exo.addAnalyticsListener(object : AnalyticsListener {

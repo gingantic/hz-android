@@ -207,6 +207,8 @@ class PlayerRepositoryImpl @Inject constructor(
         set(value) { engine().subtitleTrackChangeListener = value }
     override fun setSubtitleDelay(delayMs: Long) = engine().setSubtitleDelay(delayMs)
     override fun getSubtitleDelay(): Long = engine().getSubtitleDelay()
+    override fun setAudioDelay(delayMs: Long) = engine().setAudioDelay(delayMs)
+    override fun getAudioDelay(): Long = engine().getAudioDelay()
     override fun getAudioTracks(): List<String> = engine().getAudioTracks()
     override fun getSelectedAudioTrack(): Int = engine().getSelectedAudioTrack()
     override fun selectAudioTrack(index: Int) = engine().selectAudioTrack(index)

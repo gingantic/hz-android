@@ -169,6 +169,12 @@ interface IPlayerEngine {
     /** Select an audio track by its index in [getAudioTracks], or -1 to disable. */
     fun selectAudioTrack(index: Int)
 
+    /** Set audio timing offset in milliseconds (positive = audio heard later). Default no-op. */
+    fun setAudioDelay(delayMs: Long) {}
+
+    /** Get current audio timing offset in milliseconds, or 0 if unset. */
+    fun getAudioDelay(): Long = 0
+
     // ── Engine-specific extras ──────────────────────────────────
 
     /**

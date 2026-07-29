@@ -335,6 +335,7 @@
     <string name="expand">Expand</string>
     <string name="reset">Reset</string>
     <string name="audio_track">Audio Track</string>
+    <string name="audio_delay">Audio delay</string>
     <string name="search_songs">Search songs…</string>
 
     <!-- Player controls overlay -->
@@ -366,6 +367,26 @@
     <string name="dismiss">Dismiss</string>
     <string name="swipe">Swipe</string>
     <string name="unlocked">Unlocked</string>
+    <string name="more_options">More options</string>
+    <string name="sleep_timer">Sleep Timer</string>
+    <string name="sleep_timer_off">Off</string>
+    <string name="sleep_timer_minutes">%1$d min</string>
+    <string name="sleep_timer_end_of_video">End of video</string>
+    <string name="sleep_timer_remaining">%1$s left</string>
+    <string name="jump_to_time">Jump to</string>
+    <string name="jump">Jump</string>
+    <string name="backspace">Backspace</string>
+    <string name="chapters">Chapters</string>
+    <string name="no_chapters">No chapters</string>
+    <string name="chapter_fallback">Chapter %1$d</string>
+    <string name="repeat_mode_off">Off</string>
+    <string name="repeat_mode_all">All</string>
+    <string name="repeat_mode_one">One</string>
+    <string name="play_as_audio">Play as audio</string>
+    <string name="open_as_video">Open as video</string>
+    <string name="ab_repeat_loop">A-B repeat</string>
+    <string name="ab_repeat_point_a">A set</string>
+    <string name="ab_repeat_looping">Looping</string>
 
     <!-- Subtitle styling -->
     <string name="color_white">White</string>

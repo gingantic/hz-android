@@ -256,6 +256,7 @@ fun MainTabPager(
                             playerViewModel = playerViewModel,
                             isFullScreen = isFullScreen,
                             onNavigateToPlayer = { navController.navigate(NavRoutes.AUDIO_PLAYER) },
+                            onNavigateToVideoPlayer = { navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID) },
                         )
                     }
                 }

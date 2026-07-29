@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -93,6 +94,7 @@ fun PlayerControlsOverlay(
     onAspectRatioClick: () -> Unit = {},
     onOrientationClick: () -> Unit = {},
     onPlaylistClick: () -> Unit = {},
+    onMoreClick: () -> Unit = {},
     onDebugClick: (() -> Unit)? = null,
     onSkipToNext: (() -> Unit)? = null,
     onSkipToPrevious: (() -> Unit)? = null,
@@ -233,6 +235,8 @@ fun PlayerControlsOverlay(
                 positionFlow = positionFlow,
                 duration = uiState.duration,
                 bufferedPercentage = uiState.bufferedPercentage,
+                abLoopStartMs = uiState.abLoopStartMs,
+                abLoopEndMs = uiState.abLoopEndMs,
                 onSeek = onSeekTo,
                 onSeekStart = {},
                 onSeekEnd = {},
@@ -375,6 +379,16 @@ fun PlayerControlsOverlay(
                         modifier = Modifier.size(22.dp),
                     )
                 }
+
+                // More options (sleep timer, chapters, jump to, repeat, play as audio)
+                IconButton(onClick = onMoreClick, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.more_options),
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
     }
@@ -405,6 +419,8 @@ private fun SeekProgressRow(
     positionFlow: StateFlow<Long>,
     duration: Long,
     bufferedPercentage: Int,
+    abLoopStartMs: Long? = null,
+    abLoopEndMs: Long? = null,
     onSeek: (Long) -> Unit,
     onSeekStart: () -> Unit,
     onSeekEnd: () -> Unit,
@@ -414,6 +430,8 @@ private fun SeekProgressRow(
         currentPosition = currentPosition,
         duration = duration,
         bufferedPercentage = bufferedPercentage,
+        abLoopStartMs = abLoopStartMs,
+        abLoopEndMs = abLoopEndMs,
         onSeek = onSeek,
         onSeekStart = onSeekStart,
         onSeekEnd = onSeekEnd,

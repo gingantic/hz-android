@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.presentation.player
 import android.net.Uri
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
 import com.rhnxdev.hzplayer.domain.model.AudioItem
+import com.rhnxdev.hzplayer.domain.model.ChapterInfo
 import com.rhnxdev.hzplayer.domain.model.PlaybackErrorKind
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
@@ -17,6 +18,8 @@ data class PlayerUiState(
     val currentPlaybackUri: String? = null,
     val currentArtworkUri: String? = null,
     val isVideo: Boolean = false,
+    /** True while a video keeps playing audio-only after "Play as audio". */
+    val playingVideoAsAudio: Boolean = false,
     val isPlaying: Boolean = false,
     val isLoading: Boolean = false,
     /**
@@ -37,6 +40,8 @@ data class PlayerUiState(
     val showControls: Boolean = true,
     val externalSubtitles: List<Pair<String, Uri>> = emptyList(),
     val subtitleDelayMs: Long = 0,
+    /** Audio timing offset in ms (positive = audio heard later than video). */
+    val audioDelayMs: Long = 0,
     val playerLocked: Boolean = false,
     val errorMessage: String? = null,
     val errorKind: PlaybackErrorKind? = null,
@@ -46,6 +51,12 @@ data class PlayerUiState(
     val videoPlaylist: List<VideoItem> = emptyList(),
     val currentPlaylistIndex: Int = 0,
     val showPlaylistDrawer: Boolean = false,
+    /** Container chapters (MKV/MP4) probed for the current video; empty when none. */
+    val chapters: List<ChapterInfo> = emptyList(),
+    /** A-B repeat loop start (ms); non-null once point A is marked. */
+    val abLoopStartMs: Long? = null,
+    /** A-B repeat loop end (ms); non-null once point B is marked and the loop is active. */
+    val abLoopEndMs: Long? = null,
     /** Audio queue ("now playing" list) for the music player. */
     val audioQueue: List<AudioItem> = emptyList(),
     val audioQueueIndex: Int = 0,

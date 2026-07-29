@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.presentation.player
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,6 +15,7 @@ import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleMimeType
+import com.rhnxdev.hzplayer.core.thumbnail.MediaInfoProbe
 import com.rhnxdev.hzplayer.core.util.bitsToHuman
 import com.rhnxdev.hzplayer.core.util.formatBitsPerSecond
 import com.rhnxdev.hzplayer.core.util.formatDebugBytes
@@ -21,6 +23,7 @@ import com.rhnxdev.hzplayer.core.util.formatDebugSpeed
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +44,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
     private val playerRepository: PlayerRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val resumeProgress: ResumeRepository,
@@ -175,6 +179,8 @@ class PlayerViewModel @Inject constructor(
         private const val TAG = "PlayerViewModel"
         /** Positions below this are treated as "not really started" — no resume prompt. */
         private const val RESUME_THRESHOLD_MS = 5_000L
+        /** Sentinel passed to [onSetSleepTimer]: stop when the current video ends. */
+        const val SLEEP_TIMER_END_OF_VIDEO = -1L
     }
 
     fun getActiveEngine(): IPlayerEngine = playerRepository.activeEngine
@@ -225,6 +231,14 @@ class PlayerViewModel @Inject constructor(
                     // Used by VideoPlayerScreen to manage the window HDR color mode.
                     val videoActive = state.isVideo &&
                         (info.state == PlayerState.READY || info.state == PlayerState.BUFFERING)
+                    // Drop stale chapters as soon as the engine moves to new media;
+                    // loadChaptersIfNeeded() re-probes once the new item is READY.
+                    val uriChanged = info.currentUri != null && info.currentUri != oldUri
+                    val chapters = if (uriChanged) {
+                        emptyList()
+                    } else {
+                        state.chapters
+                    }
                     state.copy(
                         isPlaying = info.isPlaying,
                         isLoading = newIsLoading,
@@ -244,6 +258,12 @@ class PlayerViewModel @Inject constructor(
                         // progress.
                         drmSessionActive = info.drmSessionActive,
                         isVideoSurfaceActive = videoActive,
+                        chapters = chapters,
+                        // A new media item ends any A-B loop from the previous one.
+                        abLoopStartMs = if (uriChanged || isIdle) null else state.abLoopStartMs,
+                        abLoopEndMs = if (uriChanged || isIdle) null else state.abLoopEndMs,
+                        // A new media item ends the "video as audio" session.
+                        playingVideoAsAudio = if (uriChanged || isIdle) false else state.playingVideoAsAudio,
                     )
                 }
                 // Refresh track cache once ExoPlayer finishes preparing (state == READY).
@@ -252,6 +272,7 @@ class PlayerViewModel @Inject constructor(
                 if (info.state == PlayerState.READY) {
                     trackCache.refreshIfNeeded()
                     applySubtitlePreference()
+                    loadChaptersIfNeeded()
                 }
                 positionController.onPlaybackState(info.state)
             }
@@ -326,6 +347,11 @@ class PlayerViewModel @Inject constructor(
         _uiState.update { it.copy(subtitleDelayMs = delayMs) }
     }
 
+    fun onAudioDelayChange(delayMs: Long) {
+        playerRepository.setAudioDelay(delayMs)
+        _uiState.update { it.copy(audioDelayMs = delayMs) }
+    }
+
     fun onAspectRatioChange(mode: com.rhnxdev.hzplayer.domain.model.AspectRatioMode) {
         _uiState.update { it.copy(aspectRatioMode = mode) }
     }
@@ -361,7 +387,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onVideoStarted() {
-        _uiState.update { it.copy(isVideo = true) }
+        _uiState.update { it.copy(isVideo = true, playingVideoAsAudio = false) }
     }
 
     fun playVideo(video: com.rhnxdev.hzplayer.domain.model.VideoItem) {
@@ -616,12 +642,167 @@ class PlayerViewModel @Inject constructor(
         _uiState.update { it.copy(repeatMode = next) }
     }
 
+    // ── A-B repeat ────────────────────────────────────────────────────────────
+
+    private var abRepeatJob: Job? = null
+
+    /**
+     * Cycle the A-B repeat state on each tap of the A-B button:
+     *   idle      → mark point A at the current position
+     *   A marked  → mark point B and start looping A ↔ B
+     *   looping   → clear both points (back to idle)
+     * A B earlier than (or too close to) A is rejected so the range stays valid.
+     */
+    fun onCycleAbRepeat() {
+        val s = _uiState.value
+        when {
+            s.abLoopStartMs == null -> {
+                _uiState.update { it.copy(abLoopStartMs = position.value) }
+            }
+            s.abLoopEndMs == null -> {
+                val end = position.value
+                if (end <= s.abLoopStartMs + 500L) return
+                _uiState.update { it.copy(abLoopEndMs = end) }
+                startAbRepeatLoop()
+            }
+            else -> clearAbRepeat()
+        }
+    }
+
+    /** Watch the position tick and jump back to A whenever B is reached. */
+    private fun startAbRepeatLoop() {
+        abRepeatJob?.cancel()
+        abRepeatJob = viewModelScope.launch {
+            position.collect { pos ->
+                val start = _uiState.value.abLoopStartMs ?: return@collect
+                val end = _uiState.value.abLoopEndMs ?: return@collect
+                if (pos >= end) onSeekTo(start)
+            }
+        }
+    }
+
+    /** Disarm A-B repeat and clear both markers. */
+    fun clearAbRepeat() {
+        abRepeatJob?.cancel()
+        abRepeatJob = null
+        _uiState.update { it.copy(abLoopStartMs = null, abLoopEndMs = null) }
+    }
+
+    // ── Chapters ────────────────────────────────────────────────────────────
+
+    private var chaptersLoadedForUri: String? = null
+
+    /**
+     * Probe the current video's container chapters once per URI (READY state).
+     * The probe runs the native FFmpeg demuxer on IO, so it must not repeat on
+     * every READY transition (buffer → ready cycles happen constantly).
+     */
+    private fun loadChaptersIfNeeded() {
+        val state = _uiState.value
+        val uri = state.currentPlaybackUri ?: return
+        if (!state.isVideo || chaptersLoadedForUri == uri) return
+        chaptersLoadedForUri = uri
+        viewModelScope.launch {
+            val chapters = MediaInfoProbe.probeChapters(appContext, uri)
+            if (chapters.isNotEmpty() && _uiState.value.currentPlaybackUri == uri) {
+                android.util.Log.i(TAG, "loadChapters: ${chapters.size} chapters for $uri")
+                _uiState.update { it.copy(chapters = chapters) }
+            }
+        }
+    }
+
+    // ── Sleep timer ───────────────────────────────────────────────────
+
+    private var sleepTimerJob: Job? = null
+
+    /**
+     * Remaining sleep-timer time (ms), ticking at 1 Hz; 0 when inactive. Kept
+     * out of [uiState] (same as [position]) so the tick only recomposes the
+     * countdown label, not the whole player UI.
+     */
+    private val _sleepTimerRemainingMs = MutableStateFlow(0L)
+    val sleepTimerRemainingMs: StateFlow<Long> = _sleepTimerRemainingMs.asStateFlow()
+
+    /** True when the active sleep timer is the "end of video" mode. */
+    var sleepTimerEndOfVideo = false
+        private set
+
+    /**
+     * Arm the sleep timer. [durationMs] is a fixed countdown, or
+     * [SLEEP_TIMER_END_OF_VIDEO] to pause when the current video finishes.
+     * Passing 0 (or a negative other than the sentinel) cancels the timer.
+     */
+    fun onSetSleepTimer(durationMs: Long) {
+        onCancelSleepTimer()
+        if (durationMs == SLEEP_TIMER_END_OF_VIDEO) {
+            sleepTimerEndOfVideo = true
+            sleepTimerJob = viewModelScope.launch {
+                while (isActive) {
+                    val duration = _uiState.value.duration
+                    val remaining = (duration - position.value).coerceAtLeast(0L)
+                    _sleepTimerRemainingMs.value = remaining
+                    if (duration > 0 && remaining <= 1_000L) break
+                    delay(1_000)
+                }
+                android.util.Log.i(TAG, "Sleep timer (end of video) expired — pausing")
+                pause()
+                onCancelSleepTimer()
+            }
+        } else if (durationMs > 0) {
+            sleepTimerJob = viewModelScope.launch {
+                val endAt = android.os.SystemClock.elapsedRealtime() + durationMs
+                while (isActive) {
+                    val remaining = endAt - android.os.SystemClock.elapsedRealtime()
+                    if (remaining <= 0L) break
+                    _sleepTimerRemainingMs.value = remaining
+                    delay(1_000)
+                }
+                android.util.Log.i(TAG, "Sleep timer expired — pausing")
+                pause()
+                onCancelSleepTimer()
+            }
+        }
+    }
+
+    /** Disarm the sleep timer and reset the countdown. */
+    fun onCancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepTimerEndOfVideo = false
+        _sleepTimerRemainingMs.value = 0L
+    }
+
+    /**
+     * Continue the current playback as background audio: the caller closes the
+     * video screen while the singleton engine keeps playing. Flipping
+     * [PlayerUiState.isVideo] off hands the session to the mini player / audio
+     * UI, and [isMinimizing] stops the screen's ON_STOP handler from pausing.
+     */
+    fun onPlayAsAudio() {
+        isMinimizing = true
+        _uiState.update { it.copy(isVideo = false, playingVideoAsAudio = true, showPlaylistDrawer = false) }
+    }
+
+    /**
+     * Reverse of [onPlayAsAudio]: the mini player re-opens the ongoing audio-only
+     * session as full-screen video; the engine keeps playing uninterrupted.
+     */
+    fun onResumeAsVideo() {
+        _uiState.update { it.copy(isVideo = true, playingVideoAsAudio = false) }
+    }
+
     fun stop() {
         android.util.Log.i(TAG, "stop() called")
         positionController.saveProgressNow()
         playerRepository.stop()
         positionController.reset()
         subtitlePreferenceAppliedForUri = null
+        chaptersLoadedForUri = null
+        onCancelSleepTimer()
+        clearAbRepeat()
+        // The engine keeps its A/V delay across media; zero it so the next
+        // playback starts in sync like the UI state below indicates.
+        playerRepository.setAudioDelay(0)
         // Reset every per-session field so the next video starts from a clean
         // slate immediately, not only when new media replaces the old one.
         // Preference-driven fields (seekSensitivity, useSurfaceView, debugMode,
@@ -633,6 +814,7 @@ class PlayerViewModel @Inject constructor(
             currentArtworkUri = null,
             isPlaying = false,
             isLoading = false,
+            playingVideoAsAudio = false,
             duration = 0,
             bufferedPercentage = 0,
             playbackSpeed = 1.0f,
@@ -643,6 +825,7 @@ class PlayerViewModel @Inject constructor(
             showControls = true,
             externalSubtitles = emptyList(),
             subtitleDelayMs = 0,
+            audioDelayMs = 0,
             playerLocked = false,
             errorMessage = null,
             errorKind = null,
@@ -650,6 +833,9 @@ class PlayerViewModel @Inject constructor(
             videoPlaylist = emptyList(),
             currentPlaylistIndex = 0,
             showPlaylistDrawer = false,
+            chapters = emptyList(),
+            abLoopStartMs = null,
+            abLoopEndMs = null,
             audioQueue = emptyList(),
             audioQueueIndex = 0,
             showAudioQueue = false,

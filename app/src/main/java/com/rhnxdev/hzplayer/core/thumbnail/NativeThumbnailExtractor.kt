@@ -80,5 +80,39 @@ object NativeThumbnailExtractor {
 
     private external fun nativeProbeMediaInfo(bridge: ThumbnailSource): Array<String>?
 
+    /**
+     * Probes container-level chapter markers of [bridge] and returns them as
+     * (startMs, endMs, title) triples in playback order. Returns null when the
+     * native lib is unavailable, the source can't be parsed, or it has no
+     * chapters.
+     */
+    fun probeChapters(bridge: ThumbnailSource): List<Triple<Long, Long, String>>? {
+        if (!loaded) return null
+        return try {
+            nativeProbeChapters(bridge)?.let { arr ->
+                buildList {
+                    var i = 0
+                    while (i + 2 < arr.size) {
+                        val start = arr[i].toLongOrNull()
+                        val end = arr[i + 1].toLongOrNull()
+                        if (start != null && end != null) {
+                            add(Triple(start, end, arr[i + 2]))
+                        }
+                        i += 3
+                    }
+                }.takeIf { it.isNotEmpty() }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "nativeProbeChapters failed", e)
+            null
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.e(TAG, "nativeProbeChapters linkage error", e)
+            loaded = false
+            null
+        }
+    }
+
+    private external fun nativeProbeChapters(bridge: ThumbnailSource): Array<String>?
+
     private const val TAG = "NativeThumbnailExtractor"
 }
