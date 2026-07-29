@@ -139,7 +139,10 @@ class MainActivity : ComponentActivity() {
 
     private val pipReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_PIP_PLAY_PAUSE) {
+            // Only react while THIS activity is the one in PiP — VideoPlayerActivity
+            // registers a receiver for the same action, and PlayerRepository is a
+            // singleton, so handling it in both would toggle play/pause twice.
+            if (intent?.action == ACTION_PIP_PLAY_PAUSE && isInPictureInPictureMode) {
                 playerViewModel.onPlayPause()
             }
         }
