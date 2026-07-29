@@ -5,11 +5,17 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,8 +53,11 @@ fun GestureCueIndicators(
     val position by positionFlow.collectAsStateWithLifecycle()
 
     // Auto-hide the seek cue after the last tick (double-tap re-arms via the tick).
-    LaunchedEffect(state.seekShowTick) {
-        if (state.seekShowTick > 0 && !state.isDragSeeking) {
+    // Also keyed on isDragSeeking so the timer re-arms when a drag ends — keyed on
+    // the tick alone it would never re-run after the last drag tick and the cue
+    // could stay stuck on screen.
+    LaunchedEffect(state.seekShowTick, state.isDragSeeking) {
+        if (state.seekShowTick > 0 && !state.isDragSeeking && state.seekVisible) {
             delay(1200)
             state.seekVisible = false
             state.seekDelta = 0L
@@ -63,22 +72,18 @@ fun GestureCueIndicators(
         }
     }
 
-    // Accumulate real lead time while hold-to-speed is engaged. At Nx the video
-    // advances (N-1) extra seconds per real second, so a 250ms tick gains
-    // 250ms * (holdSpeed - 1). Reads state.holdSpeed live (ramps 2x→4x).
-    var holdGainedMs by remember { mutableLongStateOf(0L) }
+    // Real video time skipped during the hold: snapshot the player position at
+    // hold start and diff against the live position — no synthetic counters, this
+    // is exactly how far the video actually advanced.
+    var holdStartPositionMs by remember { mutableLongStateOf(0L) }
     LaunchedEffect(state.isHoldSpeeding) {
-        if (!state.isHoldSpeeding) {
-            holdGainedMs = 0L
-            return@LaunchedEffect
-        }
-        while (state.isHoldSpeeding) {
-            delay(250)
-            holdGainedMs += (250 * (state.holdSpeed - 1f)).toLong()
-        }
+        if (state.isHoldSpeeding) holdStartPositionMs = positionFlow.value
     }
+    val holdSkippedMs = if (state.isHoldSpeeding) {
+        (position - holdStartPositionMs).coerceAtLeast(0L)
+    } else 0L
 
-    // Hold-to-speed visual cue (above HUD, below slide/seek indicators)
+    // Hold-to-speed visual cue — top-center pill: ▶▶ Nx · video time skipped.
     AnimatedVisibility(
         visible = state.isHoldSpeeding,
         modifier = Modifier.fillMaxSize(),
@@ -86,23 +91,37 @@ fun GestureCueIndicators(
         exit = fadeOut(animationSpec = tween(200)),
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.CenterEnd,
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding(),
+            contentAlignment = Alignment.TopCenter,
         ) {
             Row(
                 modifier = Modifier
-                    .padding(end = 24.dp)
+                    .padding(top = 24.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                Icon(
+                    imageVector = Icons.Default.FastForward,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
                 Text(
-                    text = "Hold · ${"%.1f".format(state.holdSpeed)}x  +${formatDuration(holdGainedMs)}",
+                    text = "${"%.1f".format(state.holdSpeed)}x",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
+                )
+                Text(
+                    text = "+${formatDuration(holdSkippedMs)}",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.8f),
                 )
             }
         }
