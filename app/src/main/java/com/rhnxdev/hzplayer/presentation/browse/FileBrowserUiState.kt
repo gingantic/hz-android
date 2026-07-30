@@ -31,6 +31,16 @@ data class FavoriteShortcut(
     val itemCount: Int = 0,
 )
 
+/**
+ * A file or folder staged for a paste operation.
+ * [isCut] true = paste performs a move, false = paste performs a copy.
+ */
+@Immutable
+data class FileClipboard(
+    val item: FolderItem,
+    val isCut: Boolean,
+)
+
 @Immutable
 data class FileBrowserUiState(
     val mode: FileBrowserMode = FileBrowserMode.ROOTS,
@@ -48,6 +58,23 @@ data class FileBrowserUiState(
     val passwordPromptContainer: String? = null,
     val passwordError: String? = null,
     val solidArchiveWarningContainer: FolderItem? = null,
+    /** Pending cut/copy source; a paste bar is shown while non-null. */
+    val clipboard: FileClipboard? = null,
+    /** True while a paste (copy/move) is running on disk. */
+    val isPasting: Boolean = false,
+    /** One-shot user feedback for file operations; cleared via onFileOpMessageShown(). */
+    val fileOpMessage: String? = null,
+    /** True when a paste was blocked because "All files access" is not granted. */
+    val showAllFilesAccessPrompt: Boolean = false,
+    /** Item awaiting delete confirmation; a dialog is shown while non-null. */
+    val deleteConfirmItem: FolderItem? = null,
+    /**
+     * Item inside its undo grace period: hidden from the list, not yet removed
+     * from disk. An undo snackbar is shown while non-null.
+     */
+    val deleteGraceItem: FolderItem? = null,
+    /** True while a delete is running on disk. */
+    val isDeleting: Boolean = false,
 )
 
 enum class FileBrowserMode {
