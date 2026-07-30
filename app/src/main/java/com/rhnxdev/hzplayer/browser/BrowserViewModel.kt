@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.model.BrowserHistoryItem
+import com.rhnxdev.hzplayer.domain.model.UrlSuggestion
 import com.rhnxdev.hzplayer.domain.repository.BrowserHistoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockUpdater
@@ -64,6 +66,48 @@ class BrowserViewModel @Inject constructor(
 
     private var lastRecordedUrl = ""
     private var lastRecordedTime = 0L
+
+    // ── URL bar (omnibox) suggestions ────────────────────────────
+
+    /** True while the top URL bar has input focus. */
+    var isUrlBarFocused by mutableStateOf(false)
+        private set
+
+    // null = suggestions hidden; "" = show most visited; otherwise substring filter
+    private val _urlSuggestionQuery = MutableStateFlow<String?>(null)
+    val urlSuggestionQuery: StateFlow<String?> = _urlSuggestionQuery.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val urlSuggestions: StateFlow<List<UrlSuggestion>> = _urlSuggestionQuery
+        .flatMapLatest { query ->
+            if (query == null) {
+                flowOf(emptyList())
+            } else {
+                historyRepository.getUrlSuggestions(query, limit = 10)
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
+
+    fun onUrlBarFocusChanged(focused: Boolean) {
+        isUrlBarFocused = focused
+        // Chrome-style: on focus show most visited sites, filter once typing starts
+        _urlSuggestionQuery.value = if (focused) "" else null
+    }
+
+    fun onUrlInputChanged(value: String) {
+        urlInput = value
+        if (isUrlBarFocused) {
+            // Strip scheme so matching works against both url and title
+            _urlSuggestionQuery.value = value
+                .removePrefix("https://")
+                .removePrefix("http://")
+                .trim()
+        }
+    }
 
     var popupWarningMessage by mutableStateOf<String?>(null)
         private set

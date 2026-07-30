@@ -125,7 +125,15 @@ class MediaPlayerHolder @Inject constructor(
     private val loadControl = run {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val (minMs, maxMs) = if (am.isLowRamDevice) 20_000 to 40_000 else 30_000 to 60_000
-        val backBufferMs = if (am.isLowRamDevice) 15_000 else 30_000
+        // Small duration-based back buffer: retention is duration-only (no byte
+        // cap exists for it), so 30s of a high-bitrate file alone exceeds the heap.
+        val backBufferMs = if (am.isLowRamDevice) 2_000 else 5_000
+        // Hard byte cap on the sample buffer. Never prioritize time over size:
+        // buffering 30-60s "by time" of a high-bitrate file (HDR remuxes/test
+        // clips run 100-400 Mbps) allocates hundreds of MB of live samples and
+        // OOMs the 256 MB Java heap seconds into playback. With the byte cap in
+        // charge, normal-bitrate content still reaches the time thresholds first.
+        val targetBufferBytes = (if (am.isLowRamDevice) 32 else 64) * 1024 * 1024
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ minMs,
@@ -133,11 +141,11 @@ class MediaPlayerHolder @Inject constructor(
                 /* bufferForPlaybackMs = */ 1_500,
                 /* bufferForPlaybackAfterUserActionMs = */ 2_000
             )
+            .setTargetBufferBytes(targetBufferBytes)
             .setBackBuffer(
                 /* backBufferDurationMs = */ backBufferMs,
                 /* retainBackBufferFromKeyframe = */ true
             )
-            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
     }
 

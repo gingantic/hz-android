@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.data.repository
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.BrowserHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.BrowserHistoryEntity
 import com.rhnxdev.hzplayer.domain.model.BrowserHistoryItem
+import com.rhnxdev.hzplayer.domain.model.UrlSuggestion
 import com.rhnxdev.hzplayer.domain.repository.BrowserHistoryRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -23,6 +24,19 @@ class BrowserHistoryRepositoryImpl @Inject constructor(
     override fun searchHistory(query: String): Flow<List<BrowserHistoryItem>> {
         return browserHistoryDao.searchHistory(query).map { list ->
             list.map { it.toDomain() }
+        }
+    }
+
+    override fun getUrlSuggestions(query: String, limit: Int): Flow<List<UrlSuggestion>> {
+        return browserHistoryDao.getUrlSuggestions(query, limit).map { list ->
+            list.map { row ->
+                UrlSuggestion(
+                    url = row.url,
+                    title = row.title,
+                    lastVisited = row.lastVisited,
+                    visitCount = row.visitCount,
+                )
+            }
         }
     }
 
