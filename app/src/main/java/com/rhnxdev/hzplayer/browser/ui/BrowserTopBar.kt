@@ -62,6 +62,7 @@ fun BrowserTopBar(
     onReload: () -> Unit,
     onStopLoading: () -> Unit,
     modifier: Modifier = Modifier,
+    onFocusChanged: (Boolean) -> Unit = {},
 ) {
     val urlChanged = url.trim() != currentTabUrl.trim()
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -119,6 +120,7 @@ fun BrowserTopBar(
                     .fillMaxWidth()
                     .onFocusChanged { focusState ->
                         isFocused = focusState.isFocused
+                        onFocusChanged(focusState.isFocused)
                     },
                 singleLine = true,
                 placeholder = {

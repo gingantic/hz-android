@@ -68,6 +68,8 @@ fun BrowserScreen(
 
     val historyItems by viewModel.historyItems.collectAsStateWithLifecycle()
     val historySearchQuery by viewModel.historySearchQuery.collectAsStateWithLifecycle()
+    val urlSuggestions by viewModel.urlSuggestions.collectAsStateWithLifecycle()
+    val urlSuggestionQuery by viewModel.urlSuggestionQuery.collectAsStateWithLifecycle()
 
     val customView = viewModel.tabManager.customView
 
@@ -91,6 +93,7 @@ fun BrowserScreen(
     BackHandler(enabled = true) {
         when {
             customView != null -> viewModel.tabManager.hideCustomView()
+            viewModel.isUrlBarFocused -> focusManager.clearFocus()
             showMediaGrabber -> showMediaGrabber = false
             showHistory    -> showHistory = false
             showSettings   -> showSettings = false
@@ -180,10 +183,11 @@ fun BrowserScreen(
                 currentTabUrl = viewModel.activeTab?.url ?: "",
                 isLoading = viewModel.activeTab?.isLoading == true,
                 progress = viewModel.activeTab?.progress ?: 0,
-                onUrlChange = { viewModel.urlInput = it },
+                onUrlChange = { viewModel.onUrlInputChanged(it) },
                 onUrlSubmit = { viewModel.navigate(viewModel.urlInput) },
                 onReload = { viewModel.reload() },
                 onStopLoading = { viewModel.stopLoading() },
+                onFocusChanged = { viewModel.onUrlBarFocusChanged(it) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(toolbarSwipeModifier),
@@ -240,6 +244,21 @@ fun BrowserScreen(
                         }
                     }
                 }
+
+                // Chrome-style URL suggestions overlay — covers page content while
+                // the URL bar is focused and history has matching entries
+                if (viewModel.isUrlBarFocused && urlSuggestions.isNotEmpty()) {
+                    UrlSuggestionsPanel(
+                        suggestions = urlSuggestions,
+                        isFiltering = !urlSuggestionQuery.isNullOrBlank(),
+                        onSuggestionClick = { url ->
+                            focusManager.clearFocus()
+                            viewModel.navigate(url)
+                        },
+                        onFillUrl = { url -> viewModel.onUrlInputChanged(url) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
 
             // Bottom toolbar (hidden in PiP)
@@ -255,7 +274,7 @@ fun BrowserScreen(
                 onForward = { viewModel.goForward() },
                 onReload = { viewModel.reload() },
                 onStopLoading = { viewModel.stopLoading() },
-                onUrlChange = { viewModel.urlInput = it },
+                onUrlChange = { viewModel.onUrlInputChanged(it) },
                 onUrlSubmit = { viewModel.navigate(viewModel.urlInput) },
                 onNewTab = { viewModel.createTab() },
                 onTabsClick = { showTabSidebar = true },
