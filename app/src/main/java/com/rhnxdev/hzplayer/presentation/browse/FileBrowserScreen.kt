@@ -6,15 +6,22 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,9 +41,12 @@ import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.VideoItem
+import com.rhnxdev.hzplayer.presentation.browse.components.AllFilesAccessDialog
 import com.rhnxdev.hzplayer.presentation.browse.components.ArchivePasswordDialog
+import com.rhnxdev.hzplayer.presentation.browse.components.DeleteConfirmDialog
 import com.rhnxdev.hzplayer.presentation.browse.components.DirectoryStackContent
 import com.rhnxdev.hzplayer.presentation.browse.components.FileBrowserTopBarActions
+import com.rhnxdev.hzplayer.presentation.browse.components.PasteActionBar
 import com.rhnxdev.hzplayer.presentation.browse.components.SolidArchiveWarningDialog
 import com.rhnxdev.hzplayer.presentation.browse.components.StorageRootsContent
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
@@ -64,6 +74,32 @@ fun FileBrowserScreen(
             viewModel.onOpenArchive(item)
         } else {
             onFileClicked(item)
+        }
+    }
+
+    // One-shot feedback for cut/copy/paste results.
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(uiState.fileOpMessage) {
+        uiState.fileOpMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.onFileOpMessageShown()
+        }
+    }
+
+    // Undo grace period: the item is already hidden; the disk delete fires only
+    // after the ViewModel's 4s timer. This snackbar (Short = 4s) offers the undo.
+    uiState.deleteGraceItem?.let { graceItem ->
+        val message = stringResource(R.string.delete_grace_message, graceItem.name)
+        val undoLabel = stringResource(R.string.undo)
+        LaunchedEffect(graceItem.path) {
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = undoLabel,
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.onUndoDelete()
+            }
         }
     }
 
@@ -123,6 +159,9 @@ fun FileBrowserScreen(
                                 if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
                             }
                         },
+                        onCutItem = viewModel::onCutItem,
+                        onCopyItem = viewModel::onCopyItem,
+                        onDeleteItem = viewModel::onDeleteItem,
                         onToggleFavorite = { viewModel.onToggleQuickAccess(it.path) },
                         onListAtEndChanged = { isListAtEnd = it },
                     )
@@ -135,7 +174,7 @@ fun FileBrowserScreen(
                         } == true
                     }
 
-                    if (hasVideos && !isSearchActive) {
+                    if (hasVideos && !isSearchActive && uiState.clipboard == null) {
                         // Hidden at the bottom of the list so it doesn't cover the last item
                         PlayAllFab(
                             visible = !isListAtEnd,
@@ -149,6 +188,25 @@ fun FileBrowserScreen(
                         )
                     }
                 }
+            }
+
+            // Snackbar + paste bar stacked at the bottom, above the content.
+            Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+                SnackbarHost(hostState = snackbarHostState)
+                uiState.clipboard?.let { clipboard ->
+                    PasteActionBar(
+                        clipboard = clipboard,
+                        canPaste = uiState.mode == FileBrowserMode.BROWSING &&
+                            viewModel.canPasteInto(uiState.layers.lastOrNull()?.path),
+                        isPasting = uiState.isPasting,
+                        onPaste = viewModel::onPasteClipboard,
+                        onCancel = viewModel::onCancelClipboard,
+                    )
+                }
+            }
+
+            if (uiState.isDeleting) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
         }
     }
@@ -166,6 +224,17 @@ fun FileBrowserScreen(
             archiveName = uiState.solidArchiveWarningContainer!!.name,
             onConfirm = { dontShowAgain -> viewModel.onConfirmSolidArchiveWarning(dontShowAgain) },
             onDismiss = viewModel::onDismissSolidArchiveWarning,
+        )
+    }
+    if (uiState.showAllFilesAccessPrompt) {
+        AllFilesAccessDialog(onDismiss = viewModel::onDismissAllFilesAccessPrompt)
+    }
+    uiState.deleteConfirmItem?.let { item ->
+        DeleteConfirmDialog(
+            itemName = item.name,
+            isDirectory = item.isDirectory,
+            onConfirm = viewModel::onConfirmDelete,
+            onDismiss = viewModel::onDismissDeleteConfirm,
         )
     }
 }

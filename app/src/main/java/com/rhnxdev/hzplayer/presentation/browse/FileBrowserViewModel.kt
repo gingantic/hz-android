@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.presentation.browse
 
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -28,8 +29,10 @@ import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -265,6 +268,200 @@ class FileBrowserViewModel @Inject constructor(
 
     fun onFolderClicked(item: FolderItem) {
         if (item.isDirectory) pushLayer(item.path)
+    }
+
+    // ---- Cut / Copy / Paste ----
+
+    fun onCutItem(item: FolderItem) = stageClipboard(item, isCut = true)
+
+    fun onCopyItem(item: FolderItem) = stageClipboard(item, isCut = false)
+
+    private fun stageClipboard(item: FolderItem, isCut: Boolean) {
+        // Only real on-disk entries can be staged (not virtual archive entries).
+        if (!ArchiveBrowsePath.isRealFilePath(item.path)) return
+        _uiState.update { it.copy(clipboard = FileClipboard(item, isCut)) }
+    }
+
+    fun onCancelClipboard() {
+        _uiState.update { it.copy(clipboard = null) }
+    }
+
+    /** True when the currently visible directory can receive a paste. */
+    fun canPasteInto(path: String?): Boolean =
+        path != null && path.isNotEmpty() && ArchiveBrowsePath.isRealFilePath(path)
+
+    fun onPasteClipboard() {
+        val state = _uiState.value
+        val clipboard = state.clipboard ?: return
+        if (state.isPasting) return
+        val destDir = state.layers.lastOrNull()?.path ?: return
+        if (!canPasteInto(destDir)) return
+
+        // Writing outside app-specific storage on Android 11+ needs "All files access".
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            _uiState.update { it.copy(showAllFilesAccessPrompt = true) }
+            return
+        }
+
+        _uiState.update { it.copy(isPasting = true) }
+        viewModelScope.launch {
+            val result = if (clipboard.isCut) {
+                fileRepository.moveEntry(clipboard.item.path, destDir)
+            } else {
+                fileRepository.copyEntry(clipboard.item.path, destDir)
+            }
+            result.fold(
+                onSuccess = { newPath ->
+                    // Invalidate destination and, for moves, the source's parent listing.
+                    cache.remove(destDir)
+                    if (clipboard.isCut) {
+                        File(clipboard.item.path).parent?.let { cache.remove(it) }
+                    }
+                    _uiState.update {
+                        it.copy(
+                            clipboard = null,
+                            isPasting = false,
+                            fileOpMessage = if (clipboard.isCut) {
+                                "Moved \"${File(newPath).name}\""
+                            } else {
+                                "Copied \"${File(newPath).name}\""
+                            },
+                        )
+                    }
+                    reloadLayerAt(destDir)
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(isPasting = false, fileOpMessage = e.message ?: "Operation failed")
+                    }
+                },
+            )
+        }
+    }
+
+    fun onFileOpMessageShown() {
+        _uiState.update { it.copy(fileOpMessage = null) }
+    }
+
+    // ---- Delete ----
+
+    /** Ask for confirmation before deleting; only real on-disk entries qualify. */
+    fun onDeleteItem(item: FolderItem) {
+        if (!ArchiveBrowsePath.isRealFilePath(item.path)) return
+        _uiState.update { it.copy(deleteConfirmItem = item) }
+    }
+
+    fun onDismissDeleteConfirm() {
+        _uiState.update { it.copy(deleteConfirmItem = null) }
+    }
+
+    private var pendingDeleteJob: Job? = null
+
+    fun onConfirmDelete() {
+        val state = _uiState.value
+        val item = state.deleteConfirmItem ?: return
+        if (state.isDeleting) return
+
+        // Deleting outside app-specific storage on Android 11+ needs "All files access".
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            _uiState.update { it.copy(deleteConfirmItem = null, showAllFilesAccessPrompt = true) }
+            return
+        }
+
+        // A new delete supersedes any pending one — commit the older delete now.
+        commitPendingDeleteNow()
+
+        // Hide the item optimistically and start the undo grace timer; the disk
+        // delete only runs once the grace period elapses without an undo.
+        _uiState.update { it.copy(deleteConfirmItem = null, deleteGraceItem = item) }
+        hideItemFromLayers(item.path)
+        pendingDeleteJob = viewModelScope.launch {
+            delay(DELETE_GRACE_MS)
+            pendingDeleteJob = null
+            performDelete(item)
+        }
+    }
+
+    /** Cancel a delete during its grace period and restore the item in the list. */
+    fun onUndoDelete() {
+        pendingDeleteJob?.cancel()
+        pendingDeleteJob = null
+        val item = _uiState.value.deleteGraceItem ?: return
+        _uiState.update { it.copy(deleteGraceItem = null) }
+        File(item.path).parent?.let { parent ->
+            cache.remove(parent)
+            reloadLayerAt(parent)
+        }
+    }
+
+    /** Flush a grace-period delete immediately (before staging another delete). */
+    private fun commitPendingDeleteNow() {
+        val job = pendingDeleteJob ?: return
+        job.cancel()
+        pendingDeleteJob = null
+        val item = _uiState.value.deleteGraceItem ?: return
+        viewModelScope.launch { performDelete(item) }
+    }
+
+    private suspend fun performDelete(item: FolderItem) {
+        _uiState.update { it.copy(isDeleting = true) }
+        fileRepository.deleteEntry(item.path).fold(
+            onSuccess = { name ->
+                File(item.path).parent?.let { cache.remove(it) }
+                _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deleteGraceItem = it.deleteGraceItem?.takeUnless { g -> g.path == item.path },
+                        fileOpMessage = "Deleted \"$name\"",
+                        // Drop a staged clipboard entry that no longer exists.
+                        clipboard = it.clipboard?.takeUnless { c -> c.item.path == item.path },
+                    )
+                }
+            },
+            onFailure = { e ->
+                _uiState.update {
+                    it.copy(
+                        isDeleting = false,
+                        deleteGraceItem = it.deleteGraceItem?.takeUnless { g -> g.path == item.path },
+                        fileOpMessage = e.message ?: "Delete failed",
+                    )
+                }
+                // Delete failed — bring the hidden item back.
+                File(item.path).parent?.let { parent ->
+                    cache.remove(parent)
+                    reloadLayerAt(parent)
+                }
+            },
+        )
+    }
+
+    /** Remove an item from every loaded layer without touching the disk. */
+    private fun hideItemFromLayers(path: String) {
+        _uiState.update { state ->
+            state.copy(
+                layers = state.layers.map { layer ->
+                    if (layer.items.none { it.path == path }) layer
+                    else {
+                        val remaining = layer.items.filter { it.path != path }
+                        layer.copy(items = remaining, isEmpty = remaining.isEmpty())
+                    }
+                },
+            )
+        }
+    }
+
+    fun onDismissAllFilesAccessPrompt() {
+        _uiState.update { it.copy(showAllFilesAccessPrompt = false) }
+    }
+
+    /** Reload the topmost layer showing [path] after its contents changed on disk. */
+    private fun reloadLayerAt(path: String) {
+        val layers = _uiState.value.layers
+        val idx = layers.indexOfLast { it.path == path }
+        if (idx >= 0) {
+            updateLayer(idx) { it.copy(isLoading = true) }
+            loadDirectory(path, idx)
+        }
     }
 
     /** Enter an archive container as a virtual browsing layer (in-place, no extraction). */
@@ -626,5 +823,10 @@ class FileBrowserViewModel @Inject constructor(
 
     fun saveScrollState(path: String, index: Int, offset: Int, orientation: Int, isAtEnd: Boolean = false) {
         _scrollStates[scrollKey(path, orientation)] = SavedScrollPosition(index, offset, orientation, isAtEnd)
+    }
+
+    companion object {
+        /** Undo window before a confirmed delete is committed to disk. */
+        const val DELETE_GRACE_MS = 4_000L
     }
 }

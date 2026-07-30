@@ -91,6 +91,9 @@ fun FileItemCard(
     onPropertiesClick: (() -> Unit)? = null,
     onPlayAllClick: (() -> Unit)? = null,
     onPlayAsAudioClick: (() -> Unit)? = null,
+    onCutClick: (() -> Unit)? = null,
+    onCopyClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
     isFavorite: Boolean = false,
     onFavoriteClick: (() -> Unit)? = null,
 ) {
@@ -232,7 +235,7 @@ fun FileItemCard(
                 }
             }
 
-            if (onPropertiesClick != null || onPlayAllClick != null || onPlayAsAudioClick != null || onFavoriteClick != null) {
+            if (onPropertiesClick != null || onPlayAllClick != null || onPlayAsAudioClick != null || onFavoriteClick != null || onCutClick != null || onCopyClick != null || onDeleteClick != null) {
                 var showMenu by remember { mutableStateOf(false) }
                 IconButton(
                     onClick = { showMenu = true },
@@ -256,6 +259,9 @@ fun FileItemCard(
                         onFavoriteClick = onFavoriteClick,
                         onPlayAllClick = onPlayAllClick,
                         onPlayAsAudioClick = onPlayAsAudioClick,
+                        onCutClick = onCutClick,
+                        onCopyClick = onCopyClick,
+                        onDeleteClick = onDeleteClick,
                         onPropertiesClick = onPropertiesClick,
                         onDismissRequest = { showMenu = false },
                     )

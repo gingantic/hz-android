@@ -20,6 +20,7 @@ import com.rhnxdev.hzplayer.core.components.BreadcrumbBar
 import com.rhnxdev.hzplayer.core.components.DirectoryBrowsePane
 import com.rhnxdev.hzplayer.core.components.FileItemData
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
@@ -51,6 +52,9 @@ fun DirectoryStackContent(
     onFileClicked: (FolderItem) -> Unit = {},
     onPlayAsAudio: (FolderItem) -> Unit = {},
     onPlayAllFolder: ((FolderItem) -> Unit)? = null,
+    onCutItem: ((FolderItem) -> Unit)? = null,
+    onCopyItem: ((FolderItem) -> Unit)? = null,
+    onDeleteItem: ((FolderItem) -> Unit)? = null,
     onToggleFavorite: (FileItemData) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -75,6 +79,9 @@ fun DirectoryStackContent(
                 onFileClicked = onFileClicked,
                 onPlayAsAudio = onPlayAsAudio,
                 onPlayAllFolder = onPlayAllFolder,
+                onCutItem = onCutItem,
+                onCopyItem = onCopyItem,
+                onDeleteItem = onDeleteItem,
                 onToggleFavorite = onToggleFavorite,
                 onListAtEndChanged = onListAtEndChanged,
                 modifier = Modifier.fillMaxSize(),
@@ -101,6 +108,9 @@ private fun DirectoryLayerView(
     onFileClicked: (FolderItem) -> Unit = {},
     onPlayAsAudio: (FolderItem) -> Unit = {},
     onPlayAllFolder: ((FolderItem) -> Unit)? = null,
+    onCutItem: ((FolderItem) -> Unit)? = null,
+    onCopyItem: ((FolderItem) -> Unit)? = null,
+    onDeleteItem: ((FolderItem) -> Unit)? = null,
     onToggleFavorite: (FileItemData) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -228,6 +238,23 @@ private fun DirectoryLayerView(
                     layer.items.find { it.path == data.path }?.let(callback)
                 }
             },
+            // Cut/copy only apply to real on-disk entries; entries inside
+            // archive layers are virtual and cannot be staged.
+            onCutItem = if (onCutItem != null && ArchiveBrowsePath.isRealFilePath(layer.path)) {
+                { data ->
+                    layer.items.find { it.path == data.path }?.let(onCutItem)
+                }
+            } else null,
+            onCopyItem = if (onCopyItem != null && ArchiveBrowsePath.isRealFilePath(layer.path)) {
+                { data ->
+                    layer.items.find { it.path == data.path }?.let(onCopyItem)
+                }
+            } else null,
+            onDeleteItem = if (onDeleteItem != null && ArchiveBrowsePath.isRealFilePath(layer.path)) {
+                { data ->
+                    layer.items.find { it.path == data.path }?.let(onDeleteItem)
+                }
+            } else null,
             quickAccessPaths = quickAccessPaths,
             onToggleFavorite = onToggleFavorite,
             listState = listState,

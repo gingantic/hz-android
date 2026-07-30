@@ -98,6 +98,9 @@ fun DirectoryBrowsePane(
     mediaMode: Boolean = false,
     onPlayAsAudio: ((FileItemData) -> Unit)? = null,
     onPlayAllFolder: ((FileItemData) -> Unit)? = null,
+    onCutItem: ((FileItemData) -> Unit)? = null,
+    onCopyItem: ((FileItemData) -> Unit)? = null,
+    onDeleteItem: ((FileItemData) -> Unit)? = null,
     quickAccessPaths: Set<String> = emptySet(),
     onToggleFavorite: ((FileItemData) -> Unit)? = null,
     listState: androidx.compose.foundation.lazy.LazyListState? = null,
@@ -245,6 +248,15 @@ fun DirectoryBrowsePane(
                             } else null,
                             onPlayAsAudioClick = if (onPlayAsAudio != null && !item.isDirectory && (item.mimeType?.startsWith("video") == true || isVideoExtension(item.name) || item.durationMs > 0)) {
                                 { onPlayAsAudio(item) }
+                            } else null,
+                            onCutClick = if (onCutItem != null) {
+                                { onCutItem(item) }
+                            } else null,
+                            onCopyClick = if (onCopyItem != null) {
+                                { onCopyItem(item) }
+                            } else null,
+                            onDeleteClick = if (onDeleteItem != null) {
+                                { onDeleteItem(item) }
                             } else null,
                             isFavorite = quickAccessPaths.contains(item.path),
                             onFavoriteClick = if (item.isDirectory && onToggleFavorite != null) {

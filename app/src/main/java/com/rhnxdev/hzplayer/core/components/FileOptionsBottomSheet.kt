@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistPlay
@@ -57,6 +60,9 @@ fun FileOptionsBottomSheet(
     onFavoriteClick: (() -> Unit)? = null,
     onPlayAllClick: (() -> Unit)? = null,
     onPlayAsAudioClick: (() -> Unit)? = null,
+    onCutClick: (() -> Unit)? = null,
+    onCopyClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
     onPropertiesClick: (() -> Unit)? = null,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
 ) {
@@ -215,6 +221,28 @@ fun FileOptionsBottomSheet(
                     )
                 }
 
+                if (onCutClick != null) {
+                    FileOptionItem(
+                        icon = Icons.Default.ContentCut,
+                        label = stringResource(R.string.menu_cut),
+                        onClick = {
+                            onDismissRequest()
+                            onCutClick()
+                        }
+                    )
+                }
+
+                if (onCopyClick != null) {
+                    FileOptionItem(
+                        icon = Icons.Default.ContentCopy,
+                        label = stringResource(R.string.menu_copy),
+                        onClick = {
+                            onDismissRequest()
+                            onCopyClick()
+                        }
+                    )
+                }
+
                 if (onPropertiesClick != null) {
                     FileOptionItem(
                         icon = Icons.Default.Info,
@@ -222,6 +250,19 @@ fun FileOptionsBottomSheet(
                         onClick = {
                             onDismissRequest()
                             onPropertiesClick()
+                        }
+                    )
+                }
+
+                if (onDeleteClick != null) {
+                    FileOptionItem(
+                        icon = Icons.Default.Delete,
+                        label = stringResource(R.string.menu_delete),
+                        tint = MaterialTheme.colorScheme.error,
+                        labelColor = MaterialTheme.colorScheme.error,
+                        onClick = {
+                            onDismissRequest()
+                            onDeleteClick()
                         }
                     )
                 }
@@ -237,6 +278,7 @@ private fun FileOptionItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.onSurface,
+    labelColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     Row(
         modifier = modifier
@@ -255,7 +297,7 @@ private fun FileOptionItem(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-            color = MaterialTheme.colorScheme.onSurface
+            color = labelColor
         )
     }
 }
