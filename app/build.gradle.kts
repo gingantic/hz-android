@@ -235,9 +235,6 @@ dependencies {
     implementation(libs.sshj)
     implementation(libs.jcifs.ng)
 
-    // mDNS service discovery
-    implementation(libs.jmDNS)
-
     // WebDAV (uses OkHttp)
     implementation(libs.okhttp)
 

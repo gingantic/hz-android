@@ -28,9 +28,6 @@ class NetworkRepositoryImpl @Inject constructor(
             entities.map { it.toDomain(passwordCrypto) }
         }
 
-    override suspend fun getServer(id: Long): ServerConfig? =
-        serverConfigDao.getById(id)?.toDomain(passwordCrypto)
-
     override suspend fun saveServer(server: ServerConfig): Long =
         serverConfigDao.insert(server.toEntity(passwordCrypto))
 
@@ -54,11 +51,6 @@ class NetworkRepositoryImpl @Inject constructor(
 
     override fun getStreamHistory(): Flow<List<StreamHistoryItem>> =
         streamHistoryDao.getAll().map { entities ->
-            entities.map { it.toDomain() }
-        }
-
-    override fun getFavoriteStreams(): Flow<List<StreamHistoryItem>> =
-        streamHistoryDao.getFavorites().map { entities ->
             entities.map { it.toDomain() }
         }
 

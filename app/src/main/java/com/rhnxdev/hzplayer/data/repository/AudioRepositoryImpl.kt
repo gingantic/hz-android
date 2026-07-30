@@ -71,27 +71,9 @@ class AudioRepositoryImpl @Inject constructor(
             emit(memCache)
             return@flow
         }
-        // Group by album title only. A single album can have per-track artist tags
-        // (compilations, "feat." credits) — DISTINCT album+artist would split it into
-        // many cards. One card per title; artist = the album's common/first artist.
-        val songs = mediaDao.getAllAudio().first().map { it.toAudioItem() }
-            .filter { minDurationSecs <= 0 || it.durationMs >= minDurationSecs * 1000L }
+        val songs = loadFilteredSongs(minDurationSecs)
         if (songs.isNotEmpty()) {
-            val albums = songs
-                .filter { !it.album.isNullOrBlank() }
-                .groupBy { it.album.orEmpty() }
-                .map { (title, albumSongs) ->
-                    val artists = albumSongs.mapNotNull { it.artist }.distinct()
-                    Album(
-                        id = title.hashCode().toLong(),
-                        title = title,
-                        // Single artist → name; multiple → "Various artists".
-                        artist = if (artists.size == 1) artists.first() else "Various artists",
-                        albumArtUri = albumSongs.firstNotNullOfOrNull { it.albumArtUri },
-                        trackCount = albumSongs.size,
-                    )
-                }
-                .sortedBy { it.title.lowercase() }
+            val albums = buildAlbums(songs)
             cachedAlbums = albums
             emit(albums)
         } else if (BuildConfig.DEBUG) {
@@ -110,25 +92,9 @@ class AudioRepositoryImpl @Inject constructor(
             emit(memCache)
             return@flow
         }
-        // Build artists from the full song list so we can compute real album/track
-        // counts + a cover (first song's album art). DISTINCT-artist projection alone
-        // can't give counts. Artist identity is the name string (no ARTIST_ID scanned).
-        val songs = mediaDao.getAllAudio().first().map { it.toAudioItem() }
-            .filter { minDurationSecs <= 0 || it.durationMs >= minDurationSecs * 1000L }
+        val songs = loadFilteredSongs(minDurationSecs)
         if (songs.isNotEmpty()) {
-            val artists = songs
-                .filter { !it.artist.isNullOrBlank() }
-                .groupBy { it.artist.orEmpty() }
-                .map { (name, artistSongs) ->
-                    Artist(
-                        id = name.hashCode().toLong(),
-                        name = name,
-                        albumCount = artistSongs.mapNotNull { it.album }.distinct().size,
-                        trackCount = artistSongs.size,
-                        albumArtUri = artistSongs.firstNotNullOfOrNull { it.albumArtUri },
-                    )
-                }
-                .sortedBy { it.name.lowercase() }
+            val artists = buildArtists(songs)
             cachedArtists = artists
             emit(artists)
         } else if (BuildConfig.DEBUG) {
@@ -140,6 +106,47 @@ class AudioRepositoryImpl @Inject constructor(
             emit(emptyList())
         }
     }.flowOn(Dispatchers.IO)
+
+    /** Full song list from Room, filtered by the minimum-duration preference. */
+    private suspend fun loadFilteredSongs(minDurationSecs: Int): List<AudioItem> =
+        mediaDao.getAllAudio().first().map { it.toAudioItem() }
+            .filter { minDurationSecs <= 0 || it.durationMs >= minDurationSecs * 1000L }
+
+    // Group by album title only. A single album can have per-track artist tags
+    // (compilations, "feat." credits) — DISTINCT album+artist would split it into
+    // many cards. One card per title; artist = the album's common/first artist.
+    private fun buildAlbums(songs: List<AudioItem>): List<Album> = songs
+        .filter { !it.album.isNullOrBlank() }
+        .groupBy { it.album.orEmpty() }
+        .map { (title, albumSongs) ->
+            val artists = albumSongs.mapNotNull { it.artist }.distinct()
+            Album(
+                id = title.hashCode().toLong(),
+                title = title,
+                // Single artist → name; multiple → "Various artists".
+                artist = if (artists.size == 1) artists.first() else "Various artists",
+                albumArtUri = albumSongs.firstNotNullOfOrNull { it.albumArtUri },
+                trackCount = albumSongs.size,
+            )
+        }
+        .sortedBy { it.title.lowercase() }
+
+    // Build artists from the full song list so we can compute real album/track
+    // counts + a cover (first song's album art). DISTINCT-artist projection alone
+    // can't give counts. Artist identity is the name string (no ARTIST_ID scanned).
+    private fun buildArtists(songs: List<AudioItem>): List<Artist> = songs
+        .filter { !it.artist.isNullOrBlank() }
+        .groupBy { it.artist.orEmpty() }
+        .map { (name, artistSongs) ->
+            Artist(
+                id = name.hashCode().toLong(),
+                name = name,
+                albumCount = artistSongs.mapNotNull { it.album }.distinct().size,
+                trackCount = artistSongs.size,
+                albumArtUri = artistSongs.firstNotNullOfOrNull { it.albumArtUri },
+            )
+        }
+        .sortedBy { it.name.lowercase() }
 
     override fun getSongsByAlbum(albumTitle: String): Flow<List<AudioItem>> {
         if (BuildConfig.DEBUG) {
@@ -172,12 +179,14 @@ class AudioRepositoryImpl @Inject constructor(
     }
 
     override fun searchAlbums(query: String): Flow<List<Album>> = flow {
-        val albums = getAlbums().first()
+        // Serve from the in-memory cache when possible — avoids re-reading and
+        // re-grouping the whole audio table on every keystroke.
+        val albums = cachedAlbums ?: getAlbums().first()
         emit(albums.filter { it.title.contains(query, ignoreCase = true) })
     }.flowOn(Dispatchers.IO)
 
     override fun searchArtists(query: String): Flow<List<Artist>> = flow {
-        val artists = getArtists().first()
+        val artists = cachedArtists ?: getArtists().first()
         emit(artists.filter { it.name.contains(query, ignoreCase = true) })
     }.flowOn(Dispatchers.IO)
 }
