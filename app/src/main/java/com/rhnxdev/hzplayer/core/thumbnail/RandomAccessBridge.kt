@@ -33,8 +33,6 @@ class RandomAccessBridge(
     private val maxHandles = if (lightweight) 1 else 3
     private val prefetchEnabled = !lightweight
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
     @Volatile private var closed = false
 
     // Buffer pool to avoid frequent 256 KB / 1 MB allocations
@@ -234,7 +232,6 @@ class RandomAccessBridge(
                 // ignore
             }
         }
-        scope.cancel()
     }
 }
 

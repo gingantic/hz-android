@@ -33,9 +33,6 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE mediaType = 'audio' AND artist = :artistName")
     fun getSongsByArtist(artistName: String): Flow<List<MediaEntity>>
 
-    @Query("SELECT * FROM media WHERE title LIKE '%' || :query || '%'")
-    fun search(query: String): Flow<List<MediaEntity>>
-
     @Query("SELECT * FROM media WHERE mediaType = 'video' AND title LIKE '%' || :query || '%'")
     fun searchVideos(query: String): Flow<List<MediaEntity>>
 

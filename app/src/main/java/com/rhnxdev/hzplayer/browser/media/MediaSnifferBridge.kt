@@ -59,11 +59,10 @@ class MediaSnifferBridge(
         private const val TAG = "MediaSnifferBridge"
         const val INTERFACE_NAME = "HzMediaSniffer"
 
-        /**
-         * Injects DOM media listeners for HTML5 video/audio elements, fetch, and XMLHttpRequest.
-         */
-        fun injectSnifferJs(webView: WebView) {
-            val js = """
+        // Built once and reused — rebuilding the ~380-line script (interpolation +
+        // trimIndent) on every page load is wasteful.
+        private val SNIFFER_JS: String by lazy {
+            """
                 (function() {
                     if (window.__hzMediaSnifferInjected) return;
                     window.__hzMediaSnifferInjected = true;
@@ -440,9 +439,14 @@ class MediaSnifferBridge(
                     }
                 })();
             """.trimIndent()
+        }
 
+        /**
+         * Injects DOM media listeners for HTML5 video/audio elements, fetch, and XMLHttpRequest.
+         */
+        fun injectSnifferJs(webView: WebView) {
             webView.post {
-                webView.evaluateJavascript(js, null)
+                webView.evaluateJavascript(SNIFFER_JS, null)
             }
         }
     }

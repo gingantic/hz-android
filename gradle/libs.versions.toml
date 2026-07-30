@@ -26,7 +26,6 @@ sshj = "0.39.0"
 jcifsNg = "2.1.10"
 securityCrypto = "1.1.0-alpha06"
 okhttp = "4.12.0"
-jmDNS = "3.5.12"
 flagkit = "1.1.0"
 
 [libraries]
@@ -80,7 +79,6 @@ sshj = { group = "com.hierynomus", name = "sshj", version.ref = "sshj" }
 jcifs-ng = { group = "eu.agno3.jcifs", name = "jcifs-ng", version.ref = "jcifsNg" }
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
-jmDNS = { group = "org.jmdns", name = "jmdns", version.ref = "jmDNS" }
 flagkit = { group = "dev.carlsen.flagkit", name = "flagkit", version.ref = "flagkit" }
 
 [plugins]

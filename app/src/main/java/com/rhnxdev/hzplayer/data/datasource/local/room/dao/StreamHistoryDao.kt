@@ -14,9 +14,6 @@ interface StreamHistoryDao {
     @Query("SELECT * FROM stream_history ORDER BY lastPlayedAt DESC")
     fun getAll(): Flow<List<StreamHistoryEntity>>
 
-    @Query("SELECT * FROM stream_history WHERE isFavorite = 1 ORDER BY lastPlayedAt DESC")
-    fun getFavorites(): Flow<List<StreamHistoryEntity>>
-
     @Query("SELECT * FROM stream_history WHERE url = :url LIMIT 1")
     suspend fun findByUrl(url: String): StreamHistoryEntity?
 

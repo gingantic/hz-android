@@ -2,6 +2,8 @@ package com.rhnxdev.hzplayer.browser.media
 
 import android.net.Uri
 import android.util.Log
+import com.rhnxdev.hzplayer.core.util.AUDIO_EXTENSIONS
+import com.rhnxdev.hzplayer.core.util.VIDEO_EXTENSIONS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -20,14 +22,6 @@ object MediaSnifferEngine {
             .followRedirects(true)
             .build()
     }
-
-    private val VIDEO_EXTENSIONS = setOf(
-        "mp4", "m3u8", "mpd", "webm", "mkv", "mov", "flv", "avi", "3gp", "ts"
-    )
-
-    private val AUDIO_EXTENSIONS = setOf(
-        "mp3", "m4a", "aac", "wav", "ogg", "flac", "opus", "wma"
-    )
 
     private val IGNORED_DOMAINS = setOf(
         "google-analytics.com", "googletagmanager.com", "doubleclick.net",
@@ -397,20 +391,15 @@ object MediaSnifferEngine {
 
     private fun guessMimeType(ext: String, mediaType: MediaType): String {
         return when (ext) {
-            "mp4" -> "video/mp4"
+            // Streaming manifests aren't in the shared MIME map — keep explicit.
             "m3u8" -> "application/x-mpegURL"
             "mpd" -> "application/dash+xml"
-            "webm" -> "video/webm"
-            "mkv" -> "video/x-matroska"
-            "mp3" -> "audio/mpeg"
-            "m4a" -> "audio/mp4"
-            "aac" -> "audio/aac"
-            "wav" -> "audio/wav"
-            else -> when (mediaType) {
-                MediaType.VIDEO, MediaType.STREAM_HLS, MediaType.STREAM_DASH -> "video/*"
-                MediaType.AUDIO -> "audio/*"
-                else -> "*/*"
-            }
+            else -> com.rhnxdev.hzplayer.core.util.guessMimeType("f.$ext")
+                ?: when (mediaType) {
+                    MediaType.VIDEO, MediaType.STREAM_HLS, MediaType.STREAM_DASH -> "video/*"
+                    MediaType.AUDIO -> "audio/*"
+                    else -> "*/*"
+                }
         }
     }
 
@@ -437,16 +426,9 @@ object MediaSnifferEngine {
     }
 
     fun formatFileSize(bytes: Long): String {
+        // Unknown length means a live/chunked stream, not a 0-byte file.
         if (bytes <= 0) return "Stream / Unknown"
-        val kb = bytes / 1024.0
-        val mb = kb / 1024.0
-        val gb = mb / 1024.0
-
-        return when {
-            gb >= 1.0 -> String.format(Locale.ROOT, "%.2f GB", gb)
-            mb >= 1.0 -> String.format(Locale.ROOT, "%.1f MB", mb)
-            else -> String.format(Locale.ROOT, "%.0f KB", kb)
-        }
+        return com.rhnxdev.hzplayer.core.util.formatFileSize(bytes)
     }
 
     /**
