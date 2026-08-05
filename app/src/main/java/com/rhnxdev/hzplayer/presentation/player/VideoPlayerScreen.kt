@@ -141,17 +141,23 @@ fun VideoPlayerScreen(
         activity?.let { viewModel.applyOrientationMode(it, orientationMode) }
     }
 
-    // Restore last-saved volume and brightness once if saving volume/brightness state is enabled.
-    LaunchedEffect(lastVolume, lastBrightness, saveVolumeBrightnessState) {
-        if (saveVolumeBrightnessState) {
-            if (lastVolume >= 0f) {
-                val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                val vol = (lastVolume * maxVol).toInt().coerceIn(0, maxVol)
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
-            }
-            if (lastBrightness >= 0f) {
-                window?.attributes = window?.attributes?.apply { screenBrightness = lastBrightness }
-            }
+    // Restore last-saved volume and brightness once per screen session if saving volume/brightness state is enabled.
+    var hasRestoredVolume by remember { mutableStateOf(false) }
+    var hasRestoredBrightness by remember { mutableStateOf(false) }
+
+    LaunchedEffect(lastVolume, saveVolumeBrightnessState) {
+        if (!hasRestoredVolume && saveVolumeBrightnessState && lastVolume >= 0f) {
+            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val vol = (lastVolume * maxVol).toInt().coerceIn(0, maxVol)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
+            hasRestoredVolume = true
+        }
+    }
+
+    LaunchedEffect(lastBrightness, saveVolumeBrightnessState) {
+        if (!hasRestoredBrightness && saveVolumeBrightnessState && lastBrightness >= 0f) {
+            window?.attributes = window?.attributes?.apply { screenBrightness = lastBrightness }
+            hasRestoredBrightness = true
         }
     }
 
