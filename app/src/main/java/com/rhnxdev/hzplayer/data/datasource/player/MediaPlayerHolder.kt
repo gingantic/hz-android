@@ -224,7 +224,7 @@ class MediaPlayerHolder @Inject constructor(
                 // re-apply the stored delay so it survives player rebuilds.
                 audioDelaySink = renderersFactory.audioDelaySink
                 audioDelaySink?.delayUs = audioDelayMs * 1000
-                exo.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+                exo.setSeekParameters(SeekParameters.EXACT)
                 assHandler.player = exo
                 exo.addAnalyticsListener(object : AnalyticsListener {
                     override fun onVideoSizeChanged(

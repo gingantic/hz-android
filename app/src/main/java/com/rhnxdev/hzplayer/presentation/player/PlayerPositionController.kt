@@ -56,10 +56,6 @@ internal class PlayerPositionController(
      */
     @Volatile private var isForegrounded = true
 
-    companion object {
-        private const val SEEK_DEBOUNCE_MS = 150L
-    }
-
     fun start() {
         positionUpdateJob?.cancel()
         positionUpdateJob = scope.launch {
@@ -157,19 +153,20 @@ internal class PlayerPositionController(
     }
 
     fun onSeekTo(positionMs: Long) {
-        val now = System.currentTimeMillis()
-        if (now - lastSeekTimestamp < SEEK_DEBOUNCE_MS) return
-        markSeekStart(positionMs)
-        playerRepository.seekTo(positionMs)
+        val target = positionMs.coerceAtLeast(0)
+        markSeekStart(target)
+        playerRepository.seekTo(target)
     }
 
     fun onSkipForward() {
-        markSeekStart(position.value + 10_000)
+        val target = position.value + 10_000
+        markSeekStart(target)
         playerRepository.skipForward(10000)
     }
 
     fun onSkipBackward() {
-        markSeekStart((position.value - 10_000).coerceAtLeast(0))
+        val target = (position.value - 10_000).coerceAtLeast(0)
+        markSeekStart(target)
         playerRepository.skipBackward(10000)
     }
 
@@ -181,9 +178,11 @@ internal class PlayerPositionController(
     }
 
     private fun markSeekStart(targetMs: Long) {
+        val target = targetMs.coerceAtLeast(0)
         isSeeking = true
         lastSeekTimestamp = System.currentTimeMillis()
-        seekTargetPosition = targetMs.coerceAtLeast(0)
+        seekTargetPosition = target
+        _position.value = target
     }
 
     fun onCleared() {
