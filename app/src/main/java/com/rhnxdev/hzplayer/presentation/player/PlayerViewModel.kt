@@ -431,6 +431,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun playVideo(video: com.rhnxdev.hzplayer.domain.model.VideoItem) {
+        positionController.onForeground()
         _uiState.update { state ->
             state.copy(
                 currentTitle = video.title,
@@ -470,6 +471,7 @@ class PlayerViewModel @Inject constructor(
         mimeType: String? = null,
         headers: Map<String, String> = emptyMap(),
     ) {
+        positionController.onForeground()
         _uiState.update { state ->
             state.copy(
                 currentTitle = title,
@@ -500,6 +502,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onPlayPause() {
+        positionController.onForeground()
         playerRepository.togglePlayPause()
     }
 
@@ -508,10 +511,12 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun resume() {
+        positionController.onForeground()
         playerRepository.activeEngine.resume()
     }
 
     fun playAudio(audio: AudioItem) {
+        positionController.onForeground()
         _uiState.update {
             it.copy(
                 currentTitle = audio.title,
@@ -628,6 +633,7 @@ class PlayerViewModel @Inject constructor(
 
     fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int = 0) {
         if (items.isEmpty()) return
+        positionController.onForeground()
         val item = items[startIndex.coerceIn(0, items.lastIndex)]
         _uiState.update { state ->
             state.copy(

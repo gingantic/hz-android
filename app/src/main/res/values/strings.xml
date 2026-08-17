@@ -196,13 +196,9 @@
     <string name="settings_subdl_key">SubDL API Key</string>
     <string name="settings_subdl_not_configured">Not configured — get one at subdl.com</string>
     <string name="settings_audio">Audio</string>
-    <string name="settings_audio_track_info">Audio track info</string>
-    <string name="settings_audio_track_info_sub">Show technical details</string>
     <string name="settings_min_song_duration">Min song duration</string>
     <string name="settings_min_song_duration_disabled">Disabled (show all songs)</string>
     <string name="settings_min_song_duration_hidden">Hide songs under %1$d seconds</string>
-    <string name="settings_playback">Playback</string>
-    <string name="settings_default_speed">Default playback speed</string>
     <string name="settings_storage_permissions">Storage &amp; Permissions</string>
     <string name="settings_request_media_perms">Request media permissions</string>
     <string name="settings_request_media_perms_sub">Grant access to photos, video, and audio</string>

@@ -296,6 +296,8 @@ private fun MiniPlayerProgress(progress: State<Float>) {
             .height(2.dp),
         color = MaterialTheme.colorScheme.primary,
         trackColor = Color.Transparent,
+        drawStopIndicator = {},
+        gapSize = 0.dp,
     )
 }
 

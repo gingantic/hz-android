@@ -31,9 +31,7 @@ import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 private val TrackHeight = 3.dp
-private val TrackHeightActive = 4.dp
-private val ThumbRadius = 5.dp
-private val ThumbRadiusActive = 7.dp
+private val TrackHeightActive = 5.dp
 private val TouchTargetHeight = 32.dp
 
 @Composable
@@ -65,7 +63,6 @@ fun PlayerSeekBar(
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
     val bufferedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
     val activeColor = MaterialTheme.colorScheme.primary
-    val thumbColor = MaterialTheme.colorScheme.primary
     val abMarkerColor = Color(0xFF4CAF50)
 
     // A-B loop fractions along the track (null until each point is marked).
@@ -120,7 +117,6 @@ fun PlayerSeekBar(
             contentAlignment = Alignment.Center,
         ) {
             val currentTrackHeight = if (isDragging) TrackHeightActive else TrackHeight
-            val currentThumbRadius = if (isDragging) ThumbRadiusActive else ThumbRadius
 
             Canvas(
                 modifier = Modifier
@@ -129,7 +125,6 @@ fun PlayerSeekBar(
             ) {
                 val trackH = size.height
                 val cornerR = CornerRadius(trackH / 2f)
-                val thumbR = currentThumbRadius.toPx()
 
                 // Background track
                 drawRoundRect(
@@ -156,16 +151,8 @@ fun PlayerSeekBar(
                     )
                 }
 
-                // Thumb
-                val thumbX = (size.width * displayFraction).coerceIn(thumbR, size.width - thumbR)
-                drawCircle(
-                    color = thumbColor,
-                    radius = thumbR,
-                    center = Offset(thumbX, trackH / 2f),
-                )
-
                 // A-B loop: shade the region and draw a tick at each marked point.
-                val markerH = thumbR * 2.4f
+                val markerH = trackH * 2.4f
                 if (abStartFraction != null && abEndFraction != null) {
                     val xa = size.width * abStartFraction
                     val xb = size.width * abEndFraction

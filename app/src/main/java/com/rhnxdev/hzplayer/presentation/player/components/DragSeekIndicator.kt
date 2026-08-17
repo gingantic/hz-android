@@ -100,6 +100,8 @@ fun DragSeekIndicator(
                         color = Color.White,
                         trackColor = Color.White.copy(alpha = 0.25f),
                         strokeCap = StrokeCap.Round,
+                        drawStopIndicator = {},
+                        gapSize = 0.dp,
                     )
                 }
             }

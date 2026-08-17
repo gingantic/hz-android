@@ -106,7 +106,9 @@ fun UpdateDialog(
                             progress = { downloadProgress },
                             modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                            drawStopIndicator = {},
+                            gapSize = 0.dp,
                         )
                         Text(
                             text = stringResource(R.string.update_download_progress, (downloadProgress * 100).toInt()),

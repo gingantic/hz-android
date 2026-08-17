@@ -77,6 +77,8 @@ fun SlideIndicator(
                     color = Color.White,
                     trackColor = Color.White.copy(alpha = 0.25f),
                     strokeCap = StrokeCap.Round,
+                    drawStopIndicator = {},
+                    gapSize = 0.dp,
                 )
 
                 Spacer(modifier = Modifier.width(4.dp))

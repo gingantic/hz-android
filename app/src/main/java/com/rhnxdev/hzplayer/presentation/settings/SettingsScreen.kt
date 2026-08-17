@@ -321,13 +321,6 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_audio),
                     content = {
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            SettingsToggleItem(
-                                title = stringResource(R.string.settings_audio_track_info),
-                                subtitle = "${stringResource(R.string.settings_audio_track_info_sub)} ${stringResource(R.string.not_implemented)}",
-                                checked = false,
-                                onCheckedChange = {},
-                                enabled = false,
-                            )
                             SettingsSliderItem(
                                 title = stringResource(R.string.settings_min_song_duration),
                                 subtitle = if (minSongDurationSecs == 0) stringResource(R.string.settings_min_song_duration_disabled)
@@ -336,23 +329,6 @@ fun SettingsScreen(
                                 onValueChange = { settingsViewModel.saveMinSongDurationSecs(it.toInt()) },
                                 valueRange = 0f..60f,
                                 steps = 11,
-                            )
-                        }
-                    },
-                )
-            }
-
-            // Playback
-            item {
-                SettingsSection(
-                    title = stringResource(R.string.settings_playback),
-                    content = {
-                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            SettingsItem(
-                                title = stringResource(R.string.settings_default_speed),
-                                subtitle = "1.0x ${stringResource(R.string.not_implemented)}",
-                                enabled = false,
-                                onClick = {},
                             )
                         }
                     },

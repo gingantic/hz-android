@@ -85,12 +85,18 @@ fun HzPlayerApp(
         mainViewModel.setSelectedTabIndex(pagerState.currentPage)
     }
 
-    // Persist to DataStore only when app goes to background
+    // Persist to DataStore & sync player position loop on app lifecycle events
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                mainViewModel.persistTabIndex()
+            when (event) {
+                Lifecycle.Event.ON_START, Lifecycle.Event.ON_RESUME -> {
+                    playerViewModel.onAppForeground()
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    mainViewModel.persistTabIndex()
+                }
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
