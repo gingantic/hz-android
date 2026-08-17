@@ -285,24 +285,13 @@ private fun VerticalSlider(
         onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
         enabled = enabled,
-        thumb = {
-            // Drawn horizontal (8x22), appears as a wide flat cap once rotated.
-            Box(
-                modifier = Modifier
-                    .size(width = 8.dp, height = 22.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(
-                        if (enabled) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                    ),
-            )
-        },
+        thumb = {},
         track = { sliderState ->
             SliderDefaults.Track(
                 sliderState = sliderState,
                 enabled = enabled,
                 drawStopIndicator = null,
-                thumbTrackGapSize = 2.dp,
+                thumbTrackGapSize = 0.dp,
                 modifier = Modifier.height(3.dp),
             )
         },
@@ -328,6 +317,7 @@ private fun VerticalSlider(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EffectSlider(
     label: String,
@@ -363,6 +353,15 @@ private fun EffectSlider(
         valueRange = 0f..maxValue.toFloat(),
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
+        thumb = {},
+        track = { sliderState ->
+            SliderDefaults.Track(
+                sliderState = sliderState,
+                enabled = enabled,
+                drawStopIndicator = null,
+                thumbTrackGapSize = 0.dp,
+            )
+        },
     )
 }
 

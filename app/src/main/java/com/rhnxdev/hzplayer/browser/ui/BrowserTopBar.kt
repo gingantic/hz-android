@@ -244,6 +244,8 @@ fun BrowserTopBar(
                     .height(2.5.dp),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = Color.Transparent,
+                drawStopIndicator = {},
+                gapSize = 0.dp,
             )
         }
     }

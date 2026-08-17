@@ -84,10 +84,21 @@ fun SpeedSelectionDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp),
             colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
                 activeTrackColor = MaterialTheme.colorScheme.primary,
                 inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
             ),
+            thumb = {},
+            track = { sliderState ->
+                SliderDefaults.Track(
+                    sliderState = sliderState,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                    ),
+                    drawStopIndicator = null,
+                    thumbTrackGapSize = 0.dp,
+                )
+            },
         )
 
         Spacer(modifier = Modifier.height(4.dp))
