@@ -19,8 +19,10 @@ class ArchiveDataSource : DataSource {
 
     private var handle: Long = 0
     private var totalLength: Long = 0
+    private var uri: Uri? = null
 
     override fun open(dataSpec: DataSpec): Long {
+        uri = dataSpec.uri
         val parsed = ArchiveUri.parse(dataSpec.uri.toString())
             ?: throw IOException("archive: malformed uri ${dataSpec.uri}")
         val (container, entry, password) = parsed
@@ -50,13 +52,14 @@ class ArchiveDataSource : DataSource {
         return n
     }
 
-    override fun getUri(): Uri? = null
+    override fun getUri(): Uri? = uri
 
     override fun getResponseHeaders(): Map<String, List<String>> = emptyMap()
 
     override fun addTransferListener(transferListener: TransferListener) {}
 
     override fun close() {
+        uri = null
         if (handle != 0L) {
             ArchiveNative.nativeClose(handle)
             handle = 0
