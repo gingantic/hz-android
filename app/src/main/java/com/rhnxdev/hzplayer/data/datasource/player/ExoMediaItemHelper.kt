@@ -74,10 +74,10 @@ internal object ExoMediaItemHelper {
     }
 
     /** Read a subtitle file's bytes, handling local (content/file) and remote URIs. */
-    fun readSubtitleUriBytes(context: Context, playerHolder: MediaPlayerHolder, uri: Uri): ByteArray? = runCatching {
+    fun readSubtitleUriBytes(context: Context, playerHolder: MediaPlayerHolder? = null, uri: Uri): ByteArray? = runCatching {
         when (uri.scheme?.lowercase(Locale.ROOT)) {
             "content", "file" -> context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            else -> playerHolder.readUriBytes(uri)
+            else -> playerHolder?.readUriBytes(uri)
         }
     }.getOrNull()
 

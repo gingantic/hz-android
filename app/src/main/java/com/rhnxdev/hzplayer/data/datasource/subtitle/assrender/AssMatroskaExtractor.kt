@@ -1,141 +1,122 @@
 package com.rhnxdev.hzplayer.data.datasource.subtitle.assrender
 
-import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.Extractor
 import androidx.media3.extractor.ExtractorInput
 import androidx.media3.extractor.ExtractorOutput
 import androidx.media3.extractor.PositionHolder
-import androidx.media3.extractor.mkv.EbmlProcessor
 import androidx.media3.extractor.mkv.MatroskaExtractor
 
 /**
- * Extends [MatroskaExtractor] to extract font attachments from MKV
- * and wraps the [ExtractorOutput] to eavesdrop on ASS subtitle data.
+ * Wraps [MatroskaExtractor] to:
+ * 1. Pass [AssExtractorOutput] during `init` so subtitle tracks and SeekMaps
+ *    are properly intercepted for libass and seekability
+ * 2. Performs automatic cluster resynchronization (0x1F43B675) after seeking in MKV
+ *    files without Cues, enabling instant and accurate seeking just like VLC/FFmpeg
  */
 @UnstableApi
 class AssMatroskaExtractor(
     private val handler: AssHandler,
-) : MatroskaExtractor(
-    AssSubtitleParserFactory(),
-    FLAG_EMIT_RAW_SUBTITLE_DATA,
-) {
+) : Extractor {
 
-    companion object {
-        private const val TAG = "assrender"
+    private val delegate = MatroskaExtractor(
+        AssSubtitleParserFactory(),
+        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
+    )
 
-        private const val ID_ATTACHMENTS = 0x1941A469
-        private const val ID_ATTACHED_FILE = 0x61A7
-        private const val ID_FILE_NAME = 0x466E
-        private const val ID_FILE_MIME_TYPE = 0x4660
-        private const val ID_FILE_DATA = 0x465C
+    private var assOutput: AssExtractorOutput? = null
+    private var isLinearFallback = false
+    private var pendingClusterSync = false
+    private var firstClusterSeen = false
 
-        private val FONT_MIME_TYPES = setOf(
-            "application/x-truetype-font",
-            "application/x-font-truetype",
-            "application/x-font-ttf",
-            "application/vnd.ms-opentype",
-            "application/x-font-opentype",
-            "application/x-font-otf",
-            "font/ttf",
-            "font/otf",
-            "font/sfnt",
-            "font/collection",
-            "application/font-woff",
-            "font/woff",
-            "font/woff2",
-        )
+    override fun init(output: ExtractorOutput) {
+        val wrapped = AssExtractorOutput(output, handler) { isFallback ->
+            isLinearFallback = isFallback
+        }
+        assOutput = wrapped
+        delegate.init(wrapped)
+    }
 
-        private var extractorOutputField: java.lang.reflect.Field? = null
+    override fun sniff(input: ExtractorInput): Boolean = delegate.sniff(input)
 
-        init {
-            try {
-                extractorOutputField = MatroskaExtractor::class.java
-                    .getDeclaredField("extractorOutput")
-                    .apply { isAccessible = true }
-            } catch (e: Exception) {
-                Log.e(TAG, "Could not access extractorOutput field", e)
+    override fun read(input: ExtractorInput, seekPosition: PositionHolder): Int {
+        val output = assOutput
+        if (output != null) {
+            if (input.length > 0 && output.streamLength <= 0) {
+                output.streamLength = input.length
+            }
+            if (!firstClusterSeen && input.position > 0) {
+                firstClusterSeen = true
+                output.firstClusterPosition = input.position
             }
         }
-    }
 
-    private var currentFileName: String? = null
-    private var currentFileMimeType: String? = null
-    private var outputWrapped = false
-
-    override fun getElementType(id: Int): Int {
-        return when (id) {
-            ID_ATTACHMENTS -> EbmlProcessor.ELEMENT_TYPE_MASTER
-            ID_ATTACHED_FILE -> EbmlProcessor.ELEMENT_TYPE_MASTER
-            ID_FILE_NAME, ID_FILE_MIME_TYPE -> EbmlProcessor.ELEMENT_TYPE_STRING
-            ID_FILE_DATA -> EbmlProcessor.ELEMENT_TYPE_BINARY
-            else -> super.getElementType(id)
+        if (pendingClusterSync && isLinearFallback) {
+            syncToCluster(input)
         }
+        pendingClusterSync = false
+
+        return delegate.read(input, seekPosition)
     }
 
-    override fun isLevel1Element(id: Int): Boolean {
-        return super.isLevel1Element(id) || id == ID_ATTACHMENTS
+    override fun seek(position: Long, timeUs: Long) {
+        pendingClusterSync = isLinearFallback && position > 4096L
+        delegate.seek(position, timeUs)
     }
 
-    override fun startMasterElement(id: Int, contentPosition: Long, contentSize: Long) {
-        if (!outputWrapped) {
-            wrapExtractorOutput()
-            outputWrapped = true
-        }
+    override fun release() = delegate.release()
 
-        when (id) {
-            ID_ATTACHMENTS -> { /* we handle this, don't pass to super */ }
-            ID_ATTACHED_FILE -> {
-                currentFileName = null
-                currentFileMimeType = null
-            }
-            else -> super.startMasterElement(id, contentPosition, contentSize)
-        }
-    }
+    override fun getUnderlyingImplementation(): Extractor = delegate
 
-    override fun endMasterElement(id: Int) {
-        when (id) {
-            ID_ATTACHED_FILE -> {
-                currentFileName = null
-                currentFileMimeType = null
-            }
-            else -> super.endMasterElement(id)
-        }
-    }
+    /**
+     * Efficiently scans forward from the current input position to find the nearest Matroska
+     * Cluster start marker (0x1F, 0x43, 0xB6, 0x75).
+     * Positions [input] directly at the Cluster header.
+     */
+    private fun syncToCluster(input: ExtractorInput) {
+        if (input.position < 4096L) return
 
-    override fun stringElement(id: Int, value: String) {
-        when (id) {
-            ID_FILE_NAME -> currentFileName = value
-            ID_FILE_MIME_TYPE -> currentFileMimeType = value
-            else -> super.stringElement(id, value)
-        }
-    }
+        input.resetPeekPosition()
 
-    override fun binaryElement(id: Int, length: Int, input: ExtractorInput) {
-        if (id == ID_FILE_DATA) {
-            val mime = currentFileMimeType?.lowercase() ?: ""
-            val name = currentFileName?.lowercase() ?: ""
-            val isFont = mime in FONT_MIME_TYPES || name.endsWith(".ttf") || name.endsWith(".otf") || name.endsWith(".ttc")
-            if (isFont) {
-                val fontData = ByteArray(length)
-                input.readFully(fontData, 0, length)
-                handler.onFontAttachment(currentFileName ?: "unknown_font", fontData)
+        // 1. Check if we are already at a cluster start
+        val header = ByteArray(4)
+        if (input.peekFully(header, 0, 4, true)) {
+            if (header[0] == 0x1F.toByte() && header[1] == 0x43.toByte() &&
+                header[2] == 0xB6.toByte() && header[3] == 0x75.toByte()) {
+                input.resetPeekPosition()
                 return
             }
         }
-        super.binaryElement(id, length, input)
-    }
+        input.resetPeekPosition()
 
-    private fun wrapExtractorOutput() {
-        val field = extractorOutputField ?: return
-        try {
-            val currentOutput = field.get(this) as? ExtractorOutput ?: return
-            if (currentOutput is AssExtractorOutput) return
-            val wrapped = AssExtractorOutput(currentOutput, handler)
-            field.set(this, wrapped)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to wrap extractorOutput", e)
+        // 2. Scan forward in a 64KB sliding window
+        val window = ByteArray(65536)
+        var searched = 0
+        val maxSearch = 1024 * 1024 // 1 MB limit
+
+        while (searched < maxSearch) {
+            val toRead = minOf(window.size, maxSearch - searched)
+            if (toRead < 4) break
+            if (!input.peekFully(window, 0, toRead, true)) break
+
+            for (i in 0 until toRead - 3) {
+                if (window[i] == 0x1F.toByte() &&
+                    window[i + 1] == 0x43.toByte() &&
+                    window[i + 2] == 0xB6.toByte() &&
+                    window[i + 3] == 0x75.toByte()
+                ) {
+                    // Exact cluster start found! Skip directly to it
+                    input.resetPeekPosition()
+                    input.skipFully(searched + i)
+                    return
+                }
+            }
+
+            searched += (toRead - 3)
+            input.resetPeekPosition()
+            input.advancePeekPosition(searched)
         }
+
+        input.resetPeekPosition()
     }
 }

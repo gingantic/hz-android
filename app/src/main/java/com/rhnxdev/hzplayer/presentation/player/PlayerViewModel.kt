@@ -200,10 +200,26 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private var bufferingJob: Job? = null
+
     private fun observePlaybackState() {
         viewModelScope.launch {
             playerRepository.playbackStateInfo.collect { info ->
-                val newIsLoading = info.state == PlayerState.BUFFERING
+                val isBuffering = info.state == PlayerState.BUFFERING
+                if (isBuffering) {
+                    if (bufferingJob == null && !_uiState.value.isLoading) {
+                        bufferingJob = viewModelScope.launch {
+                            delay(250)
+                            _uiState.update { it.copy(isLoading = true) }
+                        }
+                    }
+                } else {
+                    bufferingJob?.cancel()
+                    bufferingJob = null
+                    if (_uiState.value.isLoading) {
+                        _uiState.update { it.copy(isLoading = false) }
+                    }
+                }
                 
                 val artworkUri = info.currentUri?.let { uri ->
                     mediaDao.getByUri(uri)?.albumArtUri
@@ -262,7 +278,7 @@ class PlayerViewModel @Inject constructor(
                     }
                     state.copy(
                         isPlaying = info.isPlaying,
-                        isLoading = newIsLoading,
+                        isLoading = if (isBuffering) state.isLoading else false,
                         playbackSpeed = info.playbackSpeed,
                         shuffleMode = info.shuffleModeEnabled,
                         repeatMode = info.repeatMode,

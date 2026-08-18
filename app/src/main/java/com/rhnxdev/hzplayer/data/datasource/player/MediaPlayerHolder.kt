@@ -125,9 +125,13 @@ class MediaPlayerHolder @Inject constructor(
     private val loadControl = run {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val (minMs, maxMs) = if (am.isLowRamDevice) 20_000 to 40_000 else 30_000 to 60_000
-        // Small duration-based back buffer: retention is duration-only (no byte
-        // cap exists for it), so 30s of a high-bitrate file alone exceeds the heap.
-        val backBufferMs = if (am.isLowRamDevice) 2_000 else 5_000
+        // Back buffer: stores already-decoded samples so backward seeks within
+        // the window are instant (no re-read or re-decode needed). The back
+        // buffer has no byte cap, but decoded samples are much smaller than the
+        // compressed bitstream, so 30–60 s is safe. retainBackBufferFromKeyframe
+        // is false so the full window is always available — with it true, MKV
+        // files with sparse keyframes (every 5–10s) silently shrink the window.
+        val backBufferMs = if (am.isLowRamDevice) 30_000 else 60_000
         // Hard byte cap on the sample buffer. Never prioritize time over size:
         // buffering 30-60s "by time" of a high-bitrate file (HDR remuxes/test
         // clips run 100-400 Mbps) allocates hundreds of MB of live samples and
@@ -138,13 +142,13 @@ class MediaPlayerHolder @Inject constructor(
             .setBufferDurationsMs(
                 /* minBufferMs = */ minMs,
                 /* maxBufferMs = */ maxMs,
-                /* bufferForPlaybackMs = */ 1_500,
-                /* bufferForPlaybackAfterUserActionMs = */ 2_000
+                /* bufferForPlaybackMs = */ 50,
+                /* bufferForPlaybackAfterUserActionMs = */ 50
             )
             .setTargetBufferBytes(targetBufferBytes)
             .setBackBuffer(
                 /* backBufferDurationMs = */ backBufferMs,
-                /* retainBackBufferFromKeyframe = */ true
+                /* retainBackBufferFromKeyframe = */ false
             )
             .build()
     }
@@ -224,7 +228,7 @@ class MediaPlayerHolder @Inject constructor(
                 // re-apply the stored delay so it survives player rebuilds.
                 audioDelaySink = renderersFactory.audioDelaySink
                 audioDelaySink?.delayUs = audioDelayMs * 1000
-                exo.setSeekParameters(SeekParameters.EXACT)
+                exo.setSeekParameters(SeekParameters.CLOSEST_SYNC)
                 assHandler.player = exo
                 exo.addAnalyticsListener(object : AnalyticsListener {
                     override fun onVideoSizeChanged(

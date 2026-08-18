@@ -93,3 +93,14 @@ target_link_libraries(ffcodec
     avcodec avutil swscale swresample
     ${ANDROID_LIB} ${LOG}
 )
+
+# Standalone Native FFmpeg player engine: handles full demux, seek, video and audio decode,
+# direct ANativeWindow blit, and instant seeking without ExoPlayer buffering pipelines.
+add_library(ffplayer SHARED FfmpegPlayer.cpp)
+target_include_directories(ffplayer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(ffplayer
+    avformat avcodec avutil swscale swresample
+    ${ANDROID_LIB} ${LOG}
+)

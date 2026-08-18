@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.di
 
 import com.rhnxdev.hzplayer.data.datasource.player.ExoPlayerEngine
+import com.rhnxdev.hzplayer.data.datasource.player.FfmpegNativeEngine
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import dagger.Binds
@@ -36,4 +37,11 @@ abstract class PlayerEngineModule {
     @EngineKey(EngineType.FFMPEG)
     @Singleton
     abstract fun bindFfmpegEngine(impl: ExoPlayerEngine): IPlayerEngine
+
+    // Native standalone FFmpeg engine (libffplayer.so) bypassing ExoPlayer pipelines.
+    @Binds
+    @IntoMap
+    @EngineKey(EngineType.NATIVE_FFMPEG)
+    @Singleton
+    abstract fun bindFfmpegNativeEngine(impl: FfmpegNativeEngine): IPlayerEngine
 }

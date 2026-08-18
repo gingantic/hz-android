@@ -17,4 +17,11 @@ enum class EngineType {
      * as fallback for formats FFmpeg doesn't claim.
      */
     FFMPEG,
+
+    /**
+     * Standalone native FFmpeg engine (libffplayer.so). Bypasses ExoPlayer,
+     * LoadControl and buffer queues entirely. Features instant seeking on
+     * local and networked media.
+     */
+    NATIVE_FFMPEG,
 }
