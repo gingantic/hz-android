@@ -40,7 +40,7 @@ class AssExtractorsFactory(
 
         return defaults.map { extractor ->
             when {
-                extractor is MatroskaExtractor && extractor !is AssMatroskaExtractor ->
+                extractor is MatroskaExtractor ->
                     AssMatroskaExtractor(handler)
                 extractor is Mp4Extractor ->
                     HzMp4Extractor(AssSubtitleParserFactory())

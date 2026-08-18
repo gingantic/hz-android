@@ -75,6 +75,10 @@ internal class PlayerPositionController(
                 } else 0
                 val currentUri = playerRepository.currentPlaybackUri
 
+                val elapsed = System.currentTimeMillis() - lastSeekTimestamp
+                if (isSeeking && elapsed > 1500) {
+                    isSeeking = false
+                }
                 val effectivePosition = if (isSeeking) seekTargetPosition else position
 
                 // Position flows on its own channel — see [_position] / [position].
@@ -147,7 +151,8 @@ internal class PlayerPositionController(
 
     /** Clears the seeking flag once the engine settles out of BUFFERING. */
     fun onPlaybackState(state: PlayerState) {
-        if (isSeeking && state != PlayerState.BUFFERING) {
+        val elapsed = System.currentTimeMillis() - lastSeekTimestamp
+        if (isSeeking && state != PlayerState.BUFFERING && elapsed > 250) {
             isSeeking = false
         }
     }
