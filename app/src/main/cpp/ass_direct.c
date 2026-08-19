@@ -305,6 +305,7 @@ void ass_direct_reload_fonts(AssDirectContext *ctx) {
     ass_set_fonts(ctx->ass_renderer, NULL, "sans-serif",
                   ASS_FONTPROVIDER_AUTODETECT, NULL, 1);
     ctx->fonts_set_count++;
+    ctx->last_has_content = 0;
     LOGI("[FONT] ass_set_fonts call #%d done — reload complete", ctx->fonts_set_count);
 }
 

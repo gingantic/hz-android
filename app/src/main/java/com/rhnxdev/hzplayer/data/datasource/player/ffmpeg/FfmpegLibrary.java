@@ -166,11 +166,8 @@ public final class FfmpegLibrary {
         return "vp8";
       case MimeTypes.VIDEO_VP9:
         return "vp9";
-      // AV1 is deliberately absent: libavcodec's built-in "av1" decoder is a
-      // hwaccel-only shell (real software decode needs dav1d/libaom, which we
-      // don't bundle), so ffmpegHasDecoder("av1") passes but it never outputs
-      // a frame — black screen + infinite buffering. MediaCodec handles AV1
-      // (c2.android.av1.decoder is a software fallback on all AV1-era devices).
+      case MimeTypes.VIDEO_AV1:
+        return "libdav1d";
       default:
         return null;
     }

@@ -112,7 +112,7 @@ internal class AssTrackOutput(
             // MKV Dialogue line so onSubtitleSample anchors at timeUs.
             val toFeed = if (isAss) rawBytes
                          else SubtitleConverters.convertEmbeddedCue(rawBytes, isVtt)
-            if (toFeed != null) handler.onSubtitleSample(trackId, timeUs, toFeed)
+            if (toFeed != null) handler.onSubtitleSample(trackId, timeUs, durationUs = 0L, toFeed)
             pendingData.reset()
         }
         delegate.sampleMetadata(timeUs, flags, size, offset, cryptoData)

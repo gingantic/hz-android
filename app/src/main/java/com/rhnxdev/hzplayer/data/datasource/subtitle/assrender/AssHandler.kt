@@ -45,7 +45,10 @@ class AssHandler @Inject constructor(
     private val trackHeaders = mutableMapOf<Int, ByteArray>()
     private val trackEvents =
         ConcurrentHashMap<Int, CopyOnWriteArrayList<Triple<Long, Long, String>>>()
+    @Volatile
     private var activeTrackId: Int = -1
+    /** The currently active track ID — exposed so FfmpegNativeEngine can map it to a list index. */
+    val currentActiveTrackId: Int get() = activeTrackId
 
     /**
      * External subtitle files (loaded outside ExoPlayer) are registered as
@@ -88,6 +91,13 @@ class AssHandler @Inject constructor(
     @Volatile
     var subtitleDelayMs: Long = 0
 
+    @Volatile
+    private var isPlayingState: Boolean = false
+
+    fun setIsPlaying(playing: Boolean) {
+        isPlayingState = playing
+    }
+
     fun updatePosition(positionUs: Long, elapsedRealtimeUs: Long) {
         // Sanity-check: reject obviously corrupted values.
         // Valid video position must be < 24 h (86400 s = 86_400_000_000 µs).
@@ -102,6 +112,7 @@ class AssHandler @Inject constructor(
     }
 
     var player: ExoPlayer? = null
+    var playbackSpeed: Float = 1.0f
 
     private var videoWidth = 1920
     private var videoHeight = 1080
@@ -121,91 +132,124 @@ class AssHandler @Inject constructor(
         private const val TAG = "assrender"
     }
 
+    fun onTrackHeader(trackId: Int, headerData: ByteArray, title: String = "") {
+        val format = Format.Builder()
+            .setId(trackId.toString())
+            .setSampleMimeType(MimeTypes.TEXT_SSA)
+            .setLabel(title.ifEmpty { "Subtitle $trackId" })
+            .build()
+        onTrackHeader(trackId, headerData, format)
+    }
+
     fun onTrackHeader(trackId: Int, headerData: ByteArray, format: Format) {
+        val safeHeader = if (headerData.isNotEmpty() && (
+                String(headerData, 0, minOf(50, headerData.size), Charsets.UTF_8).contains("[Script Info]") ||
+                String(headerData, 0, minOf(50, headerData.size), Charsets.UTF_8).contains("ScriptType:")
+            )) {
+            headerData
+        } else {
+            SubtitleConverters.buildMinimalAssHeader(videoWidth, videoHeight)
+        }
+
         trackFormats[trackId] = format
-        trackHeaders[trackId] = headerData
+        trackHeaders[trackId] = safeHeader
 
         var shouldInvokeCallback = false
         synchronized(nativeLock) {
             if (!initialized) {
-                Log.i(TAG, "[INIT] first ASS track — initializing native context ($videoWidth x $videoHeight)")
-                nativeHandle = AssDirectBridge.nativeInit(videoWidth, videoHeight, 1.0f)
-                if (nativeHandle == 0L) {
+                val bw = if (videoWidth > 0) videoWidth else 1920
+                val bh = if (videoHeight > 0) videoHeight else 1080
+                Log.i(TAG, "[INIT] first ASS track — initializing native context ($bw x $bh)")
+                nativeHandle = AssDirectBridge.nativeInit(bw, bh, 1.0f)
+                if (nativeHandle != 0L) {
+                    renderBitmap = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+                    initialized = true
+                    flushPendingFonts()
+                    shouldInvokeCallback = true
+                } else {
                     Log.e(TAG, "[INIT] nativeInit returned 0 — FATAL")
-                    return
                 }
-                Log.i(TAG, "[INIT] nativeInit OK handle=$nativeHandle")
-                renderBitmap = Bitmap.createBitmap(videoWidth, videoHeight, Bitmap.Config.ARGB_8888)
-                initialized = true
-                flushPendingFonts()
-                shouldInvokeCallback = true
+            }
+            if (activeTrackId == -1) {
+                activeTrackId = trackId
             }
         }
-        if (shouldInvokeCallback) {
-            onAssTrackSelected?.invoke()
-        }
 
-        pendingFormatToSelect?.let { pending ->
-            selectTrackByFormat(pending)
+        mainHandler.post {
+            if (shouldInvokeCallback) {
+                onAssTrackSelected?.invoke()
+            }
+
+            if (activeTrackId == trackId) {
+                selectTrack(trackId)
+            } else if (pendingFormatToSelect != null) {
+                selectTrackByFormat(pendingFormatToSelect!!)
+            }
         }
     }
 
     /**
      * Process one subtitle sample.
      *
-     * [data] from ExoPlayer/MatroskaExtractor arrives as a full "Dialogue:" line
-     * in one of two formats:
+     * [data] arrives either as:
+     * - A full "Dialogue:" line (from ExoPlayer / MatroskaExtractor)
+     * - A raw MKV block from FFmpeg demuxer: ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text
      *
-     * MKV block (colon-only timestamps):
-     *   Dialogue: Start(0),Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text
-     *   e.g. "Dialogue: 0:00:00:00,0:00:04:63,32,0,Italics,,0,0,0,,Hello"
-     *
-     * Standard ASS (dot-separated centiseconds):
-     *   Dialogue: Layer,Start,End,Style,Name,ML,MR,MV,Effect,Text
-     *   e.g. "Dialogue: 0,0:04:14.20,0:04:18.83,Italics,,0,0,0,,Hello"
-     *
-     * ass_process_chunk() expects MKV body WITHOUT timestamps/prefix:
-     *   ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text  (9 fields)
+     * [durationUs] is the packet duration in microseconds (from FFmpeg pkt->duration).
      */
-    fun onSubtitleSample(trackId: Int, timeUs: Long, data: ByteArray) {
-        if (!initialized || nativeHandle == 0L) return
-
+    fun onSubtitleSample(trackId: Int, timeUs: Long, durationUs: Long = 0L, data: ByteArray) {
         val line = String(data, Charsets.UTF_8).trim()
-        if (!line.startsWith("Dialogue:")) return
-
-        val content = line.removePrefix("Dialogue:").trimStart()
-        val isStandardAss = isStandardAssTimestamp(
-            content.split(",", limit = 3).getOrNull(1)?.trim() ?: ""
-        )
+        if (line.isEmpty()) return
 
         val startMs: Long
-        val durationMs: Long
+        var durationMs: Long = 0L
         val bodyFields: String // Layer,Style,Name,ML,MR,MV,Effect,Text
 
-        if (isStandardAss) {
-            // Standard ASS: Layer,Start,End,Style,Name,ML,MR,MV,Effect,Text  (10 fields)
-            val f = content.split(",", limit = 10)
-            if (f.size < 10) {
-                Log.w(TAG, "[TRACK] standard ASS line has <10 fields, skipping")
-                return
+        if (line.startsWith("Dialogue:")) {
+            val content = line.removePrefix("Dialogue:").trimStart()
+            val isStandardAss = isStandardAssTimestamp(
+                content.split(",", limit = 3).getOrNull(1)?.trim() ?: ""
+            )
+
+            if (isStandardAss) {
+                // Standard ASS: Layer,Start,End,Style,Name,ML,MR,MV,Effect,Text (10 fields)
+                val f = content.split(",", limit = 10)
+                if (f.size < 10) {
+                    Log.w(TAG, "[TRACK] standard ASS line has <10 fields, skipping")
+                    return
+                }
+                startMs    = parseStandardAssTimeMs(f[1].trim())
+                durationMs = (parseStandardAssTimeMs(f[2].trim()) - startMs).coerceAtLeast(0L)
+
+                bodyFields = "${f[0].trim()},${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
+                            "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9]}"
+            } else {
+                // MKV block: Start(0),Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text (11 fields)
+                val f = content.split(",", limit = 11)
+                if (f.size < 11) {
+                    Log.w(TAG, "[TRACK] MKV line has <11 fields, skipping")
+                    return
+                }
+                durationMs = parseMkvAssTimeMs(f[1].trim())
+                startMs    = timeUs / 1000
+
+                bodyFields = "${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
+                            "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9].trim()},${f[10]}"
             }
-            startMs    = parseStandardAssTimeMs(f[1].trim())
-            durationMs = (parseStandardAssTimeMs(f[2].trim()) - startMs).coerceAtLeast(0L)
-            
-            bodyFields = "${f[0].trim()},${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
-                        "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9]}"
         } else {
-            // MKV block: Start(0),Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text (11 fields)
-            val f = content.split(",", limit = 11)
-            if (f.size < 11) {
-                Log.w(TAG, "[TRACK] MKV line has <11 fields, skipping")
-                return
-            }
-            durationMs = parseMkvAssTimeMs(f[1].trim())
+            // Raw MKV block from FFmpeg demuxer: ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text (9 fields)
+            // Duration is carried separately in the durationUs parameter (from pkt->duration).
             startMs    = timeUs / 1000
-            
-            bodyFields = "${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
-                        "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9].trim()},${f[10]}"
+            durationMs = if (durationUs > 0L) durationUs / 1000L else 3000L // 3 s fallback
+            val f = line.split(",", limit = 9)
+            if (f.size >= 9) {
+                bodyFields = "${f[1].trim()},${f[2].trim()},${f[3].trim()}," +
+                            "${f[4].trim()},${f[5].trim()},${f[6].trim()},${f[7].trim()},${f[8]}"
+            } else {
+                // Plain-text SRT / WebVTT cue from FFmpeg demuxer
+                val sanitizedText = line.replace("\r\n", "\\N").replace("\n", "\\N")
+                bodyFields = "0,Default,,0,0,0,,$sanitizedText"
+            }
         }
 
         val events = trackEvents.getOrPut(trackId) { CopyOnWriteArrayList() }
@@ -227,33 +271,41 @@ class AssHandler @Inject constructor(
             readOrder = events.size - 1
         }
 
+        // ── Diagnostic: log first 10 events received ─────────────────────────
+        val totalEvents = events.size
+        if (totalEvents <= 10) {
+            Log.i(TAG, "[SUB-DBG] event #$readOrder trackId=$trackId activeTrackId=$activeTrackId " +
+                "startMs=$startMs durMs=$durationMs raw='${line.take(80)}'")
+        }
+
         val chunkBytes = "$readOrder,$bodyFields".toByteArray(Charsets.UTF_8)
 
         if (trackId == activeTrackId) {
             synchronized(nativeLock) {
                 if (nativeHandle != 0L) {
+                    if (totalEvents <= 10) Log.i(TAG, "[SUB-DBG] → nativeProcessChunk($readOrder, startMs=$startMs, durMs=$durationMs) handle=$nativeHandle")
                     AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
+                } else {
+                    if (totalEvents <= 10) Log.w(TAG, "[SUB-DBG] → SKIPPED nativeProcessChunk: nativeHandle=0")
                 }
             }
+        } else {
+            if (totalEvents <= 10) Log.w(TAG, "[SUB-DBG] → SKIPPED: trackId($trackId) != activeTrackId($activeTrackId)")
         }
     }
 
     fun onFontAttachment(name: String, data: ByteArray) {
-        // Peek at magic bytes to confirm it's a real font binary
         val magic = if (data.size >= 4)
             data.take(4).joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
         else "(too short)"
-        
 
         synchronized(nativeLock) {
             if (!initialized || nativeHandle == 0L) {
                 pendingFonts.add(Pair(name, data))
-                
                 return
             }
             AssDirectBridge.nativeAddFont(nativeHandle, name, data)
             needsFontReload = true
-            
         }
     }
 
@@ -327,6 +379,34 @@ class AssHandler @Inject constructor(
     /** Whether [trackId] is a registered external subtitle track. */
     fun isExternalTrack(trackId: Int): Boolean = trackId in externalTrackIds
 
+    /**
+     * Combined list of ALL subtitle track display names: embedded tracks first (from
+     * [trackFormats], in insertion order), then external tracks. Aligned 1:1 with [getAllTrackIds].
+     * Use this in FfmpegNativeEngine to expose both embedded and external tracks to the UI.
+     */
+    fun getAllTrackNames(): List<String> {
+        val names = mutableListOf<String>()
+        trackFormats.forEach { (_, fmt) -> names.add(fmt.label ?: "Subtitle") }
+        names.addAll(externalTrackNames)
+        return names
+    }
+
+    /**
+     * Combined list of ALL subtitle track IDs: embedded tracks first, then external.
+     * Aligned 1:1 with [getAllTrackNames].
+     */
+    fun getAllTrackIds(): List<Int> {
+        val ids = mutableListOf<Int>()
+        trackFormats.keys.forEach { ids.add(it) }
+        ids.addAll(externalTrackIds)
+        return ids
+    }
+
+    /**
+     * Index of the currently active track within [getAllTrackIds], or -1 if none is active.
+     */
+    fun getActiveTrackIndex(): Int = getAllTrackIds().indexOf(activeTrackId)
+
     private fun flushPendingFonts() {
         
         if (pendingFonts.isEmpty()) {
@@ -364,10 +444,14 @@ class AssHandler @Inject constructor(
 
         mainHandler.post {
             synchronized(nativeLock) {
-                if (nativeHandle == 0L) return@synchronized
+                if (nativeHandle == 0L) {
+                    Log.e(TAG, "[TRACK] selectTrack($trackId): nativeHandle=0 — cannot load!")
+                    return@synchronized
+                }
                 activeTrackId = trackId
                 overlayView.clear()
                 pendingFormatToSelect = null
+                renderDiagLogged = false  // Reset so first-render is always logged
 
                 AssDirectBridge.nativeFlush(nativeHandle)
 
@@ -386,6 +470,8 @@ class AssHandler @Inject constructor(
                     AssDirectBridge.nativeReloadFonts(nativeHandle)
                 }
                 val events = trackEvents[trackId]
+                val eventCount = events?.size ?: 0
+                Log.i(TAG, "[TRACK] selectTrack($trackId): replaying $eventCount stored events, handle=$nativeHandle")
                 if (events != null) {
                     events.forEachIndexed { idx, (startMs, durationMs, bodyFields) ->
                         val chunkBytes = "$idx,$bodyFields".toByteArray(Charsets.UTF_8)
@@ -473,6 +559,10 @@ class AssHandler @Inject constructor(
     }
 
     private fun startRenderLoop() {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            mainHandler.post { startRenderLoop() }
+            return
+        }
         stopRenderLoop()
 
         val callback = object : android.view.Choreographer.FrameCallback {
@@ -488,6 +578,10 @@ class AssHandler @Inject constructor(
     }
 
     private fun stopRenderLoop() {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            mainHandler.post { stopRenderLoop() }
+            return
+        }
         choreographerCallback?.let {
             android.view.Choreographer.getInstance().removeFrameCallback(it)
         }
@@ -495,6 +589,7 @@ class AssHandler @Inject constructor(
     }
 
     private var renderDiagLogged = false
+    private var renderDiagFrameCount: Long = 0L
 
     private fun renderFrame() {
         if (!initialized || nativeHandle == 0L) return
@@ -508,37 +603,43 @@ class AssHandler @Inject constructor(
         }
 
         val p = player
-        val playbackState = p?.playbackState ?: androidx.media3.common.Player.STATE_IDLE
-        if (playbackState == androidx.media3.common.Player.STATE_READY) {
-            hasLoadedFirstTime = true
+        val isExoActive = p != null && p.playbackState != androidx.media3.common.Player.STATE_IDLE
+
+        if (isExoActive) {
+            if (p!!.playbackState == androidx.media3.common.Player.STATE_READY) {
+                hasLoadedFirstTime = true
+            }
+        } else {
+            // In FFmpeg-native mode (or when ExoPlayer is not active), readiness is established
+            // as soon as native libass context is alive and a track is selected.
+            if (initialized && activeTrackId != -1) {
+                hasLoadedFirstTime = true
+            }
         }
 
         if (!hasLoadedFirstTime) {
             if (!renderDiagLogged) {
-                Log.w(TAG, "[RENDER] not loaded-first-time — abort (playbackState=$playbackState playerNull=${p == null} activeTrackId=$activeTrackId)")
+                Log.w(TAG, "[RENDER] not loaded-first-time — abort (isExoActive=$isExoActive activeTrackId=$activeTrackId)")
                 renderDiagLogged = true
             }
             overlayView.clear()
             return
         }
 
-        // Converted cues are live-chunked via nativeProcessChunk, no full document reload needed.
-
-        val isPlaying       = p?.isPlaying == true
-        val speed           = p?.playbackParameters?.speed ?: 1.0f
-        val mediaDurationMs = p?.duration?.takeIf { it > 0 } ?: Long.MAX_VALUE
+        val isPlaying       = if (isExoActive) p!!.isPlaying else isPlayingState
+        val speed           = if (isExoActive) (p!!.playbackParameters.speed) else playbackSpeed
+        val mediaDurationMs = if (isExoActive) (p!!.duration.takeIf { it > 0 } ?: Long.MAX_VALUE) else Long.MAX_VALUE
 
         val positionMs: Long
 
         if (isPlaying && lastPositionRealtimeUs != 0L && lastPositionUs > 0L) {
             val currentRealtimeUs = android.os.SystemClock.elapsedRealtime() * 1000L
-            val elapsedUs         = currentRealtimeUs - lastPositionRealtimeUs
+            val elapsedUs         = (currentRealtimeUs - lastPositionRealtimeUs).coerceAtLeast(0L)
             val interpolated      = (lastPositionUs + (elapsedUs * speed).toLong()) / 1000L
-            // Safe clamp: always [0, mediaDuration], no invalid range possible
             positionMs = interpolated.coerceAtLeast(0L)
                 .let { v -> if (mediaDurationMs < Long.MAX_VALUE) v.coerceAtMost(mediaDurationMs) else v }
         } else {
-            positionMs = p?.currentPosition ?: (lastPositionUs / 1000L).coerceAtLeast(0L)
+            positionMs = if (isExoActive) p!!.currentPosition else (lastPositionUs / 1000L).coerceAtLeast(0L)
         }
 
         var hasContent = false
@@ -546,16 +647,24 @@ class AssHandler @Inject constructor(
         // Positive delayMs ⇒ subtitles lag the audio; negative ⇒ lead. Coerce so we
         // never pass a negative position to nativeRender (cue-times are ≥ 0).
         val renderPosMs = (positionMs - subtitleDelayMs).coerceAtLeast(0L)
+
+        // ── Diagnostic: log every ~300 frames ────────────────────────────────
+        renderDiagFrameCount++
+        val shouldLog = renderDiagFrameCount % 300 == 0L
+        
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 if (needsFontReload) {
-                    
                     needsFontReload = false
                     AssDirectBridge.nativeReloadFonts(nativeHandle)
-                    
                 }
                 hasContent = AssDirectBridge.nativeRender(nativeHandle, renderPosMs, bitmap)
             }
+        }
+
+        if (shouldLog) {
+            Log.i(TAG, "[RENDER-DBG] frame=$renderDiagFrameCount posMs=$positionMs renderPosMs=$renderPosMs " +
+                "activeTrack=$activeTrackId handle=$nativeHandle hasContent=$hasContent")
         }
 
         if (hasContent) {
@@ -565,9 +674,6 @@ class AssHandler @Inject constructor(
             }
             overlayView.updateBitmap(bitmap)
         } else {
-            if (positionMs % 2000 < 100) { // ~every 2s
-                
-            }
             overlayView.clear()
         }
     }
@@ -658,30 +764,6 @@ class AssHandler @Inject constructor(
     fun onSeek() {
         lastPositionUs = 0L
         lastPositionRealtimeUs = 0L
-        synchronized(nativeLock) {
-            if (nativeHandle != 0L) {
-                AssDirectBridge.nativeFlush(nativeHandle)
-                // External tracks carry the whole ASS document in their stored bytes
-                // (no per-event chunks in trackEvents). Reloading the header after a
-                // flush re-populates all cues; using the empty trackEvents map would
-                // wipe the subtitle after every seek.
-                val externalData = if (isExternalTrack(activeTrackId)) {
-                    val idx = externalTrackIds.indexOf(activeTrackId)
-                    if (idx >= 0) externalTrackData[idx] else null
-                } else null
-                if (externalData != null) {
-                    AssDirectBridge.nativeLoadHeader(nativeHandle, externalData)
-                } else {
-                    val events = trackEvents[activeTrackId]
-                    if (events != null) {
-                        events.forEachIndexed { idx, (startMs, durationMs, bodyFields) ->
-                            val chunkBytes = "$idx,$bodyFields".toByteArray(Charsets.UTF_8)
-                            AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
-                        }
-                    }
-                }
-            }
-        }
         mainHandler.post { overlayView.clear() }
     }
 
@@ -698,6 +780,7 @@ class AssHandler @Inject constructor(
             currentTimeUs = 0L
             pendingFormatToSelect = null
             hasLoadedFirstTime = false
+            isPlayingState = false
             subtitleDelayMs = 0
             externalTrackNames.clear()
             externalTrackIds.clear()

@@ -97,6 +97,52 @@ fi
 CCACHE_BIN="$(command -v ccache || true)"
 CC_LAUNCHER="${CCACHE_BIN:+ccache }"
 
+# ----- Build dav1d dependency --------------------------------------------------
+DAV1D_VER="1.5.1"
+BUILD_TMP="$SCRIPT_DIR/ffmpeg_build_tmp"
+PREFIX="$BUILD_TMP/prefix"
+mkdir -p "$PREFIX/lib/pkgconfig" "$PREFIX/include" "$BUILD_TMP"
+
+echo "=== Building dav1d $DAV1D_VER for $ABI ==="
+DAV1D_DIR="$BUILD_TMP/dav1d-$DAV1D_VER"
+if [[ ! -d "$DAV1D_DIR" ]]; then
+  DAV1D_TAR="$BUILD_TMP/dav1d-$DAV1D_VER.tar.gz"
+  if [[ ! -f "$DAV1D_TAR" ]]; then
+    curl -sSfL "https://code.videolan.org/videolan/dav1d/-/archive/$DAV1D_VER/dav1d-$DAV1D_VER.tar.gz" -o "$DAV1D_TAR"
+  fi
+  tar -xzf "$DAV1D_TAR" -C "$BUILD_TMP"
+fi
+
+cat > "$BUILD_TMP/cross_$ABI.meson" <<EOF
+[binaries]
+c = '$TC/$CLANG'
+cpp = '$TC/$CLANGPP'
+ar = '$TC/llvm-ar'
+strip = '$TC/llvm-strip'
+pkg-config = 'pkg-config'
+
+[host_machine]
+system = 'android'
+cpu_family = '$TARGET_ARCH'
+cpu = 'armv8-a'
+endian = 'little'
+EOF
+
+cd "$DAV1D_DIR"
+rm -rf build
+meson setup build \
+  --cross-file "$BUILD_TMP/cross_$ABI.meson" \
+  --prefix "$PREFIX" \
+  --libdir "$PREFIX/lib" \
+  --buildtype release \
+  --default-library both \
+  -Denable_tools=false \
+  -Denable_tests=false \
+  -Denable_examples=false \
+  -Denable_asm=true
+
+ninja -C build install
+
 # ----- FFmpeg source -----------------------------------------------------------
 # CI sets FFMPEG_SRC_DIR (git clone); local fallback downloads tarball.
 if [[ -n "${FFMPEG_SRC_DIR:-}" && -d "$FFMPEG_SRC_DIR" ]]; then
@@ -123,24 +169,31 @@ export TMPDIR=/tmp
 # incremental across CI runs (ffmpeg-src is cached with its build objects).
 [ -n "${FFMPEG_FORCE_REBUILD:-}" ] && make clean 2>/dev/null || true
 
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
+
 echo "=== Configuring FFmpeg for $ABI ==="
 ./configure \
   --target-os=android --arch=$TARGET_ARCH \
   --enable-shared --disable-static \
   --disable-programs --disable-doc \
   --disable-avdevice --disable-avfilter --disable-network \
-  --enable-small \
+  --enable-small --enable-pic \
   --disable-encoders --disable-hwaccels --disable-muxers \
-  --enable-decoder=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1 \
+  --enable-libdav1d \
+  --enable-decoder=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1,libdav1d \
   --enable-demuxer=matroska,mov,avi,mp4,mpegts,flv \
-  --enable-protocol=file --enable-swscale \
+  --enable-protocol=file --enable-swscale --enable-swresample \
   --cross-prefix=$CROSS \
   --cc="${CC_LAUNCHER}${CLANG}" \
   --cxx="${CC_LAUNCHER}${CLANGPP}" \
   --ar=llvm-ar --nm=llvm-nm \
   --strip=llvm-strip --ranlib=llvm-ranlib \
   --sysroot="$SYSROOT" \
-  --extra-cflags="-fPIC -Os" 2>&1 | tail -20
+  --pkg-config=pkg-config \
+  --pkg-config-flags="--static" \
+  --extra-cflags="-I$PREFIX/include -fPIC -Os" \
+  --extra-ldflags="-L$PREFIX/lib" 2>&1 | tail -20
 
 echo "=== Building FFmpeg ==="
 make -j$(nproc) 2>&1 || true
@@ -159,7 +212,12 @@ done
 # ----- copy to jniLibs ---------------------------------------------------------
 echo "=== Copying .so files to jniLibs/$ABI ==="
 JNILIBS_DIR="$SCRIPT_DIR/app/src/main/jniLibs/$ABI"
-mkdir -p "$JNILIBS_DIR"
+HEADERS_DIR="$SCRIPT_DIR/app/src/main/cpp/include"
+mkdir -p "$JNILIBS_DIR" "$HEADERS_DIR/dav1d"
+
+# Copy dav1d
+cp -f "$PREFIX/lib/libdav1d.so" "$JNILIBS_DIR/"
+cp -rf "$PREFIX/include/dav1d/"* "$HEADERS_DIR/dav1d/"
 
 for lib in libavutil/libavutil.so libavcodec/libavcodec.so \
            libavformat/libavformat.so libswscale/libswscale.so \
@@ -180,7 +238,6 @@ fi
 
 # ----- copy headers to project include dir ------------------------------------
 echo "=== Copying FFmpeg headers ==="
-HEADERS_DIR="$SCRIPT_DIR/app/src/main/cpp/include"
 for subdir in libavformat libavcodec libavutil libswscale libswresample; do
   src="$FFMPEG_DIR/$subdir"
   if [[ -d "$src" ]]; then

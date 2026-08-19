@@ -21,6 +21,7 @@ class FfmpegAudioSink {
     private var channelConfig: Int = AudioFormat.CHANNEL_OUT_STEREO
     private var isPlaying = false
     private var currentSpeed: Float = 1.0f
+    private var totalFramesWritten: Long = 0L
 
     @Synchronized
     fun init(sampleRate: Int, channelCount: Int) {
@@ -28,6 +29,7 @@ class FfmpegAudioSink {
             return
         }
         release()
+        totalFramesWritten = 0L
         this.sampleRate = sampleRate
         this.channelConfig = if (channelCount == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
 
@@ -77,12 +79,25 @@ class FfmpegAudioSink {
                 Log.w(TAG, "AudioTrack.play failed: ${e.message}")
             }
         }
-        return try {
+        val bytesWritten = try {
             track.write(pcm, 0, size, AudioTrack.WRITE_BLOCKING)
         } catch (e: Exception) {
             Log.w(TAG, "AudioTrack.write failed: ${e.message}")
             -1
         }
+        if (bytesWritten > 0) {
+            val bytesPerFrame = if (channelConfig == AudioFormat.CHANNEL_OUT_MONO) 2 else 4
+            totalFramesWritten += bytesWritten / bytesPerFrame
+        }
+        return bytesWritten
+    }
+
+    @Synchronized
+    fun getAudioPlaybackLatencyUs(): Long {
+        val track = audioTrack ?: return 0L
+        val headPos = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+        val bufferedFrames = (totalFramesWritten - headPos).coerceAtLeast(0L)
+        return (bufferedFrames * 1_000_000L) / sampleRate
     }
 
     @Synchronized
@@ -107,6 +122,7 @@ class FfmpegAudioSink {
 
     @Synchronized
     fun flush() {
+        totalFramesWritten = 0L
         try {
             audioTrack?.pause()
             audioTrack?.flush()
@@ -136,6 +152,7 @@ class FfmpegAudioSink {
     @Synchronized
     fun release() {
         isPlaying = false
+        totalFramesWritten = 0L
         try {
             audioTrack?.stop()
             audioTrack?.release()
@@ -143,3 +160,4 @@ class FfmpegAudioSink {
         audioTrack = null
     }
 }
+
