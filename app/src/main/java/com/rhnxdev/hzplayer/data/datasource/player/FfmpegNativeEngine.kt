@@ -110,16 +110,20 @@ class FfmpegNativeEngine @Inject constructor(
                     else -> PlayerState.IDLE
                 }
 
+                val playing = (state == FfmpegNativePlayer.STATE_READY && player.isPlaying())
+                assHandler.setIsPlaying(playing)
+
                 _playbackState.update { current ->
                     current.copy(
                         state = mappedState,
-                        isPlaying = (state == FfmpegNativePlayer.STATE_READY && player.isPlaying()),
+                        isPlaying = playing,
                     )
                 }
             }
 
             override fun onError(message: String) {
                 Log.e(TAG, "Native player error: $message")
+                assHandler.setIsPlaying(false)
                 _playbackState.update { current ->
                     current.copy(
                         state = PlayerState.ERROR,
@@ -137,6 +141,18 @@ class FfmpegNativeEngine @Inject constructor(
                         isPlaying = player.isPlaying()
                     )
                 }
+            }
+
+            override fun onSubtitleHeader(trackId: Int, header: ByteArray, title: String) {
+                assHandler.onTrackHeader(trackId, header, title)
+            }
+
+            override fun onSubtitleData(trackId: Int, timeUs: Long, durationUs: Long, data: ByteArray) {
+                assHandler.onSubtitleSample(trackId, timeUs, durationUs, data)
+            }
+
+            override fun onFontAttachment(name: String, data: ByteArray) {
+                assHandler.onFontAttachment(name, data)
             }
         }
     }
@@ -171,8 +187,8 @@ class FfmpegNativeEngine @Inject constructor(
         currentTitle = title
         currentArtist = artist
         currentPlaylist = null
-        currentPlaylistIndex = 0
-
+        assHandler.player = null
+        assHandler.playbackSpeed = currentSpeed
         assHandler.reset()
         _playbackState.update {
             it.copy(
@@ -266,6 +282,7 @@ class FfmpegNativeEngine @Inject constructor(
         if (success) {
             player.setSpeed(currentSpeed)
             player.play()
+            assHandler.setIsPlaying(true)
             _playbackState.update {
                 it.copy(
                     state = PlayerState.READY,
@@ -273,6 +290,7 @@ class FfmpegNativeEngine @Inject constructor(
                 )
             }
         } else {
+            assHandler.setIsPlaying(false)
             _playbackState.update {
                 it.copy(
                     state = PlayerState.ERROR,
@@ -285,16 +303,19 @@ class FfmpegNativeEngine @Inject constructor(
 
     override fun pause() {
         player.pause()
+        assHandler.setIsPlaying(false)
         _playbackState.update { it.copy(isPlaying = false) }
     }
 
     override fun resume() {
         player.play()
+        assHandler.setIsPlaying(true)
         _playbackState.update { it.copy(isPlaying = true) }
     }
 
     override fun stop() {
         player.stop()
+        assHandler.setIsPlaying(false)
         (activeBridge as? Closeable)?.let { runCatching { it.close() } }
         activeBridge = null
         currentUri = null
@@ -364,6 +385,7 @@ class FfmpegNativeEngine @Inject constructor(
     override fun setPlaybackSpeed(speed: Float) {
         currentSpeed = speed
         player.setSpeed(speed)
+        assHandler.playbackSpeed = speed
         _playbackState.update { it.copy(playbackSpeed = speed) }
     }
 
@@ -385,13 +407,13 @@ class FfmpegNativeEngine @Inject constructor(
 
     // ─── Subtitles ──────────────────────────────────────────────────────────
 
-    override fun getSubtitleTracks(): List<String> = assHandler.getExternalTrackNames()
-    override fun getSelectedSubtitleTrack(): Int = assHandler.getActiveExternalTrackIndex()
+    override fun getSubtitleTracks(): List<String> = assHandler.getAllTrackNames()
+    override fun getSelectedSubtitleTrack(): Int = assHandler.getActiveTrackIndex()
 
     override fun selectSubtitleTrack(index: Int) {
-        val extIds = assHandler.getExternalTrackIds()
-        if (index in extIds.indices) {
-            assHandler.selectTrack(extIds[index])
+        val allIds = assHandler.getAllTrackIds()
+        if (index in allIds.indices) {
+            assHandler.selectTrack(allIds[index])
             assHandler.onAssTrackSelected?.invoke()
         } else {
             assHandler.clearOverlay()

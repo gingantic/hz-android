@@ -16,6 +16,9 @@ class FfmpegNativePlayer(
         fun onStateChanged(state: Int)
         fun onError(message: String)
         fun onPositionUpdate(positionMs: Long, durationMs: Long)
+        fun onSubtitleHeader(trackId: Int, header: ByteArray, title: String) {}
+        fun onSubtitleData(trackId: Int, timeUs: Long, durationUs: Long, data: ByteArray) {}
+        fun onFontAttachment(name: String, data: ByteArray) {}
     }
 
     var listener: Listener? = null
@@ -23,6 +26,11 @@ class FfmpegNativePlayer(
 
     companion object {
         init {
+            try {
+                System.loadLibrary("dav1d")
+            } catch (t: Throwable) {
+                android.util.Log.w("FfmpegNativePlayer", "Failed to load libdav1d: ${t.message}")
+            }
             System.loadLibrary("ffplayer")
         }
 
@@ -117,6 +125,11 @@ class FfmpegNativePlayer(
     }
 
     @Keep
+    private fun getAudioLatencyUs(): Long {
+        return audioSink.getAudioPlaybackLatencyUs()
+    }
+
+    @Keep
     private fun onAudioFlush() {
         audioSink.flush()
     }
@@ -139,6 +152,21 @@ class FfmpegNativePlayer(
     @Keep
     private fun onPositionUpdate(positionMs: Long, durationMs: Long) {
         listener?.onPositionUpdate(positionMs, durationMs)
+    }
+
+    @Keep
+    private fun onSubtitleHeader(trackId: Int, header: ByteArray, title: String) {
+        listener?.onSubtitleHeader(trackId, header, title)
+    }
+
+    @Keep
+    private fun onSubtitleData(trackId: Int, timeUs: Long, durationUs: Long, data: ByteArray) {
+        listener?.onSubtitleData(trackId, timeUs, durationUs, data)
+    }
+
+    @Keep
+    private fun onFontAttachment(name: String, data: ByteArray) {
+        listener?.onFontAttachment(name, data)
     }
 
     // ─── JNI Method Declarations ────────────────────────────────────────────

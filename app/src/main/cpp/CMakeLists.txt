@@ -94,6 +94,11 @@ target_link_libraries(ffcodec
     ${ANDROID_LIB} ${LOG}
 )
 
+add_library(dav1d SHARED IMPORTED)
+set_target_properties(dav1d PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${CMAKE_ANDROID_ARCH_ABI}/libdav1d.so
+)
+
 # Standalone Native FFmpeg player engine: handles full demux, seek, video and audio decode,
 # direct ANativeWindow blit, and instant seeking without ExoPlayer buffering pipelines.
 add_library(ffplayer SHARED FfmpegPlayer.cpp)
@@ -101,6 +106,10 @@ target_include_directories(ffplayer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_link_libraries(ffplayer
-    avformat avcodec avutil swscale swresample
+    avformat avcodec avutil swscale swresample dav1d
     ${ANDROID_LIB} ${LOG}
 )
+
+
+
+
