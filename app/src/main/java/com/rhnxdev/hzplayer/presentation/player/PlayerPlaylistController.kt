@@ -45,8 +45,12 @@ internal class PlayerPlaylistController(
         if (nextIndex >= playlist.size) return false
         val item = playlist[nextIndex]
         uiState.update { it.copy(currentPlaylistIndex = nextIndex, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs) }
-        playerRepository.seekTo(0)
-        playerRepository.activeEngine.play(item.uri, item.title, isVideo = true)
+        if (playerRepository.getMediaItemCount() > 1) {
+            playerRepository.seekToMediaItem(nextIndex)
+        } else {
+            playerRepository.playPlaylist(playlist.map { it.uri to it.title }, nextIndex, 0L)
+        }
+        trackCache.markNeedsRefresh()
         return true
     }
 
@@ -57,8 +61,12 @@ internal class PlayerPlaylistController(
         if (prevIndex < 0) return false
         val item = playlist[prevIndex]
         uiState.update { it.copy(currentPlaylistIndex = prevIndex, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs) }
-        playerRepository.seekTo(0)
-        playerRepository.activeEngine.play(item.uri, item.title, isVideo = true)
+        if (playerRepository.getMediaItemCount() > 1) {
+            playerRepository.seekToMediaItem(prevIndex)
+        } else {
+            playerRepository.playPlaylist(playlist.map { it.uri to it.title }, prevIndex, 0L)
+        }
+        trackCache.markNeedsRefresh()
         return true
     }
 
@@ -67,8 +75,12 @@ internal class PlayerPlaylistController(
         if (index !in playlist.indices) return
         val item = playlist[index]
         uiState.update { it.copy(currentPlaylistIndex = index, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs, showPlaylistDrawer = false) }
-        playerRepository.seekTo(0)
-        playerRepository.activeEngine.play(item.uri, item.title, isVideo = true)
+        if (playerRepository.getMediaItemCount() > 1) {
+            playerRepository.seekToMediaItem(index)
+        } else {
+            playerRepository.playPlaylist(playlist.map { it.uri to it.title }, index, 0L)
+        }
+        trackCache.markNeedsRefresh()
     }
 
     fun onTogglePlaylistDrawer() {

@@ -169,6 +169,10 @@ fun MainTabPager(
                                             playerViewModel.onVideoStarted()
                                             navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                         },
+                                        onPlayVideoPlaylist = { playlist, startIndex ->
+                                            playerViewModel.playVideoPlaylist(playlist, startIndex)
+                                            navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+                                        },
                                         onPlayAsAudio = { video ->
                                             playerViewModel.playUri(video.uri, video.title, isVideo = false)
                                             navController.navigate(NavRoutes.AUDIO_PLAYER)
@@ -204,6 +208,10 @@ fun MainTabPager(
                                         },
                                         onPlayAllVideos = { playlist ->
                                             playerViewModel.playVideoPlaylist(playlist)
+                                            navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+                                        },
+                                        onPlayVideoPlaylist = { playlist, startIndex ->
+                                            playerViewModel.playVideoPlaylist(playlist, startIndex)
                                             navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                         },
                                         onPlayAsAudio = { file ->

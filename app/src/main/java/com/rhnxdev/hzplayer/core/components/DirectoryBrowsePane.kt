@@ -37,6 +37,7 @@ import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
+import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
 
 import androidx.compose.runtime.Immutable
@@ -243,7 +244,7 @@ fun DirectoryBrowsePane(
                             resolution = if (mediaMode) item.resolution else null,
                             isNew = !item.isDirectory && item.dateAdded > 0L && (System.currentTimeMillis() / 1000L - item.dateAdded < 3600L),
                             onPropertiesClick = { propertiesItem = item },
-                            onPlayAllClick = if (onPlayAllFolder != null && item.isDirectory) {
+                            onPlayAllClick = if (onPlayAllFolder != null && (item.isDirectory || isArchiveExtension(item.name))) {
                                 { onPlayAllFolder(item) }
                             } else null,
                             onPlayAsAudioClick = if (onPlayAsAudio != null && !item.isDirectory && (item.mimeType?.startsWith("video") == true || isVideoExtension(item.name) || item.durationMs > 0)) {

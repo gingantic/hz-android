@@ -38,6 +38,17 @@ class ArchivePathsTest {
     fun archiveUri_parse_malformed_isNull() {
         assertNull(ArchiveUri.parse("file:///not/an/archive.mkv"))
         assertNull(ArchiveUri.parse("archive:///onlycontainer"))
+        assertNull(ArchiveUri.parse("archive://onlycontainer"))
+    }
+
+    @Test
+    fun archiveUri_parse_supportsMultipleSlashFormats() {
+        val built = ArchiveUri.build("/storage/0/pack.zip", "video.mp4")
+        val triple3 = ArchiveUri.parse(built)
+        val triple2 = ArchiveUri.parse(built.replace("archive:///", "archive://"))
+        val triple1 = ArchiveUri.parse(built.replace("archive:///", "archive:/"))
+        assertEquals(triple3, triple2)
+        assertEquals(triple3, triple1)
     }
 
     @Test

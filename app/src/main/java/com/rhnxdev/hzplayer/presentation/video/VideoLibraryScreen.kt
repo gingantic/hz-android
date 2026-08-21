@@ -80,6 +80,7 @@ import com.rhnxdev.hzplayer.core.util.formatFileSize
 fun VideoLibraryScreen(
     viewModel: VideoLibraryViewModel = hiltViewModel(),
     onVideoClicked: (Long) -> Unit = {},
+    onPlayVideoPlaylist: ((List<VideoItem>, Int) -> Unit)? = null,
     onPlayAsAudio: (VideoItem) -> Unit = {},
     isActive: Boolean = true,
 ) {
@@ -254,8 +255,13 @@ fun VideoLibraryScreen(
                                     videos = uiState.filteredVideos,
                                     viewMode = uiState.viewMode,
                                     onVideoClicked = { v ->
-                                        viewModel.onVideoClicked(v)
-                                        onVideoClicked(v.id)
+                                        if (onPlayVideoPlaylist != null) {
+                                            val (playlist, index) = viewModel.getPlaylistForVideo(v)
+                                            onPlayVideoPlaylist(playlist, index)
+                                        } else {
+                                            viewModel.onVideoClicked(v)
+                                            onVideoClicked(v.id)
+                                        }
                                     },
                                     onPlayAsAudio = onPlayAsAudio,
                                     searchQuery = searchQuery,
@@ -272,8 +278,13 @@ fun VideoLibraryScreen(
                                     videos = drillVideos,
                                     viewMode = uiState.viewMode,
                                     onVideoClicked = { v ->
-                                        viewModel.onVideoClicked(v)
-                                        onVideoClicked(v.id)
+                                        if (onPlayVideoPlaylist != null) {
+                                            val (playlist, index) = viewModel.getPlaylistForVideo(v)
+                                            onPlayVideoPlaylist(playlist, index)
+                                        } else {
+                                            viewModel.onVideoClicked(v)
+                                            onVideoClicked(v.id)
+                                        }
                                     },
                                     onPlayAsAudio = onPlayAsAudio,
                                     searchQuery = "",
