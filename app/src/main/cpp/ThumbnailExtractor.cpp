@@ -341,7 +341,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeExtract(
 
     int si = -1;
     for (unsigned i = 0; i < fmtCtx->nb_streams; i++)
-        if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (fmtCtx->streams[i] && fmtCtx->streams[i]->codecpar && fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
             si = static_cast<int>(i); break;
         }
     if (si == -1) {
@@ -658,10 +658,6 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtr
 
     if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
         LOGE("ass: avformat_open_input failed");
-        av_freep(&avio->buffer);
-        avio_context_free(&avio);
-        fmtCtx->pb = nullptr;  // prevent double-free in avformat_free_context
-        avformat_free_context(fmtCtx);
         return nullptr;
     }
     if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
@@ -673,6 +669,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtr
     // Find the assOrdinal-th ASS/SSA subtitle stream (container order).
     int target = -1, seen = 0;
     for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
+        if (!fmtCtx->streams[i] || !fmtCtx->streams[i]->codecpar) continue;
         AVCodecID id = fmtCtx->streams[i]->codecpar->codec_id;
         if (id == AV_CODEC_ID_ASS || id == AV_CODEC_ID_SSA) {
             if (seen == assOrdinal) { target = static_cast<int>(i); break; }
@@ -764,10 +761,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtr
     fmtCtx->max_analyze_duration = 5000000;
 
     if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
-        av_freep(&avio->buffer);
-        avio_context_free(&avio);
-        fmtCtx->pb = nullptr;  // prevent double-free in avformat_free_context
-        avformat_free_context(fmtCtx);
+        LOGE("fonts: avformat_open_input failed");
         return nullptr;
     }
     if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
@@ -778,6 +772,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_AssStreamExtractor_nativeExtr
     std::vector<int> fontStreams;
     for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
         AVStream* st = fmtCtx->streams[i];
+        if (!st || !st->codecpar) continue;
         if (st->codecpar->codec_type != AVMEDIA_TYPE_ATTACHMENT) continue;
         if (!st->codecpar->extradata || st->codecpar->extradata_size <= 0) continue;
         AVDictionaryEntry* mt = av_dict_get(st->metadata, "mimetype", nullptr, 0);
@@ -836,12 +831,14 @@ static void probePut(std::vector<std::string>& kv, const char* key,
 }
 
 static std::string probeCodecName(const AVCodecParameters* par) {
+    if (!par) return "";
     const AVCodecDescriptor* desc = avcodec_descriptor_get(par->codec_id);
     if (desc && desc->name) return desc->name;
     return "";
 }
 
 static std::string probeCodecLongName(const AVCodecParameters* par) {
+    if (!par) return "";
     const AVCodecDescriptor* desc = avcodec_descriptor_get(par->codec_id);
     if (desc && desc->long_name) return desc->long_name;
     return "";
@@ -873,16 +870,12 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeCha
     fmtCtx->max_analyze_duration = 500000;
 
     if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
-        av_freep(&avio->buffer);
-        avio_context_free(&avio);
-        fmtCtx->pb = nullptr;
-        avformat_free_context(fmtCtx);
         LOGE("chapters: avformat_open_input failed");
         return nullptr;
     }
 
     unsigned nb = fmtCtx->nb_chapters;
-    if (nb == 0) {
+    if (nb == 0 || !fmtCtx->chapters) {
         avformat_close_input(&fmtCtx);
         return nullptr;
     }
@@ -891,6 +884,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeCha
     kv.reserve(nb * 3);
     for (unsigned i = 0; i < nb; i++) {
         AVChapter* ch = fmtCtx->chapters[i];
+        if (!ch) continue;
         int64_t startMs = av_rescale_q(ch->start, ch->time_base, AVRational{1, 1000});
         int64_t endMs   = av_rescale_q(ch->end,   ch->time_base, AVRational{1, 1000});
         AVDictionaryEntry* t = av_dict_get(ch->metadata, "title", nullptr, 0);
@@ -937,10 +931,6 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
     fmtCtx->max_analyze_duration = 5000000;
 
     if (avformat_open_input(&fmtCtx, "", nullptr, nullptr) != 0) {
-        av_freep(&avio->buffer);
-        avio_context_free(&avio);
-        fmtCtx->pb = nullptr;
-        avformat_free_context(fmtCtx);
         LOGE("probe: avformat_open_input failed");
         return nullptr;
     }
@@ -963,6 +953,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
     // Stream counts
     int videoTrackCount = 0, audioTrackCount = 0, subTrackCount = 0;
     for (unsigned int i = 0; i < fmtCtx->nb_streams; i++) {
+        if (!fmtCtx->streams[i] || !fmtCtx->streams[i]->codecpar) continue;
         if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) videoTrackCount++;
         else if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) audioTrackCount++;
         else if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) subTrackCount++;
@@ -974,7 +965,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
     // ── First video stream ──
     int vIdx = av_find_best_stream(fmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1,
                                    nullptr, 0);
-    if (vIdx >= 0) {
+    if (vIdx >= 0 && fmtCtx->streams[vIdx] && fmtCtx->streams[vIdx]->codecpar) {
         AVStream* st = fmtCtx->streams[vIdx];
         const AVCodecParameters* par = st->codecpar;
         probePut(kv, "video_codec", probeCodecName(par));
@@ -1019,7 +1010,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
     // ── First audio stream ──
     int aIdx = av_find_best_stream(fmtCtx, AVMEDIA_TYPE_AUDIO, -1, -1,
                                    nullptr, 0);
-    if (aIdx >= 0) {
+    if (aIdx >= 0 && fmtCtx->streams[aIdx] && fmtCtx->streams[aIdx]->codecpar) {
         const AVCodecParameters* par = fmtCtx->streams[aIdx]->codecpar;
         probePut(kv, "audio_codec", probeCodecName(par));
         probePut(kv, "audio_codec_long", probeCodecLongName(par));
@@ -1036,9 +1027,11 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
                 probePut(kv, "audio_layout", layoutBuf);
             }
         }
-        AVDictionaryEntry* aLang = av_dict_get(fmtCtx->streams[aIdx]->metadata, "language", nullptr, 0);
-        if (aLang && aLang->value) {
-            probePut(kv, "audio_language", aLang->value);
+        if (fmtCtx->streams[aIdx]->metadata) {
+            AVDictionaryEntry* aLang = av_dict_get(fmtCtx->streams[aIdx]->metadata, "language", nullptr, 0);
+            if (aLang && aLang->value) {
+                probePut(kv, "audio_language", aLang->value);
+            }
         }
     }
 

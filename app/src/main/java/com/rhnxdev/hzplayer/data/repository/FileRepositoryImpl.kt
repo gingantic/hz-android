@@ -267,6 +267,30 @@ class FileRepositoryImpl @Inject constructor(
             }
         }
 
+    override suspend fun createDirectory(parentPath: String, folderName: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val parent = File(parentPath.trimEnd('/'))
+                if (!parent.exists() || !parent.isDirectory) {
+                    throw IOException("Parent directory not found")
+                }
+                val cleanName = folderName.trim()
+                if (cleanName.isBlank() || cleanName.contains('/') || cleanName.contains('\\')) {
+                    throw IOException("Invalid folder name")
+                }
+                val newDir = File(parent, cleanName)
+                if (newDir.exists()) {
+                    throw IOException("Folder already exists")
+                }
+                val created = newDir.mkdir() || newDir.mkdirs()
+                if (!created && !newDir.exists()) {
+                    throw IOException("Could not create folder")
+                }
+                scanPaths(listOf(newDir.absolutePath))
+                newDir.absolutePath
+            }
+        }
+
     private fun validateOperation(source: File, destDir: File) {
         if (!source.exists()) throw IOException("Source no longer exists")
         if (!destDir.exists() || !destDir.isDirectory) throw IOException("Destination folder not found")

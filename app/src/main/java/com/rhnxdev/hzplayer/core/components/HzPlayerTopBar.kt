@@ -186,7 +186,6 @@ fun HzPlayerTopBar(
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            actions()
             if (searchQuery == null && onSearchToggle != null) {
                 IconButton(onClick = onSearchToggle) {
                     Icon(
@@ -195,6 +194,7 @@ fun HzPlayerTopBar(
                     )
                 }
             }
+            actions()
             if (actionIcon != null && searchQuery == null) {
                 IconButton(onClick = onAction) {
                     Icon(

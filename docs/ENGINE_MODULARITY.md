@@ -2,14 +2,14 @@
 
 > Goal: make `IPlayerEngine` the **only** playback contract. No Media3 type
 > (`Player`, `PlayerView`, `Cue`, `MediaSession`, …) may cross the domain /
-> presentation boundary. A second backend (libVLC, mpv, …) is added by writing
+> presentation boundary. A new backend is added by writing
 > one class + one Hilt binding. The render seam lives on the interface itself —
 > `PlayerSurface` needs **zero** changes for a new engine.
 >
-> **Status: IMPLEMENTED.** The refactor landed in commit `57e66db`. This doc
-> describes the design that is now in code; the "implementation phases" below are
-> historical and complete. Last refreshed: 2026-07-29 (audio delay, HTTP headers
-> on play, expanded interface contract).
+> **Status: IMPLEMENTED — three engines bound.** The refactor landed in commit
+> `57e66db`; the design below is in code and the "implementation phases" are
+> historical. Engines today: `EXO_PLAYER`, `FFMPEG`, `NATIVE_FFMPEG`.
+> Last refreshed: 2026-08-22 (three engines, equalizer contract, native player).
 
 ---
 
@@ -76,84 +76,82 @@ The engine-selection preference **already exists** (`UserPreferencesRepository.a
 ```kotlin
 enum class EngineType {
     EXO_PLAYER,
-    // VLC, MPV added later — alphabetical, stable names (persisted to DataStore).
+
+    /** Same ExoPlayer pipeline, but the FFmpeg software renderers are indexed
+     *  before the MediaCodec ones (Media3 extension-prefer semantics), forcing
+     *  every FFmpeg-supported codec through software decode. MediaCodec stays
+     *  as fallback. */
+    FFMPEG,
+
+    /** Standalone native FFmpeg engine (libffplayer.so). Bypasses ExoPlayer,
+     *  LoadControl and buffer queues entirely. Features instant seeking on
+     *  local and networked media. */
+    NATIVE_FFMPEG,
 }
 ```
 
-### 3.2 `domain/player/IPlayerEngine.kt` (the full contract)
+### 3.2 `domain/player/IPlayerEngine.kt` (the contract — abridged)
+Full KDoc-annotated source is the reference; the shape:
+
 ```kotlin
 interface IPlayerEngine {
-
     val engineType: EngineType
     val playbackState: StateFlow<PlayerStateInfo>
 
     // playback
-    fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0, headers: Map<String, String> = emptyMap())
-    fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long)
-    fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int)
-    fun pause()
-    fun resume()
-    fun stop()
+    fun play(uri, title, artist?, isVideo, mimeType?, resumePositionMs,
+             headers: Map<String,String>, artworkUri?)   // headers for network streams;
+                                                          // artworkUri feeds MediaSession metadata
+    fun playPlaylist(items, startIndex, startPositionMs)
+    fun playAudioPlaylist(items: List<AudioItem>, startIndex)
+    fun pause() / resume() / stop()
 
     // seek
-    fun seekTo(positionMs: Long)
-    fun skipForward(ms: Long = 10_000)
-    fun skipBackward(ms: Long = 10_000)
-    fun skipToNext()
-    fun skipToPrevious()
-    fun getCurrentMediaItemIndex(): Int
-    fun getMediaItemCount(): Int
-    fun seekToMediaItem(index: Int)
+    fun seekTo(ms) / skipForward(ms) / skipBackward(ms)
+    fun setScrubbing(isScrubbing) {}          // fast keyframe live-scrub flag
+    fun skipToNext() / skipToPrevious()
+    fun getCurrentMediaItemIndex() / getMediaItemCount() / seekToMediaItem(index)
 
     // queries
-    fun isPlaying(): Boolean
-    fun getDuration(): Long
-    fun getCurrentPosition(): Long
-    fun getBufferedPosition(): Long
+    fun isPlaying() / getDuration() / getCurrentPosition() / getBufferedPosition()
 
     // config
-    fun setPlaybackSpeed(speed: Float)
-    fun setShuffleEnabled(enabled: Boolean)
-    fun setRepeatMode(mode: RepeatMode)
-    fun isShuffleEnabled(): Boolean = false
-    fun getRepeatMode(): RepeatMode = RepeatMode.NONE
-    fun setDecoderMode(mode: DecoderMode) {}
+    fun setPlaybackSpeed(speed) / setShuffleEnabled(b) / setRepeatMode(mode)
+    fun setDecoderMode(mode) {}               // SW/HW decoder selection
+    fun setDisableHdr(disabled) {}            // forced SDR tone-mapping toggle
+    fun setFfmpegPreferred(preferred) {}      // EngineType.FFMPEG renderer reordering
 
-    // tracks — subtitles
-    fun getSubtitleTracks(): List<String>
-    fun getSelectedSubtitleTrack(): Int
-    fun selectSubtitleTrack(index: Int)
-    fun loadExternalAss(uri: Uri)
-    fun getSubtitleTrackMimeTypes(): List<String?> = emptyList()
-    fun addExternalSubtitle(uri: Uri): Boolean
+    // tracks — subtitles (embedded via extractor interception, external via libass)
+    fun getSubtitleTracks() / getSelectedSubtitleTrack() / selectSubtitleTrack(index)
+    fun loadExternalAss(uri) / getSubtitleTrackMimeTypes(): List<String?>
+    fun addExternalSubtitle(uri): Boolean
     var subtitleTrackChangeListener: (() -> Unit)?
-    fun setSubtitleDelay(delayMs: Long)
-    fun getSubtitleDelay(): Long = 0
+    fun setSubtitleDelay(ms) / getSubtitleDelay()
 
-    // tracks — audio
-    fun getAudioTracks(): List<String>
-    fun getSelectedAudioTrack(): Int
-    fun selectAudioTrack(index: Int)
-    fun setAudioDelay(delayMs: Long) {}      // NEW: A/V sync offset
-    fun getAudioDelay(): Long = 0             // NEW: A/V sync offset
+    // tracks — audio + A/V sync
+    fun getAudioTracks() / getSelectedAudioTrack() / selectAudioTrack(index)
+    fun setAudioDelay(ms) {} / getAudioDelay()
 
-    // engine-specific extras (nullable → engine may not support)
+    // equalizer — all default no-op/null so engines without EQ opt out
+    fun getEqualizerState(): StateFlow<EqualizerInfo>? = null
+    fun setEqualizerEnabled(b) {} / setEqualizerBandLevel(band, mb) {}
+    fun applyEqualizerPreset(preset) {} / resetEqualizerBands() {}
+    fun setBassBoostStrength(s) {} / setLoudnessGain(mb) {}
+
+    // engine-specific extras
     fun getDebugStats(): DebugStats? = null
 
     // render seam (on the interface — no casts needed in PlayerSurface)
-    fun createRenderView(context: Context, useSurfaceView: Boolean): View
-    fun updateRenderView(view: View, config: RenderViewConfig)
-    fun onRenderViewPaused(view: View)
-    fun onRenderViewResumed(view: View)
+    fun createRenderView(context, useSurfaceView): View
+    fun updateRenderView(view, config: RenderViewConfig)
+    fun onRenderViewPaused(view) / onRenderViewResumed(view)
 
-    // MediaSession bridge
+    // MediaSession bridge (sole deliberate Media3 leak)
     fun getMedia3Player(): Player? = null
     fun setOnPlayerReplacedListener(listener: ((Player) -> Unit)?) {}
 
     // lifecycle
-    fun clearError()
-    fun retry()
-    fun release()
+    fun clearError() / retry() / release()
 }
 ```
 
@@ -290,7 +288,15 @@ Promote `playPlaylist`, `playAudioPlaylist`, add `skipToNext/Previous`,
 abstract class PlayerEngineModule {
     @Binds @IntoMap @EngineKey(EngineType.EXO_PLAYER)
     abstract fun bindExo(impl: ExoPlayerEngine): IPlayerEngine
-    // future: @Binds @IntoMap @EngineKey(EngineType.VLC) abstract fun bindVlc(impl: VlcEngine): IPlayerEngine
+
+    // FFMPEG reuses the same ExoPlayerEngine singleton; the repository flips
+    // HzRenderersFactory.preferFfmpeg when this type is active.
+    @Binds @IntoMap @EngineKey(EngineType.FFMPEG)
+    abstract fun bindFfmpeg(impl: ExoPlayerEngine): IPlayerEngine
+
+    // Standalone native player (libffplayer.so).
+    @Binds @IntoMap @EngineKey(EngineType.NATIVE_FFMPEG)
+    abstract fun bindNative(impl: FfmpegNativeEngine): IPlayerEngine
 }
 ```
 `MediaPlayerHolder` stays `@Singleton` owning the one ExoPlayer; `ExoPlayerEngine`
@@ -368,18 +374,26 @@ are all engine-agnostic by construction — **zero** changes needed.
   implements via `AudioDelaySink` (a `ForwardingAudioSink` that shifts the audio
   clock). Non-Media3 engines can leave the default no-op.
 - **`play(uri, …, headers)`** accepts HTTP headers for network requests (e.g.
-  `Authorization` / stream tokens forwarded from VIEW intents).
-- **`EngineType` currently has only `EXO_PLAYER`.** `PlayerRepositoryImpl` falls back to
+  `Authorization` / stream tokens forwarded from VIEW intents); `artworkUri` feeds
+  MediaSession metadata.
+- **Equalizer contract on the interface** (`getEqualizerState()` + band/preset/bass/
+  loudness controls). `ExoPlayerEngine` implements via `TenBandEqualizerProcessor`
+  in the `AudioProcessor` chain; the native engine wires the same `EqualizerController`
+  to its AudioTrack session id. State exposed as `StateFlow<EqualizerInfo>` and
+  persisted via `EqualizerSettings`.
+- **Three engines are bound** (see §3.1 / Phase 4): `EXO_PLAYER`,
+  `FFMPEG` (same `ExoPlayerEngine` singleton, FFmpeg renderers preferred), and
+  `NATIVE_FFMPEG` (`FfmpegNativeEngine`, standalone `libffplayer.so`). The Settings
+  engine selector lists all three; `PlayerRepositoryImpl` falls back to
   `EXO_PLAYER` if a persisted engine isn't in the binding map, so stale prefs are safe.
 
-## 7. Deferred (YAGNI until a real 2nd engine exists)
+## 7. Deferred (known ceilings, revisit when they bite)
 
-- **Lazy release of non-active engines.** Today the single engine stays alive
-  on switch. When a heavy native player (mpv/VLC) is
-  added, release the inactive instance and rebuild on demand.
-- **`MediaSession` for non-Media3 engines.** Out of scope; system media controls
-  only work with `EXO_PLAYER` until a 2nd engine implements `getMedia3Player()`.
-- **Custom subtitle overlay.** `SubtitleOverlay` is already commented out; native
-  rendering suffices. Revisit only if a 2nd engine lacks native subtitle painting.
+- **Lazy release of non-active engines.** Engines stay alive on switch. The
+  native engine is now the heavy case — release inactive instances and rebuild
+  on demand if memory pressure shows up.
+- **`MediaSession` for non-Media3 engines.** `FfmpegNativeEngine.getMedia3Player()`
+  returns `null`, so system media controls (lock screen, PiP) only work with the
+  ExoPlayer-backed engines today.
 - **Hot mid-playback decoder handoff.** Switching engines stops playback and
   restarts on the new engine. Full seamless handoff is not needed.

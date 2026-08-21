@@ -1,7 +1,7 @@
 # Hz Player — UI Component Catalog
 
 > Every reusable composable in the design system, with spec and states.
-> Last refreshed: 2026-07-29. Lists the components that actually exist today;
+> Last refreshed: 2026-08-22. Lists the components that actually exist today;
 > layouts are representative, not pixel-exact.
 
 ---
@@ -22,6 +22,7 @@
 | `MediaPropertiesDialog` | `core/components/MediaPropertiesDialog.kt` | File/codec properties dialog (FFmpeg probe) |
 | `FileItemCard` | `core/components/FileItemCard.kt` | File/folder card for browse (3-dot menu) |
 | `FileOptionsBottomSheet` | `core/components/FileOptionsBottomSheet.kt` | Modal bottom sheet for file/folder context actions (thumbnail, favorite, play all, play as audio, properties) |
+| `ViewSortBottomSheet` | `core/components/ViewSortBottomSheet.kt` | Sort / view-mode / media-type-filter picker bottom sheet |
 | `BreadcrumbBar` | `core/components/BreadcrumbBar.kt` | Directory breadcrumb navigation |
 | `DirectoryBrowsePane` | `core/components/DirectoryBrowsePane.kt` | Shared browse listing (grid/list) |
 | `HzPlayerTopBar` | `core/components/HzPlayerTopBar.kt` | App top bar |
@@ -46,6 +47,7 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `AudioPlayerSheet` | `AudioPlayerSheet.kt` | Full-height audio bottom sheet (cover, controls, seek) |
 | `AudioQueueSheet` | `AudioQueueSheet.kt` | Audio "now playing" queue list |
 | `AudioSelectionDialog` | `AudioSelectionDialog.kt` | Audio-track picker |
+| `EqualizerSheet` | `EqualizerSheet.kt` | 10-band equalizer sliders, device presets, bass boost, loudness toggle |
 | `PlaylistDrawer` | `PlaylistDrawer.kt` | Video queue/playlist drawer |
 | `PlayerMoreOptionsSheet` | `PlayerMoreOptionsSheet.kt` | Sleep timer, jump-to-time, chapters, A-B repeat, play-as-audio options sheet |
 | `SleepTimerDialog` | `PlayerMoreOptionsSheet.kt` | Sleep timer preset picker (15/30/45/60/90/120 min + end-of-video + off) |
@@ -80,6 +82,7 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `DirectoryStackContent` | `presentation/browse/components/DirectoryStackContent.kt` |
 | `StorageRootsContent` | `presentation/browse/components/StorageRootsContent.kt` |
 | `FileBrowserTopBarActions` | `presentation/browse/components/FileBrowserTopBarActions.kt` |
+| `PasteActionBar` | `presentation/browse/components/PasteActionBar.kt` (cut/copy/move/delete) |
 | `NetworkScreenContent` | `presentation/network/components/NetworkScreenContent.kt` |
 | `ServerCard` | `presentation/network/components/ServerCard.kt` |
 | `ServerConfigDialog` | `presentation/network/components/ServerConfigDialog.kt` |
@@ -91,6 +94,22 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `ColorPickerDialog` | `presentation/settings/components/ColorPickerDialog.kt` |
 | `SubdlApiKeyDialog` | `presentation/settings/components/SubdlApiKeyDialog.kt` |
 | `SettingsDialogs` | `presentation/settings/components/SettingsDialogs.kt` |
+
+---
+
+## Browser components (`browser/ui/`)
+
+The in-app browser owns its UI package (hosted by `BrowserActivity`, not the main nav graph):
+
+| Component | Purpose |
+|---|---|
+| `BrowserScreen` | Full browser scaffold; hides chrome during system PiP |
+| `BrowserTopBar` / `BrowserBottomBar` | Omnibox top bar (with `UrlSuggestionsPanel`) + navigation toolbar |
+| `TabStrip` / `TabSidebar` | Tab switcher strip + sidebar (swipe-to-switch gesture) |
+| `NewTabPage` | Start page |
+| `MediaGrabberBottomSheet` | Detected media list + download/stream actions |
+| `PopupPermissionBottomSheet` | Cross-domain popup approval |
+| `BrowserHistoryScreen` / `BrowserSettingsScreen` | History and browser settings |
 
 ---
 

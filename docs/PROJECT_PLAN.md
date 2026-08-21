@@ -3,56 +3,71 @@
 > **Project**: Hz Player — VLC-inspired Android media player
 > **Root**: `C:\Users\reihan\Desktop\Rhvn-player\hz-android`
 > **Package**: `com.rhnxdev.hzplayer`
-> **Last refreshed**: 2026-07-29. All original phases complete; eight net-new
-> work streams (network streaming, native thumbnails, modular engine, libass
-> subtitles, archive support, OTA updates, in-app browser, player enhancements)
-> since then.
+> **Last refreshed**: 2026-08-22. All original phases complete; net-new work
+> streams since then include network streaming, native thumbnails, modular
+> engine (now **three** selectable engines), libass subtitles, archive support,
+> OTA updates, in-app browser, player enhancements, 10-band equalizer,
+> file operations, and the standalone native FFmpeg player.
 
 ---
 
 ## 1. Current State
 
 Hz Player is past foundation: all 10 original roadmap phases are implemented, and
-eight additional subsystems have been added on top:
+a series of additional subsystems have been added on top:
 
 - **Multi-source playback** — local MediaStore media, device filesystem, remote
   SMB / FTP / SFTP / WebDAV servers, and compressed archives (zip/7z/rar/tar/iso),
   all played through one modular playback engine.
 - **Native thumbnail extraction** — FFmpeg frame decode for video over any URI
   (local or remote), bridged via JNI into a Coil `Fetcher`.
-- **Engine modularity** — `IPlayerEngine` contract so a second backend (libVLC/mpv)
-  can be added with one class + one Hilt binding.
+- **Engine modularity — three engines** — `IPlayerEngine` contract with three
+  selectable backends: `EXO_PLAYER` (Media3 + platform decoders), `FFMPEG`
+  (same ExoPlayer pipeline with FFmpeg software renderers preferred), and
+  `NATIVE_FFMPEG` (standalone native player, `libffplayer.so`, bypassing
+  ExoPlayer entirely — instant seek on local + networked media, AMediaCodec
+  hardware decode with libdav1d fallback, bitmap subtitle support).
 - **Native libass subtitles** — pixel-perfect ASS/SSA rendering via libass JNI;
-  SRT/VTT converted on-the-fly; embedded + external track support.
+  SRT/VTT converted on-the-fly; embedded + external track support; zero-flicker
+  rendering.
 - **Archive support** — libarchive-based virtual folder navigation + play-in-place
   streaming from inside archives (no extraction to disk). Solid archive warnings.
 - **OTA updates** — Cloudflare R2 update checker with startup reminder, About dialog,
   and open-source licenses screen (AboutLibraries).
 - **In-app browser** — WebView-based browser with Rust ad blocking engine (JNI),
   media sniffing, tab management (swipe-to-switch), browser history, popup
-  permissions, real desktop mode, and settings.
+  permissions, real desktop mode, Chrome-like omnibox URL suggestions, web
+  Picture-in-Picture (site PiP button → native PiP window), and settings.
 - **Player enhancements** — Sleep timer (presets + end-of-video), container chapter
   navigation (MKV/MP4/OGG), A-B repeat loop, audio delay (A/V sync via
   AudioDelaySink), play-as-audio mode, hold-to-fast-forward cue with real skipped
   time display.
+- **10-band equalizer** — per-band gain, device presets, bass boost and loudness
+  enhancement (`TenBandEqualizerProcessor` on ExoPlayer; wired to the native
+  engine's AudioTrack session id); persisted across restarts.
+- **File operations** — cut / copy / move / delete in the file browser with a
+  paste action bar; "Play All as Playlist" for folders.
 
 ### What exists
 - ✅ Compose + M3, 5-tab `NavigationSuiteScaffold`, M3 dynamic theme (`presentation/theme`)
 - ✅ Hilt DI (`AppModule` / `RepositoryModule` / `DatabaseModule` / `PlayerEngineModule`)
-- ✅ Room (5 DAOs, v6) + DataStore preferences + encrypted server credentials
+- ✅ Room (5 DAOs, v6, schema export + versioned migrations) + DataStore preferences + encrypted server credentials
 - ✅ Media3 ExoPlayer via singleton `MediaPlayerHolder` + `MediaPlaybackService`
+- ✅ Three playback engines: ExoPlayer / FFmpeg-software (renderer reordering) / standalone native FFmpeg (`FfmpegNativeEngine` + `cpp/FfmpegPlayer.cpp`)
 - ✅ Coil 3 image loading + native thumbnail fetcher + codec metadata probe
 - ✅ Full screens: video library, audio browser (+ album/artist detail), file browser,
   network, player (video + audio), search, settings, licenses
 - ✅ Network stack: SMB/FTP/SFTP/WebDAV clients, connection pool, LAN discovery
-- ✅ Native libass subtitle pipeline (ASS/SSA/SRT/VTT rendering)
-- ✅ Archive support: libarchive JNI + virtual navigation + `archive://` DataSource + solid archive warnings
+- ✅ Native libass subtitle pipeline (ASS/SSA/SRT/VTT rendering, zero-flicker)
+- ✅ Archive support: libarchive JNI (pinned v3.7.9) + virtual navigation + `archive://` DataSource + solid archive warnings
 - ✅ Audio queue + floating video player (PiP-style)
 - ✅ OTA update checker + startup reminder + About/Licenses
 - ✅ Full i18n (strings.xml; `DEBUG`-gated preview data only)
 - ✅ Native FFmpeg thumbnail pipeline (`cpp/ThumbnailExtractor.cpp`)
-- ✅ In-app browser (WebView + Rust ad block + media sniffing + tabs + history + desktop mode)
+- ✅ In-app browser (WebView + Rust ad block + media sniffing + tabs + history + desktop mode + omnibox suggestions + web PiP)
 - ✅ Player enhancements: sleep timer, chapters, A-B repeat, audio delay, play-as-audio
+- ✅ 10-band equalizer with presets, bass boost, loudness (`EqualizerSheet`)
+- ✅ File operations: cut/copy/move/delete + paste action bar; Play All as Playlist
 - ✅ Extracted `HzPlayerApp` composable shell + `MainTabPager` / `MainNavHost` split
 - ✅ `FileOptionsBottomSheet` context menus, `SolidArchiveWarningDialog`
 
@@ -61,16 +76,16 @@ eight additional subsystems have been added on top:
 - ⏸ `domain/usecase` layer (no use case layer; VMs call repositories directly)
 - ⏸ In-archive sibling subtitle auto-detection
 - ⏸ Multi-part / split archive support
-- ❌ Second playback engine (libVLC/mpv) — architecture supports it, none implemented
-- ❌ Android Auto, equalizer
+- ❌ Android Auto
 - ❌ Tests beyond mapper/cache/path unit tests + Robolectric
 
 ---
 
 ## 2. VLC Android Reference
 
-The full VLC Android source lives at `vlc-android-master/` for UX reference. Adapt,
-do not copy. Mapping table in the original plan remains accurate; notable updates:
+The `vlc-android-master/` source tree was **removed** from the repository (cleanup
+pass). It served its purpose as UX reference; the concepts below are already
+adapted into the codebase. Do not re-add it.
 
 | VLC | Hz Player (current) |
 |---|---|
@@ -108,14 +123,18 @@ do not copy. Mapping table in the original plan remains accurate; notable update
 | + Network streaming | SMB/FTP/SFTP/WebDAV + discovery | ✅ 100% |
 | + Native thumbnails | FFmpeg JNI + Coil fetcher + probe | ✅ 100% |
 | + Modular engine | IPlayerEngine + DI map + seam | ✅ 100% |
-| + libass subtitles | Native ASS rendering + SRT/VTT conversion | ✅ 100% |
-| + Archive support | libarchive + virtual nav + play-in-place | ✅ 100% |
+| + FFmpeg software decode | `EngineType.FFMPEG` renderer reordering | ✅ 100% |
+| + Native FFmpeg player | `EngineType.NATIVE_FFMPEG` (libffplayer.so) | ✅ 100% |
+| + 10-band equalizer | Bands/presets/bass boost/loudness + `EqualizerSheet` | ✅ 100% |
+| + File operations | Cut/copy/move/delete + paste bar; Play All as Playlist | ✅ 100% |
+| + libass subtitles | Native ASS rendering + SRT/VTT conversion, zero-flicker | ✅ 100% |
+| + Archive support | libarchive v3.7.9 + virtual nav + play-in-place | ✅ 100% |
 | + OTA updates | R2 checker + startup reminder + About/Licenses | ✅ 100% |
 | + Audio queue / Floating player | Queue sheet + PiP-style overlay | ✅ 100% |
-| + In-app browser | WebView + Rust ad block + media sniffing + tabs + history + desktop mode | ✅ 100% |
+| + In-app browser | WebView + Rust ad block + media sniffing + tabs + history + desktop mode + omnibox suggestions + web PiP | ✅ 100% |
 | + Player enhancements | Sleep timer + chapters + A-B repeat + audio delay + play-as-audio | ✅ 100% |
 | + App shell & UI overhaul | HzPlayerApp extraction + bottom-sheet menus + solid archive warnings | ✅ 100% |
-| Cleanup/i18n pass | 27-item bug/reliability/i18n | ✅ 100% |
+| Cleanup/i18n pass | 27-item bug/reliability/i18n + dead-code/dedupe pass | ✅ 100% |
 
 **Overall: foundation + all subsystems complete.**
 
@@ -130,3 +149,4 @@ do not copy. Mapping table in the original plan remains accurate; notable update
 | 2026-07-21 | Docs synced: libass pipeline, archive support, OTA updates, audio queue, floating player, render seam on interface | Claude |
 | 2026-07-24 | Docs synced: in-app browser, 11 repositories, 5 Room tables, 27 player components, 20 domain models, corrected counts throughout | Claude |
 | 2026-07-29 | Docs synced: sleep timer, chapters, A-B repeat, audio delay, play-as-audio, app shell extraction, bottom-sheet menus, solid archive warnings, Rust adblock, Room v6, new components throughout | Claude |
+| 2026-08-22 | Docs synced: three playback engines (FFMPEG software-decode + NATIVE_FFMPEG standalone player), 10-band equalizer, browser omnibox suggestions + web PiP, cut/copy/move/delete file operations, Play All as Playlist, ASS zero-flicker rendering, libarchive v3.7.9 pin, mp4fork extractor, VLC reference dir removal noted | Claude |

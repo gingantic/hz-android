@@ -39,6 +39,8 @@ inline fun <reified T : Enum<T>> EnumSelectionDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(24.dp),
         title = {
             Text(
                 text = stringResource(titleRes),

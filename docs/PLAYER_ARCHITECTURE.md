@@ -1,9 +1,11 @@
 # Hz Player — Player Architecture
 
-> Media3 ExoPlayer behind the `IPlayerEngine` contract, rendered through `PlayerSurface`.
-> Last refreshed: 2026-07-29. Reflects the libass subtitle pipeline, position controller
-> split, audio queue, floating video player, resume-mode support, in-app browser,
-> sleep timer, chapters, A-B repeat, audio delay, and play-as-audio mode.
+> Media3 ExoPlayer and a standalone native FFmpeg player behind the `IPlayerEngine`
+> contract, rendered through `PlayerSurface`.
+> Last refreshed: 2026-08-22. Reflects three selectable engines, the 10-band
+> equalizer, the libass subtitle pipeline (zero-flicker), position controller
+> split, audio queue, floating video player, resume-mode support, sleep timer,
+> chapters, A-B repeat, audio delay, and play-as-audio mode.
 
 ---
 
@@ -18,10 +20,12 @@
 └───────────────────────────┬───────────────────────────────┘
                             │ Media3 Player (via IPlayerEngine)
 ┌───────────────────────────▼───────────────────────────────┐
-│                    ExoPlayerEngine                         │
-│  • implements IPlayerEngine (the only playback contract)   │
-│  • owns rendering: createRenderView / updateRenderView     │
-│  • wraps MediaPlayerHolder.player                          │
+│        Active engine (Map<EngineType, IPlayerEngine>)      │
+│  • EXO_PLAYER / FFMPEG → ExoPlayerEngine                   │
+│    (FFMPEG = same engine, FFmpeg renderers preferred)      │
+│  • NATIVE_FFMPEG → FfmpegNativeEngine                      │
+│    (standalone libffplayer.so, no ExoPlayer)               │
+│  • all rendering via createRenderView/updateRenderView     │
 └───────────────────────────┬───────────────────────────────┘
                             │ IPlayerEngine calls
 ┌───────────────────────────▼───────────────────────────────┐
@@ -49,10 +53,14 @@
 
 ## MediaPlayerHolder (Singleton)
 
-Owns the single `ExoPlayer`. Configured for this app:
+Owns the single `ExoPlayer` (backs both `EXO_PLAYER` and `FFMPEG` engine types).
+Configured for this app:
 - `DefaultTrackSelector` with **tunneling disabled** (4K HDR HEVC tunneled seek stall).
 - `DefaultLoadControl` with larger buffers (50s/90s) for smoother remote streaming.
-- `DefaultRenderersFactory` with `EXTENSION_RENDERER_MODE_ON` (FFmpeg extension decoders).
+- `HzRenderersFactory` (single `RenderersFactory`): ASS renderers + audio delay +
+  equalizer processors, with a `preferFfmpeg` flag that indexes the FFmpeg extension
+  decoders before MediaCodec (`EngineType.FFMPEG`) or keeps platform-first order
+  (`EXO_PLAYER`).
 - `AudioDelaySink` wrapping the default audio sink for A/V sync offset.
 - Chapter probing via native FFmpeg demuxer on READY → `List<ChapterInfo>`.
 - Exposes `PlayerStateInfo` via `playbackState: StateFlow`.
@@ -316,6 +324,36 @@ ExoPlayer. Since ExoPlayer syncs video to the audio renderer's clock, offsetting
 
 ---
 
+## Engine Selection (three engines)
+
+Picked in Settings; persisted via `UserPreferencesRepository.activeEngine`:
+
+| Engine | Backing | Use case |
+|---|---|---|
+| `EXO_PLAYER` | Media3 ExoPlayer, platform decoders first | Default; best battery + format coverage |
+| `FFMPEG` | Same ExoPlayer pipeline, FFmpeg software renderers preferred (`HzRenderersFactory.preferFfmpeg`) | Formats the platform decoder mishandles |
+| `NATIVE_FFMPEG` | Standalone native player (`FfmpegNativeEngine` + `cpp/FfmpegPlayer.cpp`, `libffplayer.so`) | Instant seeking on local/networked media; AMediaCodec HW decode w/ libdav1d fallback |
+
+Switching stops current playback and rebuilds the render surface
+(`PlayerSurface` keys on `engineType`). The native engine opts out of the
+system MediaSession (`getMedia3Player() = null`).
+
+See `docs/FFMPEG_NATIVE_AUDIT_AND_ROADMAP.md` for the native player deep-dive.
+
+---
+
+## 10-Band Equalizer
+
+Implemented once, exposed through the engine contract:
+- `ExoPlayerEngine`: `TenBandEqualizerProcessor` in the `AudioProcessor` chain +
+  `EqualizerController` (bass boost, loudness enhancement).
+- `FfmpegNativeEngine`: same `EqualizerController`, attached to the native
+  player's AudioTrack session id.
+- UI: `EqualizerSheet` — per-band sliders, device presets, bass boost, loudness;
+  state flows as `StateFlow<EqualizerInfo>` and persists via `EqualizerSettings`.
+
+---
+
 ## Play-as-Audio Mode
 
 From the video player, users can tap "Play as audio" (`PlayerMoreOptionsSheet`)
@@ -337,6 +375,8 @@ floating player or navigating back to the full-screen player.
 | Subtitles (external) | `addExternalSubtitle(uri)` / `loadExternalAss(uri)` |
 | Audio tracks | `getCurrentTracks().getGroups()` |
 | Decoder mode | `setDecoderMode()` → rebuilds renderers (SW/HW) |
+| FFmpeg preference | `setFfmpegPreferred(true)` → renderer reorder (`EngineType.FFMPEG`) |
+| Equalizer | `TenBandEqualizerProcessor` + `EqualizerController` in the processor chain |
 | DRM | `drmSessionActive` flag → TextureView for secure decode |
 | ABRepeat | manual (not native) — `PlayerPositionController` loops A→B |
 | Sleep timer | manual — `PlayerViewModel` countdown + auto-pause |

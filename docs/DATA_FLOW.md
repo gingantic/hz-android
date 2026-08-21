@@ -1,9 +1,10 @@
 # Hz Player — Data Flow Architecture
 
 > How data moves from persistence to pixels.
-> Last refreshed: 2026-07-29. Reflects the modular `IPlayerEngine` seam, the remote
-> network stack, resumable playback, libass subtitle pipeline, archive support,
-> in-app browser, sleep timer, chapters, A-B repeat, audio delay, and play-as-audio mode.
+> Last refreshed: 2026-08-22. Reflects the modular `IPlayerEngine` seam (three
+> engines), the remote network stack, resumable playback, libass subtitle pipeline,
+> archive support, in-app browser (omnibox suggestions, web PiP), the 10-band
+> equalizer, sleep timer, chapters, A-B repeat, audio delay, and play-as-audio mode.
 
 ---
 
@@ -91,9 +92,11 @@ BrowserActivity (separate activity)
   → BrowserScreen
     → WebView per tab (pooled via BrowserSessionStore)
     → BrowserHistoryRepository (persists history)
+    → UrlSuggestionsPanel (Chrome-like omnibox suggestions from history)
     → MediaGrabberBottomSheet (stream detected media to player)
     → PopupPermissionBottomSheet (cross-domain popup approval)
     → Real desktop mode toggle (desktop UA + wide viewport)
+    → Web PiP API bridge: site PiP button → native Picture-in-Picture window
 ```
 
 ---
@@ -167,7 +170,20 @@ SettingsScreen → onEngineSelected(type)
     → active engine .stop() (kept alive for switch-back)
     → _activeEngineType.value = type
     → userPreferencesRepository.setActiveEngine(type)   // persisted
+    → FFMPEG additionally flips HzRenderersFactory.preferFfmpeg
+      (NATIVE_FFMPEG swaps to the standalone native engine instance)
   → PlayerSurface key(activeEngineType) recomposes render view
+```
+
+### Equalizer adjustment
+```
+EqualizerSheet → band slider / preset / bass / loudness
+  → PlayerViewModel → PlayerRepository
+    → activeEngine.setEqualizerBandLevel(band, mb)   // IPlayerEngine EQ block
+      → ExoPlayerEngine: TenBandEqualizerProcessor (AudioProcessor chain)
+      → FfmpegNativeEngine: EqualizerController on the AudioTrack session id
+    → getEqualizerState(): StateFlow<EqualizerInfo> drives the sheet UI
+  → UserPreferencesRepository persists EqualizerSettings across restarts
 ```
 
 ### Persist playback position (resume)
@@ -239,7 +255,8 @@ PlayerPositionController (250ms tick)
 | Room | Persistent cache for media index, server configs, resume positions, stream history, browser history | 5 DAOs; KSP-generated; v6 (headersJson, pageUrl, mimeType on stream_history) |
 | MediaStore | System media index | `MediaScanner` syncs into Room |
 | DataStore | User preferences (sort, theme, active engine, archive passwords) | Type-safe `Preferences` |
-| Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` |
+| Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` (backs `EXO_PLAYER` + `FFMPEG`) |
+| Native FFmpeg player | Standalone playback engine (`NATIVE_FFMPEG`) | `FfmpegNativeEngine` + `ffmpeg/FfmpegNativePlayer.kt` → `cpp/FfmpegPlayer.cpp` (`libffplayer.so`) |
 | Remote clients | SMB/FTP/SFTP/WebDAV browse + streaming | pooled in `ConnectionPool` |
 | Native FFmpeg | Video thumbnails + codec metadata probe | JNI in `core/thumbnail` + `cpp/` |
 | Native libass | ASS/SSA/SRT/VTT subtitle rendering | JNI in `data/datasource/subtitle/assrender` + `cpp/` |

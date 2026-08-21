@@ -27,4 +27,10 @@ interface FileRepository {
      * @return the name of the deleted entry.
      */
     suspend fun deleteEntry(path: String): Result<String>
+
+    /**
+     * Create a new folder named [folderName] inside [parentPath].
+     * @return the absolute path of the created directory.
+     */
+    suspend fun createDirectory(parentPath: String, folderName: String): Result<String>
 }

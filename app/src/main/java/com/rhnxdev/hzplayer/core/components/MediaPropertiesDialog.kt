@@ -219,21 +219,22 @@ fun MediaPropertiesDialog(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         tonalElevation = 0.dp,
         dragHandle = {
             if (!hasThumbnailBanner) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp, bottom = 8.dp),
+                        .padding(top = 10.dp, bottom = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(36.dp)
+                            .width(32.dp)
                             .height(4.dp)
                             .background(
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
                                 RoundedCornerShape(2.dp)
                             )
                     )
@@ -308,15 +309,15 @@ fun MediaPropertiesDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 12.dp),
+                            .padding(top = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(
                             modifier = Modifier
-                                .width(36.dp)
+                                .width(32.dp)
                                 .height(4.dp)
                                 .background(
-                                    Color.White.copy(alpha = 0.4f),
+                                    Color.White.copy(alpha = 0.45f),
                                     RoundedCornerShape(2.dp)
                                 )
                         )
@@ -327,7 +328,7 @@ fun MediaPropertiesDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.md)
+                    .padding(horizontal = 20.dp)
                     .padding(bottom = Spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
@@ -337,7 +338,7 @@ fun MediaPropertiesDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(Spacing.sm),
+                        shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                         modifier = Modifier.size(40.dp)
                     ) {
@@ -352,16 +353,19 @@ fun MediaPropertiesDialog(
                                 imageVector = icon,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(Spacing.sm))
+                    Spacer(modifier = Modifier.width(12.dp))
 
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.2).sp,
+                        ),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
