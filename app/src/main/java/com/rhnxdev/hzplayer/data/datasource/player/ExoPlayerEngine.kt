@@ -89,6 +89,10 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.decoderMode = mode
     }
 
+    override fun setDisableHdr(disabled: Boolean) {
+        playerHolder.disableHdr = disabled
+    }
+
     /** Toggle FFmpeg-first renderer ordering (the "FFmpeg" engine selection).
      *  Forwards to the holder; rebuilt player applies it on the next play. */
     override fun setFfmpegPreferred(preferred: Boolean) {
@@ -210,18 +214,21 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun seekTo(positionMs: Long) {
-        player.seekTo(positionMs)
+        val duration = player.duration.coerceAtLeast(0)
+        val clamped = positionMs.coerceIn(0, if (duration > 0) duration else Long.MAX_VALUE)
+        player.seekTo(clamped)
+        assHandler.onSeek(clamped)
     }
 
     override fun skipForward(ms: Long) {
-        val newPos = (player.currentPosition + ms)
-            .coerceAtMost(player.duration.coerceAtLeast(0))
-        player.seekTo(newPos)
+        val duration = player.duration.coerceAtLeast(0)
+        val newPos = (player.currentPosition + ms).coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE)
+        seekTo(newPos)
     }
 
     override fun skipBackward(ms: Long) {
         val newPos = (player.currentPosition - ms).coerceAtLeast(0)
-        player.seekTo(newPos)
+        seekTo(newPos)
     }
 
     override fun skipToNext() {
@@ -613,12 +620,18 @@ class ExoPlayerEngine @Inject constructor(
             com.rhnxdev.hzplayer.domain.model.AspectRatioMode.AUTO -> {
                 playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 val videoSize = currentPlayer.videoSize
+                val isRotated = videoSize.unappliedRotationDegrees == 90 || videoSize.unappliedRotationDegrees == 270
+                val sar = if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1.0f
                 val videoAspectRatio = if (videoSize.height == 0 || videoSize.width == 0) {
                     0f
+                } else if (isRotated) {
+                    videoSize.height.toFloat() / (videoSize.width.toFloat() * sar)
                 } else {
-                    (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio) / videoSize.height.toFloat()
+                    (videoSize.width.toFloat() * sar) / videoSize.height.toFloat()
                 }
-                contentFrame?.setAspectRatio(videoAspectRatio)
+                if (videoAspectRatio > 0f) {
+                    contentFrame?.setAspectRatio(videoAspectRatio)
+                }
             }
             com.rhnxdev.hzplayer.domain.model.AspectRatioMode.RATIO_16_9 -> {
                 playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -639,12 +652,18 @@ class ExoPlayerEngine @Inject constructor(
             com.rhnxdev.hzplayer.domain.model.AspectRatioMode.ZOOM -> {
                 playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                 val videoSize = currentPlayer.videoSize
+                val isRotated = videoSize.unappliedRotationDegrees == 90 || videoSize.unappliedRotationDegrees == 270
+                val sar = if (videoSize.pixelWidthHeightRatio > 0f) videoSize.pixelWidthHeightRatio else 1.0f
                 val videoAspectRatio = if (videoSize.height == 0 || videoSize.width == 0) {
                     0f
+                } else if (isRotated) {
+                    videoSize.height.toFloat() / (videoSize.width.toFloat() * sar)
                 } else {
-                    (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio) / videoSize.height.toFloat()
+                    (videoSize.width.toFloat() * sar) / videoSize.height.toFloat()
                 }
-                contentFrame?.setAspectRatio(videoAspectRatio)
+                if (videoAspectRatio > 0f) {
+                    contentFrame?.setAspectRatio(videoAspectRatio)
+                }
             }
             com.rhnxdev.hzplayer.domain.model.AspectRatioMode.STRETCH -> {
                 playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
@@ -680,6 +699,12 @@ class ExoPlayerEngine @Inject constructor(
                 subtitleView.visibility = View.GONE
             }
         }
+        playerView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                applyAspectRatioMode(playerView, currentAspectRatioMode)
+            }
+        }
+        applyAspectRatioMode(playerView, currentAspectRatioMode)
         return playerView
     }
 

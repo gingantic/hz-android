@@ -13,6 +13,7 @@ import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.key.Keyer
 import coil3.request.Options
+import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
 import jcifs.smb.SmbFile
@@ -135,11 +136,30 @@ class VideoFrameFetcher(
         val scheme = uri.substringBefore("://").lowercase()
 
         val result = when {
+            scheme == "archive" -> extractArchiveFrame(uri)
             scheme == "smb" -> extractSmbFrame(uri)
             scheme in setOf("ftp", "sftp", "webdav", "webdavs", "http", "https") -> extractRemoteFrame(uri)
             else -> extractLocalFrame(uri)
         }
         return result
+    }
+
+    private fun extractArchiveFrame(archiveUri: String): Bitmap? {
+        val parsed = ArchiveUri.parse(archiveUri) ?: return null
+        val (container, entry, password) = parsed
+        return try {
+            val bridge = ArchiveRandomAccessBridge(container, entry, password)
+            try {
+                NativeThumbnailExtractor.extractThumbnail(
+                    bridge, 0.40f, THUMB_MAX_WIDTH_NETWORK, fastMode = true
+                )
+            } finally {
+                bridge.close()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "extractArchiveFrame: failed: ${e.message}")
+            null
+        }
     }
 
     private fun extractSmbFrame(remoteUri: String): Bitmap? {

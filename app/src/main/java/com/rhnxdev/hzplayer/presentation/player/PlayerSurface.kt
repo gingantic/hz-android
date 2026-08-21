@@ -4,6 +4,7 @@ import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.viewinterop.AndroidView
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
@@ -20,7 +21,10 @@ fun PlayerSurface(
     modifier: Modifier = Modifier,
     onRenderView: (View?) -> Unit,
 ) {
-    key(engine.engineType) {
+    val configuration = LocalConfiguration.current
+    val currentOrientation = configuration.orientation
+
+    key(engine.engineType, uiState.useSurfaceView) {
         AndroidView(
             factory = { ctx ->
                 val view = engine.createRenderView(ctx, uiState.useSurfaceView)
@@ -28,12 +32,15 @@ fun PlayerSurface(
                 view
             },
             update = { view ->
-                engine.updateRenderView(
-                    view,
-                    RenderViewConfig(
-                        aspectRatioMode = uiState.aspectRatioMode,
-                    ),
-                )
+                // Reading currentOrientation inside update ensures Compose executes this lambda on rotation
+                if (currentOrientation != 0) {
+                    engine.updateRenderView(
+                        view,
+                        RenderViewConfig(
+                            aspectRatioMode = uiState.aspectRatioMode,
+                        ),
+                    )
+                }
             },
             modifier = modifier,
         )

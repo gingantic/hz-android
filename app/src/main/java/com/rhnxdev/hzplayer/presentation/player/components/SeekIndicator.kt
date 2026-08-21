@@ -19,6 +19,11 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,9 +43,18 @@ fun SeekIndicator(
     modifier: Modifier = Modifier,
     isForward: Boolean = deltaMs >= 0,
 ) {
-    val targetMs = (currentPositionMs + deltaMs).coerceAtLeast(0)
+    var lastDisplayedDeltaMs by remember { mutableLongStateOf(deltaMs) }
+    var lastIsForward by remember { mutableStateOf(isForward) }
 
-    val deltaSeconds = (deltaMs / 1000).let {
+    if (deltaMs != 0L) {
+        lastDisplayedDeltaMs = deltaMs
+        lastIsForward = isForward
+    }
+
+    val displayDelta = if (deltaMs != 0L) deltaMs else lastDisplayedDeltaMs
+    val displayIsForward = if (deltaMs != 0L) isForward else lastIsForward
+
+    val deltaSeconds = (displayDelta / 1000).let {
         if (it == 0L) "" else if (it > 0) "+${it}s" else "${it}s"
     }
 
@@ -50,7 +64,7 @@ fun SeekIndicator(
 
     Box(
         modifier = modifier.fillMaxSize(),
-        contentAlignment = if (isForward) Alignment.CenterEnd else Alignment.CenterStart,
+        contentAlignment = if (displayIsForward) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         AnimatedVisibility(
             visible = visible,
@@ -67,7 +81,7 @@ fun SeekIndicator(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
-                    imageVector = if (isForward) Icons.Default.FastForward else Icons.Default.FastRewind,
+                    imageVector = if (displayIsForward) Icons.Default.FastForward else Icons.Default.FastRewind,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(18.dp),

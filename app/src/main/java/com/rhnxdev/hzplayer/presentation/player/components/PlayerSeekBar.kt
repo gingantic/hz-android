@@ -43,6 +43,7 @@ fun PlayerSeekBar(
     onSeekStart: () -> Unit,
     onSeekEnd: () -> Unit,
     modifier: Modifier = Modifier,
+    onScrub: ((Long) -> Unit)? = null,
     abLoopStartMs: Long? = null,
     abLoopEndMs: Long? = null,
 ) {
@@ -98,10 +99,12 @@ fun PlayerSeekBar(
                             isDragging = true
                             dragFraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
                             onSeekStart()
+                            onScrub?.invoke((dragFraction * duration).toLong())
                         },
                         onHorizontalDrag = { change, _ ->
                             change.consume()
                             dragFraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                            onScrub?.invoke((dragFraction * duration).toLong())
                         },
                         onDragEnd = {
                             onSeek((dragFraction * duration).toLong())

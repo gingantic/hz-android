@@ -30,6 +30,7 @@ interface PlayerRepository {
     fun seekToMediaItem(index: Int)
     fun togglePlayPause()
     fun seekTo(positionMs: Long)
+    fun setScrubbing(isScrubbing: Boolean)
     fun skipForward(ms: Long = 10000)
     fun skipBackward(ms: Long = 10000)
     fun skipToNext()

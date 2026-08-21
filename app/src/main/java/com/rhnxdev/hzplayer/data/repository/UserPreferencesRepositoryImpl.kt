@@ -64,6 +64,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override val decoderMode: Flow<DecoderMode> =
         enumPreference(PrefKey.DecoderMode.key, DecoderMode.AUTO)
 
+    override val disableHdr: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PrefKey.DisableHdr.key] ?: false
+    }.distinctUntilChanged()
+
     override val fileBrowserMediaMode: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[PrefKey.FileBrowserMediaMode.key] ?: false
     }.distinctUntilChanged()
@@ -187,6 +191,10 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override suspend fun setDecoderMode(mode: DecoderMode) {
         dataStore.edit { prefs -> prefs[PrefKey.DecoderMode.key] = mode.name }
+    }
+
+    override suspend fun setDisableHdr(disabled: Boolean) {
+        dataStore.edit { prefs -> prefs[PrefKey.DisableHdr.key] = disabled }
     }
 
     override suspend fun setFileBrowserMediaMode(enabled: Boolean) {
@@ -371,6 +379,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         object ShowHiddenFiles : PrefKey<Boolean>(booleanPreferencesKey("show_hidden_files"))
         object UseSurfaceView : PrefKey<Boolean>(booleanPreferencesKey("use_surface_view"))
         object DecoderMode : PrefKey<String>(stringPreferencesKey("decoder_mode"))
+        object DisableHdr : PrefKey<Boolean>(booleanPreferencesKey("disable_hdr"))
         object FileBrowserMediaMode : PrefKey<Boolean>(booleanPreferencesKey("file_browser_media_mode"))
         object OrientationMode : PrefKey<String>(stringPreferencesKey("orientation_mode"))
         object ResumeMode : PrefKey<String>(stringPreferencesKey("resume_mode"))

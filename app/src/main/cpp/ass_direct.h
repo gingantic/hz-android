@@ -35,7 +35,7 @@ void ass_direct_process_chunk(AssDirectContext *ctx, const char *data, int size,
 /**
  * Render the subtitle frame at the given timestamp.
  * @param out_pixels Output buffer (RGBA, width*height*4 bytes).
- * @return 1 if content was rendered, 0 if blank.
+ * @return 0 if blank (empty), 1 if content was rendered (changed), 2 if content unchanged.
  */
 int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixels);
 

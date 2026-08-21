@@ -49,7 +49,7 @@ static Session* openPositioned(const std::string& path,
     if (!password.empty()) {
         archive_read_add_passphrase(a, password.c_str());
     }
-    if (archive_read_open_filename(a, path.c_str(), 10240) != ARCHIVE_OK) {
+    if (archive_read_open_filename(a, path.c_str(), 65536) != ARCHIVE_OK) {
         LOGE("openPositioned: open failed: %s", archive_error_string(a));
         archive_read_free(a);
         return nullptr;
@@ -136,7 +136,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeList(
     if (!password.empty()) {
         archive_read_add_passphrase(a, password.c_str());
     }
-    int open_hr = archive_read_open_filename(a, path.c_str(), 10240);
+    int open_hr = archive_read_open_filename(a, path.c_str(), 65536);
     if (open_hr < ARCHIVE_OK) {
         LOGE("nativeList: open warning/error %d: %s", open_hr, archive_error_string(a));
         if (open_hr < ARCHIVE_WARN || isPassphraseError(a, open_hr, path, password)) {
@@ -263,8 +263,33 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeSeek(
     if (target == s->pos) return JNI_TRUE;
     if (target < 0) return JNI_FALSE;
 
-    // Expensive path: libarchive has no backward seek, so re-open + skip to
-    // target. Solid archives re-decompress preceding entries (see §3).
+    // Fast path: forward seek when archive session is still valid.
+    // Discard the delta in-between without closing and re-opening from byte 0.
+    if (target > s->pos && s->a != nullptr) {
+        la_int64_t remaining = target - s->pos;
+        std::vector<uint8_t> dump(256 * 1024);
+        bool skipOk = true;
+        while (remaining > 0) {
+            size_t chunk = static_cast<size_t>(std::min<la_int64_t>(remaining, dump.size()));
+            la_ssize_t rr = archive_read_data(s->a, dump.data(), chunk);
+            if (rr == 0) {
+                s->pos = target - remaining;
+                return (remaining == 0) ? JNI_TRUE : JNI_FALSE;
+            }
+            if (rr < 0) {
+                LOGE("nativeSeek: forward skip error %s", archive_error_string(s->a));
+                skipOk = false;
+                break;
+            }
+            remaining -= rr;
+            s->pos += rr;
+        }
+        if (skipOk && remaining == 0) {
+            return JNI_TRUE;
+        }
+    }
+
+    // Fallback path (backward seek or recovery): re-open from beginning + skip to target.
     LOGD("nativeSeek: reopen+skip %s#%s from=%lld to=%lld",
          s->path.c_str(), s->entry.c_str(),
          static_cast<long long>(s->pos), static_cast<long long>(target));
@@ -290,12 +315,15 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeSeek(
     delete ns;
     s->pos = 0;
 
+    if (target == 0) {
+        return JNI_TRUE;
+    }
+
     la_int64_t remaining = target;
-    uint8_t dump[65536];
+    std::vector<uint8_t> dump(256 * 1024);
     while (remaining > 0) {
-        size_t chunk = static_cast<size_t>(remaining);
-        if (chunk > sizeof(dump)) chunk = sizeof(dump);
-        la_ssize_t rr = archive_read_data(s->a, dump, chunk);
+        size_t chunk = static_cast<size_t>(std::min<la_int64_t>(remaining, dump.size()));
+        la_ssize_t rr = archive_read_data(s->a, dump.data(), chunk);
         if (rr == 0) break;                 // EOF
         if (rr < 0) {
             archive_read_free(s->a);

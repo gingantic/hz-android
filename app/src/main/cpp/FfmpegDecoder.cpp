@@ -140,6 +140,9 @@ struct VideoContext {
   AVCodecContext* codecContext;
   // Owned by the playback thread (renderFrame only).
   SwsContext* swsContext;
+  ANativeWindow* cachedWindow = nullptr;
+  jobject cachedSurface = nullptr;
+  AVPacket* decodePacket = nullptr;
 };
 
 jint JNI_OnLoad(JavaVM* vm, void* reserved) {
@@ -338,7 +341,7 @@ VIDEO_DECODER_FUNC(jlong, ffmpegVideoInitialize, jstring codecName,
     releaseContext(context);
     return 0L;
   }
-  VideoContext* videoContext = new VideoContext{context, nullptr};
+  VideoContext* videoContext = new VideoContext{context, nullptr, nullptr, nullptr, av_packet_alloc()};
   return (jlong)videoContext;
 }
 
@@ -355,11 +358,12 @@ VIDEO_DECODER_FUNC(jint, ffmpegVideoDecode, jlong jContext, jobject inputData,
   }
   AVCodecContext* context = videoContext->codecContext;
   uint8_t* inputBuffer = (uint8_t*)env->GetDirectBufferAddress(inputData);
-  AVPacket* packet = av_packet_alloc();
+  AVPacket* packet = videoContext->decodePacket;
   if (!packet) {
-    LOGE("Video decode: failed to allocate packet.");
-    return VIDEO_DECODER_ERROR_OTHER;
+    packet = av_packet_alloc();
+    videoContext->decodePacket = packet;
   }
+  av_packet_unref(packet);
   packet->data = inputBuffer;
   packet->size = inputSize;
   // Microsecond timestamps ride through the decoder opaquely; reordered
@@ -369,7 +373,6 @@ VIDEO_DECODER_FUNC(jint, ffmpegVideoDecode, jlong jContext, jobject inputData,
   int sendResult = avcodec_send_packet(context, packet);
   AVFrame* frame = av_frame_alloc();
   if (!frame) {
-    av_packet_free(&packet);
     LOGE("Video decode: failed to allocate frame.");
     return VIDEO_DECODER_ERROR_OTHER;
   }
@@ -378,7 +381,8 @@ VIDEO_DECODER_FUNC(jint, ffmpegVideoDecode, jlong jContext, jobject inputData,
     // Decoder was full; a frame has been drained, so the packet fits now.
     sendResult = avcodec_send_packet(context, packet);
   }
-  av_packet_free(&packet);
+  packet->data = nullptr;
+  packet->size = 0;
 
   if (sendResult < 0 && sendResult != AVERROR(EAGAIN)) {
     av_frame_free(&frame);
@@ -424,17 +428,33 @@ VIDEO_DECODER_FUNC(jint, ffmpegVideoRenderFrame, jlong jContext,
     LOGE("Video render: context, frame and surface must be non-NULL.");
     return VIDEO_DECODER_ERROR_OTHER;
   }
-  ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
-  if (!window) {
-    LOGE("Video render: failed to acquire native window.");
-    return VIDEO_DECODER_ERROR_OTHER;
+
+  ANativeWindow* window = nullptr;
+  if (videoContext->cachedSurface && env->IsSameObject(videoContext->cachedSurface, surface) && videoContext->cachedWindow) {
+    window = videoContext->cachedWindow;
+  } else {
+    if (videoContext->cachedWindow) {
+      ANativeWindow_release(videoContext->cachedWindow);
+      videoContext->cachedWindow = nullptr;
+    }
+    if (videoContext->cachedSurface) {
+      env->DeleteGlobalRef(videoContext->cachedSurface);
+      videoContext->cachedSurface = nullptr;
+    }
+    window = ANativeWindow_fromSurface(env, surface);
+    if (!window) {
+      LOGE("Video render: failed to acquire native window.");
+      return VIDEO_DECODER_ERROR_OTHER;
+    }
+    videoContext->cachedWindow = window;
+    videoContext->cachedSurface = env->NewGlobalRef(surface);
   }
+
   ANativeWindow_setBuffersGeometry(window, frame->width, frame->height,
                                    WINDOW_FORMAT_RGBA_8888);
   ANativeWindow_Buffer windowBuffer;
   if (ANativeWindow_lock(window, &windowBuffer, nullptr) < 0) {
     LOGE("Video render: failed to lock native window.");
-    ANativeWindow_release(window);
     return VIDEO_DECODER_ERROR_OTHER;
   }
   videoContext->swsContext = sws_getCachedContext(
@@ -445,7 +465,6 @@ VIDEO_DECODER_FUNC(jint, ffmpegVideoRenderFrame, jlong jContext,
     LOGE("Video render: failed to create swscale context for pix_fmt %d.",
          frame->format);
     ANativeWindow_unlockAndPost(window);
-    ANativeWindow_release(window);
     return VIDEO_DECODER_ERROR_OTHER;
   }
   // Pick YUV→RGB coefficients from the frame's signaled colorspace; HD pro
@@ -467,7 +486,6 @@ VIDEO_DECODER_FUNC(jint, ffmpegVideoRenderFrame, jlong jContext,
   sws_scale(videoContext->swsContext, frame->data, frame->linesize, 0,
             frame->height, dstPlanes, dstStrides);
   ANativeWindow_unlockAndPost(window);
-  ANativeWindow_release(window);
   return VIDEO_DECODER_SUCCESS;
 }
 
@@ -489,6 +507,17 @@ VIDEO_DECODER_FUNC(void, ffmpegVideoRelease, jlong jContext) {
   VideoContext* videoContext = (VideoContext*)jContext;
   if (!videoContext) {
     return;
+  }
+  if (videoContext->cachedWindow) {
+    ANativeWindow_release(videoContext->cachedWindow);
+    videoContext->cachedWindow = nullptr;
+  }
+  if (videoContext->cachedSurface) {
+    env->DeleteGlobalRef(videoContext->cachedSurface);
+    videoContext->cachedSurface = nullptr;
+  }
+  if (videoContext->decodePacket) {
+    av_packet_free(&videoContext->decodePacket);
   }
   if (videoContext->swsContext) {
     sws_freeContext(videoContext->swsContext);

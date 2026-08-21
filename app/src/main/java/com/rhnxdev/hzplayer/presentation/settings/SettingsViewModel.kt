@@ -161,6 +161,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setOrientationMode(mode) }
     }
 
+    val disableHdr: StateFlow<Boolean> = prefs.disableHdr
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun saveDisableHdr(disabled: Boolean) {
+        viewModelScope.launch { prefs.setDisableHdr(disabled) }
+    }
+
     fun saveDecoderMode(mode: DecoderMode) {
         viewModelScope.launch { prefs.setDecoderMode(mode) }
     }

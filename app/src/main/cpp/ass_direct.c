@@ -368,13 +368,12 @@ int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixel
     ASS_Image *img = ass_render_frame(ctx->ass_renderer, ctx->ass_track,
                                       time_ms, &changed);
 
-    /* changed==0 means the image list is identical to the previous call, so
-     * the overlay we blitted last time is still valid and must remain on
-     * screen. Return the cached content state so the caller keeps showing it
-     * (the bitmap still holds the previous frame). Returning 0 here would make
-     * the caller clear the overlay, causing every subtitle to flash for only a
-     * single frame. */
-    if (changed == 0) return ctx->last_has_content;
+    /* changed == 0 means libass detected no changes in the rendered images
+     * compared to the previous call. If we had content, it's still identical
+     * (UNCHANGED = 2). If we had no content, it's still empty (EMPTY = 0). */
+    if (changed == 0) {
+        return ctx->last_has_content ? 2 : 0;
+    }
 
     /* Defensive buffer size validation */
     size_t expected_size = (size_t)ctx->width * ctx->height * 4;
@@ -454,7 +453,7 @@ int ass_direct_render(AssDirectContext *ctx, int64_t time_ms, uint8_t *out_pixel
         img = img->next;
     }
     ctx->last_has_content = has_content;
-    return has_content;
+    return has_content ? 1 : 0;
 }
 
 /* ─────────────────────────────── FLUSH / DESTROY ──────────────────────── */

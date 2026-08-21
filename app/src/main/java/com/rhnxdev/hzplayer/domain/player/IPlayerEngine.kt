@@ -69,6 +69,9 @@ interface IPlayerEngine {
     /** Skip backward by [ms] milliseconds. */
     fun skipBackward(ms: Long = 10000)
 
+    /** Set whether fast keyframe live scrubbing is actively in progress. */
+    fun setScrubbing(isScrubbing: Boolean) {}
+
     /** Advance to the next media item in the current playlist. */
     fun skipToNext()
 
@@ -118,6 +121,9 @@ interface IPlayerEngine {
     /** Select the decoder implementation (e.g. Media3 software vs hardware).
      *  Default no-op — only engines with selectable decoders override it. */
     fun setDecoderMode(mode: com.rhnxdev.hzplayer.domain.model.DecoderMode) {}
+
+    /** Toggle forced SDR tone-mapping for HDR content. Default false. */
+    fun setDisableHdr(disabled: Boolean) {}
 
     /** Prefer the FFmpeg software renderers over platform decoders (the
      *  [EngineType.FFMPEG] selection). Default no-op — only engines with an

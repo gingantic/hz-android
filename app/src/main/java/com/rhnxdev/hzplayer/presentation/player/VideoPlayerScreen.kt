@@ -130,6 +130,7 @@ fun VideoPlayerScreen(
     val lastVolume by viewModel.lastVolume.collectAsStateWithLifecycle()
     val lastBrightness by viewModel.lastBrightness.collectAsStateWithLifecycle()
     val saveVolumeBrightnessState by viewModel.saveVolumeBrightnessState.collectAsStateWithLifecycle()
+    val disableHdr by viewModel.disableHdr.collectAsStateWithLifecycle()
     val view = LocalView.current
     val context = view.context
     val activity = remember(view) { context as? android.app.Activity }
@@ -359,18 +360,15 @@ fun VideoPlayerScreen(
     // COLOR_MODE_HDR when the video surface is active so the system knows to
     // keep the HDR pipeline active (helps devices that need the explicit hint).
     val videoSurfaceActive = uiState.isVideoSurfaceActive
-    LaunchedEffect(videoSurfaceActive) {
+    LaunchedEffect(videoSurfaceActive, disableHdr) {
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return@LaunchedEffect
         val w = activity?.window ?: return@LaunchedEffect
-        if (videoSurfaceActive) {
-            // Video surface is presenting frames — allow the system to use HDR
-            // if the SurfaceView content is HDR.  Setting COLOR_MODE_HDR here is
-            // a hint; the compositor still decides based on actual content.
+        if (videoSurfaceActive && !disableHdr) {
+            // Video surface is presenting frames in HDR mode — allow the system to use HDR
+            // if the SurfaceView content is HDR.
             w.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_HDR
         } else {
-            // Video surface is no longer active (ended, idle, error, or audio
-            // playback) — revert to SDR so the app's custom accent color renders
-            // correctly.
+            // Revert / force SDR mode so the display compositor remains in standard dynamic range.
             w.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
         }
     }
@@ -520,6 +518,9 @@ fun VideoPlayerScreen(
                             onBack = handleBack,
                             onPlayPause = onPlayPause,
                             onSeekTo = onSeekTo,
+                            onScrubStart = viewModel::onScrubStart,
+                            onScrub = viewModel::onScrub,
+                            onScrubEnd = viewModel::onScrubEnd,
                             onSkipForward = onSkipForward,
                             onSkipBackward = onSkipBackward,
                             onSpeedClick = onSpeedClick,

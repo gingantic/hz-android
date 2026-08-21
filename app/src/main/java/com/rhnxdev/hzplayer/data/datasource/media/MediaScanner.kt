@@ -32,6 +32,8 @@ class MediaScanner @Inject constructor(
             MediaStore.Video.Media.DATE_MODIFIED,
             MediaStore.Video.Media.MIME_TYPE,
             MediaStore.Video.Media.RESOLUTION,
+            MediaStore.Video.Media.WIDTH,
+            MediaStore.Video.Media.HEIGHT,
         )
 
         val cursor = context.contentResolver.query(
@@ -56,8 +58,19 @@ class MediaScanner @Inject constructor(
             val dateModifiedCol = it.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
             val mimeCol = it.getColumnIndex(MediaStore.Video.Media.MIME_TYPE)
             val resolutionCol = it.getColumnIndex(MediaStore.Video.Media.RESOLUTION)
+            val widthCol = it.getColumnIndex(MediaStore.Video.Media.WIDTH)
+            val heightCol = it.getColumnIndex(MediaStore.Video.Media.HEIGHT)
 
             while (it.moveToNext()) {
+                val resStr = if (resolutionCol >= 0) it.getString(resolutionCol) else null
+                val width = if (widthCol >= 0) it.getInt(widthCol) else 0
+                val height = if (heightCol >= 0) it.getInt(heightCol) else 0
+                val resolvedRes = when {
+                    !resStr.isNullOrBlank() -> resStr
+                    width > 0 && height > 0 -> "${width}x${height}"
+                    else -> null
+                }
+
                 videos.add(
                     MediaEntity(
                         id = it.getLong(idCol),
@@ -67,7 +80,7 @@ class MediaScanner @Inject constructor(
                         durationMs = if (durationCol >= 0) it.getLong(durationCol) else 0,
                         fileSize = if (sizeCol >= 0) it.getLong(sizeCol) else 0,
                         mimeType = if (mimeCol >= 0) it.getString(mimeCol) else null,
-                        resolution = if (resolutionCol >= 0) it.getString(resolutionCol) else null,
+                        resolution = resolvedRes,
                         dateAdded = it.getLong(dateAddedCol),
                         dateModified = if (dateModifiedCol >= 0) it.getLong(dateModifiedCol) else 0,
                     ),

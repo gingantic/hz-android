@@ -18,20 +18,40 @@ class FfmpegAudioSink {
 
     private var audioTrack: AudioTrack? = null
     private var sampleRate: Int = 48000
+    private var channelCount: Int = 2
     private var channelConfig: Int = AudioFormat.CHANNEL_OUT_STEREO
     private var isPlaying = false
     private var currentSpeed: Float = 1.0f
     private var totalFramesWritten: Long = 0L
+    private var rampInFramesRemaining: Int = 0
+    private var totalRampInFrames: Int = 0
+
+    var onAudioSessionId: ((Int) -> Unit)? = null
+    @Volatile var audioDelayMs: Long = 0L
+
+    @Synchronized
+    private fun triggerRampIn(durationMs: Int = 80) {
+        totalRampInFrames = ((sampleRate * durationMs) / 1000).coerceAtLeast(1)
+        rampInFramesRemaining = totalRampInFrames
+    }
 
     @Synchronized
     fun init(sampleRate: Int, channelCount: Int) {
-        if (this.sampleRate == sampleRate && audioTrack != null) {
+        if (this.sampleRate == sampleRate && this.channelCount == channelCount && audioTrack != null) {
+            triggerRampIn(60)
             return
         }
         release()
         totalFramesWritten = 0L
+        headPositionOffset = 0L
         this.sampleRate = sampleRate
-        this.channelConfig = if (channelCount == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
+        this.channelCount = channelCount
+        this.channelConfig = when (channelCount) {
+            1 -> AudioFormat.CHANNEL_OUT_MONO
+            6 -> AudioFormat.CHANNEL_OUT_5POINT1
+            8 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) AudioFormat.CHANNEL_OUT_7POINT1_SURROUND else AudioFormat.CHANNEL_OUT_5POINT1
+            else -> AudioFormat.CHANNEL_OUT_STEREO
+        }
 
         val minBufferSize = AudioTrack.getMinBufferSize(
             sampleRate,
@@ -60,10 +80,15 @@ class FfmpegAudioSink {
                 .build()
 
             setSpeed(currentSpeed)
+            triggerRampIn(80)
             if (isPlaying) {
                 audioTrack?.play()
             }
-            Log.d(TAG, "AudioTrack initialized (sampleRate=$sampleRate, bufferSize=$bufferSize)")
+            val sessionId = audioTrack?.audioSessionId ?: 0
+            if (sessionId != 0) {
+                onAudioSessionId?.invoke(sessionId)
+            }
+            Log.d(TAG, "AudioTrack initialized (sampleRate=$sampleRate, channels=$channelCount, bufferSize=$bufferSize, sessionId=$sessionId)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create AudioTrack: ${e.message}", e)
         }
@@ -79,6 +104,7 @@ class FfmpegAudioSink {
                 Log.w(TAG, "AudioTrack.play failed: ${e.message}")
             }
         }
+
         val bytesWritten = try {
             track.write(pcm, 0, size, AudioTrack.WRITE_BLOCKING)
         } catch (e: Exception) {
@@ -86,22 +112,30 @@ class FfmpegAudioSink {
             -1
         }
         if (bytesWritten > 0) {
-            val bytesPerFrame = if (channelConfig == AudioFormat.CHANNEL_OUT_MONO) 2 else 4
+            val bytesPerFrame = (channelCount * 2).coerceAtLeast(2)
             totalFramesWritten += bytesWritten / bytesPerFrame
         }
         return bytesWritten
     }
 
+    private var headPositionOffset: Long = 0L
+
     @Synchronized
     fun getAudioPlaybackLatencyUs(): Long {
         val track = audioTrack ?: return 0L
-        val headPos = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+        val rawHead = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+        val headPos = (rawHead - headPositionOffset).coerceAtLeast(0L)
         val bufferedFrames = (totalFramesWritten - headPos).coerceAtLeast(0L)
-        return (bufferedFrames * 1_000_000L) / sampleRate
+        val rawLatencyUs = (bufferedFrames * 1_000_000L) / sampleRate
+        val delayUs = audioDelayMs * 1_000L
+        return rawLatencyUs - delayUs
     }
 
     @Synchronized
     fun play() {
+        if (!isPlaying) {
+            triggerRampIn(50)
+        }
         isPlaying = true
         try {
             audioTrack?.play()
@@ -123,9 +157,12 @@ class FfmpegAudioSink {
     @Synchronized
     fun flush() {
         totalFramesWritten = 0L
+        triggerRampIn(60)
         try {
             audioTrack?.pause()
             audioTrack?.flush()
+            val rawHead = audioTrack?.playbackHeadPosition?.toLong()?.and(0xFFFFFFFFL) ?: 0L
+            headPositionOffset = rawHead
             if (isPlaying) {
                 audioTrack?.play()
             }
@@ -137,22 +174,17 @@ class FfmpegAudioSink {
     @Synchronized
     fun setSpeed(speed: Float) {
         currentSpeed = speed
-        val track = audioTrack ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                val params = track.playbackParams
-                params.speed = speed.coerceIn(0.25f, 4.0f)
-                track.playbackParams = params
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to set playback speed on AudioTrack: ${e.message}")
-            }
-        }
+        // Note: Audio tempo/speed is handled in the native C++ filtergraph (atempo filter).
+        // AudioTrack must always consume PCM frames at normal rate (1.0x) without applying
+        // playbackParams speed, which would cause duplicate speed scaling.
     }
 
     @Synchronized
     fun release() {
         isPlaying = false
         totalFramesWritten = 0L
+        headPositionOffset = 0L
+        onAudioSessionId?.invoke(0)
         try {
             audioTrack?.stop()
             audioTrack?.release()

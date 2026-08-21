@@ -81,6 +81,14 @@ class MediaPlayerHolder @Inject constructor(
             requestDecoderRebuild()
         }
 
+    /** When true, forces HDR to SDR tone-mapping. */
+    @Volatile var disableHdr: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            requestDecoderRebuild()
+        }
+
     /** When true (the "FFmpeg" engine selection), the FFmpeg software renderers
      *  are indexed before the MediaCodec ones, forcing every FFmpeg-supported
      *  codec through software decode. Same deferred-rebuild semantics as
@@ -235,7 +243,10 @@ class MediaPlayerHolder @Inject constructor(
                         eventTime: AnalyticsListener.EventTime,
                         videoSize: VideoSize,
                     ) {
-                        assHandler.setVideoSize(videoSize.width, videoSize.height)
+                        val isRotated = videoSize.unappliedRotationDegrees == 90 || videoSize.unappliedRotationDegrees == 270
+                        val targetW = if (isRotated) videoSize.height else videoSize.width
+                        val targetH = if (isRotated) videoSize.width else videoSize.height
+                        assHandler.setVideoSize(targetW, targetH)
                     }
 
                     override fun onVideoDecoderInitialized(
@@ -348,6 +359,10 @@ class MediaPlayerHolder @Inject constructor(
     private val _audioSessionId = MutableStateFlow(0)
     val audioSessionId: StateFlow<Int> = _audioSessionId.asStateFlow()
 
+    fun setAudioSessionId(id: Int) {
+        _audioSessionId.value = id
+    }
+
     /** Video decoder counters — set by AnalyticsListener.onVideoEnabled.
      *  @Volatile: written on the player/analytics thread, read on the FPS poll thread. */
     @Volatile private var videoDecoderCounters: DecoderCounters? = null
@@ -395,11 +410,12 @@ class MediaPlayerHolder @Inject constructor(
                     reason: Int
                 ) {
                     if (reason == Player.DISCONTINUITY_REASON_SEEK) {
-                        assHandler.onSeek()
+                        assHandler.onSeek(newPosition.positionMs)
                     }
                 }
 
                 override fun onPlaybackStateChanged(state: Int) {
+                    assHandler.setIsBuffering(state == Player.STATE_BUFFERING)
                     val isNewPlayback = state == Player.STATE_BUFFERING || state == Player.STATE_READY
                     _playbackStateInfo.value = _playbackStateInfo.value.copy(
                         state = when (state) {
@@ -415,6 +431,10 @@ class MediaPlayerHolder @Inject constructor(
                     // Decoder rebuild is deferred to flushPendingDecoderRebuild()
                     // (main thread, from play()) — never rebuild from inside this
                     // callback, as releasing the player here races the dispatch.
+                }
+
+                override fun onRenderedFirstFrame() {
+                    assHandler.setIsBuffering(false)
                 }
 
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {

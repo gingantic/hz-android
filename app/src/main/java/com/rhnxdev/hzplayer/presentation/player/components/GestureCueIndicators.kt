@@ -60,7 +60,10 @@ fun GestureCueIndicators(
         if (state.seekShowTick > 0 && !state.isDragSeeking && state.seekVisible) {
             delay(1200)
             state.seekVisible = false
-            state.seekDelta = 0L
+            delay(350)
+            if (!state.seekVisible) {
+                state.seekDelta = 0L
+            }
         }
     }
 

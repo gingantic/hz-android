@@ -73,6 +73,11 @@ class PlayerRepositoryImpl @Inject constructor(
             }
         }
         scope.launch {
+            userPreferencesRepository.disableHdr.collect { disabled ->
+                engine().setDisableHdr(disabled)
+            }
+        }
+        scope.launch {
             playbackStateInfo.collect { info ->
                 info.currentUri?.let { uri -> savedPlaybackUri = uri }
             }
@@ -200,6 +205,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override fun seekTo(positionMs: Long) = engine().seekTo(positionMs)
+    override fun setScrubbing(isScrubbing: Boolean) = engine().setScrubbing(isScrubbing)
     override fun skipForward(ms: Long) = engine().skipForward(ms)
     override fun skipBackward(ms: Long) = engine().skipBackward(ms)
     override fun skipToNext() = engine().skipToNext()
