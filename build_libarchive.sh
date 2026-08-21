@@ -182,10 +182,10 @@ build_mbedtls & p_mb=$!
 for p in $p_bz $p_xz $p_mb; do wait "$p" || fail=1; done
 [ "$fail" -eq 0 ] || exit 1
 
-# ---------- libarchive (current master) ----------
+# ---------- libarchive (pinned to v3.7.9) ----------
 cd "$SRC"
 if [ ! -d libarchive ]; then
-  git clone --depth 1 https://github.com/libarchive/libarchive.git libarchive
+  git clone --depth 1 --branch v3.7.9 https://github.com/libarchive/libarchive.git libarchive
 fi
 cmake -S libarchive -B libarchive-build -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$TCFILE" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$PREFIX" \
