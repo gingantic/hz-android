@@ -22,10 +22,17 @@ if [[ -z "$NDK_PATH" ]]; then
   [[ -n "${ANDROID_NDK_ROOT:-}" ]] && NDK_PATH="$ANDROID_NDK_ROOT"
 fi
 if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then
-  # Fallback: find highest NDK under ANDROID_HOME (GitHub runner)
   if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME/ndk" ]]; then
     NDK_PATH=$(ls -d "$ANDROID_HOME/ndk"/* 2>/dev/null | sort -V | tail -n 1)
   fi
+fi
+if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then
+  for p in /opt/android-ndk-r27c /opt/android-ndk /root/android-ndk /root/android-ndk-r27c; do
+    if [[ -d "$p" ]]; then
+      NDK_PATH="$p"
+      break
+    fi
+  done
 fi
 if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then
   echo "ERROR: NDK not found. Set ANDROID_NDK_ROOT or pass --ndk-path." >&2
@@ -33,12 +40,14 @@ if [[ -z "$NDK_PATH" || ! -d "$NDK_PATH" ]]; then
 fi
 
 # ----- toolchain host detection ------------------------------------------------
-if [[ -n "${WSL_DISTRO_NAME:-}" || -f /proc/sys/fs/binfmt_misc/WSLInterop ]]; then
+NDK_BASE="$NDK_PATH"
+if [[ -d "$NDK_BASE/toolchains/llvm/prebuilt/linux-x86_64" ]]; then
+  TC_HOST="linux-x86_64"
+elif [[ -d "$NDK_BASE/toolchains/llvm/prebuilt/windows-x86_64" ]]; then
   TC_HOST="windows-x86_64"
 else
   TC_HOST="linux-x86_64"
 fi
-NDK_BASE="$NDK_PATH"
 TC="$NDK_BASE/toolchains/llvm/prebuilt/$TC_HOST/bin"
 SYSROOT="$NDK_BASE/toolchains/llvm/prebuilt/$TC_HOST/sysroot"
 
@@ -50,6 +59,9 @@ case "$ABI" in
 esac
 
 # ----- WSL wrappers (Windows ld.lld can't handle Linux SONAME symlinks) --------
+EXE=""
+[[ -f "$TC/llvm-ar.exe" ]] && EXE=".exe"
+
 if [[ "$TC_HOST" == "windows-x86_64" ]]; then
   WRAPPER_DIR="/tmp/ndk-wrappers"; mkdir -p "$WRAPPER_DIR"
   clang_real="$TC/$CLANG"
@@ -84,13 +96,33 @@ done
 exec "$clangpp_real" "\${ARGS[@]}"
 WRAPEOF
   for tool in aarch64-linux-android-{as,ld,objcopy,objdump,readelf} llvm-{ar,nm,strip,ranlib,objcopy,objdump,readobj}; do
-    real="$TC/$tool"; [[ -f "$real" ]] && ln -sf "$real" "$WRAPPER_DIR/$tool" 2>/dev/null || true
+    real="$TC/${tool}${EXE}"
+    if [[ -f "$real" ]]; then
+      cat > "$WRAPPER_DIR/$tool" << WRAPEOF
+#!/bin/bash
+ARGS=()
+for a in "\$@"; do
+  if [[ "\$a" == *=/mnt/c/* ]]; then
+    prefix="\${a%%=*}"; path="\${a#*=}"; converted="\$(wslpath -w "\$path")"; ARGS+=("\$prefix=\$converted")
+  elif [[ "\$a" == /mnt/c/* ]]; then
+    ARGS+=("\$(wslpath -w "\$a")")
+  else
+    ARGS+=("\$a")
+  fi
+done
+exec "$real" "\${ARGS[@]}"
+WRAPEOF
+      chmod +x "$WRAPPER_DIR/$tool"
+      ln -sf "$WRAPPER_DIR/$tool" "$WRAPPER_DIR/${tool}${EXE}" 2>/dev/null || true
+    fi
   done
   ln -sf "$WRAPPER_DIR/$CLANG" "$WRAPPER_DIR/aarch64-linux-android-ld" 2>/dev/null || true
   chmod +x "$WRAPPER_DIR/"*
   export PATH="$WRAPPER_DIR:$PATH"
+  BIN_DIR="$WRAPPER_DIR"
 else
   export PATH="$TC:$PATH"
+  BIN_DIR="$TC"
 fi
 
 # ccache wrapper (guarded so local builds without ccache still work).
@@ -99,7 +131,7 @@ CC_LAUNCHER="${CCACHE_BIN:+ccache }"
 
 # ----- Build dav1d dependency --------------------------------------------------
 DAV1D_VER="1.5.1"
-BUILD_TMP="$SCRIPT_DIR/ffmpeg_build_tmp"
+BUILD_TMP="/tmp/ffmpeg_build_tmp"
 PREFIX="$BUILD_TMP/prefix"
 mkdir -p "$PREFIX/lib/pkgconfig" "$PREFIX/include" "$BUILD_TMP"
 
@@ -113,17 +145,20 @@ if [[ ! -d "$DAV1D_DIR" ]]; then
   tar -xzf "$DAV1D_TAR" -C "$BUILD_TMP"
 fi
 
+MESON_CPU_FAMILY="$TARGET_ARCH"
+[[ "$TARGET_ARCH" == "arm64" ]] && MESON_CPU_FAMILY="aarch64"
+
 cat > "$BUILD_TMP/cross_$ABI.meson" <<EOF
 [binaries]
-c = '$TC/$CLANG'
-cpp = '$TC/$CLANGPP'
-ar = '$TC/llvm-ar'
-strip = '$TC/llvm-strip'
+c = '$BIN_DIR/$CLANG'
+cpp = '$BIN_DIR/$CLANGPP'
+ar = '$BIN_DIR/llvm-ar'
+strip = '$BIN_DIR/llvm-strip'
 pkg-config = 'pkg-config'
 
 [host_machine]
 system = 'android'
-cpu_family = '$TARGET_ARCH'
+cpu_family = '$MESON_CPU_FAMILY'
 cpu = 'armv8-a'
 endian = 'little'
 EOF
@@ -144,22 +179,28 @@ meson setup build \
 ninja -C build install
 
 # ----- FFmpeg source -----------------------------------------------------------
-# CI sets FFMPEG_SRC_DIR (git clone); local fallback downloads tarball.
+# Prefer FFMPEG_SRC_DIR or existing WSL location (/root/ffmpeg-src)
 if [[ -n "${FFMPEG_SRC_DIR:-}" && -d "$FFMPEG_SRC_DIR" ]]; then
   FFMPEG_DIR="$(cd "$FFMPEG_SRC_DIR" && pwd)"
   echo "=== Using FFmpeg source from $FFMPEG_DIR ==="
+elif [[ -d "/root/ffmpeg-src" ]]; then
+  FFMPEG_DIR="/root/ffmpeg-src"
+  echo "=== Using FFmpeg source from $FFMPEG_DIR ==="
+elif [[ -d "$HOME/ffmpeg-src" ]]; then
+  FFMPEG_DIR="$HOME/ffmpeg-src"
+  echo "=== Using FFmpeg source from $FFMPEG_DIR ==="
 else
   FFMPEG_VER="7.1"
-  FFMPEG_DIR="$SCRIPT_DIR/ffmpeg-${FFMPEG_VER}"
-  FFMPEG_TAR="$SCRIPT_DIR/ffmpeg-${FFMPEG_VER}.tar.xz"
+  FFMPEG_DIR="/tmp/ffmpeg-${FFMPEG_VER}"
+  FFMPEG_TAR="/tmp/ffmpeg-${FFMPEG_VER}.tar.xz"
   if [[ ! -d "$FFMPEG_DIR" ]]; then
     if [[ ! -f "$FFMPEG_TAR" ]]; then
       echo "=== Downloading FFmpeg $FFMPEG_VER ==="
       curl -fLo "$FFMPEG_TAR" \
         "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VER}.tar.xz"
     fi
-    echo "=== Extracting FFmpeg $FFMPEG_VER ==="
-    tar -xf "$FFMPEG_TAR" -C "$SCRIPT_DIR"
+    echo "=== Extracting FFmpeg $FFMPEG_VER to /tmp ==="
+    tar -xf "$FFMPEG_TAR" -C "/tmp"
   fi
 fi
 
@@ -177,18 +218,22 @@ echo "=== Configuring FFmpeg for $ABI ==="
   --target-os=android --arch=$TARGET_ARCH \
   --enable-shared --disable-static \
   --disable-programs --disable-doc \
-  --disable-avdevice --disable-avfilter --disable-network \
+  --disable-avdevice --enable-avfilter \
+  --enable-filter=atempo,volume,equalizer,firequalizer,aresample,anull,amix,bass,treble,pan \
+  --enable-network \
   --enable-small --enable-pic \
   --disable-encoders --disable-hwaccels --disable-muxers \
+  --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,av1_frame_merge,av1_metadata \
   --enable-libdav1d \
-  --enable-decoder=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1,libdav1d \
-  --enable-demuxer=matroska,mov,avi,mp4,mpegts,flv \
-  --enable-protocol=file --enable-swscale --enable-swresample \
+  --enable-decoder=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1,libdav1d,aac,ac3,eac3,dca,flac,mp3,opus,vorbis,alac,truehd,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,ass,ssa,subrip,mov_text,pgssub,dvdsub \
+  --enable-demuxer=matroska,mov,avi,mp4,mpegts,flv,hls,dash,wav,aac,flac,ogg,mp3,m4v,webvtt,srt,ass,rtsp,sdp \
+  --enable-protocol=file,http,https,tcp,udp,crypto,tls,hls,pipe,data,concat --enable-swscale --enable-swresample \
   --cross-prefix=$CROSS \
   --cc="${CC_LAUNCHER}${CLANG}" \
-  --cxx="${CC_LAUNCHER}${CLANGPP}" \
-  --ar=llvm-ar --nm=llvm-nm \
-  --strip=llvm-strip --ranlib=llvm-ranlib \
+  --ar="llvm-ar$EXE" \
+  --nm="llvm-nm$EXE" \
+  --strip="llvm-strip$EXE" \
+  --ranlib="llvm-ranlib$EXE" \
   --sysroot="$SYSROOT" \
   --pkg-config=pkg-config \
   --pkg-config-flags="--static" \
@@ -201,7 +246,7 @@ make -j$(nproc) 2>&1 || true
 # Ensure unversioned .so files exist (FFmpeg make creates symlinks;
 # Android packager needs real files, and WSL can't follow symlinks).
 echo "=== Ensuring unversioned .so files ==="
-for libdir in libavutil libavcodec libavformat libswscale libswresample; do
+for libdir in libavutil libavcodec libavformat libswscale libswresample libavfilter; do
   # Find the most recent versioned .so file (e.g. libavutil.so.60)
   ver_so=$(ls -t "$libdir"/lib*.so.* 2>/dev/null | head -1)
   if [[ -n "$ver_so" && ! -f "$libdir/lib$(basename $libdir).so" ]]; then
@@ -221,7 +266,7 @@ cp -rf "$PREFIX/include/dav1d/"* "$HEADERS_DIR/dav1d/"
 
 for lib in libavutil/libavutil.so libavcodec/libavcodec.so \
            libavformat/libavformat.so libswscale/libswscale.so \
-           libswresample/libswresample.so; do
+           libswresample/libswresample.so libavfilter/libavfilter.so; do
   if [[ -f "$lib" ]]; then
     cp "$lib" "$JNILIBS_DIR/"
     echo "  copied $(basename $lib)"
@@ -238,7 +283,7 @@ fi
 
 # ----- copy headers to project include dir ------------------------------------
 echo "=== Copying FFmpeg headers ==="
-for subdir in libavformat libavcodec libavutil libswscale libswresample; do
+for subdir in libavformat libavcodec libavutil libswscale libswresample libavfilter; do
   src="$FFMPEG_DIR/$subdir"
   if [[ -d "$src" ]]; then
     mkdir -p "$HEADERS_DIR/$subdir"

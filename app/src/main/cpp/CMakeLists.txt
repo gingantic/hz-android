@@ -21,6 +21,7 @@ add_ffmpeg_lib(avcodec)
 add_ffmpeg_lib(avutil)
 add_ffmpeg_lib(swscale)
 add_ffmpeg_lib(swresample)
+add_ffmpeg_lib(avfilter)
 
 # Dependency libs for the assrender native lib (all prebuilt, in jniLibs/<abi>/).
 # libass is the fontconfig-enabled build; fontconfig pulls in expat; libass pulls
@@ -50,6 +51,10 @@ set_target_properties(archive PROPERTIES
 find_library(JNIGRAPHICS jnigraphics)
 find_library(LOG log)
 find_library(ANDROID_LIB android)
+find_library(MEDIANDK mediandk)
+find_library(EGL_LIB EGL)
+find_library(GLES3_LIB GLESv3)
+find_library(AAUDIO_LIB aaudio)
 
 add_library(thumbnail-extractor SHARED ThumbnailExtractor.cpp)
 target_include_directories(thumbnail-extractor PRIVATE
@@ -106,8 +111,8 @@ target_include_directories(ffplayer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_link_libraries(ffplayer
-    avformat avcodec avutil swscale swresample dav1d
-    ${ANDROID_LIB} ${LOG}
+    avformat avcodec avutil swscale swresample avfilter dav1d
+    ${ANDROID_LIB} ${LOG} ${MEDIANDK} ${EGL_LIB} ${GLES3_LIB} ${AAUDIO_LIB}
 )
 
 

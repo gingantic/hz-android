@@ -32,6 +32,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -93,6 +94,9 @@ class PlayerViewModel @Inject constructor(
 
     val orientationMode: StateFlow<OrientationMode> = userPreferencesRepository.orientationMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrientationMode.AUTO)
+
+    val disableHdr: StateFlow<Boolean> = userPreferencesRepository.disableHdr
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** Floating video player (in-app mini + system PiP) master toggle. */
     val backgroundPlay: StateFlow<Boolean> = userPreferencesRepository.backgroundPlay
@@ -190,6 +194,7 @@ class PlayerViewModel @Inject constructor(
         observeSeekSensitivity()
         observeActiveEngine()
         observeResumeMode()
+        observeUseSurfaceView()
         debugController.observe()
         positionController.start()
         trackCache.refresh()
@@ -331,6 +336,22 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private fun observeUseSurfaceView() {
+        viewModelScope.launch {
+            combine(
+                userPreferencesRepository.useSurfaceView,
+                userPreferencesRepository.disableHdr
+            ) { useSurface, disableHdr ->
+                // When Force SDR mode is enabled, route through TextureView so Android's
+                // RenderThread composites into the window's standard 8-bit SDR surface without
+                // triggering display panel HDR brightness.
+                if (disableHdr) false else useSurface
+            }.distinctUntilChanged().collect { useSurface ->
+                _uiState.update { it.copy(useSurfaceView = useSurface) }
+            }
+        }
+    }
+
     fun selectSubtitleTrack(index: Int) {
         val mimes = runCatching { getActiveEngine().getSubtitleTrackMimeTypes() }
             .getOrDefault(emptyList())
@@ -417,13 +438,12 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onToggleOrientation(activity: android.app.Activity) {
-        val rotation = activity.windowManager.defaultDisplay?.rotation
-            ?: android.view.Surface.ROTATION_0
-        activity.requestedOrientation = when (rotation) {
-            android.view.Surface.ROTATION_0, android.view.Surface.ROTATION_180 ->
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            else ->
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        val isLandscape = activity.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        activity.requestedOrientation = if (isLandscape) {
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        } else {
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
     }
 
@@ -671,6 +691,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun onSeekTo(positionMs: Long) = positionController.onSeekTo(positionMs)
+    fun onScrubStart() = positionController.onScrubStart()
+    fun onScrub(positionMs: Long) = positionController.onScrub(positionMs)
+    fun onScrubEnd() = positionController.onScrubEnd()
 
     fun onSkipForward() = positionController.onSkipForward()
 

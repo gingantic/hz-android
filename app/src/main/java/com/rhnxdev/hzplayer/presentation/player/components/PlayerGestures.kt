@@ -114,6 +114,7 @@ fun Modifier.playerGestures(
     // ponytail: single gesture loop so hold-to-speed survives finger drag
     // (two stacked pointerInput blocks stole the stream and cancelled the hold)
     var lastTapTime = 0L
+    var lastTapDir = 0
     var pendingSingleTap: Job? = null
     val DOUBLE_TAP_MS = 300L
     awaitEachGesture {
@@ -136,11 +137,9 @@ fun Modifier.playerGestures(
         val isRightSideEdge = start.x > size.width * 0.7f
         val isMiddleArea = !isLeftSideEdge && !isRightSideEdge
 
-        // ponytail: reset seek cue state at gesture start so previous gesture's
-        // stale "seeking" flag doesn't leak into a new tap/drag. Slide cues stay
-        // neutral until the ADJUST direction commits (lazy init in the drag handler).
+        // Reset slide cue at gesture start. Seek cue is retained across multi-taps
+        // until the auto-hide timer expires or a new drag starts.
         state.slideVisible = false
-        state.seekVisible = false
 
         var adjustInitialized = false
         var lazyBrightness = 0f
@@ -165,6 +164,10 @@ fun Modifier.playerGestures(
                 if (dominantDirection == null) {
                     holdTriggered = true
                     holdActive = true
+                    pendingSingleTap?.cancel()
+                    pendingSingleTap = null
+                    lastTapTime = 0L
+                    lastTapDir = 0
                     state.isHoldSpeeding = true
                     state.holdSpeed = HOLD_SPEED_MULTIPLIER
                     prevSpeed = callbacks.uiState().playbackSpeed
@@ -221,6 +224,10 @@ fun Modifier.playerGestures(
                 }
                 if (dominantDirection != null && !dragStarted) {
                     dragStarted = true
+                    pendingSingleTap?.cancel()
+                    pendingSingleTap = null
+                    lastTapTime = 0L
+                    lastTapDir = 0
                     callbacks.onHideControls()
                 }
                 when (dominantDirection) {
@@ -301,31 +308,61 @@ fun Modifier.playerGestures(
                 callbacks.onSlideDone(state.slideType, state.slideValue)
             }
             if (!holdTriggered && dominantDirection == null && !inControlsZone) {
-                // Pure tap → double-tap seek / single-tap toggle
+                // Pure tap → double-tap seek / single-tap toggle / double-tap pairing
                 val now = System.currentTimeMillis()
-                if (now - lastTapTime <= DOUBLE_TAP_MS) {
-                    pendingSingleTap?.cancel()
-                    lastTapTime = 0L
-                    when {
-                        dir < 0 -> {
-                            state.isDragSeeking = false; state.isSeekForward = false
-                            callbacks.onSeekBy(-TAP_SEEK_MS)
-                            state.seekDelta = -TAP_SEEK_MS; state.seekVisible = true; state.seekShowTick++
+                if (dir != 0) {
+                    val isSameDirSeekActive = state.seekVisible && !state.isDragSeeking && (state.isSeekForward == (dir > 0))
+                    val isQuickDoubleTap = (now - lastTapTime <= DOUBLE_TAP_MS) && (lastTapDir == dir)
+
+                    if (isQuickDoubleTap) {
+                        pendingSingleTap?.cancel()
+                        pendingSingleTap = null
+                        lastTapTime = 0L
+                        lastTapDir = 0
+
+                        val isForward = dir > 0
+                        val step = if (isForward) TAP_SEEK_MS else -TAP_SEEK_MS
+                        val newDelta = if (isSameDirSeekActive) state.seekDelta + step else step
+
+                        state.isDragSeeking = false
+                        state.isSeekForward = isForward
+                        state.seekDelta = newDelta
+                        state.seekVisible = true
+                        state.seekShowTick++
+
+                        callbacks.onSeekBy(step)
+                    } else {
+                        lastTapTime = now
+                        lastTapDir = dir
+                        pendingSingleTap?.cancel()
+                        pendingSingleTap = scope.launch {
+                            delay(DOUBLE_TAP_MS)
+                            if (lastTapTime == now) {
+                                callbacks.onToggleControls()
+                                lastTapTime = 0L
+                                lastTapDir = 0
+                            }
                         }
-                        dir > 0 -> {
-                            state.isDragSeeking = false; state.isSeekForward = true
-                            callbacks.onSeekBy(TAP_SEEK_MS)
-                            state.seekDelta = TAP_SEEK_MS; state.seekVisible = true; state.seekShowTick++
-                        }
-                        else -> callbacks.onPlayPause()
                     }
                 } else {
-                    lastTapTime = now
-                    pendingSingleTap = scope.launch {
-                        delay(DOUBLE_TAP_MS)
-                        if (lastTapTime != 0L) {
-                            callbacks.onToggleControls()
-                            lastTapTime = 0L
+                    // Center tap: double-tap = play/pause, single-tap = toggle controls
+                    if (now - lastTapTime <= DOUBLE_TAP_MS && lastTapDir == 0) {
+                        pendingSingleTap?.cancel()
+                        pendingSingleTap = null
+                        lastTapTime = 0L
+                        lastTapDir = 0
+                        callbacks.onPlayPause()
+                    } else {
+                        lastTapTime = now
+                        lastTapDir = 0
+                        pendingSingleTap?.cancel()
+                        pendingSingleTap = scope.launch {
+                            delay(DOUBLE_TAP_MS)
+                            if (lastTapTime == now) {
+                                callbacks.onToggleControls()
+                                lastTapTime = 0L
+                                lastTapDir = 0
+                            }
                         }
                     }
                 }

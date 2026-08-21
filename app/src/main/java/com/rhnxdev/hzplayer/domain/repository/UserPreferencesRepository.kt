@@ -21,6 +21,7 @@ interface UserPreferencesRepository {
     val showHiddenFiles: Flow<Boolean>
     val useSurfaceView: Flow<Boolean>
     val decoderMode: Flow<DecoderMode>
+    val disableHdr: Flow<Boolean>
     val fileBrowserMediaMode: Flow<Boolean>
     val orientationMode: Flow<OrientationMode>
     val resumeMode: Flow<ResumeMode>
@@ -50,6 +51,7 @@ interface UserPreferencesRepository {
     suspend fun setShowHiddenFiles(enabled: Boolean)
     suspend fun setUseSurfaceView(enabled: Boolean)
     suspend fun setDecoderMode(mode: DecoderMode)
+    suspend fun setDisableHdr(disabled: Boolean)
     suspend fun setFileBrowserMediaMode(enabled: Boolean)
     suspend fun setOrientationMode(mode: OrientationMode)
     suspend fun setResumeMode(mode: ResumeMode)

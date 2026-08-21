@@ -205,6 +205,38 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
+    private var wasInPip = false
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) {
+            wasInPip = true
+        } else {
+            if (wasInPip) {
+                wasInPip = false
+                // When PiP is closed via 'X' button or swiped away, activity remains stopped in background
+                if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                    playerViewModel.isShuttingDown = true
+                    playerViewModel.stop()
+                    finish()
+                }
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (wasInPip && !isInPictureInPictureMode) {
+            wasInPip = false
+            playerViewModel.isShuttingDown = true
+            playerViewModel.stop()
+            finish()
+        }
+    }
+
     override fun onDestroy() {
         try {
             unregisterReceiver(pipReceiver)

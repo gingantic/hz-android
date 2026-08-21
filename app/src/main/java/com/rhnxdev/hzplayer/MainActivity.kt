@@ -212,11 +212,33 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var wasInPip = false
+
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
         newConfig: android.content.res.Configuration,
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) {
+            wasInPip = true
+        } else {
+            if (wasInPip) {
+                wasInPip = false
+                if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                    playerViewModel.isShuttingDown = true
+                    playerViewModel.stop()
+                }
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (wasInPip && !isInPictureInPictureMode) {
+            wasInPip = false
+            playerViewModel.isShuttingDown = true
+            playerViewModel.stop()
+        }
     }
 
     fun requestMediaPermissions() {

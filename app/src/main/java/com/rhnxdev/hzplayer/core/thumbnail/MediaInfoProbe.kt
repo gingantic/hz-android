@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
 import kotlinx.coroutines.Dispatchers
@@ -16,8 +17,9 @@ import java.io.RandomAccessFile
  * Probes a media file's container + codec metadata via the native FFmpeg
  * demuxer, bridging the source bytes through a [ThumbnailSource].
  *
- * Supports `content://` URIs, `file://` URIs, plain filesystem paths, and
- * `smb://` URIs. Remote protocols other than SMB are not probed (returns null).
+ * Supports `content://` URIs, `file://` URIs, plain filesystem paths,
+ * `archive://` URIs, and `smb://` URIs. Remote protocols other than SMB are
+ * not probed (returns null).
  *
  * The returned map uses the keys produced by the native probe, e.g.
  * `format`, `video_codec`, `video_profile`, `video_fps`, `audio_codec`,
@@ -84,7 +86,7 @@ object MediaInfoProbe {
 
     /**
      * Opens [uriOrPath] as a [ThumbnailSource] (scheme-dispatched: local path,
-     * `file://`, `content://`, `smb://`) and runs [block] with it, closing the
+     * `file://`, `content://`, `smb://`, `archive://`) and runs [block] with it, closing the
      * source afterwards. Returns null for unsupported schemes.
      */
     private fun <T> withSource(
@@ -94,11 +96,29 @@ object MediaInfoProbe {
     ): T? {
         val scheme = uriOrPath.substringBefore("://", "").lowercase()
         return when {
+            scheme == "archive" -> withArchiveSource(uriOrPath, block)
             scheme == "smb" -> withSmbSource(uriOrPath, block)
             scheme == "content" -> withContentSource(context, uriOrPath, block)
             scheme == "file" -> Uri.parse(uriOrPath).path?.let { withLocalSource(it, block) }
             scheme.isEmpty() -> withLocalSource(uriOrPath, block)
             else -> null // ftp/sftp/webdav/http(s): not probed
+        }
+    }
+
+    /** `archive://` URI — open an entry directly inside the compressed container. */
+    private fun <T> withArchiveSource(archiveUriString: String, block: (ThumbnailSource) -> T?): T? {
+        val parsed = ArchiveUri.parse(archiveUriString) ?: return null
+        val (container, entry, password) = parsed
+        return try {
+            val bridge = ArchiveRandomAccessBridge(container, entry, password)
+            try {
+                block(bridge)
+            } finally {
+                bridge.close()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "withArchiveSource failed: ${e.message}")
+            null
         }
     }
 

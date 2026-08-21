@@ -152,6 +152,16 @@
     <string name="prop_channels">Channels</string>
     <string name="prop_pixel_format">Pixel format</string>
     <string name="prop_loading_codecs">Reading codec info…</string>
+    <string name="prop_section_video">Video</string>
+    <string name="prop_section_audio">Audio</string>
+    <string name="prop_section_audio_format">Audio Format</string>
+    <string name="prop_section_file">File Details</string>
+    <string name="prop_color_depth">Color / Format</string>
+    <string name="prop_tracks">Tracks</string>
+    <string name="prop_language">Language</string>
+    <string name="prop_layout">Layout</string>
+    <string name="prop_copy_path">Copy path</string>
+    <string name="prop_copied_path">Path copied to clipboard</string>
 
     <!-- Not-implemented suffix (concatenated where needed) -->
     <string name="not_implemented">(Not implemented)</string>
@@ -169,6 +179,8 @@
     <string name="settings_engine_active">Active — switches on next playback</string>
     <string name="settings_engine_inactive">Tap to use</string>
     <string name="settings_video">Video</string>
+    <string name="settings_disable_hdr">Force SDR mode (Tone-map HDR)</string>
+    <string name="settings_disable_hdr_sub">Convert HDR10 / HLG to SDR with accurate BT.709 color mapping</string>
     <string name="settings_decoder_mode">Decoder mode</string>
     <string name="decoder_mode_selection_title">Decoder mode</string>
     <string name="decoder_mode_auto">Auto (device default)</string>

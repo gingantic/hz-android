@@ -85,6 +85,9 @@ fun PlayerControlsOverlay(
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    onScrubStart: () -> Unit = {},
+    onScrub: (Long) -> Unit = {},
+    onScrubEnd: () -> Unit = {},
     onSkipForward: () -> Unit,
     onSkipBackward: () -> Unit,
     onSpeedClick: () -> Unit,
@@ -238,8 +241,9 @@ fun PlayerControlsOverlay(
                 abLoopStartMs = uiState.abLoopStartMs,
                 abLoopEndMs = uiState.abLoopEndMs,
                 onSeek = onSeekTo,
-                onSeekStart = {},
-                onSeekEnd = {},
+                onSeekStart = onScrubStart,
+                onSeekEnd = onScrubEnd,
+                onScrub = onScrub,
             )
 
             // Row 2: play controls
@@ -424,6 +428,7 @@ private fun SeekProgressRow(
     onSeek: (Long) -> Unit,
     onSeekStart: () -> Unit,
     onSeekEnd: () -> Unit,
+    onScrub: (Long) -> Unit = {},
 ) {
     val currentPosition by positionFlow.collectAsStateWithLifecycle()
     PlayerSeekBar(
@@ -435,6 +440,7 @@ private fun SeekProgressRow(
         onSeek = onSeek,
         onSeekStart = onSeekStart,
         onSeekEnd = onSeekEnd,
+        onScrub = onScrub,
     )
 }
 

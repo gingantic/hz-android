@@ -32,8 +32,14 @@ object AssDirectBridge {
     /** Process a subtitle chunk (dialogue line with timing). */
     external fun nativeProcessChunk(handle: Long, data: ByteArray, startMs: Long, durationMs: Long)
 
-    /** Render subtitle frame at given time. Returns true if content rendered. */
-    external fun nativeRender(handle: Long, timeMs: Long, bitmap: Bitmap): Boolean
+    /**
+     * Render subtitle frame at given time.
+     * Returns:
+     *   0: empty (no subtitle content)
+     *   1: changed (new content rendered into bitmap)
+     *   2: unchanged (same content as previous frame, bitmap untouched)
+     */
+    external fun nativeRender(handle: Long, timeMs: Long, bitmap: Bitmap): Int
 
     /** Flush all events (on seek or track change). */
     external fun nativeFlush(handle: Long)

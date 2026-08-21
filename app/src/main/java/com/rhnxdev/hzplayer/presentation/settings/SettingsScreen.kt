@@ -89,6 +89,7 @@ fun SettingsScreen(
     val orientationMode by settingsViewModel.orientationMode.collectAsStateWithLifecycle()
     val resumeMode by settingsViewModel.resumeMode.collectAsStateWithLifecycle()
     val decoderMode by settingsViewModel.decoderMode.collectAsStateWithLifecycle()
+    val disableHdr by settingsViewModel.disableHdr.collectAsStateWithLifecycle()
     val activeEngine by settingsViewModel.activeEngine.collectAsStateWithLifecycle()
     val availableEngines = settingsViewModel.availableEngines
 
@@ -279,6 +280,12 @@ fun SettingsScreen(
                                     DecoderMode.SOFTWARE -> stringResource(R.string.decoder_mode_software)
                                 },
                                 onClick = { showDecoderDialog = true },
+                            )
+                            SettingsToggleItem(
+                                title = stringResource(R.string.settings_disable_hdr),
+                                subtitle = stringResource(R.string.settings_disable_hdr_sub),
+                                checked = disableHdr,
+                                onCheckedChange = { settingsViewModel.saveDisableHdr(it) },
                             )
                             SettingsToggleItem(
                                 title = stringResource(R.string.settings_background_play),

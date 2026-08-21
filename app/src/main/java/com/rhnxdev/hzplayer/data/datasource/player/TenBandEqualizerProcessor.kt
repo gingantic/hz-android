@@ -49,6 +49,15 @@ class TenBandEqualizerProcessor @Inject constructor() : BaseAudioProcessor() {
     /** Per-channel filter memory: BAND_COUNT * (x1, x2, y1, y2). Audio thread only. */
     private var filterState: Array<FloatArray> = emptyArray()
 
+    private var rampInFramesRemaining = 0
+    private var totalRampInFrames = 0
+
+    private fun triggerRampIn(durationMs: Int = 80) {
+        val sr = inputAudioFormat.sampleRate.takeIf { it > 0 } ?: 48000
+        totalRampInFrames = ((sr * durationMs) / 1000).coerceAtLeast(1)
+        rampInFramesRemaining = totalRampInFrames
+    }
+
     fun setEnabled(enabled: Boolean) {
         this.enabled = enabled
     }
@@ -71,6 +80,7 @@ class TenBandEqualizerProcessor @Inject constructor() : BaseAudioProcessor() {
         }
         // Sample rate may have changed — recompute the filters for it.
         rebuildCoefficients(inputAudioFormat.sampleRate)
+        triggerRampIn(80)
         return inputAudioFormat
     }
 
@@ -81,16 +91,18 @@ class TenBandEqualizerProcessor @Inject constructor() : BaseAudioProcessor() {
         val coeffs = coefficients
         var anyBandActive = false
         for (c in coeffs) if (c != null) { anyBandActive = true; break }
-        if (!enabled || !anyBandActive) {
-            output.put(inputBuffer)
-        } else {
-            val channelCount = inputAudioFormat.channelCount
-            if (filterState.size != channelCount) {
-                filterState = Array(channelCount) { FloatArray(BAND_COUNT * 4) }
-            }
-            var channel = 0
-            while (inputBuffer.remaining() >= 2) {
-                var sample = inputBuffer.short.toFloat()
+
+        val channelCount = inputAudioFormat.channelCount.coerceAtLeast(1)
+        if (filterState.size != channelCount) {
+            filterState = Array(channelCount) { FloatArray(BAND_COUNT * 4) }
+        }
+
+        var channel = 0
+        while (inputBuffer.remaining() >= 2) {
+            var sample = inputBuffer.short.toFloat()
+
+            // Run EQ filter biquad chain if active
+            if (enabled && anyBandActive) {
                 val state = filterState[channel]
                 for (band in 0 until BAND_COUNT) {
                     val c = coeffs[band] ?: continue
@@ -106,19 +118,41 @@ class TenBandEqualizerProcessor @Inject constructor() : BaseAudioProcessor() {
                     state[base + 3] = y1
                     sample = y
                 }
-                output.putShort(sample.coerceIn(-32768f, 32767f).toInt().toShort())
-                channel = if (channel + 1 == channelCount) 0 else channel + 1
             }
+
+            // Smooth S-curve start ramp-in to prevent volume peaks / jumpscares
+            if (rampInFramesRemaining > 0) {
+                val progress = 1.0f - (rampInFramesRemaining.toFloat() / totalRampInFrames)
+                val smoothFactor = 0.5f * (1.0f - cos(progress * PI).toFloat())
+                sample *= smoothFactor
+                if (channel + 1 == channelCount) {
+                    rampInFramesRemaining--
+                }
+            }
+
+            // Soft-knee peak limiting to avoid clipping and abrupt audio blasts
+            val limited = when {
+                sample > 30000f -> 30000f + (sample - 30000f) * 0.25f
+                sample < -30000f -> -30000f + (sample + 30000f) * 0.25f
+                else -> sample
+            }
+
+            output.putShort(limited.coerceIn(-32768f, 32767f).toInt().toShort())
+            channel = if (channel + 1 == channelCount) 0 else channel + 1
         }
         output.flip()
     }
 
+    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onFlush() {
         clearFilterState()
+        triggerRampIn(60)
     }
 
+    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onReset() {
         clearFilterState()
+        triggerRampIn(60)
     }
 
     private fun clearFilterState() {

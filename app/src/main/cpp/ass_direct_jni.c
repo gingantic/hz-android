@@ -93,25 +93,25 @@ Java_com_rhnxdev_hzplayer_data_datasource_subtitle_assrender_AssDirectBridge_nat
     (*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
 }
 
-JNIEXPORT jboolean JNICALL
+JNIEXPORT jint JNICALL
 Java_com_rhnxdev_hzplayer_data_datasource_subtitle_assrender_AssDirectBridge_nativeRender(
         JNIEnv *env, jobject thiz,
         jlong handle, jlong time_ms, jobject bitmap) {
     (void)thiz;
     AssDirectContext *ctx = (AssDirectContext *)(intptr_t)handle;
-    if (!ctx || !bitmap) return JNI_FALSE;
+    if (!ctx || !bitmap) return 0;
 
     void *pixels = NULL;
     int ret = AndroidBitmap_lockPixels(env, bitmap, &pixels);
     if (ret != ANDROID_BITMAP_RESULT_SUCCESS) {
         LOGE("Failed to lock bitmap pixels: %d", ret);
-        return JNI_FALSE;
+        return 0;
     }
 
-    int has_content = ass_direct_render(ctx, time_ms, (uint8_t *)pixels);
+    int result = ass_direct_render(ctx, time_ms, (uint8_t *)pixels);
 
     AndroidBitmap_unlockPixels(env, bitmap);
-    return has_content ? JNI_TRUE : JNI_FALSE;
+    return (jint)result;
 }
 
 JNIEXPORT void JNICALL

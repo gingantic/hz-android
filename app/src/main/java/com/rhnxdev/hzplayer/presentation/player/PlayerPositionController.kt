@@ -48,6 +48,8 @@ internal class PlayerPositionController(
     private var isSeeking = false
     private var lastSeekTimestamp = 0L
     private var seekTargetPosition = 0L
+    private var accumulatedSeekTarget: Long? = null
+    private var seekDebounceJob: Job? = null
 
     /**
      * True while the app is in the foreground (ON_START…ON_STOP lifecycle).
@@ -76,8 +78,12 @@ internal class PlayerPositionController(
                 val currentUri = playerRepository.currentPlaybackUri
 
                 val elapsed = System.currentTimeMillis() - lastSeekTimestamp
-                if (isSeeking && elapsed > 1500) {
-                    isSeeking = false
+                if (isSeeking) {
+                    val reachedTarget = kotlin.math.abs(position - seekTargetPosition) <= 2000L || (position >= seekTargetPosition && position - seekTargetPosition < 5000L)
+                    val timedOut = elapsed > 1500L
+                    if ((reachedTarget || timedOut) && accumulatedSeekTarget == null) {
+                        isSeeking = false
+                    }
                 }
                 val effectivePosition = if (isSeeking) seekTargetPosition else position
 
@@ -146,40 +152,69 @@ internal class PlayerPositionController(
         _position.value = 0L
         isSeeking = false
         seekTargetPosition = 0L
+        accumulatedSeekTarget = null
+        seekDebounceJob?.cancel()
         saveTick = 0
     }
 
     /** Clears the seeking flag once the engine settles out of BUFFERING. */
     fun onPlaybackState(state: PlayerState) {
-        val elapsed = System.currentTimeMillis() - lastSeekTimestamp
-        if (isSeeking && state != PlayerState.BUFFERING && elapsed > 250) {
+        if (state != PlayerState.BUFFERING && accumulatedSeekTarget == null) {
             isSeeking = false
         }
     }
 
     fun onSeekTo(positionMs: Long) {
-        val target = positionMs.coerceAtLeast(0)
+        val duration = playerRepository.activeEngine.getDuration().takeIf { it > 0 } ?: Long.MAX_VALUE
+        val target = positionMs.coerceIn(0, duration)
+        accumulatedSeekTarget = target
+        markSeekStart(target)
+        playerRepository.seekTo(target)
+
+        seekDebounceJob?.cancel()
+        seekDebounceJob = scope.launch {
+            delay(800)
+            accumulatedSeekTarget = null
+        }
+    }
+
+    fun onScrubStart() {
+        playerRepository.setScrubbing(true)
+    }
+
+    fun onScrub(positionMs: Long) {
+        val target = positionMs.coerceIn(0, (playerRepository.activeEngine.getDuration()).takeIf { it > 0 } ?: Long.MAX_VALUE)
+        accumulatedSeekTarget = target
         markSeekStart(target)
         playerRepository.seekTo(target)
     }
 
+    fun onScrubEnd() {
+        accumulatedSeekTarget = null
+        playerRepository.setScrubbing(false)
+    }
+
     fun onSkipForward() {
-        val target = position.value + 10_000
-        markSeekStart(target)
-        playerRepository.skipForward(10000)
+        onSeekBy(10_000L)
     }
 
     fun onSkipBackward() {
-        val target = (position.value - 10_000).coerceAtLeast(0)
-        markSeekStart(target)
-        playerRepository.skipBackward(10000)
+        onSeekBy(-10_000L)
     }
 
     fun onSeekBy(deltaMs: Long) {
-        val target = (playerRepository.activeEngine.getCurrentPosition() + deltaMs).coerceAtLeast(0)
+        val duration = playerRepository.activeEngine.getDuration().takeIf { it > 0 } ?: Long.MAX_VALUE
+        val base = accumulatedSeekTarget ?: (if (isSeeking) seekTargetPosition else _position.value)
+        val target = (base + deltaMs).coerceIn(0, duration)
+        accumulatedSeekTarget = target
         markSeekStart(target)
-        if (deltaMs >= 0) playerRepository.skipForward(deltaMs)
-        else playerRepository.skipBackward(-deltaMs)
+        playerRepository.seekTo(target)
+
+        seekDebounceJob?.cancel()
+        seekDebounceJob = scope.launch {
+            delay(800)
+            accumulatedSeekTarget = null
+        }
     }
 
     private fun markSeekStart(targetMs: Long) {
@@ -192,6 +227,7 @@ internal class PlayerPositionController(
 
     fun onCleared() {
         positionUpdateJob?.cancel()
+        seekDebounceJob?.cancel()
         saveProgressNow()
         saveScope.cancel()
     }

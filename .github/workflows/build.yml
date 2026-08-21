@@ -90,6 +90,7 @@ jobs:
             app/src/main/jniLibs/arm64-v8a/libavutil.so
             app/src/main/jniLibs/arm64-v8a/libswscale.so
             app/src/main/jniLibs/arm64-v8a/libswresample.so
+            app/src/main/jniLibs/arm64-v8a/libavfilter.so
             app/src/main/jniLibs/arm64-v8a/libdav1d.so
             app/src/main/jniLibs/arm64-v8a/libass.so
             app/src/main/jniLibs/arm64-v8a/libexpat.so

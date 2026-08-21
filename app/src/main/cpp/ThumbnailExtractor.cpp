@@ -960,6 +960,17 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
     if (fmtCtx->bit_rate > 0)
         probePut(kv, "bitrate", std::to_string(fmtCtx->bit_rate));
 
+    // Stream counts
+    int videoTrackCount = 0, audioTrackCount = 0, subTrackCount = 0;
+    for (unsigned int i = 0; i < fmtCtx->nb_streams; i++) {
+        if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) videoTrackCount++;
+        else if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) audioTrackCount++;
+        else if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) subTrackCount++;
+    }
+    if (videoTrackCount > 0) probePut(kv, "video_tracks", std::to_string(videoTrackCount));
+    if (audioTrackCount > 0) probePut(kv, "audio_tracks", std::to_string(audioTrackCount));
+    if (subTrackCount > 0) probePut(kv, "subtitle_tracks", std::to_string(subTrackCount));
+
     // ── First video stream ──
     int vIdx = av_find_best_stream(fmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1,
                                    nullptr, 0);
@@ -993,6 +1004,15 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
             const char* pf = av_get_pix_fmt_name(
                 static_cast<AVPixelFormat>(par->format));
             if (pf) probePut(kv, "video_pix_fmt", pf);
+
+            const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(
+                static_cast<AVPixelFormat>(par->format));
+            if (desc && desc->comp[0].depth > 0) {
+                probePut(kv, "video_bit_depth", std::to_string(desc->comp[0].depth) + "-bit");
+            }
+        }
+        if (par->color_primaries == AVCOL_PRI_BT2020 || par->color_trc == AVCOL_TRC_SMPTE2084 || par->color_trc == AVCOL_TRC_ARIB_STD_B67) {
+            probePut(kv, "video_hdr", (par->color_trc == AVCOL_TRC_ARIB_STD_B67) ? "HLG" : "HDR10");
         }
     }
 
@@ -1007,9 +1027,19 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
             probePut(kv, "audio_bitrate", std::to_string(par->bit_rate));
         if (par->sample_rate > 0)
             probePut(kv, "audio_sample_rate", std::to_string(par->sample_rate));
-        if (par->ch_layout.nb_channels > 0)
+        if (par->ch_layout.nb_channels > 0) {
             probePut(kv, "audio_channels",
                      std::to_string(par->ch_layout.nb_channels));
+            char layoutBuf[64] = {0};
+            av_channel_layout_describe(&par->ch_layout, layoutBuf, sizeof(layoutBuf));
+            if (layoutBuf[0] != '\0') {
+                probePut(kv, "audio_layout", layoutBuf);
+            }
+        }
+        AVDictionaryEntry* aLang = av_dict_get(fmtCtx->streams[aIdx]->metadata, "language", nullptr, 0);
+        if (aLang && aLang->value) {
+            probePut(kv, "audio_language", aLang->value);
+        }
     }
 
     avformat_close_input(&fmtCtx);

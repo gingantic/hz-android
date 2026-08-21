@@ -21,6 +21,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,10 +46,23 @@ fun DragSeekIndicator(
     modifier: Modifier = Modifier,
     isForward: Boolean = deltaMs >= 0,
 ) {
-    val targetMs = (currentPositionMs + deltaMs).coerceIn(0L, durationMs)
+    var lastDisplayedDeltaMs by remember { mutableLongStateOf(deltaMs) }
+    var lastTargetMs by remember { mutableLongStateOf((currentPositionMs + deltaMs).coerceIn(0L, durationMs)) }
+    var lastIsForward by remember { mutableStateOf(isForward) }
+
+    if (deltaMs != 0L) {
+        lastDisplayedDeltaMs = deltaMs
+        lastTargetMs = (currentPositionMs + deltaMs).coerceIn(0L, durationMs)
+        lastIsForward = isForward
+    }
+
+    val displayDelta = if (deltaMs != 0L) deltaMs else lastDisplayedDeltaMs
+    val targetMs = if (deltaMs != 0L) (currentPositionMs + deltaMs).coerceIn(0L, durationMs) else lastTargetMs
+    val displayIsForward = if (deltaMs != 0L) isForward else lastIsForward
+
     val fraction = if (durationMs > 0) (targetMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 
-    val deltaSeconds = (deltaMs / 1000).let {
+    val deltaSeconds = (displayDelta / 1000).let {
         if (it == 0L) "" else if (it > 0) "+${it}s" else "${it}s"
     }
 

@@ -41,10 +41,25 @@ class AssHandler @Inject constructor(
     private var renderBitmap: Bitmap? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    data class BitmapCue(
+        val trackId: Int,
+        val startPtsUs: Long,
+        val endPtsUs: Long,
+        val x: Int,
+        val y: Int,
+        val w: Int,
+        val h: Int,
+        val bitmap: Bitmap?,
+        val canvasW: Int,
+        val canvasH: Int
+    )
+
     private val trackFormats = mutableMapOf<Int, Format>()
     private val trackHeaders = mutableMapOf<Int, ByteArray>()
     private val trackEvents =
         ConcurrentHashMap<Int, CopyOnWriteArrayList<Triple<Long, Long, String>>>()
+    private val bitmapCues =
+        ConcurrentHashMap<Int, CopyOnWriteArrayList<BitmapCue>>()
     @Volatile
     private var activeTrackId: Int = -1
     /** The currently active track ID — exposed so FfmpegNativeEngine can map it to a list index. */
@@ -80,6 +95,13 @@ class AssHandler @Inject constructor(
     private var lastPositionRealtimeUs: Long = 0L
 
     @Volatile
+    private var lastRenderedPositionMs: Long = 0L
+
+    private var renderBitmapA: Bitmap? = null
+    private var renderBitmapB: Bitmap? = null
+    private var useBufferA: Boolean = true
+
+    @Volatile
     private var needsFontReload = false
 
     @Volatile
@@ -98,6 +120,12 @@ class AssHandler @Inject constructor(
         isPlayingState = playing
     }
 
+    fun setIsBuffering(buffering: Boolean) {
+        if (!buffering) {
+            lastPositionRealtimeUs = android.os.SystemClock.elapsedRealtime() * 1000L
+        }
+    }
+
     fun updatePosition(positionUs: Long, elapsedRealtimeUs: Long) {
         // Sanity-check: reject obviously corrupted values.
         // Valid video position must be < 24 h (86400 s = 86_400_000_000 µs).
@@ -105,6 +133,10 @@ class AssHandler @Inject constructor(
         if (positionUs < 0 || positionUs > maxValidPositionUs) {
             // ExoPlayer sometimes passes elapsedRealtimeUs in positionUs slot — ignore
             return
+        }
+        val posMs = positionUs / 1000L
+        if (kotlin.math.abs(posMs - lastRenderedPositionMs) > 1000L) {
+            lastRenderedPositionMs = posMs
         }
         lastPositionUs = positionUs
         lastPositionRealtimeUs = elapsedRealtimeUs
@@ -116,6 +148,19 @@ class AssHandler @Inject constructor(
 
     private var videoWidth = 1920
     private var videoHeight = 1080
+
+    private fun ensureBitmaps(w: Int, h: Int) {
+        val width = if (w > 0) w else 1920
+        val height = if (h > 0) h else 1080
+        if (renderBitmapA == null || renderBitmapA?.width != width || renderBitmapA?.height != height) {
+            renderBitmapA?.recycle()
+            renderBitmapA = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
+        if (renderBitmapB == null || renderBitmapB?.width != width || renderBitmapB?.height != height) {
+            renderBitmapB?.recycle()
+            renderBitmapB = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
+    }
 
     /** Current renderer frame size — used to stamp PlayResX/Y into synthesized ASS. */
     fun getVideoWidth(): Int = videoWidth
@@ -162,7 +207,7 @@ class AssHandler @Inject constructor(
                 Log.i(TAG, "[INIT] first ASS track — initializing native context ($bw x $bh)")
                 nativeHandle = AssDirectBridge.nativeInit(bw, bh, 1.0f)
                 if (nativeHandle != 0L) {
-                    renderBitmap = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+                    ensureBitmaps(bw, bh)
                     initialized = true
                     flushPendingFonts()
                     shouldInvokeCallback = true
@@ -263,13 +308,13 @@ class AssHandler @Inject constructor(
             }
         }
 
-        val readOrder: Int
         if (existingIdx != -1) {
-            readOrder = existingIdx
-        } else {
-            events.add(Triple(startMs, durationMs, bodyFields))
-            readOrder = events.size - 1
+            // Already processed and added to libass; skip duplicate re-processing on seek
+            return
         }
+
+        events.add(Triple(startMs, durationMs, bodyFields))
+        val readOrder = events.size - 1
 
         // ── Diagnostic: log first 10 events received ─────────────────────────
         val totalEvents = events.size
@@ -307,6 +352,35 @@ class AssHandler @Inject constructor(
             AssDirectBridge.nativeAddFont(nativeHandle, name, data)
             needsFontReload = true
         }
+    }
+
+    fun onBitmapSubtitle(
+        trackId: Int,
+        startPtsUs: Long,
+        endPtsUs: Long,
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+        argb: IntArray?,
+        canvasW: Int,
+        canvasH: Int
+    ) {
+        val list = bitmapCues.getOrPut(trackId) { CopyOnWriteArrayList() }
+        val exists = list.any { it.startPtsUs == startPtsUs && it.endPtsUs == endPtsUs }
+        if (exists) return
+
+        if (argb == null || w <= 0 || h <= 0) {
+            list.add(BitmapCue(trackId, startPtsUs, endPtsUs, 0, 0, 0, 0, null, canvasW, canvasH))
+        } else {
+            val bmp = Bitmap.createBitmap(argb, w, h, Bitmap.Config.ARGB_8888)
+            list.add(BitmapCue(trackId, startPtsUs, endPtsUs, x, y, w, h, bmp, canvasW, canvasH))
+        }
+        if (activeTrackId == -1) {
+            activeTrackId = trackId
+        }
+        hasLoadedFirstTime = true
+        mainHandler.post { startRenderLoop() }
     }
 
     /**
@@ -590,17 +664,13 @@ class AssHandler @Inject constructor(
 
     private var renderDiagLogged = false
     private var renderDiagFrameCount: Long = 0L
+    private var lastRenderedBitmapCue: BitmapCue? = null
 
     private fun renderFrame() {
         if (!initialized || nativeHandle == 0L) return
-        val bitmap = renderBitmap
-        if (bitmap == null) {
-            if (!renderDiagLogged) {
-                Log.w(TAG, "[RENDER] bitmap NULL — abort (initialized=$initialized handle=$nativeHandle video=${videoWidth}x$videoHeight)")
-                renderDiagLogged = true
-            }
-            return
-        }
+        ensureBitmaps(videoWidth, videoHeight)
+        val targetBitmap = if (useBufferA) renderBitmapA else renderBitmapB
+        if (targetBitmap == null || targetBitmap.isRecycled) return
 
         val p = player
         val isExoActive = p != null && p.playbackState != androidx.media3.common.Player.STATE_IDLE
@@ -631,50 +701,89 @@ class AssHandler @Inject constructor(
         val mediaDurationMs = if (isExoActive) (p!!.duration.takeIf { it > 0 } ?: Long.MAX_VALUE) else Long.MAX_VALUE
 
         val positionMs: Long
-
-        if (isPlaying && lastPositionRealtimeUs != 0L && lastPositionUs > 0L) {
+        if (isPlaying && lastPositionRealtimeUs != 0L && lastPositionUs >= 0L) {
             val currentRealtimeUs = android.os.SystemClock.elapsedRealtime() * 1000L
             val elapsedUs         = (currentRealtimeUs - lastPositionRealtimeUs).coerceAtLeast(0L)
-            val interpolated      = (lastPositionUs + (elapsedUs * speed).toLong()) / 1000L
-            positionMs = interpolated.coerceAtLeast(0L)
+            val cappedElapsedUs   = minOf(elapsedUs, 250_000L)
+            val rawPos            = (lastPositionUs + (cappedElapsedUs * speed).toLong()) / 1000L
+            val monotonicPos      = if (rawPos >= lastRenderedPositionMs && rawPos - lastRenderedPositionMs < 1000L) {
+                rawPos
+            } else if (rawPos < lastRenderedPositionMs && lastRenderedPositionMs - rawPos < 200L) {
+                lastRenderedPositionMs
+            } else {
+                rawPos
+            }
+            lastRenderedPositionMs = monotonicPos
+            positionMs = monotonicPos.coerceAtLeast(0L)
                 .let { v -> if (mediaDurationMs < Long.MAX_VALUE) v.coerceAtMost(mediaDurationMs) else v }
         } else {
-            positionMs = if (isExoActive) p!!.currentPosition else (lastPositionUs / 1000L).coerceAtLeast(0L)
+            val rawPos = (lastPositionUs / 1000L).coerceAtLeast(0L)
+            lastRenderedPositionMs = rawPos
+            positionMs = rawPos.let { v -> if (mediaDurationMs < Long.MAX_VALUE) v.coerceAtMost(mediaDurationMs) else v }
         }
 
-        var hasContent = false
-        // Apply the timing offset: libass renders the cue anchored at (pos − delay).
-        // Positive delayMs ⇒ subtitles lag the audio; negative ⇒ lead. Coerce so we
-        // never pass a negative position to nativeRender (cue-times are ≥ 0).
+        val cues = bitmapCues[activeTrackId]
+        if (cues != null && cues.isNotEmpty()) {
+            val delayUs = subtitleDelayMs * 1000L
+            val renderPtsUs = (positionMs * 1000L - delayUs).coerceAtLeast(0L)
+            val activeCue = cues.lastOrNull { renderPtsUs >= it.startPtsUs && renderPtsUs <= it.endPtsUs }
+            if (activeCue != null && activeCue.bitmap != null && !activeCue.bitmap.isRecycled) {
+                if (activeCue !== lastRenderedBitmapCue) {
+                    lastRenderedBitmapCue = activeCue
+                    val canvas = android.graphics.Canvas(targetBitmap)
+                    canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+                    canvas.drawBitmap(activeCue.bitmap, activeCue.x.toFloat(), activeCue.y.toFloat(), null)
+                    overlayView.updateBitmap(targetBitmap)
+                    useBufferA = !useBufferA
+                }
+            } else {
+                if (lastRenderedBitmapCue != null) {
+                    lastRenderedBitmapCue = null
+                    overlayView.clear()
+                }
+            }
+            return
+        }
+
         val renderPosMs = (positionMs - subtitleDelayMs).coerceAtLeast(0L)
 
         // ── Diagnostic: log every ~300 frames ────────────────────────────────
         renderDiagFrameCount++
         val shouldLog = renderDiagFrameCount % 300 == 0L
-        
+
+        val renderResult: Int
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 if (needsFontReload) {
                     needsFontReload = false
                     AssDirectBridge.nativeReloadFonts(nativeHandle)
                 }
-                hasContent = AssDirectBridge.nativeRender(nativeHandle, renderPosMs, bitmap)
+                renderResult = AssDirectBridge.nativeRender(nativeHandle, renderPosMs, targetBitmap)
+            } else {
+                renderResult = 0
             }
         }
 
         if (shouldLog) {
             Log.i(TAG, "[RENDER-DBG] frame=$renderDiagFrameCount posMs=$positionMs renderPosMs=$renderPosMs " +
-                "activeTrack=$activeTrackId handle=$nativeHandle hasContent=$hasContent")
+                "activeTrack=$activeTrackId handle=$nativeHandle renderResult=$renderResult")
         }
 
-        if (hasContent) {
-            if (!renderDiagLogged) {
-                Log.i(TAG, "[RENDER] FIRST content rendered at posMs=$positionMs (was waiting on READY)")
-                renderDiagLogged = true
+        when (renderResult) {
+            1 -> { // CHANGED (new content)
+                if (!renderDiagLogged) {
+                    Log.i(TAG, "[RENDER] FIRST content rendered at posMs=$positionMs (was waiting on READY)")
+                    renderDiagLogged = true
+                }
+                overlayView.updateBitmap(targetBitmap)
+                useBufferA = !useBufferA
             }
-            overlayView.updateBitmap(bitmap)
-        } else {
-            overlayView.clear()
+            2 -> { // UNCHANGED (identical to previous frame)
+                // Keep displaying current overlay without any redraw/invalidation
+            }
+            else -> { // 0: EMPTY
+                overlayView.clear()
+            }
         }
     }
 
@@ -758,17 +867,28 @@ class AssHandler @Inject constructor(
     }
 
     /**
-     * Called by AssTimeRenderer when a seek occurs, ensuring rendering buffers
-     * are cleared and libass is flushed immediately.
+     * Called when a seek occurs. Immediately updates playback position and
+     * synchronously triggers a frame render so the subtitle updates seamlessly
+     * without any intermediate blank frame (eliminating seek flicker).
      */
-    fun onSeek() {
-        lastPositionUs = 0L
-        lastPositionRealtimeUs = 0L
-        mainHandler.post { overlayView.clear() }
+    fun onSeek(positionMs: Long? = null) {
+        if (positionMs != null && positionMs >= 0L) {
+            val nowUs = android.os.SystemClock.elapsedRealtime() * 1000L
+            lastPositionUs = positionMs * 1000L
+            lastPositionRealtimeUs = nowUs
+            currentTimeUs = positionMs * 1000L
+            lastRenderedPositionMs = positionMs
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            renderFrame()
+        } else {
+            mainHandler.post { renderFrame() }
+        }
     }
 
     /** Reset subtitle state when loading a new media item. */
     fun reset() {
+        lastRenderedBitmapCue = null
         synchronized(nativeLock) {
             trackFormats.clear()
             trackHeaders.clear()
@@ -847,6 +967,7 @@ class AssHandler @Inject constructor(
 
     fun release() {
         stopRenderLoop()
+        lastRenderedBitmapCue = null
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 AssDirectBridge.nativeDestroy(nativeHandle)
@@ -857,8 +978,11 @@ class AssHandler @Inject constructor(
             initialized = false
             hasLoadedFirstTime = false
             trackFormats.clear()
+            bitmapCues.forEach { (_, list) ->
+                list.forEach { cue -> cue.bitmap?.recycle() }
+            }
+            bitmapCues.clear()
         }
         mainHandler.post { overlayView.clear() }
-        
     }
 }
