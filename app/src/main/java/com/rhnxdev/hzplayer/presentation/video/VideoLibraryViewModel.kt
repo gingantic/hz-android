@@ -259,7 +259,7 @@ class VideoLibraryViewModel @Inject constructor(
         loadVideos(forceRefresh = true)
     }
 
-    fun onVideoClicked(video: VideoItem) {
+    fun getPlaylistForVideo(video: VideoItem): Pair<List<VideoItem>, Int> {
         val state = _uiState.value
         val playlist: List<VideoItem> = when {
             state.selectedFolder == RECENT_KEY -> state.recentVideos
@@ -268,6 +268,11 @@ class VideoLibraryViewModel @Inject constructor(
             else -> listOf(video)
         }
         val index = playlist.indexOfFirst { it.id == video.id }.coerceAtLeast(0)
+        return playlist to index
+    }
+
+    fun onVideoClicked(video: VideoItem) {
+        val (playlist, index) = getPlaylistForVideo(video)
         playerRepository.playPlaylist(playlist.map { it.uri to it.title }, index)
     }
 

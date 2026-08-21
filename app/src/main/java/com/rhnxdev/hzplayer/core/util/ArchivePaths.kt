@@ -53,7 +53,9 @@ object ArchiveUri {
         val cleanUri = if (queryIdx >= 0) uri.substring(0, queryIdx) else uri
         val query = if (queryIdx >= 0) uri.substring(queryIdx + 1) else null
 
-        val path = cleanUri.substringAfter("archive:///", "").ifEmpty { return null }
+        val prefix = "$SCHEME:"
+        if (!cleanUri.startsWith(prefix, ignoreCase = true)) return null
+        val path = cleanUri.substring(prefix.length).trimStart('/').ifEmpty { return null }
         val idx = path.indexOf('/')
         if (idx <= 0) return null
         val container = URLDecoder.decode(path.substring(0, idx), "UTF-8")

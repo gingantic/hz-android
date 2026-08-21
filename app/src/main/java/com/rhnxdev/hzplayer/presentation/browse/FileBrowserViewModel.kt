@@ -221,7 +221,7 @@ class FileBrowserViewModel @Inject constructor(
      * Supports both real directories and virtual archive folders.
      */
     fun collectFolderVideoPlaylist(folder: FolderItem, onReady: (List<VideoItem>) -> Unit) {
-        if (!folder.isDirectory) return
+        if (!folder.isDirectory && !isArchiveExtension(folder.name)) return
         viewModelScope.launch {
             val children = cache.get(folder.path) ?: try {
                 if (ArchiveBrowsePath.isArchiveBrowsePath(folder.path)) {
@@ -229,6 +229,11 @@ class FileBrowserViewModel @Inject constructor(
                     archiveRepository.listEntries(container, archivePasswords[container])
                         .getOrNull()
                         ?.let { archiveChildren(container, prefix, it) }
+                        ?: emptyList()
+                } else if (isArchiveExtension(folder.name)) {
+                    archiveRepository.listEntries(folder.path, archivePasswords[folder.path])
+                        .getOrNull()
+                        ?.let { archiveChildren(folder.path, "", it) }
                         ?: emptyList()
                 } else {
                     fileRepository.listDirectory(folder.path, showHidden).first()

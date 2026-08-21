@@ -266,11 +266,37 @@ class FfmpegNativeEngine @Inject constructor(
         headers: Map<String, String>,
         artworkUri: String?
     ) {
+        playInternal(
+            uri = uri,
+            title = title,
+            artist = artist,
+            isVideo = isVideo,
+            mimeType = mimeType,
+            resumePositionMs = resumePositionMs,
+            headers = headers,
+            artworkUri = artworkUri,
+            preservePlaylist = false,
+        )
+    }
+
+    private fun playInternal(
+        uri: String,
+        title: String,
+        artist: String? = null,
+        isVideo: Boolean = true,
+        mimeType: String? = null,
+        resumePositionMs: Long = 0L,
+        headers: Map<String, String> = emptyMap(),
+        artworkUri: String? = null,
+        preservePlaylist: Boolean = false,
+    ) {
         currentUri = uri
         currentTitle = title
         currentArtist = artist
         currentHeaders = headers
-        currentPlaylist = null
+        if (!preservePlaylist) {
+            currentPlaylist = null
+        }
         pendingSeekTargetMs = -1L
         assHandler.player = null
         assHandler.playbackSpeed = currentSpeed
@@ -306,7 +332,7 @@ class FfmpegNativeEngine @Inject constructor(
         currentPlaylist = items
         currentPlaylistIndex = startIndex.coerceIn(0, items.lastIndex)
         val (uri, title) = items[currentPlaylistIndex]
-        play(uri, title, resumePositionMs = startPositionMs)
+        playInternal(uri, title, resumePositionMs = startPositionMs, preservePlaylist = true)
     }
 
     override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
@@ -483,7 +509,7 @@ class FfmpegNativeEngine @Inject constructor(
         if (currentPlaylistIndex + 1 < playlist.size) {
             currentPlaylistIndex++
             val (uri, title) = playlist[currentPlaylistIndex]
-            play(uri, title)
+            playInternal(uri, title, preservePlaylist = true)
         }
     }
 
@@ -492,7 +518,7 @@ class FfmpegNativeEngine @Inject constructor(
         if (currentPlaylistIndex > 0) {
             currentPlaylistIndex--
             val (uri, title) = playlist[currentPlaylistIndex]
-            play(uri, title)
+            playInternal(uri, title, preservePlaylist = true)
         }
     }
 
@@ -504,7 +530,7 @@ class FfmpegNativeEngine @Inject constructor(
         if (index in playlist.indices) {
             currentPlaylistIndex = index
             val (uri, title) = playlist[index]
-            play(uri, title)
+            playInternal(uri, title, preservePlaylist = true)
         }
     }
 
