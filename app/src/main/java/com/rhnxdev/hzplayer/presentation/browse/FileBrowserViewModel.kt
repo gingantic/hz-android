@@ -18,6 +18,7 @@ import com.rhnxdev.hzplayer.core.util.isSolidArchiveExtension
 import com.rhnxdev.hzplayer.core.util.sortFilesByType
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
@@ -169,6 +170,35 @@ class FileBrowserViewModel @Inject constructor(
                     loadDirectory(path, lastIdx)
                 }
             }
+        }
+    }
+
+    fun onCreateFolder(folderName: String) {
+        val state = _uiState.value
+        if (state.layers.isEmpty()) return
+        val currentPath = state.layers.last().path
+        if (!ArchiveBrowsePath.isRealFilePath(currentPath)) return
+
+        // Writing outside app-specific storage on Android 11+ needs "All files access".
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            _uiState.update { it.copy(showAllFilesAccessPrompt = true) }
+            return
+        }
+
+        viewModelScope.launch {
+            fileRepository.createDirectory(currentPath, folderName)
+                .onSuccess {
+                    cache.remove(currentPath)
+                    val lastIdx = _uiState.value.layers.lastIndex
+                    if (lastIdx >= 0) {
+                        updateLayer(lastIdx) { it.copy(isLoading = true) }
+                        loadDirectory(currentPath, lastIdx)
+                    }
+                    _uiState.update { it.copy(fileOpMessage = "Folder created: $folderName") }
+                }
+                .onFailure { err ->
+                    _uiState.update { it.copy(fileOpMessage = err.message ?: "Failed to create folder") }
+                }
         }
     }
 
@@ -551,6 +581,10 @@ class FileBrowserViewModel @Inject constructor(
         val enabled = !_uiState.value.isMediaMode
         _uiState.update { it.copy(isMediaMode = enabled) }
         viewModelScope.launch { userPrefs.setFileBrowserMediaMode(enabled) }
+    }
+
+    fun onMediaTypeFilterChanged(filter: FileMediaTypeFilter) {
+        _uiState.update { it.copy(mediaTypeFilter = filter) }
     }
 
     fun onSearchToggle() = search.toggle()

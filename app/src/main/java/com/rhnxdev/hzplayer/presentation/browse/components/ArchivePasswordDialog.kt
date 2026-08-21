@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 
@@ -37,6 +38,8 @@ fun ArchivePasswordDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         title = { Text("Password Required") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {

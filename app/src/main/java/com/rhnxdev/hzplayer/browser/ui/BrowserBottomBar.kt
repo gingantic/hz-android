@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.browser.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -225,12 +226,31 @@ fun BrowserBottomBar(
                 onDismissRequest = { showMenu = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                dragHandle = { BottomSheetDefaults.DragHandle() },
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                tonalElevation = 0.dp,
+                dragHandle = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp, bottom = 6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(32.dp)
+                                .height(4.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                                    RoundedCornerShape(2.dp),
+                                ),
+                        )
+                    }
+                },
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
                 ) {
                     // Navigation controls pill bar
                     Row(

@@ -2,7 +2,6 @@
     <string name="app_name">Hz Player</string>
     <string name="video_player_title">Hz Player Video</string>
     <string name="music_player_title">Hz Player Music</string>
-
     <!-- Player error messages (mapped from PlaybackErrorKind; raw cause is never shown) -->
     <string name="player_error_network">Network connection failed. Check your internet connection and try again.</string>
     <string name="player_error_timeout">The connection timed out. The server took too long to respond.</string>
@@ -14,9 +13,7 @@
     <string name="player_error_decoder">Playback failed because a decoder couldn\'t be initialized.</string>
     <string name="player_error_server">The remote server returned an error (e.g. HTTP 500). The stream or server may be down or temporary unavailable.</string>
     <string name="player_error_unknown">Something went wrong during playback.</string>
-
     <string name="player_action_retry">Retry</string>
-
     <!-- Video library -->
     <string name="video_sort_cd">Sort</string>
     <string name="sort_by_title">Sort by Title</string>
@@ -32,7 +29,6 @@
     <string name="video_search_empty">No videos found for \"%1$s\".</string>
     <string name="cat_recent">Recent</string>
     <string name="cat_all_videos">All Videos</string>
-
     <!-- Search -->
     <string name="search_placeholder">Search media...</string>
     <string name="search_videos_placeholder">Search videos...</string>
@@ -45,7 +41,6 @@
     <string name="search_music_count">Music (%1$d)</string>
     <string name="search_albums_count">Albums (%1$d)</string>
     <string name="search_artists_count">Artists (%1$d)</string>
-
     <!-- Browse -->
     <string name="browse_sort_cd">Sort</string>
     <string name="play_all_cd">Play All</string>
@@ -55,7 +50,7 @@
     <string name="quick_access">Quick Access</string>
     <string name="menu_favorite">Favorite</string>
     <string name="menu_unfavorite">Remove from Favorites</string>
-    <string name="menu_play_all_playlist">Play all as playlist</string>
+    <string name="menu_play_all_playlist">Play as playlist</string>
     <string name="menu_cut">Cut</string>
     <string name="menu_copy">Copy</string>
     <string name="menu_delete">Delete</string>
@@ -73,23 +68,19 @@
     <string name="solid_archive_warning_message">\"%1$s\" uses solid compression. Playing media or seeking/scrubbing inside this archive may be slower and use higher CPU because prior data must be decompressed.</string>
     <string name="solid_archive_dont_show_again">Don\'t show this again</string>
     <string name="solid_archive_continue">Continue</string>
-
     <!-- Navigation destinations -->
     <string name="nav_video">Video</string>
     <string name="nav_audio">Audio</string>
     <string name="nav_browse">Browse</string>
     <string name="nav_network">Network</string>
     <string name="nav_settings">Settings</string>
-
     <!-- Player common -->
     <string name="back_cd">Back</string>
-
     <!-- Server list / cards -->
     <string name="options_cd">Options</string>
     <string name="edit">Edit</string>
     <string name="delete">Delete</string>
     <string name="server_summary">%1$s • %2$s</string>
-
     <!-- Subtitle search -->
     <string name="subtitle_search_placeholder">Movie or show name...</string>
     <string name="subtitle_search_type">Type</string>
@@ -97,7 +88,6 @@
     <string name="subtitle_search_series">Series</string>
     <string name="subtitle_search_season">Season</string>
     <string name="subtitle_search_episode">Episode</string>
-
     <!-- Network screen -->
     <string name="network_search_cd">Search</string>
     <string name="network_sort_cd">Sort</string>
@@ -114,21 +104,17 @@
     <string name="clear">Clear</string>
     <string name="connect">Connect</string>
     <string name="stream_url_error">Enter a valid URL (http, https, rtsp)</string>
-
     <!-- Network scan -->
     <string name="scan_network_cd">Scan network</string>
     <string name="stop_scan_cd">Stop scan</string>
-
     <!-- Credential / server config field labels -->
     <string name="label_username">Username</string>
     <string name="label_password">Password</string>
-
     <!-- Shared dialog controls -->
     <string name="dialog_save">Save</string>
     <string name="dialog_cancel">Cancel</string>
     <string name="dialog_close">Close</string>
     <string name="dialog_select">Select</string>
-
     <!-- Media overflow menu / properties -->
     <string name="media_overflow_cd">More options</string>
     <string name="media_properties">Properties</string>
@@ -162,10 +148,8 @@
     <string name="prop_layout">Layout</string>
     <string name="prop_copy_path">Copy path</string>
     <string name="prop_copied_path">Path copied to clipboard</string>
-
     <!-- Not-implemented suffix (concatenated where needed) -->
     <string name="not_implemented">(Not implemented)</string>
-
     <!-- Settings screen -->
     <string name="settings_title">Settings</string>
     <string name="settings_display">Display</string>
@@ -226,7 +210,6 @@
     <string name="settings_stats_nerds_sub">Show video/audio codec info in player overlay</string>
     <string name="settings_about">About Hz Player</string>
     <string name="settings_version">Version 1.0</string>
-
     <!-- About dialog -->
     <string name="about_title">About Hz Player</string>
     <string name="about_tagline">A modern, open media player for Android.</string>
@@ -239,7 +222,6 @@
     <string name="about_tech_hilt">Hilt (DI) &amp; Coil</string>
     <string name="about_copyright">© %1$d Hz Player. Free &amp; open source.</string>
     <string name="about_build_date">Build date: %1$s</string>
-
     <!-- Server config dialog -->
     <string name="label_name">Name</string>
     <string name="placeholder_name">My Server</string>
@@ -258,7 +240,6 @@
     <string name="add_server">Add Server</string>
     <string name="hide">Hide</string>
     <string name="show">Show</string>
-
     <!-- Settings dialogs -->
     <string name="theme_selection_title">Select Theme</string>
     <string name="theme_light">Light</string>
@@ -278,7 +259,6 @@
     <string name="subdl_title">SubDL API Key</string>
     <string name="subdl_desc">Enter your API key from subdl.com. Required for online subtitle search.</string>
     <string name="subdl_placeholder">e.g. abc123xyz…</string>
-
     <!-- Debug overlay -->
     <string name="debug_stats_title">Stats for nerds</string>
     <string name="debug_close">Close</string>
@@ -299,17 +279,14 @@
     <string name="debug_stat_language">Language</string>
     <string name="debug_stat_speed">Speed</string>
     <string name="debug_stat_downloaded">Downloaded</string>
-
     <!-- Audio player sheet -->
     <string name="no_track">No track</string>
     <string name="unknown_artist">Unknown artist</string>
     <string name="queue">Queue</string>
     <string name="queue_track_count">%1$d tracks</string>
     <string name="queue_empty">No tracks in the queue</string>
-
     <!-- Audio selection dialog -->
     <string name="no_alternate_audio">No alternate audio tracks available</string>
-
     <!-- Subtitle browser bottom sheet -->
     <string name="browse_subtitles">Browse Subtitles</string>
     <string name="navigate_up">Navigate up</string>
@@ -318,14 +295,12 @@
     <string name="could_not_load_files">Could not load files</string>
     <string name="no_subtitle_files">No subtitle files found</string>
     <string name="subtitles_empty_hint">Folders and subtitles will show up here.</string>
-
     <!-- Subtitle selection dialog -->
     <string name="subtitle_tracks">Tracks</string>
     <string name="subtitle_off">Off</string>
     <string name="add_subtitle_file">Add subtitle file…</string>
     <string name="search_online">Search online…</string>
     <string name="subtitle_delay">Delay</string>
-
     <!-- Subtitle search dialog -->
     <string name="subtitle_search_hint">Enter a name and tap search.</string>
     <string name="subtitle_search_no_results">No subtitles found for \"%1$s\". Try a different title or language.</string>
@@ -333,19 +308,16 @@
     <string name="subtitle_search_showing">Showing</string>
     <string name="subtitle_search_history">Recent searches</string>
     <string name="subtitle_search_history_clear">Clear all</string>
-
     <!-- Subtitle search/browser error strings (shown in composable, not ViewModel) -->
     <string name="search_failed">Search failed</string>
     <string name="download_failed">Download failed: %1$s</string>
     <string name="connection_failed">Connection failed</string>
-
     <!-- Audio browser -->
     <string name="audio_music">Music</string>
     <string name="no_albums">No albums found</string>
     <string name="no_albums_hint">Albums will appear here once music is scanned.</string>
     <string name="no_artists">No artists found</string>
     <string name="no_artists_hint">Artists will appear here once music is scanned.</string>
-
     <!-- Shared player UI -->
     <string name="close">Close</string>
     <string name="storages">Storages</string>
@@ -366,7 +338,6 @@
     <string name="toggle_on">On</string>
     <string name="toggle_off">Off</string>
     <string name="search_songs">Search songs…</string>
-
     <!-- Player controls overlay -->
     <string name="back">Back</string>
     <string name="now_playing">Now Playing</string>
@@ -416,7 +387,6 @@
     <string name="ab_repeat_loop">A-B repeat</string>
     <string name="ab_repeat_point_a">A set</string>
     <string name="ab_repeat_looping">Looping</string>
-
     <!-- Subtitle styling -->
     <string name="color_white">White</string>
     <string name="color_yellow">Yellow</string>
@@ -429,18 +399,15 @@
     <string name="background_semi">Semi</string>
     <string name="background_full">Full</string>
     <string name="apply">Apply</string>
-
     <!-- Subtitle search -->
     <string name="search_subtitles_online">Search Subtitles Online</string>
     <string name="search">Search</string>
     <string name="unknown">Unknown</string>
     <string name="download">Download</string>
-
     <!-- Network sort menu -->
     <string name="list_view">List view</string>
     <string name="media_view">Media view</string>
     <string name="sort_by_date">Sort by Date</string>
-
     <!-- Audio browser -->
     <string name="no_results_for">No results for "%1$s"</string>
     <string name="no_songs">No songs found</string>
@@ -448,12 +415,10 @@
     <string name="tap_browse">Tap browse to find music on your device.</string>
     <string name="artist_subtitle">%1$d albums • %2$d tracks</string>
     <string name="track_count">%1$d songs</string>
-
     <!-- File browser -->
     <string name="downloads">Downloads</string>
     <string name="movies">Movies</string>
     <string name="storage_info">%1$s free of %2$s</string>
-
     <!-- Subtitle browser -->
     <string name="items_count">%1$d items</string>
     <string name="dir_summary">%1$d folders, %2$d files</string>
@@ -463,16 +428,13 @@
     <string name="folder_videos_count">%1$d videos</string>
     <string name="internal_storage">Internal Storage</string>
     <string name="server_name_format">%1$s Server (%2$s)</string>
-
     <!-- Duration / time format -->
     <string name="duration_hm">%1$dh%2$dm</string>
     <string name="duration_m">%1$dm</string>
-
     <!-- Delay buttons -->
     <string name="delay_decrease">–100 ms</string>
     <string name="delay_value">%1$d ms</string>
     <string name="delay_increase">+100 ms</string>
-
     <!-- Bitrate / speed / size format -->
     <string name="bitrate_bps">%1$d bps</string>
     <string name="bitrate_kbps">%1$d kbps</string>
@@ -482,7 +444,6 @@
     <string name="speed_mbps">%1$.1f MB/s</string>
     <string name="size_bytes">%1$d B</string>
     <string name="network_speed_format">↓ %1$s</string>
-
     <!-- OTA Updates -->
     <string name="update_available_title">Update Available</string>
     <string name="update_version_label">Version: %1$s</string>
@@ -496,13 +457,30 @@
     <string name="update_dont_show_again">Don\'t show again</string>
     <string name="settings_check_updates">Check for Updates</string>
     <string name="settings_check_updates_sub">Get the latest builds from GitHub</string>
-
     <string name="github_token_placeholder">ghp_...</string>
     <string name="permission_required_title">Storage Permission Required</string>
     <string name="permission_required_desc">Hz Player requires access to your device storage to scan and show your local audio and video files.</string>
     <string name="permission_grant_button">Grant Permission</string>
     <string name="permission_settings_button">Open App Settings</string>
-
     <!-- Browser -->
     <string name="open_browser">Open Browser</string>
+    <!-- View & Sort Bottom Sheet -->
+    <string name="view_and_sort_title">View &amp; Sort</string>
+    <string name="view_mode_title">View Mode</string>
+    <string name="view_mode_list">List</string>
+    <string name="view_mode_list_desc">Compact with file details</string>
+    <string name="view_mode_media">Media</string>
+    <string name="view_mode_media_desc">16:9 thumbnail previews</string>
+    <string name="sort_order_title">Sort Order</string>
+    <string name="filter_by_type_title">Filter by Media</string>
+    <string name="filter_all">All</string>
+    <string name="filter_videos">Videos</string>
+    <string name="filter_audio">Audio</string>
+    <string name="filter_archives">Archives</string>
+    <string name="view_sort_cd">View and sort options</string>
+    <!-- Directory 3-dot menu -->
+    <string name="new_folder">New Folder</string>
+    <string name="new_folder_placeholder">Folder name</string>
+    <string name="create">Create</string>
+    <string name="refresh">Refresh</string>
 </resources>

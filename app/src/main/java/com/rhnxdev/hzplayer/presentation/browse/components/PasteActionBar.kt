@@ -153,6 +153,8 @@ fun AllFilesAccessDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         title = { Text(stringResource(R.string.all_files_access_title)) },
         text = { Text(stringResource(R.string.all_files_access_message)) },
         confirmButton = {

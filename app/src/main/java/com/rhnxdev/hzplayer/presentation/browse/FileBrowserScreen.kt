@@ -133,6 +133,9 @@ fun FileBrowserScreen(
                     isSearchActive = isSearchActive,
                     onToggleMediaMode = viewModel::onToggleMediaMode,
                     onSortChanged = viewModel::onSortChanged,
+                    onMediaTypeFilterChanged = viewModel::onMediaTypeFilterChanged,
+                    onRefresh = viewModel::onRefresh,
+                    onCreateFolder = viewModel::onCreateFolder,
                 )
             }
         },
@@ -156,6 +159,7 @@ fun FileBrowserScreen(
                         searchQuery = searchQuery,
                         isSearchActive = isSearchActive,
                         mediaMode = uiState.isMediaMode,
+                        mediaTypeFilter = uiState.mediaTypeFilter,
                         quickAccessPaths = uiState.quickAccessPaths,
                         onFolderClicked = viewModel::onFolderClicked,
                         onBreadcrumbClicked = viewModel::onBreadcrumbClicked,

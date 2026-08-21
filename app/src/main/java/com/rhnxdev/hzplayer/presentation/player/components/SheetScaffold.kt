@@ -65,19 +65,23 @@ fun SheetScaffold(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         tonalElevation = 0.dp,
         dragHandle = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 8.dp),
+                    .padding(top = 10.dp, bottom = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .width(36.dp)
+                        .width(32.dp)
                         .height(4.dp)
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f), RoundedCornerShape(2.dp))
+                        .background(
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                            RoundedCornerShape(2.dp),
+                        )
                 )
             }
         },
@@ -105,7 +109,7 @@ fun SheetScaffold(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp),
+                        .padding(horizontal = 20.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -120,9 +124,9 @@ fun SheetScaffold(
                                 imageVector = icon,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp),
+                                modifier = Modifier.size(20.dp),
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                         }
                         Text(
                             text = title,

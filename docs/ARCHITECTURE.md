@@ -1,8 +1,9 @@
 # Hz Player — Architecture
 
 > Clean MVVM with unidirectional data flow for a Compose-first media player.
-> Last refreshed: 2026-07-29 (sleep timer, chapters, A-B repeat, audio delay, play-as-audio,
-> app shell extraction, bottom-sheet menus, solid archive warnings, Rust adblock engine).
+> Last refreshed: 2026-08-22 (three playback engines incl. standalone native FFmpeg,
+> 10-band equalizer, browser omnibox suggestions + web PiP, file operations,
+> mp4fork extractor).
 
 ---
 
@@ -83,7 +84,8 @@ com.rhnxdev.hzplayer/
 │   │       ├── SolidArchiveWarningDialog.kt  (solid archive perf warning + dont-show-again)
 │   │       ├── DirectoryStackContent.kt      (directory listing with breadcrumb + scroll save)
 │   │       ├── StorageRootsContent.kt         (storage root picker + pull-to-refresh)
-│   │       └── FileBrowserTopBarActions.kt    (sort/view/media-mode top bar buttons)
+│   │       ├── FileBrowserTopBarActions.kt    (sort/view/media-mode top bar buttons)
+│   │       └── PasteActionBar.kt              (cut/copy/move/delete paste bar)
 │   │
 │   ├── network/
 │   │   ├── NetworkScreen.kt / NetworkViewModel.kt / NetworkUiState.kt
@@ -99,7 +101,8 @@ com.rhnxdev.hzplayer/
 │   │   ├── PlayerPlaylistController.kt / PlayerDebugController.kt
 │   │   ├── SubtitleBrowserViewModel.kt / SubtitleSearchViewModel.kt ( + UiState files)
 │   │   ├── PlayerMoreOptionsSheet.kt  (sleep timer, jump-to, chapters, A-B repeat, play-as-audio)
-│   │   └── components/   (see UI_COMPONENTS.md — overlay, seek, sheets, dialogs, …)
+│   │   └── components/   (see UI_COMPONENTS.md — overlay, seek, sheets, dialogs,
+│   │                      EqualizerSheet, …)
 │   │
 │   ├── search/
 │   │   ├── SearchScreen.kt / SearchViewModel.kt / SearchUiState.kt
@@ -122,11 +125,18 @@ com.rhnxdev.hzplayer/
 │   │   ├── NetworkTraffic.kt StreamHistoryItem.kt DebugStats.kt
 │   │   ├── AspectRatioMode.kt ThemeMode.kt BrowserHistoryItem.kt
 │   │   ├── ChapterInfo.kt (container chapter markers: MKV/MP4/OGG)
+│   │   ├── EqualizerInfo.kt (EqualizerBand / EqualizerInfo / EqualizerSettings)
+│   │   ├── UrlSuggestion.kt (browser omnibox suggestion)
+│   │   └── FileMediaTypeFilter.kt (ALL/VIDEOS/AUDIO/ARCHIVES browse filter)
 │   │
 │   ├── player/
 │   │   ├── EngineType.kt IPlayerEngine.kt
+│   │   │   // EngineType: EXO_PLAYER, FFMPEG (ExoPlayer w/ FFmpeg-first renderers),
+│   │   │   // NATIVE_FFMPEG (standalone libffplayer.so engine)
+│   │   │   // IPlayerEngine also carries: setScrubbing, play(artworkUri), setDisableHdr,
+│   │   │   // setFfmpegPreferred, equalizer block (getEqualizerState + band/preset/
+│   │   │   // bass/loudness controls), setAudioDelay/getAudioDelay
 │   │   ├── RenderViewConfig.kt PlaybackErrorMapper.kt
-│   │   // IPlayerEngine now includes setAudioDelay/getAudioDelay, play(headers)
 │   │
 │   ├── repository/   (one interface per domain area — see below)
 │   │
@@ -152,7 +162,18 @@ com.rhnxdev.hzplayer/
 │   │   │   ├── SftpBrowserClient.kt WebDavBrowserClient.kt
 │   │   ├── player/
 │   │   │   ├── MediaPlayerHolder.kt     (owns the single ExoPlayer)
-│   │   │   ├── ExoPlayerEngine.kt       (IPlayerEngine impl)
+│   │   │   ├── ExoPlayerEngine.kt       (IPlayerEngine impl for EXO_PLAYER + FFMPEG)
+│   │   │   ├── FfmpegNativeEngine.kt    (IPlayerEngine impl for NATIVE_FFMPEG)
+│   │   │   ├── ffmpeg/                  (native FFmpeg player support)
+│   │   │   │   ├── FfmpegNativePlayer.kt  (JNI bridge → libffplayer.so)
+│   │   │   │   ├── FfmpegAudioSink.kt     (AudioTrack PCM output + latency tracking)
+│   │   │   │   ├── FfmpegMimeTypes.kt
+│   │   │   │   ├── FfmpegLibrary.java / FfmpegAudioRenderer.java / FfmpegVideoRenderer.java
+│   │   │   │   └── FfmpegAudioDecoder.java / FfmpegVideoDecoder.java / FfmpegDecoderException.java
+│   │   │   │                            (Media3 extension decoders for software decode)
+│   │   │   ├── mp4fork/                 (forked Media3 MP4 extractor: Samsung SEF
+│   │   │   │                             motion-photo reading, auxiliary tracks,
+│   │   │   │                             container MIME resolution)
 │   │   │   ├── ExoDebugStats.kt         (frame rate / decoder labeling / stats extraction)
 │   │   │   ├── ExoMediaItemHelper.kt    (MediaItem building + subtitle MIME inference)
 │   │   │   ├── AudioDelaySink.kt        (ForwardingAudioSink for A/V sync offset)
@@ -161,8 +182,9 @@ com.rhnxdev.hzplayer/
 │   │   │   ├── RemoteDataSourceBase.kt  (shared base for protocol DataSources)
 │   │   │   ├── FtpDataSource.kt SftpDataSource.kt SmbDataSource.kt WebDavDataSource.kt
 │   │   │   ├── SmbPathResolver.kt SftpTofuVerifier.kt
-│   │   │   ├── HzRenderersFactory.kt    (single RenderersFactory: EQ + audio delay + ASS renderers)
-│   │   │   ├── TenBandEqualizerProcessor.kt AudioDelaySink.kt EqualizerController.kt
+│   │   │   ├── HzRenderersFactory.kt    (single RenderersFactory: EQ + audio delay + ASS
+│   │   │   │                             renderers; preferFfmpeg renderer reordering)
+│   │   │   ├── TenBandEqualizerProcessor.kt EqualizerController.kt
 │   │   │   └── MediaPlaybackService.kt  (Media3 MediaSessionService)
 │   │   ├── subtitle/assrender/          (native libass subtitle pipeline)
 │   │   │   ├── AssHandler.kt            (singleton coordinator: data→libass→bitmap)
@@ -185,7 +207,7 @@ com.rhnxdev.hzplayer/
 │   ├── ui/BrowserScreen.kt / BrowserTopBar.kt / BrowserBottomBar.kt / TabStrip.kt
 │   │      / TabSidebar.kt / NewTabPage.kt / BrowserHistoryScreen.kt
 │   │      / BrowserSettingsScreen.kt / MediaGrabberBottomSheet.kt
-│   │      / PopupPermissionBottomSheet.kt
+│   │      / PopupPermissionBottomSheet.kt / UrlSuggestionsPanel.kt (omnibox history suggestions)
 │   ├── AdBlockEngine.kt / BrowserActivity.kt / BrowserSessionStore.kt
 │   │   BrowserSettings.kt / BrowserSettingsStore.kt / BrowserTab.kt
 │   │   BrowserViewModel.kt / PendingPopupRequest.kt / TabManager.kt
@@ -194,7 +216,8 @@ com.rhnxdev.hzplayer/
 │   ├── designsystem/  (HzPlayerIcons.kt Dimens.kt NavBarInsets.kt)
 │   │   // Dimens.kt also exports Spacing, CornerRadii, CardSizes, BrowserDimens, HzPlayerShapes
 │   ├── components/    (see UI_COMPONENTS.md)
-│   ├── thumbnail/     (native FFmpeg extractor + Coil fetcher + MediaInfoProbe)
+│   ├── thumbnail/     (native FFmpeg extractor + Coil fetcher + MediaInfoProbe
+│   │                   + RandomAccessBridge family incl. ArchiveRandomAccessBridge)
 │   └── util/          (MediaTimeUtils / MediaExtensions / MimeTypeUtil /
 │                       BreadcrumbBuilder / DirectoryLruCache / PlaybackFormatters /
 │                       ServerDiscoverer / SubtitleLanguageResolver / UpdateChecker /
@@ -228,9 +251,22 @@ com.rhnxdev.hzplayer/
 - `cpp/ass_direct.c` + `ass_direct_jni.c` — native libass rendering (fontconfig-free).
 
 ### Native archive pipeline (`data/datasource/archive/` + `cpp/`)
-- `ArchiveNative.kt` — JNI bridge to `cpp/ArchiveExtractor.cpp` (libarchive).
+- `ArchiveNative.kt` — JNI bridge to `cpp/ArchiveExtractor.cpp` (libarchive, pinned v3.7.9).
 - `ArchiveDataSource.kt` — Media3 `DataSource` for `archive://` URIs (open/read/seek/close).
 - `cpp/ArchiveExtractor.cpp` — libarchive list/open/read/seek/close via JNI.
+
+### Native FFmpeg player pipeline (`FfmpegNativeEngine` + `cpp/FfmpegPlayer.cpp`)
+- `FfmpegNativeEngine.kt` — `IPlayerEngine` impl for `NATIVE_FFMPEG`; bridges surface
+  events, aspect ratio, and data sources (`content://`, `smb://`, `file://`) into the
+  native player via `RandomAccessBridge` AVIO callbacks.
+- `ffmpeg/FfmpegNativePlayer.kt` — typed JNI wrapper over `cpp/FfmpegPlayer.cpp`
+  (`libffplayer.so`): demux/decode/AV-sync threads, ANativeWindow blit,
+  AMediaCodec hardware decode (H.264/HEVC/VP9/AV1 + HDR) with libdav1d/CPU fallback.
+- `ffmpeg/FfmpegAudioSink.kt` — AudioTrack PCM output with head-position latency tracking.
+- `FfmpegNativePlayer` also routes subtitle packets to the shared libass pipeline
+  (`AssHandler`) and exposes the equalizer by forwarding the AudioTrack session id to
+  `EqualizerController`.
+- See `docs/FFMPEG_NATIVE_AUDIT_AND_ROADMAP.md` for the deep technical audit.
 
 ---
 

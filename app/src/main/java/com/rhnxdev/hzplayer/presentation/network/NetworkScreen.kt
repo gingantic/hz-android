@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
+import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
 import com.rhnxdev.hzplayer.core.util.isVideoOrStreamDefault
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
@@ -104,69 +105,27 @@ fun NetworkScreen(
                     )
                 }
             }
-            if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) {
-                if (!isSearchActive) {
-                    // Media mode toggle
-                    androidx.compose.material3.IconButton(onClick = viewModel::onToggleMediaMode) {
-                        androidx.compose.material3.Icon(
-                            imageVector = if (uiState.isMediaMode) Icons.AutoMirrored.Filled.ViewList
-                            else Icons.Filled.PhotoLibrary,
-                            contentDescription = if (uiState.isMediaMode) stringResource(R.string.list_view) else stringResource(R.string.media_view),
-                        )
-                    }
-                }
-                var showSortMenu by remember { mutableStateOf(false) }
-                androidx.compose.material3.IconButton(onClick = { showSortMenu = true }) {
-                    androidx.compose.material3.Icon(
+            if (uiState.mode == NetworkScreenMode.SERVER_BROWSE && !isSearchActive) {
+                var showViewSortSheet by remember { mutableStateOf(false) }
+                IconButton(onClick = { showViewSortSheet = true }) {
+                    Icon(
                         imageVector = Icons.AutoMirrored.Filled.Sort,
-                        contentDescription = stringResource(R.string.network_sort_cd),
+                        contentDescription = stringResource(R.string.view_sort_cd),
                     )
                 }
-                androidx.compose.material3.DropdownMenu(
-                    expanded = showSortMenu,
-                    onDismissRequest = { showSortMenu = false },
-                ) {
-                    listOf(
-                        SortType.TITLE to stringResource(R.string.sort_by_name),
-                        SortType.DATE_MODIFIED to stringResource(R.string.sort_by_date),
-                        SortType.FILE_SIZE to stringResource(R.string.sort_by_size),
-                    ).forEach { (type, label) ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { androidx.compose.material3.Text(label) },
-                            onClick = {
-                                viewModel.onSortChanged(type, uiState.sortDirection)
-                                showSortMenu = false
-                            },
-                            leadingIcon = if (uiState.sortType == type) {
-                                {
-                                    androidx.compose.material3.Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                    )
-                                }
-                            } else null,
-                        )
-                    }
-                    HorizontalDivider()
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { androidx.compose.material3.Text(stringResource(R.string.sort_ascending)) },
-                        onClick = {
-                            viewModel.onSortChanged(uiState.sortType, SortDirection.ASCENDING)
-                            showSortMenu = false
-                        },
-                        leadingIcon = if (uiState.sortDirection == SortDirection.ASCENDING) {
-                            { androidx.compose.material3.Icon(Icons.Filled.Check, null) }
-                        } else null,
-                    )
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { androidx.compose.material3.Text(stringResource(R.string.sort_descending)) },
-                        onClick = {
-                            viewModel.onSortChanged(uiState.sortType, SortDirection.DESCENDING)
-                            showSortMenu = false
-                        },
-                        leadingIcon = if (uiState.sortDirection == SortDirection.DESCENDING) {
-                            { androidx.compose.material3.Icon(Icons.Filled.Check, null) }
-                        } else null,
+                if (showViewSortSheet) {
+                    ViewSortBottomSheet(
+                        sortType = uiState.sortType,
+                        sortDirection = uiState.sortDirection,
+                        onSortChanged = viewModel::onSortChanged,
+                        isMediaMode = uiState.isMediaMode,
+                        onToggleMediaMode = viewModel::onToggleMediaMode,
+                        availableSortTypes = listOf(
+                            SortType.TITLE,
+                            SortType.DATE_MODIFIED,
+                            SortType.FILE_SIZE,
+                        ),
+                        onDismissRequest = { showViewSortSheet = false },
                     )
                 }
             }

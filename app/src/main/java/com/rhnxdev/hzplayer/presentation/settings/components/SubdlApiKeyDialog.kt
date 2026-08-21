@@ -29,6 +29,8 @@ fun SubdlApiKeyDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         title = { Text(stringResource(R.string.subdl_title)) },
         text = {
             Column {

@@ -35,6 +35,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.defaultPort
@@ -138,6 +139,8 @@ fun ServerConfigDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         title = { Text(stringResource(if (isEditing) R.string.edit_server else R.string.add_server)) },
         text = {
             Column(

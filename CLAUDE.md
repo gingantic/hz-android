@@ -71,7 +71,7 @@ Native libs (e.g. `libarchive.so`) are built **outside Gradle** by standalone sc
 | UI | Jetpack Compose + Material 3 |
 | Architecture | MVVM + Repository + StateFlow |
 | DI | Hilt |
-| Media | Media3 ExoPlayer (`IPlayerEngine` abstraction) |
+| Media | Media3 ExoPlayer + standalone native FFmpeg player (`IPlayerEngine` abstraction, 3 engines) |
 | Persistence | Room (KSP) + Preferences DataStore |
 | Images / Thumbnails | Coil 3 + custom `VideoThumbnailFetcher` (NDK-backed) |
 | Navigation | Navigation Compose + M3 Adaptive Navigation Suite |
@@ -92,14 +92,16 @@ Native libs (e.g. `libarchive.so`) are built **outside Gradle** by standalone sc
 ```
 com.rhnxdev.hzplayer
 ├── core/
-│   ├── components/          — 16 shared Composables (MediaCard, HzPlayerTopBar, FileItemCard, …)
+│   ├── components/          — 18 shared Composables (MediaCard, HzPlayerTopBar, FileItemCard,
+│   │                          FileOptionsBottomSheet, ViewSortBottomSheet, …)
 │   ├── designsystem/        — Dimens.kt, HzPlayerIcons.kt, NavBarInsets.kt
 │   ├── thumbnail/           — VideoThumbnailFetcher, NativeThumbnailExtractor, RandomAccessBridge,
-│   │                          LocalRandomAccessBridge, ChannelRandomAccessBridge, ThumbnailSource,
-│   │                          MediaInfoProbe
+│   │                          LocalRandomAccessBridge, ChannelRandomAccessBridge,
+│   │                          ArchiveRandomAccessBridge, ThumbnailSource, MediaInfoProbe
 │   └── util/                — BreadcrumbBuilder, DirectoryLruCache, MediaExtensions,
 │                              MediaTimeUtils, MimeTypeUtil, PlaybackFormatters, ServerDiscoverer,
-│                              SubtitleLanguageResolver, UpdateChecker, ArchivePaths, IntentUtils
+│                              SubtitleLanguageResolver, UpdateChecker, ArchivePaths, IntentUtils,
+│                              NetworkDomainUtils
 │
 ├── data/
 │   ├── datasource/
@@ -108,12 +110,18 @@ com.rhnxdev.hzplayer
 │   │   ├── media/           — MediaScanner.kt
 │   │   ├── network/         — FtpBrowserClient, SftpBrowserClient, SmbBrowserClient,
 │   │   │                      WebDavBrowserClient, RemoteBrowserClient (interface)
-│   │   ├── player/          — ExoPlayerEngine, MediaPlayerHolder, ConnectionPool,
+│   │   ├── player/          — ExoPlayerEngine (backs EXO_PLAYER + FFMPEG), FfmpegNativeEngine
+│   │   │                      (NATIVE_FFMPEG), MediaPlayerHolder, ConnectionPool,
 │   │   │                      HzRenderersFactory, TenBandEqualizerProcessor, EqualizerController,
-│   │   │                      AudioDelaySink,
+│   │   │                      AudioDelaySink, ExoDebugStats, ExoMediaItemHelper,
 │   │   │                      FtpDataSource, SftpDataSource, SmbDataSource, WebDavDataSource,
 │   │   │                      RemoteDataSourceBase, SmbPathResolver, SftpTofuVerifier,
-│   │   │                      NeighborSubtitleDiscoverer, MediaPlaybackService
+│   │   │                      NeighborSubtitleDiscoverer, MediaPlaybackService,
+│   │   │                      ffmpeg/ (FfmpegNativePlayer JNI bridge → libffplayer.so,
+│   │   │                      FfmpegAudioSink, FfmpegLibrary/AudioRenderer/VideoRenderer/
+│   │   │                      AudioDecoder/VideoDecoder extension decoders, FfmpegMimeTypes),
+│   │   │                      mp4fork/ (HzMp4Extractor + BoxParser + SefReader — forked
+│   │   │                      Media3 MP4 extractor: Samsung SEF motion photos, aux tracks)
 │   │   ├── archive/         — ArchiveNative (JNI), ArchiveDataSource, ArchiveRepositoryImpl
 │   │   ├── subtitle/assrender/ — AssHandler, AssDirectBridge, AssTrackOutput,
 │   │   │                      AssExtractorOutput, AssExtractorsFactory,
@@ -131,7 +139,7 @@ com.rhnxdev.hzplayer
 │   ├── ui/                  — BrowserScreen, BrowserTopBar, BrowserBottomBar, TabStrip,
 │   │                          TabSidebar, NewTabPage, BrowserHistoryScreen,
 │   │                          BrowserSettingsScreen, MediaGrabberBottomSheet,
-│   │                          PopupPermissionBottomSheet
+│   │                          PopupPermissionBottomSheet, UrlSuggestionsPanel
 │   ├── AdBlockEngine.kt, BrowserActivity.kt, BrowserSessionStore.kt,
 │   │   BrowserSettings.kt, BrowserSettingsStore.kt, BrowserTab.kt,
 │   │   BrowserViewModel.kt, PendingPopupRequest.kt, TabManager.kt
@@ -140,18 +148,20 @@ com.rhnxdev.hzplayer
 │   ├── AppModule.kt
 │   ├── DatabaseModule.kt
 │   ├── EngineKey.kt         — Hilt multibinding key for IPlayerEngine map
-│   ├── PlayerEngineModule.kt — Binds ExoPlayerEngine into Map<EngineType, IPlayerEngine>
+│   ├── PlayerEngineModule.kt — Binds ExoPlayerEngine (EXO_PLAYER + FFMPEG) and
+│   │                           FfmpegNativeEngine (NATIVE_FFMPEG) into Map<EngineType, IPlayerEngine>
 │   └── RepositoryModule.kt  — Binds all 11 repository implementations
 │
 ├── domain/
-│   ├── model/               — 20 pure Kotlin models (VideoItem, AudioItem, MediaItem,
+│   ├── model/               — 24 pure Kotlin models (VideoItem, AudioItem, MediaItem,
 │   │                          FolderItem, FolderCounts, ServerConfig, PlayerState,
 │   │                          PlaybackProgress, DecoderMode, OrientationMode, ResumeMode,
 │   │                          NetworkProtocol, AspectRatioMode, ThemeMode, DebugStats,
 │   │                          NetworkTraffic, RemoteFileItem, RemoteAuthException,
-│   │                          StreamHistoryItem, BrowserHistoryItem)
-│   ├── player/              — IPlayerEngine (interface), EngineType (enum: EXO_PLAYER),
-│   │                          RenderViewConfig, PlaybackErrorMapper
+│   │                          StreamHistoryItem, BrowserHistoryItem, ChapterInfo,
+│   │                          EqualizerInfo, UrlSuggestion, FileMediaTypeFilter)
+│   ├── player/              — IPlayerEngine (interface), EngineType (enum: EXO_PLAYER, FFMPEG,
+│   │                          NATIVE_FFMPEG), RenderViewConfig, PlaybackErrorMapper
 │   ├── repository/          — 11 interfaces (see Repositories section)
 │   └── usecase/             — (none; ViewModels call repositories directly)
 │
@@ -159,9 +169,11 @@ com.rhnxdev.hzplayer
 │   ├── audio/               — AudioBrowserScreen, AlbumDetailScreen, ArtistDetailScreen,
 │   │                          AudioDetailViewModel, components/ (AlbumCard, AudioDetailHeader)
 │   ├── browse/              — FileBrowserScreen, FileBrowserUiState, FileBrowserViewModel,
-│   │                          components/ArchivePasswordDialog
-│   ├── main/                — App shell
-│   ├── navigation/          — AppDestinations (5 top-level routes), AppNavigation
+│   │                          components/ (ArchivePasswordDialog, SolidArchiveWarningDialog,
+│   │                          DirectoryStackContent, StorageRootsContent,
+│   │                          FileBrowserTopBarActions, PasteActionBar)
+│   ├── main/                — App shell (HzPlayerApp, MainViewModel, components/)
+│   ├── navigation/          — AppDestinations (5 top-level routes), AppNavigation, MainNavHost
 │   ├── network/             — NetworkScreen, NetworkUiState, NetworkViewModel,
 │   │                          components/ (NetworkScreenContent, ServerCard,
 │   │                          ServerConfigDialog, StreamHistoryListItem)
@@ -174,9 +186,10 @@ com.rhnxdev.hzplayer
 │   │   ├── PlayerTrackCache.kt          — cached subtitle/audio track lists
 │   │   ├── PlayerPlaylistController.kt  — video playlist + audio queue
 │   │   ├── PlayerDebugController.kt     — debug stats polling
+│   │   ├── PlayerMoreOptionsSheet.kt    — sleep timer, chapters, A-B repeat, play-as-audio
 │   │   ├── SubtitleBrowserUiState/ViewModel.kt
 │   │   ├── SubtitleSearchUiState/ViewModel.kt
-│   │   └── components/      — 27 player Composables (PlayerControlsOverlay, PlayerSeekBar,
+│   │   └── components/      — 29 player Composables (PlayerControlsOverlay, PlayerSeekBar,
 │   │                          PlayerGestures, GestureCueIndicators, AssSubtitleOverlay,
 │   │                          PlaylistDrawer, AudioPlayerSheet, AudioQueueSheet,
 │   │                          MiniPlayerBar, FloatingVideoPlayer, SpeedSelectionDialog,
@@ -185,7 +198,8 @@ com.rhnxdev.hzplayer
 │   │                          AudioSelectionDialog, TrackSelectionRow, FlagIcon,
 │   │                          SheetScaffold, DragSeekIndicator, SeekIndicator,
 │   │                          SeekIndicators, SlideIndicator, PlaybackErrorOverlay,
-│   │                          DebugOverlay, UnlockPill, PlayerRenderView)
+│   │                          DebugOverlay, UnlockPill, PlayerRenderView,
+│   │                          PlayerMoreOptionsSheet content, EqualizerSheet)
 │   ├── preview/             — PreviewMedia.kt (all @Preview data helpers)
 │   ├── search/              — SearchScreen + ViewModel
 │   ├── settings/            — SettingsScreen, SettingsViewModel, LicensesScreen,
@@ -268,16 +282,17 @@ PlayerRepository (interface)
     ↓ implemented by
 PlayerRepositoryImpl
     ↓ holds Map<EngineType, IPlayerEngine>
-ExoPlayerEngine  ←  bound via PlayerEngineModule (@Singleton)
-    ↓ wraps
-MediaPlayerHolder  →  Media3 ExoPlayer
+ExoPlayerEngine (EXO_PLAYER + FFMPEG)  /  FfmpegNativeEngine (NATIVE_FFMPEG)
+    ↓ bound via PlayerEngineModule (@Singleton)
+MediaPlayerHolder (ExoPlayer engines)  /  libffplayer.so JNI (native engine)
     ↓
-MediaPlaybackService (MediaSessionService — background playback + lock-screen controls)
+MediaPlaybackService (MediaSessionService — background playback + lock-screen controls;
+                      only for engines whose getMedia3Player() returns non-null)
 ```
 
 ### `IPlayerEngine` contract
 
-`domain/player/IPlayerEngine` is the **only** playback boundary — no Media3 type crosses it. Adding a new backend (mpv, libVLC) = implement `IPlayerEngine` + add one `@Binds @IntoMap @EngineKey(...)` line to `PlayerEngineModule`. Current engines: `EXO_PLAYER` (only active engine).
+`domain/player/IPlayerEngine` is the **only** playback boundary — no Media3 type crosses it. Adding a new backend = implement `IPlayerEngine` + add one `@Binds @IntoMap @EngineKey(...)` line to `PlayerEngineModule`. Current engines: `EXO_PLAYER`, `FFMPEG` (same ExoPlayer pipeline, FFmpeg renderers preferred), `NATIVE_FFMPEG` (standalone native player).
 
 ### `PlayerUiState` highlights
 
@@ -374,10 +389,10 @@ Player (`VideoPlayerScreen`) is launched as a full-screen destination on top of 
 - **Built-in tracks:** ExoPlayer track selection via `IPlayerEngine.selectSubtitleTrack()`.
 - **External subtitles:** Added via `IPlayerEngine.addExternalSubtitle(uri)` — supports `.srt`, `.vtt`, `.ass`.
 - **Subtitle delay:** `IPlayerEngine.setSubtitleDelay(delayMs)`.
-- **Subtitle styling:** `SubtitleStyle` model → `SubtitleStylingDialog` UI.
 - **Online search:** `SubdlApi` (Search & Download API, plain `HttpURLConnection`) → `SubtitleSearchViewModel`.
 - **SMB auto-discovery:** `findSmbNeighborSubtitles()` uses jcifs-ng `SmbFile` to list sibling files.
-- **Built-in rendering is active** (`PlayerView` built-in). Custom `SubtitleOverlay` is parked pending refinement.
+- **Rendering:** Exo-backed engines use the built-in `PlayerView`; the native FFmpeg engine
+  renders via the libass pipeline (`AssHandler` → `AssSubtitleOverlay`, zero-flicker).
 
 ---
 
@@ -394,38 +409,28 @@ Player (`VideoPlayerScreen`) is launched as a full-screen destination on top of 
 
 ## Core Components & Utils
 
-### `core/components/` (16 shared Composables)
-`BreadcrumbBar`, `DirectoryBrowsePane`, `DurationBadge`, `FileItemCard`, `HzPlayerSearchableScaffold`, `HzPlayerTopBar`, `MediaCard`, `MediaEmptyState`, `MediaErrorState`, `MediaListItem`, `MediaLoadingState`, `MediaPropertiesDialog`, `PermissionRequiredState`, `SearchDelegate`, `ThumbnailPlaceholder`, `ViewToggleFab`
+### `core/components/` (18 shared Composables)
+`BreadcrumbBar`, `DirectoryBrowsePane`, `DurationBadge`, `FileItemCard`, `FileOptionsBottomSheet`, `HzPlayerSearchableScaffold`, `HzPlayerTopBar`, `MediaCard`, `MediaEmptyState`, `MediaErrorState`, `MediaListItem`, `MediaLoadingState`, `MediaPropertiesDialog`, `PermissionRequiredState`, `SearchDelegate`, `ThumbnailPlaceholder`, `ViewSortBottomSheet`, `ViewToggleFab`
 
 ### `core/designsystem/`
 `Dimens` — spacing/size tokens · `HzPlayerIcons` — icon references · `NavBarInsets` — inset helpers
 
 ### `core/thumbnail/`
-`VideoThumbnailFetcher` — Coil `Fetcher` for video frames · `NativeThumbnailExtractor` — NDK frame extraction · `RandomAccessBridge` / `LocalRandomAccessBridge` / `ChannelRandomAccessBridge` — unified seek interface · `ThumbnailSource` · `MediaInfoProbe`
+`VideoThumbnailFetcher` — Coil `Fetcher` for video frames · `NativeThumbnailExtractor` — NDK frame extraction · `RandomAccessBridge` / `LocalRandomAccessBridge` / `ChannelRandomAccessBridge` / `ArchiveRandomAccessBridge` — unified seek interface · `ThumbnailSource` · `MediaInfoProbe`
 
 ### `core/util/`
-`BreadcrumbBuilder` · `DirectoryLruCache` · `MediaExtensions` · `MediaTimeUtils` · `MimeTypeUtil` · `PlaybackFormatters` · `ServerDiscoverer` · `SubtitleLanguageResolver` · `UpdateChecker` · `ArchivePaths` · `IntentUtils`
+`BreadcrumbBuilder` · `DirectoryLruCache` · `MediaExtensions` · `MediaTimeUtils` · `MimeTypeUtil` · `PlaybackFormatters` · `ServerDiscoverer` · `SubtitleLanguageResolver` · `UpdateChecker` · `ArchivePaths` · `IntentUtils` · `NetworkDomainUtils`
 
-### `presentation/player/components/` (27 Composables)
-`PlayerControlsOverlay` · `PlayerSeekBar` · `SubtitleOverlay` · `PlaylistDrawer` · `AudioPlayerSheet` · `MiniPlayerBar` · `SpeedSelectionDialog` · `SubtitleSelectionDialog` · `SubtitleStylingDialog` · `SubtitleFileBrowserBottomSheet` · `SubtitleSearchDialog` · `AudioSelectionDialog` · `DragSeekIndicator` · `SeekIndicator` · `SeekIndicators` · `SlideIndicator` · `PlaybackErrorOverlay` · `DebugOverlay` · `UnlockPill` · `PlayerRenderView`
+### `presentation/player/components/` (29 Composables)
+`PlayerControlsOverlay` · `PlayerSeekBar` · `AssSubtitleOverlay` · `PlaylistDrawer` · `AudioPlayerSheet` · `AudioQueueSheet` · `MiniPlayerBar` · `FloatingVideoPlayer` · `SpeedSelectionDialog` · `SubtitleSelectionDialog` · `SubtitleFileBrowserBottomSheet` · `SubtitleSearchDialog` · `SubtitleBrowserContent` · `AudioSelectionDialog` · `TrackSelectionRow` · `FlagIcon` · `SheetScaffold` · `DragSeekIndicator` · `SeekIndicator` · `SeekIndicators` · `SlideIndicator` · `PlaybackErrorOverlay` · `DebugOverlay` · `UnlockPill` · `PlayerRenderView` · `PlayerGestures` · `GestureCueIndicators` · `EqualizerSheet` · `PlayerMoreOptionsSheet` (sleep timer, chapters, A-B repeat content)
 
 ---
 
 ## VLC Reference
 
-VLC source is in `vlc-android-master/`. **UX reference only — do not copy code.** Adapt concepts to Compose + Media3 + MVVM.
-
-| Feature | VLC Reference File |
-|---|---|
-| Video library | `vlc-android/src/.../video/VideoGridFragment.kt` |
-| Audio browser | `vlc-android/src/.../audio/AudioBrowserFragment.kt` |
-| Audio player | `vlc-android/src/.../audio/AudioPlayer.kt` |
-| Video player | `vlc-android/src/.../video/VideoPlayerActivity.kt` |
-| Player controls | `vlc-android/src/.../video/VideoPlayerOverlayDelegate.kt` |
-| Touch gestures | `vlc-android/src/.../video/VideoTouchDelegate.kt` |
-| Playback service | `vlc-android/src/.../PlaybackService.kt` |
-| File browser | `vlc-android/src/.../browser/FileBrowserFragment.kt` |
-| Media providers | `vlc-android/src/.../providers/medialibrary/` |
+The `vlc-android-master/` source tree was **removed** from the repository (cleanup).
+VLC concepts (gesture model, playback service, browser UX) are already adapted into
+the Compose + Media3 + MVVM codebase — do not re-add the tree.
 
 ---
 
@@ -459,9 +464,8 @@ VLC source is in `vlc-android-master/`. **UX reference only — do not copy code
 
 1. **Read existing code** — find what already exists and reuse it.
 2. **Check `docs/`** — architecture decisions are documented there.
-3. **Check `TODO.md`** — see if the feature is tracked or partially done.
-4. **Check VLC reference** — for UX pattern guidance.
-5. **Fetch current docs via MCP — never guess.** Use these before any web search:
+3. **Check `docs/PROJECT_PLAN.md`** — "What is missing / deferred" lists open work.
+4. **Fetch current docs via MCP — never guess.** Use these before any web search:
    - **Context7** (`mcp__context7__*`) — official library/framework/SDK/API docs. `resolve-library-id` first, then `query-docs`. Covers Android, Media3/ExoPlayer, Compose, Hilt, Room, Kotlin, OkHttp, Coil, etc. Prefer over web search for library docs.
    - **Firecrawl** (`mcp__firecrawl__*`) — `firecrawl_scrape` for live pages, `firecrawl_search` for broad web. Use when Context7 has no match (e.g. xAI Grok API, third-party tools) or page is newer than Context7 snapshot.
    - **Fetch** (`mcp__fetch__imageFetch`) — fetch+markdown a single URL when Context7/Firecrawl unavailable or you need page text + inline images extracted. Also `firecrawl_search_feedback` after searches to improve quality and refund credits.
@@ -471,7 +475,7 @@ VLC source is in `vlc-android-master/`. **UX reference only — do not copy code
      - [Jetpack Compose](https://developer.android.com/jetpack/compose/documentation)
      - [Hilt](https://developer.android.com/training/dependency-injection/hilt-android)
      - [Room](https://developer.android.com/training/data-storage/room)
-6. **Do not guess** — if unclear, query the MCP docs before writing a single line. A wrong API call is worse than slow delivery.
+5. **Do not guess** — if unclear, query the MCP docs before writing a single line. A wrong API call is worse than slow delivery.
 
 ### Complex change? Reason it through first
 - Use **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) for multi-step problems, architectural decisions, or anything touching 3+ files. Build the analysis step-by-step, revise prior steps as understanding deepens, branch when exploring alternatives. Run this *before* editing — comprehension first, then the smallest diff.
@@ -487,14 +491,12 @@ VLC source is in `vlc-android-master/`. **UX reference only — do not copy code
 
 ---
 
-## Known In-Progress Work (see TODO.md for full tracking)
+## Known In-Progress Work
 
 | Feature | Status |
 |---|---|
 | HDR→SDR colour correction (`GlEffect` / custom GLSL) | 🔧 In progress — pref wired, pipeline no-op |
-| Custom `SubtitleOverlay` (replace built-in PlayerView subtitles) | ⏸ Parked — built-in active for reliability |
-| ASS/SSA animated subtitles (libass or VLC subtitle renderer) | ✅ Implemented — native libass pipeline with SRT/VTT conversion |
-| Remove unused `vlc-android-master/` directory | ✅ Done |
+| Custom `SubtitleOverlay` (replace built-in PlayerView subtitles) | ⏸ Parked — built-in active for reliability; native engine uses libass overlay |
 
 ---
 
@@ -507,11 +509,10 @@ VLC source is in `vlc-android-master/`. **UX reference only — do not copy code
 | [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md) | Data flow diagrams |
 | [`docs/ENGINE_MODULARITY.md`](docs/ENGINE_MODULARITY.md) | `IPlayerEngine` abstraction, adding new backends |
 | [`docs/UI_COMPONENTS.md`](docs/UI_COMPONENTS.md) | Composable component catalogue |
-| [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) | Feature roadmap |
+| [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) | Feature roadmap + "what is missing" list |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | High-level roadmap |
 | [`docs/ARCHIVE_SUPPORT.md`](docs/ARCHIVE_SUPPORT.md) | Archive support design & implementation |
-| [`docs/CLEANUP_PLAN.md`](docs/CLEANUP_PLAN.md) | Tech debt and cleanup tasks |
-| [`TODO.md`](TODO.md) | Current task tracking |
+| [`docs/FFMPEG_NATIVE_AUDIT_AND_ROADMAP.md`](docs/FFMPEG_NATIVE_AUDIT_AND_ROADMAP.md) | Native FFmpeg player audit + VLC-parity roadmap |
 
 ---
 

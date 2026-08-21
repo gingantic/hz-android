@@ -21,9 +21,12 @@ import com.rhnxdev.hzplayer.core.components.DirectoryBrowsePane
 import com.rhnxdev.hzplayer.core.components.FileItemData
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
+import com.rhnxdev.hzplayer.core.util.isArchiveExtension
+import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.presentation.browse.DirectoryLayer
 import com.rhnxdev.hzplayer.presentation.browse.SavedScrollPosition
@@ -49,6 +52,7 @@ fun DirectoryStackContent(
     getScrollState: (String, Int) -> SavedScrollPosition,
     saveScrollState: (String, Int, Int, Int, Boolean) -> Unit,
     fullScreenOverlay: Boolean = false,
+    mediaTypeFilter: FileMediaTypeFilter = FileMediaTypeFilter.ALL,
     onFileClicked: (FolderItem) -> Unit = {},
     onPlayAsAudio: (FolderItem) -> Unit = {},
     onPlayAllFolder: ((FolderItem) -> Unit)? = null,
@@ -67,6 +71,7 @@ fun DirectoryStackContent(
                 searchQuery = searchQuery,
                 isSearchActive = isSearchActive,
                 mediaMode = mediaMode,
+                mediaTypeFilter = mediaTypeFilter,
                 quickAccessPaths = quickAccessPaths,
                 onFolderClicked = onFolderClicked,
                 onBreadcrumbClicked = onBreadcrumbClicked,
@@ -96,6 +101,7 @@ private fun DirectoryLayerView(
     searchQuery: String,
     isSearchActive: Boolean,
     mediaMode: Boolean,
+    mediaTypeFilter: FileMediaTypeFilter,
     quickAccessPaths: Set<String>,
     onFolderClicked: (FolderItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
@@ -156,9 +162,6 @@ private fun DirectoryLayerView(
             }
     }
 
-    // Report when the list is scrolled to the very end so the Play All FAB
-    // can hide instead of covering the last item. Lists too short to scroll
-    // never report true, keeping the FAB available.
     LaunchedEffect(listState, layer.path) {
         snapshotFlow { listState.canScrollBackward && !listState.canScrollForward }
             .collect { onListAtEndChanged(it) }
@@ -176,10 +179,20 @@ private fun DirectoryLayerView(
         }
     }
 
-    val visibleItems = remember(layer.items, mediaMode) {
-        when {
-            mediaMode -> layer.items.filter { it.isDirectory || it.isVideo() }
-            else -> layer.items.filter { it.isDirectory || (!isDocumentExtension(it.name) && !isBinaryExtension(it.name)) }
+    val visibleItems = remember(layer.items, mediaMode, mediaTypeFilter) {
+        layer.items.filter { item ->
+            if (item.isDirectory) true
+            else {
+                when (mediaTypeFilter) {
+                    FileMediaTypeFilter.VIDEOS -> item.isVideo()
+                    FileMediaTypeFilter.AUDIO -> item.isAudio()
+                    FileMediaTypeFilter.ARCHIVES -> isArchiveExtension(item.name)
+                    FileMediaTypeFilter.ALL -> {
+                        if (mediaMode) item.isVideo()
+                        else (!isDocumentExtension(item.name) && !isBinaryExtension(item.name))
+                    }
+                }
+            }
         }
     }
 
@@ -207,7 +220,7 @@ private fun DirectoryLayerView(
         DirectoryBrowsePane(
             items = remember(visibleItems) { visibleItems.map { it.toFileItemData() } },
             isLoading = layer.isLoading,
-            isEmpty = if (mediaMode) visibleItems.isEmpty() else layer.isEmpty,
+            isEmpty = if (mediaMode || mediaTypeFilter != FileMediaTypeFilter.ALL) visibleItems.isEmpty() else layer.isEmpty,
             error = layer.error,
             searchQuery = searchQuery,
             isSearchActive = isSearchActive,
@@ -223,47 +236,54 @@ private fun DirectoryLayerView(
                     currentOrientation,
                     isAtEnd,
                 )
-                val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
-                if (data.isDirectory) onFolderClicked(item)
-                else onFileClicked(item)
-            },
-            onRefresh = onRefresh,
-            onRetry = onRetry,
-            onPlayAsAudio = { data ->
-                val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
-                onPlayAsAudio(item)
-            },
-            onPlayAllFolder = onPlayAllFolder?.let { callback ->
-                { data ->
-                    layer.items.find { it.path == data.path }?.let(callback)
+                val item = layer.items.firstOrNull { it.id.toString() == data.id || it.path == data.path }
+                    ?: FolderItem(
+                        id = data.id.toLongOrNull() ?: 0L,
+                        name = data.name,
+                        path = data.path,
+                        isDirectory = data.isDirectory,
+                        fileSize = data.fileSize,
+                        mimeType = data.mimeType,
+                    )
+                if (item.isDirectory) {
+                    onFolderClicked(item)
+                } else {
+                    onFileClicked(item)
                 }
             },
-            // Cut/copy only apply to real on-disk entries; entries inside
-            // archive layers are virtual and cannot be staged.
+            onPlayAsAudio = { data ->
+                val item = layer.items.firstOrNull { it.id.toString() == data.id || it.path == data.path }
+                if (item != null) onPlayAsAudio(item)
+            },
+            onPlayAllFolder = { data ->
+                val item = layer.items.firstOrNull { it.id.toString() == data.id || it.path == data.path }
+                if (item != null && onPlayAllFolder != null) onPlayAllFolder(item)
+            },
             onCutItem = if (onCutItem != null && ArchiveBrowsePath.isRealFilePath(layer.path)) {
                 { data ->
-                    layer.items.find { it.path == data.path }?.let(onCutItem)
+                    layer.items.firstOrNull { it.id.toString() == data.id || it.path == data.path }?.let(onCutItem)
                 }
             } else null,
             onCopyItem = if (onCopyItem != null && ArchiveBrowsePath.isRealFilePath(layer.path)) {
                 { data ->
-                    layer.items.find { it.path == data.path }?.let(onCopyItem)
+                    layer.items.firstOrNull { it.id.toString() == data.id || it.path == data.path }?.let(onCopyItem)
                 }
             } else null,
             onDeleteItem = if (onDeleteItem != null && ArchiveBrowsePath.isRealFilePath(layer.path)) {
                 { data ->
-                    layer.items.find { it.path == data.path }?.let(onDeleteItem)
+                    layer.items.firstOrNull { it.id.toString() == data.id || it.path == data.path }?.let(onDeleteItem)
                 }
             } else null,
             quickAccessPaths = quickAccessPaths,
             onToggleFavorite = onToggleFavorite,
+            onRefresh = onRefresh,
+            onRetry = onRetry,
             listState = listState,
-            modifier = Modifier.weight(1f).fillMaxSize(),
         )
     }
 }
 
-private fun FolderItem.toFileItemData() = FileItemData(
+private fun FolderItem.toFileItemData(): FileItemData = FileItemData(
     id = id.toString(),
     name = name,
     path = path,
@@ -283,3 +303,6 @@ private fun FolderItem.toFileItemData() = FileItemData(
 
 private fun FolderItem.isVideo(): Boolean =
     mimeType?.startsWith("video") == true || isVideoExtension(name)
+
+private fun FolderItem.isAudio(): Boolean =
+    mimeType?.startsWith("audio") == true || isAudioExtension(name)
