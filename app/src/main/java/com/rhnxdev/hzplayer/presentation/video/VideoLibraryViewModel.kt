@@ -272,8 +272,7 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     fun onVideoClicked(video: VideoItem) {
-        val (playlist, index) = getPlaylistForVideo(video)
-        playerRepository.playPlaylist(playlist.map { it.uri to it.title }, index)
+        playerRepository.playUri(video.uri, video.title, isVideo = true)
     }
 
     fun onFolderClicked(folderTitle: String) {

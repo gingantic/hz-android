@@ -77,7 +77,7 @@ import com.rhnxdev.hzplayer.core.util.formatFileSize
 @Composable
 fun VideoLibraryScreen(
     viewModel: VideoLibraryViewModel = hiltViewModel(),
-    onVideoClicked: (Long) -> Unit = {},
+    onVideoClicked: (VideoItem) -> Unit = {},
     onPlayVideoPlaylist: ((List<VideoItem>, Int) -> Unit)? = null,
     onPlayAsAudio: (VideoItem) -> Unit = {},
     isActive: Boolean = true,
@@ -207,15 +207,7 @@ fun VideoLibraryScreen(
                                 SearchResultsContent(
                                     videos = uiState.filteredVideos,
                                     viewMode = uiState.viewMode,
-                                    onVideoClicked = { v ->
-                                        if (onPlayVideoPlaylist != null) {
-                                            val (playlist, index) = viewModel.getPlaylistForVideo(v)
-                                            onPlayVideoPlaylist(playlist, index)
-                                        } else {
-                                            viewModel.onVideoClicked(v)
-                                            onVideoClicked(v.id)
-                                        }
-                                    },
+                                    onVideoClicked = onVideoClicked,
                                     onPlayAsAudio = onPlayAsAudio,
                                     searchQuery = searchQuery,
                                 )
@@ -230,15 +222,7 @@ fun VideoLibraryScreen(
                                 SearchResultsContent(
                                     videos = drillVideos,
                                     viewMode = uiState.viewMode,
-                                    onVideoClicked = { v ->
-                                        if (onPlayVideoPlaylist != null) {
-                                            val (playlist, index) = viewModel.getPlaylistForVideo(v)
-                                            onPlayVideoPlaylist(playlist, index)
-                                        } else {
-                                            viewModel.onVideoClicked(v)
-                                            onVideoClicked(v.id)
-                                        }
-                                    },
+                                    onVideoClicked = onVideoClicked,
                                     onPlayAsAudio = onPlayAsAudio,
                                     searchQuery = "",
                                 )

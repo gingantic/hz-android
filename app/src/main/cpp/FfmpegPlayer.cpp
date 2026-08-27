@@ -1306,6 +1306,19 @@ struct HwVideoDecoder {
             return false;
         }
 
+        if (bsfName) {
+            const AVBitStreamFilter* bsf = av_bsf_get_by_name(bsfName);
+            if (bsf) {
+                if (av_bsf_alloc(bsf, &bsfCtx) == 0) {
+                    avcodec_parameters_copy(bsfCtx->par_in, par);
+                    if (av_bsf_init(bsfCtx) < 0) {
+                        av_bsf_free(&bsfCtx);
+                        bsfCtx = nullptr;
+                    }
+                }
+            }
+        }
+
         AMediaFormat* format = AMediaFormat_new();
         AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, mime);
         AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, width);
@@ -1314,11 +1327,11 @@ struct HwVideoDecoder {
             AMediaFormat_setInt32(format, "rotation-degrees", rotationDegrees);
         }
 
-        // Codec Specific Data
-        if (par->extradata && par->extradata_size > 0) {
-            if (par->codec_id == AV_CODEC_ID_AV1 || par->codec_id == AV_CODEC_ID_VP9 || !bsfName) {
-                AMediaFormat_setBuffer(format, "csd-0", par->extradata, par->extradata_size);
-            }
+        // Codec Specific Data (CSD)
+        if (bsfCtx && bsfCtx->par_out && bsfCtx->par_out->extradata && bsfCtx->par_out->extradata_size > 0) {
+            AMediaFormat_setBuffer(format, "csd-0", bsfCtx->par_out->extradata, bsfCtx->par_out->extradata_size);
+        } else if (par->extradata && par->extradata_size > 0) {
+            AMediaFormat_setBuffer(format, "csd-0", par->extradata, par->extradata_size);
         }
 
         if (forceSdr) {
@@ -1357,29 +1370,14 @@ struct HwVideoDecoder {
 
         if (status != AMEDIA_OK) {
             LOGW("HwVideoDecoder: AMediaCodec_configure failed (%d)", status);
-            AMediaCodec_delete(codec);
-            codec = nullptr;
+            release();
             return false;
         }
 
         if (AMediaCodec_start(codec) != AMEDIA_OK) {
             LOGW("HwVideoDecoder: AMediaCodec_start failed");
-            AMediaCodec_delete(codec);
-            codec = nullptr;
+            release();
             return false;
-        }
-
-        if (bsfName) {
-            const AVBitStreamFilter* bsf = av_bsf_get_by_name(bsfName);
-            if (bsf) {
-                if (av_bsf_alloc(bsf, &bsfCtx) == 0) {
-                    avcodec_parameters_copy(bsfCtx->par_in, par);
-                    if (av_bsf_init(bsfCtx) < 0) {
-                        av_bsf_free(&bsfCtx);
-                        bsfCtx = nullptr;
-                    }
-                }
-            }
         }
 
         codecName = std::string("MediaCodec (") + mime + ")";
@@ -2215,7 +2213,12 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
 
     HwVideoDecoder hwDecoder;
     if (allowHw && ctx->videoCodecPar) {
-        std::lock_guard<std::mutex> lock(ctx->windowMutex);
+        std::unique_lock<std::mutex> lock(ctx->windowMutex);
+        if (!ctx->nativeWindow && ctx->isRunning.load() && !ctx->isStopped.load()) {
+            ctx->controlCv.wait_for(lock, std::chrono::milliseconds(200), [&] {
+                return ctx->nativeWindow != nullptr || !ctx->isRunning.load() || ctx->isStopped.load();
+            });
+        }
         if (ctx->nativeWindow) {
             if (hwDecoder.init(ctx->videoCodecPar, ctx->nativeWindow, ctx->forceSdr.load(), ctx->videoRotation)) {
                 ctx->videoCodecName = hwDecoder.codecName;
@@ -2539,7 +2542,11 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             int64_t renderTimestampNs = nowNs + static_cast<int64_t>((diffUs * 1000LL) / speed);
 
-            AMediaCodec_releaseOutputBufferAtTime(hwDecoder.codec, outIdx, renderTimestampNs);
+            if (renderTimestampNs <= nowNs) {
+                AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, true);
+            } else {
+                AMediaCodec_releaseOutputBufferAtTime(hwDecoder.codec, outIdx, renderTimestampNs);
+            }
         }
 
         ctx->totalRenderedFrames.fetch_add(1, std::memory_order_relaxed);
@@ -2553,11 +2560,16 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         return true;
     };
 
+    int hwDecodeConsecutiveFailures = 0;
+    bool fallbackToSoftwareRequested = false;
+
     auto drainHwFrames = [&]() {
+        if (!hwDecoder.codec || !hwDecoder.isConfigured.load()) return;
         AMediaCodecBufferInfo info;
         while (ctx->isRunning.load() && !ctx->isStopped.load() && ctx->seekTargetMs.load() < 0) {
             ssize_t outIdx = AMediaCodec_dequeueOutputBuffer(hwDecoder.codec, &info, 0);
             if (outIdx >= 0) {
+                hwDecodeConsecutiveFailures = 0;
                 int64_t ptsUs = info.presentationTimeUs;
                 bool rendered = renderHwFrame(ptsUs, outIdx, needSeekFrame);
                 if (rendered) needSeekFrame = false;
@@ -2580,12 +2592,16 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
     };
 
     auto feedHwPacket = [&](AVPacket* p) {
+        if (!p || !hwDecoder.codec || !hwDecoder.isConfigured.load()) return;
+        if (ctx->seekTargetMs.load() >= 0) return;
+
         int64_t ptsUs = (p->pts != AV_NOPTS_VALUE)
             ? av_rescale_q(p->pts, ctx->videoTimeBase, AV_TIME_BASE_Q)
             : ((p->dts != AV_NOPTS_VALUE)
                 ? av_rescale_q(p->dts, ctx->videoTimeBase, AV_TIME_BASE_Q)
                 : 0);
         int maxRetries = 50;
+        bool queued = false;
         while (maxRetries-- > 0 && ctx->isRunning.load() && !ctx->isStopped.load() && ctx->seekTargetMs.load() < 0) {
             ssize_t inIdx = AMediaCodec_dequeueInputBuffer(hwDecoder.codec, 5000);
             if (inIdx >= 0) {
@@ -2594,10 +2610,22 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 if (inBuf && p->size <= inBufSize) {
                     memcpy(inBuf, p->data, p->size);
                     AMediaCodec_queueInputBuffer(hwDecoder.codec, inIdx, 0, p->size, ptsUs, 0);
+                    queued = true;
+                    hwDecodeConsecutiveFailures = 0;
                 }
+                break;
+            } else if (inIdx < -1) {
+                LOGW("HwVideoDecoder: AMediaCodec_dequeueInputBuffer fatal error %zd", inIdx);
+                hwDecodeConsecutiveFailures += 5;
                 break;
             }
             drainHwFrames();
+        }
+        if (!queued && ctx->seekTargetMs.load() < 0 && !ctx->isPaused.load()) {
+            hwDecodeConsecutiveFailures++;
+            if (hwDecodeConsecutiveFailures >= 30) {
+                fallbackToSoftwareRequested = true;
+            }
         }
     };
 
@@ -2648,15 +2676,17 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             if (hwDecoder.isConfigured.load()) {
                 if (ctx->nativeWindow && allowHwNow) {
                     if (!hwDecoder.setOutputSurface(ctx->nativeWindow)) {
-                        LOGI("Re-initializing HwVideoDecoder for new surface");
-                        hwDecoder.init(ctx->videoCodecPar, ctx->nativeWindow, ctx->forceSdr.load(), ctx->videoRotation);
+                        LOGI("HwVideoDecoder: setOutputSurface failed, falling back to software decoder");
+                        hwDecoder.release();
+                        if (ctx->videoCodecName.rfind("MediaCodec", 0) == 0) {
+                            ctx->videoCodecName = ctx->videoCodecCtx ? ctx->videoCodecCtx->codec->name : "Software";
+                        }
                     }
-                } else if (!allowHwNow) {
+                } else {
                     hwDecoder.release();
-                }
-            } else if (allowHwNow && ctx->videoCodecPar && ctx->nativeWindow) {
-                if (hwDecoder.init(ctx->videoCodecPar, ctx->nativeWindow, ctx->forceSdr.load(), ctx->videoRotation)) {
-                    ctx->videoCodecName = hwDecoder.codecName;
+                    if (ctx->videoCodecName.rfind("MediaCodec", 0) == 0) {
+                        ctx->videoCodecName = ctx->videoCodecCtx ? ctx->videoCodecCtx->codec->name : "Software";
+                    }
                 }
             }
             needSeekFrame = true;
@@ -2679,6 +2709,8 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         }
 
         if (item.isFlush) {
+            hwDecodeConsecutiveFailures = 0;
+            fallbackToSoftwareRequested = false;
             if (hwDecoder.isConfigured.load()) {
                 hwDecoder.flush();
                 // Drain and discard any output buffers that were queued before the flush.
@@ -2744,17 +2776,17 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                     AVPacket* bsfPkt = av_packet_alloc();
                     int bsfRet = av_bsf_send_packet(hwDecoder.bsfCtx, item.pkt);
                     if (bsfRet == 0) {
-                        while (av_bsf_receive_packet(hwDecoder.bsfCtx, bsfPkt) == 0) {
+                        while (!fallbackToSoftwareRequested && hwDecoder.bsfCtx && av_bsf_receive_packet(hwDecoder.bsfCtx, bsfPkt) == 0) {
                             feedHwPacket(bsfPkt);
                             av_packet_unref(bsfPkt);
                         }
                     } else if (bsfRet == AVERROR(EAGAIN)) {
-                        while (av_bsf_receive_packet(hwDecoder.bsfCtx, bsfPkt) == 0) {
+                        while (!fallbackToSoftwareRequested && hwDecoder.bsfCtx && av_bsf_receive_packet(hwDecoder.bsfCtx, bsfPkt) == 0) {
                             feedHwPacket(bsfPkt);
                             av_packet_unref(bsfPkt);
                         }
-                        if (av_bsf_send_packet(hwDecoder.bsfCtx, item.pkt) == 0) {
-                            while (av_bsf_receive_packet(hwDecoder.bsfCtx, bsfPkt) == 0) {
+                        if (!fallbackToSoftwareRequested && hwDecoder.bsfCtx && av_bsf_send_packet(hwDecoder.bsfCtx, item.pkt) == 0) {
+                            while (!fallbackToSoftwareRequested && hwDecoder.bsfCtx && av_bsf_receive_packet(hwDecoder.bsfCtx, bsfPkt) == 0) {
                                 feedHwPacket(bsfPkt);
                                 av_packet_unref(bsfPkt);
                             }
@@ -2767,6 +2799,19 @@ static void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 av_packet_free(&item.pkt);
             }
             drainHwFrames();
+
+            if (fallbackToSoftwareRequested) {
+                LOGW("HwVideoDecoder: Too many dequeue/feed failures, safely falling back to software decoder");
+                hwDecoder.release();
+                if (ctx->videoCodecCtx) {
+                    avcodec_flush_buffers(ctx->videoCodecCtx);
+                }
+                if (ctx->videoCodecName.rfind("MediaCodec", 0) == 0) {
+                    ctx->videoCodecName = ctx->videoCodecCtx ? ctx->videoCodecCtx->codec->name : "Software";
+                }
+                fallbackToSoftwareRequested = false;
+                hwDecodeConsecutiveFailures = 0;
+            }
             continue;
         }
 

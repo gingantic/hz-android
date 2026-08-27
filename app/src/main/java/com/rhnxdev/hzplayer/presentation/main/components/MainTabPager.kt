@@ -165,8 +165,8 @@ fun MainTabPager(
                                 when (page) {
                                     0 -> VideoLibraryScreen(
                                         isActive = pagerState.currentPage == page,
-                                        onVideoClicked = {
-                                            playerViewModel.onVideoStarted()
+                                        onVideoClicked = { video ->
+                                            playerViewModel.playUri(video.uri, video.title, isVideo = true)
                                             navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
                                         },
                                         onPlayVideoPlaylist = { playlist, startIndex ->

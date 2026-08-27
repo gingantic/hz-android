@@ -74,18 +74,7 @@ fun FileBrowserScreen(
         if (isArchiveExtension(item.name) && ArchiveBrowsePath.isRealFilePath(item.path)) {
             viewModel.onOpenArchive(item)
         } else {
-            val isVideo = item.mimeType?.startsWith("video/") == true || isVideoExtension(item.name)
-            if (isVideo) {
-                val playlist = viewModel.collectVideoPlaylist()
-                val targetIndex = playlist.indexOfFirst { it.id == item.id || it.uri == item.path }
-                if (playlist.isNotEmpty() && targetIndex >= 0) {
-                    onPlayVideoPlaylist(playlist, targetIndex)
-                } else {
-                    onFileClicked(item)
-                }
-            } else {
-                onFileClicked(item)
-            }
+            onFileClicked(item)
         }
     }
 
