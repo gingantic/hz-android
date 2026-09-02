@@ -60,14 +60,21 @@ extern "C" {
 
 static JavaVM* g_jvm = nullptr;
 
-static JNIEnv* getJniEnv() {
-    if (!g_jvm) return nullptr;
+static JNIEnv* getJniEnv(bool* outAttached = nullptr) {
+    if (!g_jvm) {
+        if (outAttached) *outAttached = false;
+        return nullptr;
+    }
     JNIEnv* env = nullptr;
     jint res = g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
     if (res == JNI_EDETACHED) {
         if (g_jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+            if (outAttached) *outAttached = false;
             return nullptr;
         }
+        if (outAttached) *outAttached = true;
+    } else {
+        if (outAttached) *outAttached = false;
     }
     return env;
 }
@@ -117,7 +124,8 @@ public:
     }
 
     ~JniFile() override {
-        JNIEnv* env = getJniEnv();
+        bool attached = false;
+        JNIEnv* env = getJniEnv(&attached);
         if (env) {
             if (bufferArray_) env->DeleteGlobalRef(bufferArray_);
             if (bridge_) {
@@ -136,6 +144,9 @@ public:
                 }
                 env->DeleteGlobalRef(bridge_);
             }
+        }
+        if (attached && g_jvm) {
+            g_jvm->DetachCurrentThread();
         }
     }
 
@@ -1031,10 +1042,14 @@ struct FfmpegPlayerContext {
         stopPlayback();
         closeMedia();
 
-        JNIEnv* env = nullptr;
-        if (g_jvm && g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) {
+        bool attached = false;
+        JNIEnv* env = getJniEnv(&attached);
+        if (env) {
             if (kotlinPlayerRef) env->DeleteGlobalRef(kotlinPlayerRef);
             if (kotlinPlayerClass) env->DeleteGlobalRef(kotlinPlayerClass);
+        }
+        if (attached && g_jvm) {
+            g_jvm->DetachCurrentThread();
         }
         av_channel_layout_uninit(&outChLayout);
     }

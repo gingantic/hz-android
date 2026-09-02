@@ -17,39 +17,45 @@ import java.io.IOException
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class ArchiveDataSource : DataSource {
 
+    private val lock = Any()
     private var handle: Long = 0
     private var totalLength: Long = 0
     private var uri: Uri? = null
 
     override fun open(dataSpec: DataSpec): Long {
-        uri = dataSpec.uri
-        val parsed = ArchiveUri.parse(dataSpec.uri.toString())
-            ?: throw IOException("archive: malformed uri ${dataSpec.uri}")
-        val (container, entry, password) = parsed
-        handle = ArchiveNative.nativeOpen(container, entry, password)
-        if (handle == 0L) {
-            throw IOException("archive: cannot open entry $entry in $container")
-        }
-        totalLength = ArchiveNative.nativeLength(handle)
-        if (dataSpec.position > 0) {
-            if (!ArchiveNative.nativeSeek(handle, dataSpec.position)) {
-                throw IOException("archive: seek to ${dataSpec.position} failed")
+        synchronized(lock) {
+            uri = dataSpec.uri
+            val parsed = ArchiveUri.parse(dataSpec.uri.toString())
+                ?: throw IOException("archive: malformed uri ${dataSpec.uri}")
+            val (container, entry, password) = parsed
+            handle = ArchiveNative.nativeOpen(container, entry, password)
+            if (handle == 0L) {
+                throw IOException("archive: cannot open entry $entry in $container")
             }
-        }
-        val remaining = totalLength - dataSpec.position
-        return if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
-            remaining
-        } else {
-            dataSpec.length.coerceAtMost(remaining)
+            totalLength = ArchiveNative.nativeLength(handle)
+            if (dataSpec.position > 0) {
+                if (!ArchiveNative.nativeSeek(handle, dataSpec.position)) {
+                    throw IOException("archive: seek to ${dataSpec.position} failed")
+                }
+            }
+            val remaining = totalLength - dataSpec.position
+            return if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
+                remaining
+            } else {
+                dataSpec.length.coerceAtMost(remaining)
+            }
         }
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
-        val n = ArchiveNative.nativeRead(handle, buffer, offset, length)
-        if (n < 0) throw IOException("archive: read error")
-        if (n == 0) return C.RESULT_END_OF_INPUT
-        return n
+        synchronized(lock) {
+            if (handle == 0L) return -1
+            val n = ArchiveNative.nativeRead(handle, buffer, offset, length)
+            if (n < 0) throw IOException("archive: read error")
+            if (n == 0) return C.RESULT_END_OF_INPUT
+            return n
+        }
     }
 
     override fun getUri(): Uri? = uri
@@ -59,10 +65,12 @@ class ArchiveDataSource : DataSource {
     override fun addTransferListener(transferListener: TransferListener) {}
 
     override fun close() {
-        uri = null
-        if (handle != 0L) {
-            ArchiveNative.nativeClose(handle)
-            handle = 0
+        synchronized(lock) {
+            uri = null
+            if (handle != 0L) {
+                ArchiveNative.nativeClose(handle)
+                handle = 0
+            }
         }
     }
 

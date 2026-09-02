@@ -9,6 +9,7 @@ extern "C" {
 #include <cstring>
 #include <string>
 #include <vector>
+#include <mutex>
 
 #define LOG_TAG "HzPlayer/Archive"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -26,6 +27,7 @@ struct Session {
     la_int64_t totalSize = 0;
     la_int64_t pos = 0;
     bool ok = false;
+    std::mutex mtx;
 };
 
 static std::string jstr(JNIEnv* env, jstring s) {
@@ -222,7 +224,9 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeLength(
     JNIEnv*, jclass, jlong handle) {
     Session* s = reinterpret_cast<Session*>(handle);
-    return s ? s->totalSize : -1;
+    if (!s) return -1;
+    std::lock_guard<std::mutex> lk(s->mtx);
+    return s->totalSize;
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -232,6 +236,9 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeRead(
     Session* s = reinterpret_cast<Session*>(handle);
     if (!s || !s->a) return -1;
     if (len <= 0) return 0;
+
+    std::lock_guard<std::mutex> lk(s->mtx);
+    if (!s->a) return -1;
 
     jbyte* arr = env->GetByteArrayElements(jbuf, nullptr);
     if (!arr) return -1;
@@ -260,6 +267,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeSeek(
 
     Session* s = reinterpret_cast<Session*>(handle);
     if (!s) return JNI_FALSE;
+    std::lock_guard<std::mutex> lk(s->mtx);
     if (target == s->pos) return JNI_TRUE;
     if (target < 0) return JNI_FALSE;
 
@@ -347,6 +355,11 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeClose(
     JNIEnv*, jclass, jlong handle) {
     Session* s = reinterpret_cast<Session*>(handle);
     if (!s) return;
-    if (s->a) archive_read_free(s->a);
+    {
+        std::lock_guard<std::mutex> lk(s->mtx);
+        if (s->a) archive_read_free(s->a);
+        s->a = nullptr;
+        s->ok = false;
+    }
     delete s;
 }
