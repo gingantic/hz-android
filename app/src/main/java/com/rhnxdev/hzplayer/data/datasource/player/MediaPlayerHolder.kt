@@ -332,6 +332,11 @@ class MediaPlayerHolder @Inject constructor(
     /** Reset the subtitle handler state and prepare for playing [uri]. */
     fun prepareForUri(uri: String) {
         lastTransitionUri = uri
+        // Re-point the render-time ExoPlayer reference: FfmpegNativeEngine nulls it
+        // when IT plays (shared AssHandler), and without this restore every Exo
+        // playback after any native playback would run renderFrame with
+        // isExoActive=false — frozen-anchor position source, no extrapolation.
+        assHandler.player = player
         assHandler.reset()
     }
 

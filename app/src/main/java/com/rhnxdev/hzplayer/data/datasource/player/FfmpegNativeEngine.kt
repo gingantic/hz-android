@@ -79,6 +79,7 @@ class FfmpegNativeEngine @Inject constructor(
 
     private var activeSurface: Surface? = null
     private var activeBridge: ThumbnailSource? = null
+    @Volatile
     private var currentUri: String? = null
     private var currentTitle: String? = null
     private var currentArtist: String? = null
@@ -103,6 +104,10 @@ class FfmpegNativeEngine @Inject constructor(
     private var playJob: Job? = null
     @Volatile
     private var pendingSeekTargetMs: Long = -1L
+    /** Set once in [release]; afterwards clock pulls return -1 and playInternal is a no-op. */
+    @Volatile
+    private var released = false
+    private val releaseLock = Any()
 
     override var subtitleTrackChangeListener: (() -> Unit)? = null
 
@@ -290,6 +295,7 @@ class FfmpegNativeEngine @Inject constructor(
         artworkUri: String? = null,
         preservePlaylist: Boolean = false,
     ) {
+        if (released) return
         currentUri = uri
         currentTitle = title
         currentArtist = artist
@@ -301,6 +307,7 @@ class FfmpegNativeEngine @Inject constructor(
         assHandler.player = null
         assHandler.playbackSpeed = currentSpeed
         assHandler.reset()
+        assHandler.positionClock = ::clockPositionUs
         _playbackState.update {
             it.copy(
                 state = PlayerState.BUFFERING,
@@ -692,10 +699,37 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     override fun release() {
+        // Disarm the subtitle clock under releaseLock so any in-flight clock pull
+        // completes before the native context is freed — renderFrame invokes the
+        // clock at display cadence on the main thread, and a snapshot taken before
+        // this line could otherwise call into a released player.
+        synchronized(releaseLock) {
+            released = true
+            currentUri = null
+        }
         engineScope.cancel()
+        // reset() nulls positionClock, stops the render loop and clears overlay
+        // state — must run before player.release() frees the native context.
+        // The `released` flag also blocks the cooperative-cancel window where an
+        // in-flight collector re-enters playInternal and re-arms the clock.
+        assHandler.reset()
         player.release()
         (activeBridge as? Closeable)?.let { runCatching { it.close() } }
         activeBridge = null
+    }
+
+    /**
+     * Position source for [AssHandler.positionClock], invoked on the render thread
+     * every frame while playing. Returns µs, or -1 when unavailable. releaseLock
+     * guarantees it can never call into a released native player: [release] sets
+     * the flag under the same lock, so a pull either finishes first or bails out.
+     */
+    private fun clockPositionUs(): Long {
+        if (released) return -1L
+        synchronized(releaseLock) {
+            if (released) return -1L
+            return if (currentUri != null) player.getPosition() * 1000L else -1L
+        }
     }
 
     // ─── Render View Seam ───────────────────────────────────────────────────

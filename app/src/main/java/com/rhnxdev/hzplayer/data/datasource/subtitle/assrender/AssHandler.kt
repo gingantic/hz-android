@@ -56,8 +56,17 @@ class AssHandler @Inject constructor(
 
     private val trackFormats = mutableMapOf<Int, Format>()
     private val trackHeaders = mutableMapOf<Int, ByteArray>()
+    // Plain lists under trackStateLock: CopyOnWriteArrayList.add copies the whole
+    // backing array per add (O(N²) total on 10k-line .ass files) on the demux
+    // thread — the exact stall the O(1) dedup set was added to eliminate.
+    // Readers take the same lock (selectTrack replay, logDiagnostics); bitmapCues
+    // stays COW because renderFrame reads it lock-free on the render thread.
     private val trackEvents =
-        ConcurrentHashMap<Int, CopyOnWriteArrayList<Triple<Long, Long, String>>>()
+        ConcurrentHashMap<Int, ArrayList<Triple<Long, Long, String>>>()
+    private val trackDedupKeys =
+        ConcurrentHashMap<Int, MutableSet<String>>()
+    /** Serializes event/dedup/bitmap-map mutations against [reset]'s clears. */
+    private val trackStateLock = Any()
     private val bitmapCues =
         ConcurrentHashMap<Int, CopyOnWriteArrayList<BitmapCue>>()
     @Volatile
@@ -87,6 +96,18 @@ class AssHandler @Inject constructor(
 
     @Volatile
     var currentTimeUs: Long = 0L
+
+    /**
+     * Direct playback clock source (native FFmpeg engine). When set, [renderFrame]
+     * pulls the position from this clock on every Choreographer tick instead of
+     * extrapolating from the last pushed anchor — no demux-sampling latency, no
+     * 250 ms update-gap cap, no monotonic ratchet. Returns position in µs, or -1
+     * when unavailable (falls back to the pushed-anchor path). Only consulted
+     * while playing — paused/error frames use the frozen-anchor path so a
+     * runaway native clock cannot scroll subtitles behind an error overlay.
+     */
+    @Volatile
+    var positionClock: (() -> Long)? = null
 
     @Volatile
     private var lastPositionUs: Long = 0L
@@ -297,27 +318,25 @@ class AssHandler @Inject constructor(
             }
         }
 
-        val events = trackEvents.getOrPut(trackId) { CopyOnWriteArrayList() }
-        var existingIdx = -1
-        // Scan backwards since seek-redelivered cues are likely near the end of the list
-        for (i in events.indices.reversed()) {
-            val evt = events[i]
-            if (evt.first == startMs && evt.second == durationMs && evt.third == bodyFields) {
-                existingIdx = i
-                break
+        // O(1) duplicate detection for seek re-delivery. The previous backward
+        // scan was O(N) per event (O(N²) per track) and stalled the demux
+        // thread on long .ass files with thousands of dialogue lines.
+        // dedup-add + event-append are atomic w.r.t. reset(): a reset between
+        // the two would leave a dedup key with no event, permanently dropping
+        // any coincidentally identical line in the next session.
+        val readOrder = synchronized(trackStateLock) {
+            val dedupKeys = trackDedupKeys.getOrPut(trackId) { ConcurrentHashMap.newKeySet<String>() }
+            if (!dedupKeys.add("$startMs:$durationMs:$bodyFields")) {
+                // Already processed and added to libass; skip duplicate re-processing on seek
+                return
             }
+            val events = trackEvents.getOrPut(trackId) { ArrayList() }
+            events.add(Triple(startMs, durationMs, bodyFields))
+            events.size - 1
         }
-
-        if (existingIdx != -1) {
-            // Already processed and added to libass; skip duplicate re-processing on seek
-            return
-        }
-
-        events.add(Triple(startMs, durationMs, bodyFields))
-        val readOrder = events.size - 1
 
         // ── Diagnostic: log first 10 events received ─────────────────────────
-        val totalEvents = events.size
+        val totalEvents = readOrder + 1
         if (totalEvents <= 10) {
             Log.i(TAG, "[SUB-DBG] event #$readOrder trackId=$trackId activeTrackId=$activeTrackId " +
                 "startMs=$startMs durMs=$durationMs raw='${line.take(80)}'")
@@ -366,15 +385,17 @@ class AssHandler @Inject constructor(
         canvasW: Int,
         canvasH: Int
     ) {
-        val list = bitmapCues.getOrPut(trackId) { CopyOnWriteArrayList() }
-        val exists = list.any { it.startPtsUs == startPtsUs && it.endPtsUs == endPtsUs }
-        if (exists) return
-
-        if (argb == null || w <= 0 || h <= 0) {
-            list.add(BitmapCue(trackId, startPtsUs, endPtsUs, 0, 0, 0, 0, null, canvasW, canvasH))
-        } else {
-            val bmp = Bitmap.createBitmap(argb, w, h, Bitmap.Config.ARGB_8888)
-            list.add(BitmapCue(trackId, startPtsUs, endPtsUs, x, y, w, h, bmp, canvasW, canvasH))
+        synchronized(trackStateLock) {
+            val cues = bitmapCues.getOrPut(trackId) { CopyOnWriteArrayList() }
+            val exists = cues.any { it.startPtsUs == startPtsUs && it.endPtsUs == endPtsUs }
+            if (exists) return
+            if (argb == null || w <= 0 || h <= 0) {
+                cues.add(BitmapCue(trackId, startPtsUs, endPtsUs, 0, 0, 0, 0, null, canvasW, canvasH))
+            } else {
+                val bmp = Bitmap.createBitmap(argb, w, h, Bitmap.Config.ARGB_8888)
+                cues.add(BitmapCue(trackId, startPtsUs, endPtsUs, x, y, w, h, bmp, canvasW, canvasH))
+            }
+            cues
         }
         if (activeTrackId == -1) {
             activeTrackId = trackId
@@ -543,14 +564,13 @@ class AssHandler @Inject constructor(
                     needsFontReload = false
                     AssDirectBridge.nativeReloadFonts(nativeHandle)
                 }
-                val events = trackEvents[trackId]
-                val eventCount = events?.size ?: 0
-                Log.i(TAG, "[TRACK] selectTrack($trackId): replaying $eventCount stored events, handle=$nativeHandle")
-                if (events != null) {
-                    events.forEachIndexed { idx, (startMs, durationMs, bodyFields) ->
-                        val chunkBytes = "$idx,$bodyFields".toByteArray(Charsets.UTF_8)
-                        AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
-                    }
+                val replay = synchronized(trackStateLock) {
+                    trackEvents[trackId]?.toList() ?: emptyList()
+                }
+                Log.i(TAG, "[TRACK] selectTrack($trackId): replaying ${replay.size} stored events, handle=$nativeHandle")
+                replay.forEachIndexed { idx, (startMs, durationMs, bodyFields) ->
+                    val chunkBytes = "$idx,$bodyFields".toByteArray(Charsets.UTF_8)
+                    AssDirectBridge.nativeProcessChunk(nativeHandle, chunkBytes, startMs, durationMs)
                 }
             }
 
@@ -701,7 +721,27 @@ class AssHandler @Inject constructor(
         val mediaDurationMs = if (isExoActive) (p!!.duration.takeIf { it > 0 } ?: Long.MAX_VALUE) else Long.MAX_VALUE
 
         val positionMs: Long
-        if (isPlaying && lastPositionRealtimeUs != 0L && lastPositionUs >= 0L) {
+        val clock = positionClock
+        if (clock != null && isPlaying) {
+            // Direct master-clock pull (native FFmpeg engine): the position is read
+            // from the audio-mastered native clock on every tick — no stale anchors,
+            // no extrapolation cap, no monotonic ratchet. This is what eliminates
+            // the gradual subtitle drift relative to audio/video.
+            // Gated on isPlaying: after a demux/error death the native master clock
+            // keeps extrapolating with nothing to re-anchor it, which would scroll
+            // subtitles behind the error overlay — so paused/error falls through to
+            // the frozen lastPositionUs branch below.
+            val clockUs = clock()
+            positionMs = if (clockUs >= 0L) {
+                lastPositionUs = clockUs
+                currentTimeUs = clockUs
+                val ms = clockUs / 1000L
+                lastRenderedPositionMs = ms
+                ms
+            } else {
+                (lastPositionUs / 1000L).coerceAtLeast(0L)
+            }
+        } else if (isPlaying && lastPositionRealtimeUs != 0L && lastPositionUs >= 0L) {
             val currentRealtimeUs = android.os.SystemClock.elapsedRealtime() * 1000L
             val elapsedUs         = (currentRealtimeUs - lastPositionRealtimeUs).coerceAtLeast(0L)
             val cappedElapsedUs   = minOf(elapsedUs, 250_000L)
@@ -802,8 +842,10 @@ class AssHandler @Inject constructor(
         trackHeaders.forEach { (id, hdr) ->
             Log.d(TAG, "[DIAG] header[$id]: ${hdr.size}B  preview=${String(hdr, 0, minOf(120, hdr.size), Charsets.UTF_8).replace('\n','|')}")
         }
-        trackEvents.forEach { (id, evts) ->
-            Log.d(TAG, "[DIAG] events[$id]: ${evts.size} items")
+        synchronized(trackStateLock) {
+            trackEvents.forEach { (id, evts) ->
+                Log.d(TAG, "[DIAG] events[$id]: ${evts.size} items")
+            }
         }
         Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     }
@@ -889,10 +931,22 @@ class AssHandler @Inject constructor(
     /** Reset subtitle state when loading a new media item. */
     fun reset() {
         lastRenderedBitmapCue = null
+        positionClock = null
         synchronized(nativeLock) {
             trackFormats.clear()
             trackHeaders.clear()
-            trackEvents.clear()
+            // Events, dedup keys and bitmap cues clear atomically with the demux
+            // thread's append path — otherwise a stale cue list (track ids are
+            // per-file stream indices and collide across files) makes renderFrame's
+            // bitmap early-return suppress the next file's text subtitles, and an
+            // orphaned dedup key permanently drops an identical line. Cue bitmaps
+            // are NOT recycled here: renderFrame draws them without holding
+            // trackStateLock, so recycling could crash a concurrent draw; GC reclaims.
+            synchronized(trackStateLock) {
+                trackEvents.clear()
+                trackDedupKeys.clear()
+                bitmapCues.clear()
+            }
             activeTrackId = -1
             pendingFonts.clear()
             lastPositionUs = 0L
@@ -968,6 +1022,7 @@ class AssHandler @Inject constructor(
     fun release() {
         stopRenderLoop()
         lastRenderedBitmapCue = null
+        positionClock = null
         synchronized(nativeLock) {
             if (nativeHandle != 0L) {
                 AssDirectBridge.nativeDestroy(nativeHandle)
