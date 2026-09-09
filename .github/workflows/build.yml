@@ -235,10 +235,12 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASS: ${{ secrets.KEY_PASS }}
 
-      - name: Rename APK with version
+      - name: Prepare APK files
         run: |
+          VERSIONED_APK="app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$VERSIONED_APK"
           cp app/build/outputs/apk/release/app-release.apk \
-             "app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk"
+             app/build/outputs/apk/release/HzPlayer-latest.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -317,16 +319,24 @@ jobs:
           echo "=== Generated Changelog ==="
           cat /tmp/changelog.md
 
-      - name: Create GitHub Release
+      # Keep one mutable deployment tag and point the release at the current commit.
+      - name: Update 'latest' tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git tag -f latest
+          git push origin latest --force
+
+      - name: Update GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version_name }}
-          name: HzPlayer v${{ steps.version.outputs.version_name }}
+          tag_name: latest
+          name: HzPlayer Latest
           body_path: /tmp/changelog.md
           draft: false
           prerelease: false
-          files: app/build/outputs/apk/release/HzPlayer-v${{ steps.version.outputs.version_name }}.apk
+          overwrite_files: true
+          files: app/build/outputs/apk/release/HzPlayer-latest.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -351,12 +361,6 @@ jobs:
           echo "=== Published to R2 ==="
           echo "APK: HzPlayer-v${VNAME}.apk"
           echo "Manifest: latest.json"
-
-      - name: Update 'latest' tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          git tag -f latest
-          git push origin latest --force
 
       - name: ccache stats
         run: |

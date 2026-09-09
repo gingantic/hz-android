@@ -79,6 +79,13 @@ static JNIEnv* getJniEnv(bool* outAttached = nullptr) {
     return env;
 }
 
+// AAudio output is intentionally normalized to mono or stereo. FFmpeg's
+// libswresample uses the decoded input AVChannelLayout to fold multichannel
+// audio (including the center/dialogue channel) into this output layout.
+static int nativeOutputChannelCount(int inputChannels) {
+    return inputChannels == 1 ? 1 : 2;
+}
+
 // ─── RandomAccessFile / JniFile for custom AVIO ──────────────────────────────
 
 class RandomAccessFile {
@@ -3038,7 +3045,7 @@ static void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
 
                 ctx->outSampleRate = (frameToRender->sample_rate > 0) ? frameToRender->sample_rate : 48000;
                 int inCh = frameToRender->ch_layout.nb_channels > 0 ? frameToRender->ch_layout.nb_channels : 2;
-                ctx->outChannels = (inCh == 1) ? 1 : ((inCh == 6) ? 6 : ((inCh == 8) ? 8 : 2));
+                ctx->outChannels = nativeOutputChannelCount(inCh);
 
                 av_channel_layout_uninit(&ctx->outChLayout);
                 av_channel_layout_default(&ctx->outChLayout, ctx->outChannels);
@@ -3922,15 +3929,7 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
             if (avcodec_open2(ctx->audioCodecCtx, aCodec, nullptr) == 0) {
                 ctx->outSampleRate = ctx->audioCodecCtx->sample_rate > 0 ? ctx->audioCodecCtx->sample_rate : 48000;
                 int inChannels = ctx->audioCodecCtx->ch_layout.nb_channels;
-                if (inChannels == 1) {
-                    ctx->outChannels = 1;
-                } else if (inChannels == 6) {
-                    ctx->outChannels = 6;
-                } else if (inChannels == 8) {
-                    ctx->outChannels = 8;
-                } else {
-                    ctx->outChannels = 2;
-                }
+                ctx->outChannels = nativeOutputChannelCount(inChannels);
                 ctx->audioCodecName = aCodec->name;
                 AVDictionaryEntry* langEntry = av_dict_get(ast->metadata, "language", nullptr, 0);
                 ctx->audioLanguage = langEntry ? langEntry->value : "";
@@ -4147,11 +4146,7 @@ JNI_FUNC(jboolean, nativeSelectAudioTrack, jlong handle, jint targetTrackIndex) 
 
     int newSampleRate = newCodecCtx->sample_rate > 0 ? newCodecCtx->sample_rate : 48000;
     int inChannels = newCodecCtx->ch_layout.nb_channels;
-    int newChannels = 2;
-    if (inChannels == 1) newChannels = 1;
-    else if (inChannels == 6) newChannels = 6;
-    else if (inChannels == 8) newChannels = 8;
-    else newChannels = 2;
+    int newChannels = nativeOutputChannelCount(inChannels);
 
     AVChannelLayout targetLayout{};
     av_channel_layout_default(&targetLayout, newChannels);
