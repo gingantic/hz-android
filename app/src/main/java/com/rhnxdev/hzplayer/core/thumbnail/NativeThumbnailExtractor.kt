@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.core.thumbnail
 
 import android.graphics.Bitmap
 import androidx.annotation.Keep
+import com.rhnxdev.hzplayer.core.io.RandomAccessMediaSource
 
 /**
  * JNI bridge to the native FFmpeg thumbnail extractor.
@@ -25,7 +26,7 @@ object NativeThumbnailExtractor {
 
     /** Returns null when the native lib failed to load (e.g. x86_64 emulator). */
     fun extractThumbnail(
-        bridge: ThumbnailSource,
+        bridge: RandomAccessMediaSource,
         positionPercent: Float,
         maxWidth: Int,
         fastMode: Boolean = false,
@@ -44,7 +45,7 @@ object NativeThumbnailExtractor {
     }
 
     private external fun nativeExtract(
-        bridge: ThumbnailSource,
+        bridge: RandomAccessMediaSource,
         positionPercent: Float,
         maxWidth: Int,
         fastMode: Boolean,
@@ -56,7 +57,7 @@ object NativeThumbnailExtractor {
      * the demuxer could determine are present. Returns null when the native lib
      * is unavailable or the source can't be parsed.
      */
-    fun probeMediaInfo(bridge: ThumbnailSource): Map<String, String>? {
+    fun probeMediaInfo(bridge: RandomAccessMediaSource): Map<String, String>? {
         if (!loaded) return null
         return try {
             nativeProbeMediaInfo(bridge)?.let { arr ->
@@ -78,7 +79,7 @@ object NativeThumbnailExtractor {
         }
     }
 
-    private external fun nativeProbeMediaInfo(bridge: ThumbnailSource): Array<String>?
+    private external fun nativeProbeMediaInfo(bridge: RandomAccessMediaSource): Array<String>?
 
     /**
      * Probes container-level chapter markers of [bridge] and returns them as
@@ -86,7 +87,7 @@ object NativeThumbnailExtractor {
      * native lib is unavailable, the source can't be parsed, or it has no
      * chapters.
      */
-    fun probeChapters(bridge: ThumbnailSource): List<Triple<Long, Long, String>>? {
+    fun probeChapters(bridge: RandomAccessMediaSource): List<Triple<Long, Long, String>>? {
         if (!loaded) return null
         return try {
             nativeProbeChapters(bridge)?.let { arr ->
@@ -112,7 +113,7 @@ object NativeThumbnailExtractor {
         }
     }
 
-    private external fun nativeProbeChapters(bridge: ThumbnailSource): Array<String>?
+    private external fun nativeProbeChapters(bridge: RandomAccessMediaSource): Array<String>?
 
     private const val TAG = "NativeThumbnailExtractor"
 }

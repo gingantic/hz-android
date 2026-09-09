@@ -1,69 +1,52 @@
 # CLAUDE.md
 
-This file provides guidance to Claude (claude.ai/code) when working with code in this repository.
+Guidance for Claude (claude.ai/code) when working with code in this repository.
 
 ---
 
 ## ⚠️ MANDATORY: Verify Before You Change
 
-> **Before making ANY change to existing code:**
->
-> 1. **Read the relevant file(s) in full** — never assume what already exists.
-> 2. **Understand the existing pattern** — follow it; do not invent a new one.
-> 3. **If unsure about an API, behaviour, or best practice** — search the internet (Android docs, Media3/ExoPlayer docs, Jetpack Compose docs) before writing code. Wrong code is worse than slow delivery.
-> 4. **Check the `docs/` directory** before designing any feature — architecture decisions live there.
-> 5. **Never silently delete or reorganise code** — ask first.
+1. **Read the relevant file(s) in full** — never assume what already exists.
+2. **Follow the existing pattern** — do not invent a new one.
+3. **Unsure about an API, behaviour, or best practice?** Search the official docs (Android, Media3/ExoPlayer, Jetpack Compose) — wrong code is worse than slow delivery.
+4. **Check `docs/`** before designing any feature — architecture decisions live there.
+5. **Never silently delete or reorganise code** — ask first.
 
 ---
 
-## Build & Run Commands
+## Build & Run
 
 ```sh
-# Build debug APK
-./gradlew assembleDebug        # Linux / macOS
 gradlew.bat assembleDebug      # Windows ← use this
-
-# Build release APK
-./gradlew assembleRelease
-
-# Unit tests
-./gradlew test
-./gradlew test --tests "com.rhnxdev.hzplayer.*"
-
-# Instrumented (on-device) tests
-./gradlew connectedCheck
-
-# Static analysis
-./gradlew lint
-
-# Clean
-./gradlew clean
+./gradlew assembleDebug        # Linux / macOS
+./gradlew assembleRelease      # release APK
+./gradlew test                 # unit tests
+./gradlew connectedCheck       # instrumented (on-device) tests
+./gradlew lint                 # static analysis
 ```
 
-> **Gradle wrapper:** version **8.13** — see `gradle/wrapper/gradle-wrapper.properties`.
+Gradle wrapper **8.13** — see `gradle/wrapper/gradle-wrapper.properties`.
 
 ---
 
 ## Native (C/C++) Cross-Compilation
 
-Native libs (e.g. `libarchive.so`) are built **outside Gradle** by standalone scripts (`build_libarchive.sh`, `ffmpeg_build_android.sh`, `libass_build_android.sh`). When editing or rebuilding them on this Windows host, obey these hard-won rules:
+Native libs (`libarchive.so`, FFmpeg, libass) are built **outside Gradle** by standalone scripts (`build_libarchive.sh`, `ffmpeg_build_android.sh`, `libass_build_android.sh`). Hard-won rules for this Windows host:
 
-- **Toolchain:** NDK r27 only ships the `windows-x86_64` prebuilt. Drive the Windows clang wrappers (`aarch64-linux-android<N>-clang` etc.) **from WSL** (`wsl bash -c '...'`). The wrappers set `--target` but NOT `--sysroot`; do NOT pass an explicit `--sysroot` (it breaks header resolution — the wrapper's baked-in default works).
-- **`/mnt/c` is NOT readable by Windows NDK tools.** `clang.exe`, `llvm-nm.exe`, `llvm-strings.exe`, `llvm-objdump.exe` cannot open `/mnt/c/...` paths. When invoking them from WSL, pass the *argument* as a native `C:/...` path (forward slashes OK); the tool's own *location* can stay `/mnt/c/...`. Any `nm`/`strings` result of "0 symbols / no such file" is this artifact, **not** a real empty lib — re-run with a `C:/` argument.
-- **`ar`/`ranlib`** are `llvm-ar.exe` / `llvm-ranlib.exe` (no extensionless wrapper exists).
-- **Hand-linking static → shared:** a `Generic` CMake system (never `Linux`, which leaks host `/usr/include` → `bits/wordsize.h` not found) refuses `BUILD_SHARED_LIBS`. Build static `.a`, then fuse into a `.so` with the clang wrapper: `-shared -Wl,--whole-archive … -Wl,--no-whole-archive`. **Every static dep that supplies symbols must sit INSIDE the `--whole-archive` group** (e.g. mbedTLS) or the linker silently drops it.
-- **Output path:** link to a temp file first, then `cp -f` into `app/src/main/jniLibs/<abi>/`. Writing directly into `jniLibs` fails with `Permission denied` on the existing locked file.
-- **`android_lf.h`:** libarchive's `android_lf.h` is a *static* header at `contrib/android/include` (not installed). Add `-I<src>/contrib/android/include` via `CMAKE_C_FLAGS` in the toolchain file (FORCE-set), not the per-project cmake call.
-- **mbedTLS version:** libarchive master uses the legacy `mbedtls_md_hmac_*` API removed in the mbedTLS dev branch — pin **`mbedtls-3.6.7`** (LTS). Build all three (`libmbedtls.a`, `libmbedx509.a`, `libmbedcrypto.a`).
-- **Verify a built `.so`:** `nm` on a *stripped* APK-packed `.so` is empty by design — confirm code presence with `llvm-strings.exe` on the `C:/...` path and grep for distinctive strings (e.g. `Mbed TLS 3.6.7`, `mbedtls_aes_crypt_ecb`).
+- **Toolchain:** NDK r27 ships only the `windows-x86_64` prebuilt. Drive the Windows clang wrappers (`aarch64-linux-android<N>-clang` etc.) **from WSL** (`wsl bash -c '...'`). Wrappers set `--target` but NOT `--sysroot` — do NOT pass an explicit `--sysroot` (breaks header resolution; the baked-in default works).
+- **`/mnt/c` is NOT readable by Windows NDK tools** (`clang.exe`, `llvm-nm.exe`, `llvm-strings.exe`, `llvm-objdump.exe`). Pass the *argument* as a native `C:/...` path (forward slashes OK); the tool's own *location* can stay `/mnt/c/...`. Any `nm`/`strings` result of "0 symbols / no such file" is this artifact, **not** a real empty lib — re-run with a `C:/` argument.
+- **`ar`/`ranlib`** = `llvm-ar.exe` / `llvm-ranlib.exe` (no extensionless wrapper exists).
+- **Static → shared:** use a `Generic` CMake system (never `Linux`, which leaks host `/usr/include` → `bits/wordsize.h` not found). Build static `.a`, then fuse into a `.so` with the clang wrapper: `-shared -Wl,--whole-archive … -Wl,--no-whole-archive`. **Every static dep that supplies symbols must sit INSIDE the `--whole-archive` group** (e.g. mbedTLS) or the linker silently drops it.
+- **Output path:** link to a temp file first, then `cp -f` into `app/src/main/jniLibs/<abi>/` — writing directly fails `Permission denied` on the locked file.
+- **`android_lf.h`:** libarchive's copy is a *static* header at `contrib/android/include` (not installed) — add `-I<src>/contrib/android/include` via `CMAKE_C_FLAGS` in the toolchain file (FORCE-set), not the per-project cmake call.
+- **mbedTLS:** pin **`mbedtls-3.6.7`** (LTS) — libarchive master uses the legacy `mbedtls_md_hmac_*` API removed in the mbedTLS dev branch. Build all three (`libmbedtls.a`, `libmbedx509.a`, `libmbedcrypto.a`).
+- **Verify a built `.so`:** `nm` on a *stripped* APK-packed `.so` is empty by design — confirm with `llvm-strings.exe` on the `C:/...` path, grep for distinctive strings (e.g. `Mbed TLS 3.6.7`, `mbedtls_aes_crypt_ecb`).
 
 ---
 
 ## Project Overview
 
-**Hz Player** is a full-featured Android video/audio media player inspired by VLC. It supports local storage, SMB, FTP, SFTP, and WebDAV sources with custom DataSources for each protocol. Includes a full in-app browser with ad blocking and media sniffing.
-
-### Tech Stack (essentials)
+**Hz Player** — VLC-inspired Android video/audio player. Local storage, SMB, FTP, SFTP, WebDAV sources (custom DataSources per protocol) + full in-app browser with ad blocking and media sniffing.
 
 | Layer | Technology |
 |---|---|
@@ -73,33 +56,26 @@ Native libs (e.g. `libarchive.so`) are built **outside Gradle** by standalone sc
 | Media | Media3 ExoPlayer + standalone native FFmpeg player (`IPlayerEngine` abstraction, 3 engines) |
 | Min / Target / Compile SDK | 28 / 36 / 36 |
 
-Full stack detail lives in `docs/ARCHITECTURE.md` and the Gradle manifest — do not duplicate it here.
+Full detail lives in `docs/ARCHITECTURE.md` — do not duplicate it here.
 
 ---
 
-## Architecture
-
-### Core Rules
+## Architecture Rules
 
 - **Screen = stateless Composable** — receives `UiState` + lambda callbacks only; never holds repositories.
-- **ViewModel = `@HiltViewModel`** — exposes `StateFlow<XxxUiState>`, calls use cases / repositories, owns all side effects.
-- **Repository = interface in `domain/`**, implementation in `data/`. Always inject the interface.
-- **UiState = `@Immutable data class`** — one per screen, updated only via `copy()`.
-- **Preview data** lives in `presentation/preview/PreviewMedia.kt` — never hardcode fake data in Composables.
-
-### State & Collection
+- **ViewModel = `@HiltViewModel`** — exposes `StateFlow<XxxUiState>`, calls repositories, owns side effects.
+- **Repository = interface in `domain/`, impl in `data/`** — always inject the interface.
+- **UiState = `@Immutable data class`** — updated only via `copy()`.
+- **Preview data** lives in `presentation/preview/PreviewMedia.kt`.
+- `collectAsStateWithLifecycle()` everywhere; `remember` for local UI state only (animation, menus, scroll position).
 
 ```kotlin
-// ViewModel
 @HiltViewModel
-class XxxViewModel @Inject constructor(
-    private val repo: XxxRepository
-) : ViewModel() {
+class XxxViewModel @Inject constructor(private val repo: XxxRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(XxxUiState())
     val uiState: StateFlow<XxxUiState> = _uiState.asStateFlow()
 }
 
-// Screen
 @Composable
 fun XxxScreen(vm: XxxViewModel = hiltViewModel()) {
     val state by vm.uiState.collectAsStateWithLifecycle()
@@ -107,187 +83,59 @@ fun XxxScreen(vm: XxxViewModel = hiltViewModel()) {
 }
 ```
 
-- `collectAsStateWithLifecycle()` everywhere — lifecycle-aware.
-- `remember` for local UI state only (animation, expanded menus, scroll position).
-- Never `LiveData`. Never `SharedPreferences`.
-
----
-
-## Player Architecture
-
-### Layer diagram
+### Player stack
 
 ```
-VideoPlayerScreen (Compose)
-    ↓ UiState / events
-PlayerViewModel (@HiltViewModel)
-    ↓
-PlayerRepository (interface)
-    ↓ implemented by
-PlayerRepositoryImpl
-    ↓ holds Map<EngineType, IPlayerEngine>
-ExoPlayerEngine (EXO_PLAYER + FFMPEG)  /  FfmpegNativeEngine (NATIVE_FFMPEG)
-    ↓ bound via PlayerEngineModule (@Singleton)
-MediaPlayerHolder (ExoPlayer engines)  /  libffplayer.so JNI (native engine)
-    ↓
-MediaPlaybackService (MediaSessionService — background playback + lock-screen controls;
-                      only for engines whose getMedia3Player() returns non-null)
+VideoPlayerScreen → PlayerViewModel → PlayerRepository(Impl)
+  → Map<EngineType, IPlayerEngine> (bound via PlayerEngineModule, @Singleton)
+  → ExoPlayerEngine (EXO_PLAYER + FFMPEG) / FfmpegNativeEngine (NATIVE_FFMPEG)
+  → MediaPlayerHolder (Exo engines) / libffplayer.so JNI (native engine)
+  → MediaPlaybackService (MediaSessionService; only engines with non-null getMedia3Player())
 ```
 
-### `IPlayerEngine` contract
+- `domain/player/IPlayerEngine` is the **only** playback boundary — no Media3 type crosses it. New backend = implement `IPlayerEngine` + one `@Binds @IntoMap @EngineKey(...)` line in `PlayerEngineModule`. Engines: `EXO_PLAYER`, `FFMPEG` (same ExoPlayer pipeline, FFmpeg renderers preferred), `NATIVE_FFMPEG` (standalone native).
+- **Position is NOT in `PlayerUiState`** — the 250 ms tick is a separate `StateFlow` in the ViewModel to avoid full recompose.
+- VideoPlayerScreen gestures are **mutually exclusive** — one per touch sequence (hold-to-speed-up, horizontal scrub, brightness left half, volume right half, double-tap seek).
+- Deep-dive: `docs/PLAYER_ARCHITECTURE.md`.
 
-`domain/player/IPlayerEngine` is the **only** playback boundary — no Media3 type crosses it. Adding a new backend = implement `IPlayerEngine` + add one `@Binds @IntoMap @EngineKey(...)` line to `PlayerEngineModule`. Current engines: `EXO_PLAYER`, `FFMPEG` (same ExoPlayer pipeline, FFmpeg renderers preferred), `NATIVE_FFMPEG` (standalone native player).
+### Network & subtitles
 
-### `PlayerUiState` highlights
+- SMB / FTP / SFTP / WebDAV — one browser client + one DataSource each, per-protocol seek strategy. `ConnectionPool` (`@Singleton`) caches by `host:port:user`: SMB single `CIFSContext` per server, FTP control-connection reuse, SFTP session reuse, WebDAV via OkHttp pool.
+- `ServerDiscoverer`: NSD/mDNS discovery with port-scan fallback → `StateFlow<List<ServerConfig>>`.
+- Subtitles: built-in tracks via `IPlayerEngine.selectSubtitleTrack()`; external `.srt/.vtt/.ass` via `addExternalSubtitle(uri)`; delay via `setSubtitleDelay()`; online search via `SubdlApi` → `SubtitleSearchViewModel`; SMB sibling auto-discovery (`findSmbNeighborSubtitles()`, jcifs-ng). Native engine renders via libass (`AssHandler` → `AssSubtitleOverlay`, zero-flicker).
 
-| Field | Note |
-|---|---|
-| `isPlaying`, `isLoading`, `duration`, `bufferedPercentage` | Core playback state |
-| `playbackSpeed`, `shuffleMode`, `repeatMode` | Playback configuration |
-| `subtitleTracks`, `audioTracks`, `selectedSubtitleTrack`, `selectedAudioTrack` | Track selection |
-| `externalSubtitles`, `subtitleDelayMs`, `subtitleStyle` | External subtitle handling |
-| `playerLocked` | Screen lock gesture |
-| `errorMessage`, `errorKind` | Playback error overlay |
-| `networkTraffic` | Realtime bandwidth display |
-| `seekSensitivity`, `aspectRatioMode` | User preference overrides |
-| `useSurfaceView` / `useTextureView` | Surface selection (HDR passthrough vs. composited) |
-| `hdrEnabled`, `drmSessionActive` | HDR / DRM state |
-| `videoPlaylist`, `currentPlaylistIndex`, `showPlaylistDrawer` | Playlist management |
-| `debugMode`, `debugStats`, `debugOverlayVisible` | "Stats for nerds" overlay |
-| `activeEngineType` | Drives surface type in `VideoPlayerScreen` |
-| **position NOT here** | Ticks every 250 ms → separate `StateFlow` in ViewModel to avoid full recompose |
+### Navigation
 
-### Gesture rules (VideoPlayerScreen)
+5 tabs — `video_library`, `audio_browser`, `file_browser`, `network`, `settings` (`AppDestinations.kt`). Player launches as a full-screen destination on top of the nav graph.
 
-Gestures are **mutually exclusive** — commit to one per touch sequence:
+### VLC reference
 
-| Gesture | Trigger | Notes |
-|---|---|---|
-| Hold-to-speed-up | Long-press without movement | Finger moves past threshold → cancelled |
-| Seek (scrub) | Horizontal drag past threshold | — |
-| Brightness | Vertical drag, left half | — |
-| Volume | Vertical drag, right half | — |
-| Double-tap seek | Two quick taps, minimal movement | — |
-
----
-
-## Network DataSources
-
-### Protocol support
-
-| Protocol | Browser client | Playback DataSource | Seek strategy |
-|---|---|---|---|
-| SMB | `SmbBrowserClient` | `SmbDataSource` | `SmbRandomAccessFile.seek()` |
-| FTP | `FtpBrowserClient` | `FtpDataSource` | `FTPClient.setRestartOffset()` |
-| SFTP | `SftpBrowserClient` | `SftpDataSource` | Direct offset via `sftpHandle.read(pos, …)` |
-| WebDAV | `WebDavBrowserClient` | `WebDavDataSource` | HTTP `Range: bytes=…` header |
-
-### Connection pooling (`ConnectionPool` — `@Singleton`)
-
-- Caches connections keyed by `host:port:user`.
-- SMB: single `CIFSContext` per server — prevents "No more connections" crash.
-- FTP: reuses control connection — eliminates ~200 ms login per seek.
-- SFTP: reuses SSH session — eliminates ~500 ms key exchange per seek.
-- WebDAV: OkHttp connection pool via `ConnectionPool`.
-
-### Server discovery (`ServerDiscoverer`)
-
-- Uses Android NSD (mDNS) for automatic server discovery on LAN.
-- Falls back to manual port-scan when mDNS is unavailable.
-- Exposes `StateFlow<List<ServerConfig>>` consumed by `NetworkViewModel`.
-
----
-
-## Navigation
-
-5 top-level destinations (bottom nav + rail):
-
-| Destination | Route | Screen |
-|---|---|---|
-| `VideoLibrary` | `video_library` | `VideoLibraryScreen` |
-| `AudioBrowser` | `audio_browser` | `AudioPlayerScreen` |
-| `FileBrowser` | `file_browser` | `FileBrowserScreen` |
-| `Network` | `network` | `NetworkScreen` |
-| `Settings` | `settings` | `SettingsScreen` |
-
-Player (`VideoPlayerScreen`) is launched as a full-screen destination on top of the nav graph.
-
----
-
-## Subtitle System
-
-- **Built-in tracks:** ExoPlayer track selection via `IPlayerEngine.selectSubtitleTrack()`.
-- **External subtitles:** Added via `IPlayerEngine.addExternalSubtitle(uri)` — supports `.srt`, `.vtt`, `.ass`.
-- **Subtitle delay:** `IPlayerEngine.setSubtitleDelay(delayMs)`.
-- **Online search:** `SubdlApi` (Search & Download API, plain `HttpURLConnection`) → `SubtitleSearchViewModel`.
-- **SMB auto-discovery:** `findSmbNeighborSubtitles()` uses jcifs-ng `SmbFile` to list sibling files.
-- **Rendering:** Exo-backed engines use the built-in `PlayerView`; the native FFmpeg engine
-  renders via the libass pipeline (`AssHandler` → `AssSubtitleOverlay`, zero-flicker).
-
----
-
-## VLC Reference
-
-The `vlc-android-master/` source tree was **removed** from the repository (cleanup).
-VLC concepts (gesture model, playback service, browser UX) are already adapted into
-the Compose + Media3 + MVVM codebase — do not re-add the tree.
+`vlc-android-master/` tree was **removed** — VLC concepts are already adapted into the Compose + Media3 + MVVM codebase. Do not re-add.
 
 ---
 
 ## Code Conventions
 
-### Naming & size
-- Files: `XxxScreen.kt`, `XxxViewModel.kt`, `XxxUiState.kt`, `XxxRepository.kt`, `XxxRepositoryImpl.kt`
-- Keep files under **~300 lines**; extract reusable Composables to `components/` sub-package.
-- Every public Composable: `modifier: Modifier = Modifier` parameter.
-- Every reusable component: `@Preview` using `PreviewMedia` data (no ViewModel in preview).
+- Files: `XxxScreen.kt` / `XxxViewModel.kt` / `XxxUiState.kt` / `XxxRepository.kt` / `XxxRepositoryImpl.kt`. Keep files under **~300 lines**; extract reusable Composables to `components/` sub-package.
+- Every public Composable: `modifier: Modifier = Modifier` parameter. Every reusable component: `@Preview` using `PreviewMedia` (no ViewModel in preview).
+- `data class` + `copy()` for models; `sealed interface` for UI events/actions; extension functions → `core/util/` or `core/extensions/`; no `lateinit` in ViewModels — constructor injection only.
 
-### Kotlin
-- `data class` + `copy()` for all models; `@Immutable` on UiState.
-- Extension functions → `core/util/` or `core/extensions/`.
-- `sealed interface` for UI events/actions.
-- No `lateinit` in ViewModels — constructor injection only.
-
-### Hard rules
-- ❌ No `LiveData` anywhere.
-- ❌ No `SharedPreferences` — use `DataStore`.
-- ❌ No hardcoded fake data in Composables — use `PreviewMedia`.
-- ❌ No `runBlocking` in production.
-- ❌ No direct `Context` in ViewModels — `@ApplicationContext` only when unavoidable.
-- ❌ No Media3 types crossing `IPlayerEngine` — keep the abstraction clean.
+Hard rules:
+- ❌ No `LiveData` · no `SharedPreferences` (use `DataStore`) · no `runBlocking` in production
+- ❌ No hardcoded fake data in Composables — use `PreviewMedia`
+- ❌ No direct `Context` in ViewModels — `@ApplicationContext` only when unavoidable
+- ❌ No Media3 types crossing `IPlayerEngine`
 
 ---
 
 ## Research Protocol
 
-### Before implementing any feature
-
 1. **Read existing code** — find what already exists and reuse it.
 2. **Check `docs/`** — architecture decisions are documented there.
-3. **Check `docs/PROJECT_PLAN.md`** — "What is missing / deferred" lists open work.
-4. **Fetch current docs via MCP — never guess.** Use these before any web search:
-   - **Context7** (`mcp__context7__*`) — official library/framework/SDK/API docs. `resolve-library-id` first, then `query-docs`. Covers Android, Media3/ExoPlayer, Compose, Hilt, Room, Kotlin, OkHttp, Coil, etc. Prefer over web search for library docs.
-   - **Firecrawl** (`mcp__firecrawl__*`) — `firecrawl_scrape` for live pages, `firecrawl_search` for broad web. Use when Context7 has no match (e.g. xAI Grok API, third-party tools) or page is newer than Context7 snapshot.
-   - **Fetch** (`mcp__fetch__imageFetch`) — fetch+markdown a single URL when Context7/Firecrawl unavailable or you need page text + inline images extracted. Also `firecrawl_search_feedback` after searches to improve quality and refund credits.
-   - Fallback links (only if all MCPs fail):
-     - [Android Developers](https://developer.android.com)
-     - [Media3 / ExoPlayer](https://developer.android.com/media/media3)
-     - [Jetpack Compose](https://developer.android.com/jetpack/compose/documentation)
-     - [Hilt](https://developer.android.com/training/dependency-injection/hilt-android)
-     - [Room](https://developer.android.com/training/data-storage/room)
-5. **Do not guess** — if unclear, query the MCP docs before writing a single line. A wrong API call is worse than slow delivery.
+3. **Do not guess** — if an API or behaviour is unclear, check official docs before writing a single line. A wrong API call is worse than slow delivery.
+4. **Complex change** (multi-step, architectural, 3+ files)? Run **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) *before* editing — comprehension first, then the smallest diff. Apply the Ponytail ladder after understanding the full flow: reuse existing code → stdlib → platform feature → installed dep → one line → minimum code.
 
-### Complex change? Reason it through first
-- Use **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) for multi-step problems, architectural decisions, or anything touching 3+ files. Build the analysis step-by-step, revise prior steps as understanding deepens, branch when exploring alternatives. Run this *before* editing — comprehension first, then the smallest diff.
-- Apply the Ponytail ladder (CLAUDE.md header) *after* understanding the full flow: reuse existing code → stdlib → installed dep → one line → minimum code.
-
-### Before modifying existing code
-
-1. Read the **entire file** being changed — no patching in isolation.
-2. Understand **why** the code is written that way (check `docs/` or git history).
-3. Check **callers** — use "Find Usages" to understand the blast radius.
-4. Trace the full **data flow**: event → ViewModel → state → UI.
-5. When in doubt, **ask** — a wrong fix is worse than no fix.
+Before modifying existing code: read the **entire file**, understand *why* it's written that way (`docs/` or git history), check callers (blast radius), trace the data flow (event → ViewModel → state → UI). When in doubt, **ask** — a wrong fix is worse than no fix.
 
 ---
 
@@ -307,19 +155,12 @@ the Compose + Media3 + MVVM codebase — do not re-add the tree.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full app architecture, module boundaries |
 | [`docs/PLAYER_ARCHITECTURE.md`](docs/PLAYER_ARCHITECTURE.md) | Player stack deep-dive |
 | [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md) | Data flow diagrams |
-| [`docs/ENGINE_MODULARITY.md`](docs/ENGINE_MODULARITY.md) | `IPlayerEngine` abstraction, adding new backends |
 | [`docs/UI_COMPONENTS.md`](docs/UI_COMPONENTS.md) | Composable component catalogue |
-| [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) | Feature roadmap + "what is missing" list |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | High-level roadmap |
-| [`docs/ARCHIVE_SUPPORT.md`](docs/ARCHIVE_SUPPORT.md) | Archive support design & implementation |
-| [`docs/FFMPEG_NATIVE_AUDIT_AND_ROADMAP.md`](docs/FFMPEG_NATIVE_AUDIT_AND_ROADMAP.md) | Native FFmpeg player audit + VLC-parity roadmap |
 
 ---
 
 ## 🚦 Guidelines for AI Development
 
-* **Minor Features & Bug Fixes**:
-  * The AI assistant is permitted to implement and verify minor features, bug fixes, refactoring, pipeline adjustments, and styling alignments.
-  * **Versioning Increment**: The AI must always ask for the developer's opinion and confirmation before bumping or increasing the versioning numbers. Any version changes (for example, bumping from `X.Y.Z` to `X.Y.Z+1` for patches, or `X.Y.0` to `X.Y+1.0` for minor features) should be proposed as examples for developer approval.
-* **Major Features & Core Architecture**:
-  * **Only the human developer can make major architecture modifications, structural design changes, or major features.** The AI is restricted from executing major updates autonomously.
+* **Minor Features & Bug Fixes:** the AI may implement and verify minor features, bug fixes, refactoring, pipeline adjustments, and styling alignments.
+  * **Versioning Increment:** the AI must always ask for the developer's confirmation before changing version numbers (e.g. `X.Y.Z` → `X.Y.Z+1` for patches, `X.Y.0` → `X.Y+1.0` for minor features) — proposed as examples for approval.
+* **Major Features & Core Architecture:** only the human developer makes major architecture modifications, structural design changes, or major features.

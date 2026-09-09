@@ -1,4 +1,4 @@
-package com.rhnxdev.hzplayer.core.thumbnail
+package com.rhnxdev.hzplayer.core.io
 
 import androidx.annotation.Keep
 import com.rhnxdev.hzplayer.data.datasource.archive.ArchiveNative
@@ -6,7 +6,7 @@ import java.io.Closeable
 import java.io.IOException
 
 /**
- * [ThumbnailSource] backed by a single entry inside a compressed archive
+ * [RandomAccessMediaSource] backed by a single entry inside a compressed archive
  * (zip/7z/rar/tar/iso/etc.) via [ArchiveNative] (libarchive).
  *
  * Employs a sliding-window block cache (24 x 256KB = 6MB) to absorb local
@@ -14,11 +14,11 @@ import java.io.IOException
  * directly from memory without triggering expensive libarchive reopen+decompression cycles.
  */
 @Keep
-class ArchiveRandomAccessBridge(
+class ArchiveRandomAccessSource(
     private val containerPath: String,
     private val entryName: String,
     private val password: String? = null,
-) : ThumbnailSource, Closeable {
+) : RandomAccessMediaSource, Closeable {
 
     companion object {
         private const val BLOCK_SIZE = 256 * 1024 // 256 KB per block

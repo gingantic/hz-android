@@ -24,6 +24,7 @@ import java.io.File
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -60,9 +61,57 @@ internal object ConnectionPool {
     private class Timed<V>(val value: V) {
         @Volatile var lastUsed = System.currentTimeMillis()
         private val inUse = AtomicInteger(0)
-        fun acquire() { inUse.incrementAndGet(); lastUsed = System.currentTimeMillis() }
-        fun release() { inUse.updateAndGet { (it - 1).coerceAtLeast(0) }; lastUsed = System.currentTimeMillis() }
+        private val lifecycleLock = Any()
+        private var retired = false
+        private var closed = false
+        private var closeWhenIdle: (() -> Unit)? = null
+
+        fun acquire() {
+            inUse.incrementAndGet()
+            lastUsed = System.currentTimeMillis()
+        }
+
+        fun release() {
+            inUse.updateAndGet { (it - 1).coerceAtLeast(0) }
+            lastUsed = System.currentTimeMillis()
+            closeIfIdle()
+        }
+
         fun isInUse(): Boolean = inUse.get() > 0
+
+        /** Remove this entry from the active pool without closing live leases. */
+        fun retire(close: () -> Unit) {
+            synchronized(lifecycleLock) {
+                retired = true
+                closeWhenIdle = close
+            }
+            closeIfIdle()
+        }
+
+        private fun closeIfIdle() {
+            var closer: (() -> Unit)? = null
+            synchronized(lifecycleLock) {
+                if (retired && !closed && inUse.get() == 0) {
+                    closed = true
+                    closer = closeWhenIdle
+                }
+            }
+            closer?.invoke()
+        }
+    }
+
+    /** Exact-owner lease for a pooled SMB context. */
+    internal class SmbContextLease internal constructor(
+        val context: CIFSContext,
+        private val releaseAction: () -> Unit,
+    ) {
+        private val released = AtomicBoolean(false)
+
+        fun release() {
+            if (released.compareAndSet(false, true)) {
+                releaseAction()
+            }
+        }
     }
 
     private fun <V> ConcurrentHashMap<String, Timed<V>>.evictIdle(close: (V) -> Unit) {
@@ -202,24 +251,26 @@ internal object ConnectionPool {
     // ── SMB (DataSource) ──────────────────────────────────────────
 
     /**
-     * Force-close + drop a pooled [CIFSContext] for [host]. Called when a borrow
-     * turns out to be a stale session (network drop / SMB timeout): the next
-     * borrow rebuilds a fresh context instead of reusing the dead one. jcifs-ng
-     * has no `isConnected`, so staleness only surfaces on the next I/O — we
-     * can't probe cheaply, so we drop on the first failure that signals it.
+     * Retire a pooled [CIFSContext] after a session failure. Existing leases
+     * keep their exact pool entry alive until they release; a later borrow gets
+     * a fresh entry without allowing one owner's return to decrement another
+     * owner's checkout.
      */
     fun dropSmbContext(host: String, port: Int, user: String, pass: String) {
         val k = key("smb", host, port, user, pass)
-        smbPool.remove(k)?.let { timed ->
+        val timed = smbPool.remove(k) ?: return
+        timed.retire {
             try { timed.value.close() } catch (_: Exception) {}
         }
     }
 
-    /** Borrow (or create) a shared [CIFSContext] for the given server. */
-    fun borrowSmbContext(host: String, port: Int, user: String, pass: String): CIFSContext {
+    /** Borrow an exact-owner lease for a shared SMB context. */
+    fun borrowSmbContextLease(host: String, port: Int, user: String, pass: String): SmbContextLease {
         val k = key("smb", host, port, user, pass)
-        return smbPool.getOrPut(k) { Timed(newSmbContext(host, user, pass, 15000, 15000, k)) }
-            .also { it.acquire() }.value
+        val timed = smbPool.computeIfAbsent(k) {
+            Timed(newSmbContext(host, user, pass, 15000, 15000, k))
+        }.also { it.acquire() }
+        return SmbContextLease(timed.value) { timed.release() }
     }
 
     /** Borrow (or create) a shared [CIFSContext] for remote SMB thumbnails with tight timeouts. */
@@ -235,7 +286,12 @@ internal object ConnectionPool {
 
     // ── WebDAV (DataSource) ──────────────────────────────────────
 
-    /** Borrow a reusable [OkHttpClient] for WebDAV streaming. */
+    /**
+     * Borrow a reusable [OkHttpClient] for WebDAV data transfer — both
+     * [WebDavDataSource] streaming and remote thumbnail fetching
+     * ([VideoThumbnailFetcher]); OkHttp is stateless, so sharing the
+     * stream-keyed client is safe.
+     */
     fun borrowWebDavClient(
         host: String,
         port: Int,

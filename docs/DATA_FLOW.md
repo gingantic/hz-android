@@ -1,10 +1,11 @@
 # Hz Player — Data Flow Architecture
 
 > How data moves from persistence to pixels.
-> Last refreshed: 2026-08-22. Reflects the modular `IPlayerEngine` seam (three
+> Last refreshed: 2026-09-09. Reflects the modular `IPlayerEngine` seam (three
 > engines), the remote network stack, resumable playback, libass subtitle pipeline,
-> archive support, in-app browser (omnibox suggestions, web PiP), the 10-band
-> equalizer, sleep timer, chapters, A-B repeat, audio delay, and play-as-audio mode.
+> archive support, in-app browser (omnibox suggestions, web PiP, error/SSL pages),
+> the 10-band equalizer (engine-shared state), sleep timer, chapters, A-B repeat,
+> audio delay, and play-as-audio mode.
 
 ---
 
@@ -97,6 +98,9 @@ BrowserActivity (separate activity)
     → PopupPermissionBottomSheet (cross-domain popup approval)
     → Real desktop mode toggle (desktop UA + wide viewport)
     → Web PiP API bridge: site PiP button → native Picture-in-Picture window
+    → Custom error / SSL interstitial pages (TabManager routes main-frame
+      failures to asset error_page.html / ssl_warning.html; renderer crashes
+      reload a fresh renderer with a crash page)
 ```
 
 ---
@@ -181,7 +185,8 @@ EqualizerSheet → band slider / preset / bass / loudness
   → PlayerViewModel → PlayerRepository
     → activeEngine.setEqualizerBandLevel(band, mb)   // IPlayerEngine EQ block
       → ExoPlayerEngine: TenBandEqualizerProcessor (AudioProcessor chain)
-      → FfmpegNativeEngine: EqualizerController on the AudioTrack session id
+      → FfmpegNativeEngine: mirrors EQ state into the native EQ; session
+        effects attach via MediaPlayerHolder.audioSessionId (fed by both engines)
     → getEqualizerState(): StateFlow<EqualizerInfo> drives the sheet UI
   → UserPreferencesRepository persists EqualizerSettings across restarts
 ```
@@ -258,7 +263,7 @@ PlayerPositionController (250ms tick)
 | Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` (backs `EXO_PLAYER` + `FFMPEG`) |
 | Native FFmpeg player | Standalone playback engine (`NATIVE_FFMPEG`) | `FfmpegNativeEngine` + `ffmpeg/FfmpegNativePlayer.kt` → `cpp/FfmpegPlayer.cpp` (`libffplayer.so`) |
 | Remote clients | SMB/FTP/SFTP/WebDAV browse + streaming | pooled in `ConnectionPool` |
-| Native FFmpeg | Video thumbnails + codec metadata probe | JNI in `core/thumbnail` + `cpp/` |
+| Native FFmpeg | Video thumbnails + codec metadata probe | `core/io/` sources + `core/thumbnail/` JNI + `cpp/` |
 | Native libass | ASS/SSA/SRT/VTT subtitle rendering | JNI in `data/datasource/subtitle/assrender` + `cpp/` |
 | Native libarchive | Archive listing + streaming playback | JNI in `data/datasource/archive` + `cpp/` |
 | Native ad blocker | WebView ad filtering | Rust-based engine in `browser/adblock/` (JNI) |

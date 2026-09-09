@@ -9,7 +9,6 @@ import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
-import com.rhnxdev.hzplayer.presentation.player.PlayerUiState
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia

@@ -22,7 +22,10 @@ internal data class PlaylistRebuild(
 
 /**
  * Helper object providing MediaItem building, subtitle MIME-type inference,
- * and playlist rebuilding utilities for ExoPlayer.
+ * and playlist rebuilding utilities. Primarily serves the ExoPlayer engines;
+ * [readSubtitleUriBytes] is also borrowed by [FfmpegNativeEngine] to load
+ * external subtitles for native playback through the ExoPlayer DataSource
+ * stack (the only scheme-routing loader in the app).
  */
 @OptIn(UnstableApi::class)
 internal object ExoMediaItemHelper {

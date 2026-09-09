@@ -24,6 +24,12 @@ import java.io.InputStream
 class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
 
     private var closed = false
+    private var activeSmbLease: ConnectionPool.SmbContextLease? = null
+
+    private fun releaseSmbLease() {
+        activeSmbLease?.release()
+        activeSmbLease = null
+    }
 
     /** URI with user-info stripped — safe for logs and thrown error messages. */
     private fun safeUri(u: Uri): String {
@@ -49,7 +55,8 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             val host = uriStr.host ?: throw IOException("No host in URI: ${safeUri(dataSpec.uri)}")
             val port = uriStr.port.takeIf { it > 0 } ?: 445
 
-            val cifsCtx = ConnectionPool.borrowSmbContext(host, port, username, password)
+            val lease = ConnectionPool.borrowSmbContextLease(host, port, username, password)
+            activeSmbLease = lease
 
             // Resolve the target by walking the directory tree via listFiles() rather
             // than constructing an SmbFile from a URL containing the path. jcifs
@@ -66,7 +73,7 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             // Open with brief retry/backoff for transient network drops (e.g. Wi-Fi
             // handoff). Connection-stage only — mid-read errors are not retried.
             val (_, fileLength, rawStream) = openWithRetry(
-                cifsCtx, host, port, username, password, segments, cacheKey, dataSpec
+                lease, host, port, username, password, segments, cacheKey, dataSpec
             )
 
             // BufferedInputStream does large SMB reads (512 KB at a time),
@@ -84,6 +91,9 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             transferStarted(dataSpec)
             return bytesRemaining
         } catch (e: Exception) {
+            try { inputStream?.close() } catch (_: Exception) {}
+            resetSharedState()
+            releaseSmbLease()
             android.util.Log.e(TAG, "open failed for uri=${safeUri(dataSpec.uri)}: ${e.message}", e)
             throw e
         }
@@ -106,6 +116,7 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         closed = true
         try { inputStream?.close() } catch (_: Exception) {}
         resetSharedState()
+        releaseSmbLease()
         transferEnded()
     }
 
@@ -131,7 +142,7 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
      * position-exceeds-length) are thrown immediately without retry.
      */
     private fun openWithRetry(
-        cifsCtx: jcifs.CIFSContext,
+        initialLease: ConnectionPool.SmbContextLease,
         host: String,
         port: Int,
         username: String,
@@ -141,11 +152,14 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         dataSpec: DataSpec,
     ): Triple<SmbFile, Long, InputStream> {
         val backoffMs = longArrayOf(250, 750, 2000)
+        var activeLease = initialLease
+        var activeContext = initialLease.context
         var lastErr: IOException? = null
         repeat(backoffMs.size + 1) { attempt ->
+            var openedStream: InputStream? = null
             try {
                 val file = resolvedFileCache[cacheKey] ?: run {
-                    val match = SmbPathResolver.resolve(cifsCtx, host, port, segments)
+                    val match = SmbPathResolver.resolve(activeContext, host, port, segments)
                         ?: throw IOException("File not found: ${safeUri(dataSpec.uri)}")
                     resolvedFileCache[cacheKey] = match
                     match
@@ -154,10 +168,12 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
                 if (dataSpec.position > len) {
                     throw IOException("Position ${dataSpec.position} exceeds file length $len")
                 }
-                val s = file.inputStream
-                if (dataSpec.position > 0) skipFully(s, dataSpec.position)
-                return Triple(file, len, s)
+                val stream = file.inputStream
+                openedStream = stream
+                if (dataSpec.position > 0) skipFully(stream, dataSpec.position)
+                return Triple(file, len, stream)
             } catch (e: IOException) {
+                try { openedStream?.close() } catch (_: Exception) {}
                 lastErr = e
                 if (e.message?.contains("File not found") == true) throw e
                 if (e.message?.contains("exceeds file length") == true) throw e
@@ -169,6 +185,15 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
                 // borrows a fresh context instead of reusing the stale one.
                 if (e is jcifs.smb.SmbException) {
                     ConnectionPool.dropSmbContext(host, port, username, password)
+                    activeLease.release()
+                    activeSmbLease = null
+                    if (attempt < backoffMs.size) {
+                        // Reborrow an exact new lease after retiring the stale
+                        // session; retries never reuse a closed context.
+                        activeLease = ConnectionPool.borrowSmbContextLease(host, port, username, password)
+                        activeSmbLease = activeLease
+                        activeContext = activeLease.context
+                    }
                 }
                 if (attempt < backoffMs.size) {
                     android.util.Log.w(TAG, "SMB open attempt $attempt failed, retrying", e)

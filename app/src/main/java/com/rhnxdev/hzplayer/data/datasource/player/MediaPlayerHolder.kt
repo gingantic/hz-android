@@ -364,6 +364,12 @@ class MediaPlayerHolder @Inject constructor(
     private val _audioSessionId = MutableStateFlow(0)
     val audioSessionId: StateFlow<Int> = _audioSessionId.asStateFlow()
 
+    /**
+     * Push an audio session ID into [audioSessionId]. ExoPlayer writes here
+     * from its [AnalyticsListener.onAudioSessionIdChanged]; the native FFmpeg
+     * engine pushes its JNI-reported session here too, so [EqualizerController]'s
+     * platform effects attach to whichever engine is playing.
+     */
     fun setAudioSessionId(id: Int) {
         _audioSessionId.value = id
     }

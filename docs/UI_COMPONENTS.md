@@ -1,7 +1,7 @@
 # Hz Player — UI Component Catalog
 
 > Every reusable composable in the design system, with spec and states.
-> Last refreshed: 2026-08-22. Lists the components that actually exist today;
+> Last refreshed: 2026-09-09. Lists the components that actually exist today;
 > layouts are representative, not pixel-exact.
 
 ---
@@ -83,6 +83,7 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `StorageRootsContent` | `presentation/browse/components/StorageRootsContent.kt` |
 | `FileBrowserTopBarActions` | `presentation/browse/components/FileBrowserTopBarActions.kt` |
 | `PasteActionBar` | `presentation/browse/components/PasteActionBar.kt` (cut/copy/move/delete) |
+| `NewFolderDialog` | `presentation/browse/components/NewFolderDialog.kt` (create-folder dialog) |
 | `NetworkScreenContent` | `presentation/network/components/NetworkScreenContent.kt` |
 | `ServerCard` | `presentation/network/components/ServerCard.kt` |
 | `ServerConfigDialog` | `presentation/network/components/ServerConfigDialog.kt` |

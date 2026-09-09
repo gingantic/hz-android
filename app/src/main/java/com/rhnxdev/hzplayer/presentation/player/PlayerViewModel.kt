@@ -15,7 +15,7 @@ import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleMimeType
-import com.rhnxdev.hzplayer.core.thumbnail.MediaInfoProbe
+import com.rhnxdev.hzplayer.core.io.MediaInfoProbe
 import com.rhnxdev.hzplayer.core.util.bitsToHuman
 import com.rhnxdev.hzplayer.core.util.formatBitsPerSecond
 import com.rhnxdev.hzplayer.core.util.formatDebugBytes

@@ -1,9 +1,10 @@
 # Hz Player — Architecture
 
 > Clean MVVM with unidirectional data flow for a Compose-first media player.
-> Last refreshed: 2026-08-22 (three playback engines incl. standalone native FFmpeg,
-> 10-band equalizer, browser omnibox suggestions + web PiP, file operations,
-> mp4fork extractor).
+> Last refreshed: 2026-09-09 (three playback engines incl. standalone native FFmpeg,
+> 10-band equalizer shared across engines, browser omnibox suggestions + web PiP +
+> error/SSL interstitials, file operations, mp4fork extractor, `core/io`
+> random-access source split from `core/thumbnail`).
 
 ---
 
@@ -41,7 +42,7 @@
 composable. The render seam methods (`createRenderView`, `updateRenderView`,
 `onRenderViewPaused/Resumed`) live directly on `IPlayerEngine` — no typed casts needed.
 Only `ExoPlayerEngine` (in `data/`) knows about `ExoPlayer`/`PlayerView`.
-See `docs/ENGINE_MODULARITY.md`.
+See `docs/PLAYER_ARCHITECTURE.md`.
 
 ---
 
@@ -85,6 +86,7 @@ com.rhnxdev.hzplayer/
 │   │       ├── DirectoryStackContent.kt      (directory listing with breadcrumb + scroll save)
 │   │       ├── StorageRootsContent.kt         (storage root picker + pull-to-refresh)
 │   │       ├── FileBrowserTopBarActions.kt    (sort/view/media-mode top bar buttons)
+│   │       ├── NewFolderDialog.kt            (create-folder dialog for file ops)
 │   │       └── PasteActionBar.kt              (cut/copy/move/delete paste bar)
 │   │
 │   ├── network/
@@ -108,7 +110,7 @@ com.rhnxdev.hzplayer/
 │   │   ├── SearchScreen.kt / SearchViewModel.kt / SearchUiState.kt
 │   │
 │   ├── settings/
-│   │   ├── SettingsScreen.kt / SettingsViewModel.kt / LicensesScreen.kt
+│   │   ├── SettingsScreen.kt / SettingsViewModel.kt
 │   │   └── components/SettingsDialogs.kt / SettingsItem.kt / SettingsSection.kt
 │   │              / AboutDialog.kt / UpdateDialog.kt / EnumSelectionDialog.kt
 │   │              / ColorPickerDialog.kt / SubdlApiKeyDialog.kt
@@ -216,8 +218,10 @@ com.rhnxdev.hzplayer/
 │   ├── designsystem/  (HzPlayerIcons.kt Dimens.kt NavBarInsets.kt)
 │   │   // Dimens.kt also exports Spacing, CornerRadii, CardSizes, BrowserDimens, HzPlayerShapes
 │   ├── components/    (see UI_COMPONENTS.md)
-│   ├── thumbnail/     (native FFmpeg extractor + Coil fetcher + MediaInfoProbe
-│   │                   + RandomAccessBridge family incl. ArchiveRandomAccessBridge)
+│   ├── io/            (RandomAccessMediaSource family: Local/Channel/Smb/Archive
+│   │                   sources + MediaInfoProbe — random-access reads over any
+│   │                   media URI for the native FFmpeg pipelines)
+│   ├── thumbnail/     (native FFmpeg frame extractor + Coil fetcher)
 │   └── util/          (MediaTimeUtils / MediaExtensions / MimeTypeUtil /
 │                       BreadcrumbBuilder / DirectoryLruCache / PlaybackFormatters /
 │                       ServerDiscoverer / SubtitleLanguageResolver / UpdateChecker /
@@ -228,14 +232,20 @@ com.rhnxdev.hzplayer/
     ├── PlayerEngineModule.kt EngineKey.kt
 ```
 
+### Random-access media sources (`core/io/`)
+- `RandomAccessMediaSource.kt` — the shared `seek`/`readAt` interface every source
+  implements; the native pipelines (thumbnails, MediaInfoProbe, the FFmpeg player)
+  read media through it.
+- `LocalRandomAccessSource.kt` / `ChannelRandomAccessSource.kt` / `SmbRandomAccessSource.kt`
+  / `ArchiveRandomAccessSource.kt` — concrete sources over local files, content-resolver
+  channels (`content://`), SMB shares, and compressed archive entries (sliding-window
+  block cache so libarchive seeks don't reopen + re-decompress).
+- `MediaInfoProbe.kt` — FFmpeg-based container/codec metadata probe for the Properties dialog.
+
 ### Native thumbnail pipeline (`core/thumbnail` + `cpp/`)
 - `VideoThumbnailFetcher.kt` — Coil `Fetcher` that drives extraction and caches to disk.
 - `NativeThumbnailExtractor.kt` — JNI bridge; guards `System.loadLibrary` so it degrades
   to a placeholder on devices without the native lib (e.g. x86 emulator).
-- `MediaInfoProbe.kt` — FFmpeg-based container/codec metadata probe for the Properties dialog.
-- `RandomAccessBridge.kt` / `LocalRandomAccessBridge.kt` / `ChannelRandomAccessBridge.kt`
-  / `ThumbnailSource.kt` — expose a `seek`/`readAt` interface over any URI (local, SMB, …)
-  so FFmpeg reads remotely.
 - `cpp/ThumbnailExtractor.cpp` — FFmpeg-based frame decode → RGBA for any source URI.
 
 ### Native libass subtitle pipeline (`data/datasource/subtitle/assrender/` + `cpp/`)
@@ -257,8 +267,8 @@ com.rhnxdev.hzplayer/
 
 ### Native FFmpeg player pipeline (`FfmpegNativeEngine` + `cpp/FfmpegPlayer.cpp`)
 - `FfmpegNativeEngine.kt` — `IPlayerEngine` impl for `NATIVE_FFMPEG`; bridges surface
-  events, aspect ratio, and data sources (`content://`, `smb://`, `file://`) into the
-  native player via `RandomAccessBridge` AVIO callbacks.
+  events, aspect ratio, and data sources (`content://`, `smb://`, `file://`, and
+  `archive://`) into the native player via `RandomAccessMediaSource` AVIO callbacks.
 - `ffmpeg/FfmpegNativePlayer.kt` — typed JNI wrapper over `cpp/FfmpegPlayer.cpp`
   (`libffplayer.so`): demux/decode/AV-sync threads, ANativeWindow blit,
   AMediaCodec hardware decode (H.264/HEVC/VP9/AV1 + HDR) with libdav1d/CPU fallback.
@@ -266,7 +276,6 @@ com.rhnxdev.hzplayer/
 - `FfmpegNativePlayer` also routes subtitle packets to the shared libass pipeline
   (`AssHandler`) and exposes the equalizer by forwarding the AudioTrack session id to
   `EqualizerController`.
-- See `docs/FFMPEG_NATIVE_AUDIT_AND_ROADMAP.md` for the deep technical audit.
 
 ---
 

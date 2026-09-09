@@ -2,10 +2,11 @@
 
 > Media3 ExoPlayer and a standalone native FFmpeg player behind the `IPlayerEngine`
 > contract, rendered through `PlayerSurface`.
-> Last refreshed: 2026-08-22. Reflects three selectable engines, the 10-band
-> equalizer, the libass subtitle pipeline (zero-flicker), position controller
-> split, audio queue, floating video player, resume-mode support, sleep timer,
-> chapters, A-B repeat, audio delay, and play-as-audio mode.
+> Last refreshed: 2026-09-09. Reflects three selectable engines, the 10-band
+> equalizer (state shared across engines), the libass subtitle pipeline
+> (zero-flicker), position controller split, audio queue, floating video player,
+> resume-mode support, sleep timer, chapters, A-B repeat, audio delay, and
+> play-as-audio mode.
 
 ---
 
@@ -338,17 +339,18 @@ Switching stops current playback and rebuilds the render surface
 (`PlayerSurface` keys on `engineType`). The native engine opts out of the
 system MediaSession (`getMedia3Player() = null`).
 
-See `docs/FFMPEG_NATIVE_AUDIT_AND_ROADMAP.md` for the native player deep-dive.
-
 ---
 
 ## 10-Band Equalizer
 
 Implemented once, exposed through the engine contract:
+- `EqualizerController` is the single EQ state store for the whole app; both
+  engines' mutators write through it.
 - `ExoPlayerEngine`: `TenBandEqualizerProcessor` in the `AudioProcessor` chain +
-  `EqualizerController` (bass boost, loudness enhancement).
-- `FfmpegNativeEngine`: same `EqualizerController`, attached to the native
-  player's AudioTrack session id.
+  `EqualizerController` (bass boost, loudness enhancement) on the Exo audio session.
+- `FfmpegNativeEngine`: mirrors the controller's state into its own native EQ and
+  pushes its AudioTrack session id through `MediaPlayerHolder.setAudioSessionId`,
+  so the same platform effects attach to whichever engine is playing.
 - UI: `EqualizerSheet` — per-band sliders, device presets, bass boost, loudness;
   state flows as `StateFlow<EqualizerInfo>` and persists via `EqualizerSettings`.
 

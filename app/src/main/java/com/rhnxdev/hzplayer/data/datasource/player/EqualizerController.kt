@@ -19,16 +19,19 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Audio effects for the ExoPlayer engine.
+ * Audio effects shared by both playback engines.
  *
  * Band EQ: the in-sink [TenBandEqualizerProcessor] — a fixed 10-band DSP
- * running inside the player's audio pipeline, so it is device-independent
- * and configurable even before any playback session exists. Presets are the
- * app's own curves ([PRESETS]).
+ * running inside the ExoPlayer audio pipeline — while the native FFmpeg engine
+ * mirrors [state] into its own native EQ (see [FfmpegNativeEngine]), so this
+ * controller is the single EQ state store for the whole app, either engine's
+ * mutator. Presets are the app's own curves ([PRESETS]).
  *
  * Bass boost / loudness: platform session effects, attached to the audio
- * session ID emitted by [MediaPlayerHolder] (which survives decoder rebuilds
- * — the new player emits a fresh session through the same StateFlow).
+ * session ID emitted by [MediaPlayerHolder] — the Exo session via ExoPlayer's
+ * AnalyticsListener, the native engine's session via
+ * [MediaPlayerHolder.setAudioSessionId] (which survives decoder rebuilds —
+ * the new player emits a fresh session through the same StateFlow).
  *
  * Settings persist via DataStore and are loaded once at startup, so a saved
  * EQ applies from the first played media.

@@ -13,6 +13,9 @@ import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.key.Keyer
 import coil3.request.Options
+import com.rhnxdev.hzplayer.core.io.ArchiveRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.LocalRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.SmbRandomAccessSource
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
@@ -148,7 +151,7 @@ class VideoFrameFetcher(
         val parsed = ArchiveUri.parse(archiveUri) ?: return null
         val (container, entry, password) = parsed
         return try {
-            val bridge = ArchiveRandomAccessBridge(container, entry, password)
+            val bridge = ArchiveRandomAccessSource(container, entry, password)
             try {
                 NativeThumbnailExtractor.extractThumbnail(
                     bridge, 0.40f, THUMB_MAX_WIDTH_NETWORK, fastMode = true
@@ -189,7 +192,7 @@ class VideoFrameFetcher(
                     Log.w(TAG, "extractSmbFrame: file not found: $remoteUri"); return null
                 }
                 val size = file.length()
-                val bridge = RandomAccessBridge(file, size, lightweight = true)
+                val bridge = SmbRandomAccessSource(file, size, lightweight = true)
                 try {
                     NativeThumbnailExtractor.extractThumbnail(
                         bridge, 0.40f, THUMB_MAX_WIDTH_NETWORK, fastMode = true
@@ -281,7 +284,7 @@ class VideoFrameFetcher(
     /** Native FFmpeg extractor — primary path for local files. */
     private fun extractLocalFrameNative(path: String): Bitmap? {
         return try {
-            val bridge = LocalRandomAccessBridge(path)
+            val bridge = LocalRandomAccessSource(path)
             try {
                 NativeThumbnailExtractor.extractThumbnail(bridge, 0.40f, THUMB_MAX_WIDTH)
             } finally {

@@ -1,16 +1,17 @@
-package com.rhnxdev.hzplayer.core.thumbnail
+package com.rhnxdev.hzplayer.core.io
 
 import java.io.Closeable
 import java.io.RandomAccessFile
 
 /**
- * [ThumbnailSource] backed by a local file. Used as a last-resort fallback for
- * formats [android.media.MediaMetadataRetriever] can't decode (e.g. some
- * MPEG-TS streams), routing the file through the native FFmpeg extractor.
+ * [RandomAccessMediaSource] backed by a local file. Used for local playback in
+ * the native engine and as a last-resort fallback for formats
+ * [android.media.MediaMetadataRetriever] can't decode (e.g. some MPEG-TS
+ * streams), routing the file through the native FFmpeg extractor.
  *
  * No prefetch/caching — local disk seeks are cheap, unlike the SMB bridge.
  */
-class LocalRandomAccessBridge(path: String) : ThumbnailSource, Closeable {
+class LocalRandomAccessSource(path: String) : RandomAccessMediaSource, Closeable {
     private val raf = RandomAccessFile(path, "r")
     private val size = raf.length()
 

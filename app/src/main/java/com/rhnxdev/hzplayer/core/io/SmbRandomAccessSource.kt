@@ -1,15 +1,16 @@
-package com.rhnxdev.hzplayer.core.thumbnail
+package com.rhnxdev.hzplayer.core.io
 
 import jcifs.smb.SmbFile
 import jcifs.smb.SmbRandomAccessFile
 import kotlinx.coroutines.*
+import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Semaphore
 import java.util.concurrent.locks.ReentrantLock
 
 /**
- * Bridges the native FFmpeg extractor to SMB.
+ * Bridges native FFmpeg to an SMB file.
  *
  * Two modes:
  * - **Full** (default): concurrent read-ahead with 1 MB blocks and 3 handles.
@@ -18,11 +19,11 @@ import java.util.concurrent.locks.ReentrantLock
  *   handle.  Minimises network bytes for random-access patterns like thumbnail
  *   extraction where FFmpeg reads a header then jumps to one keyframe.
  */
-class RandomAccessBridge(
+class SmbRandomAccessSource(
     private val file: SmbFile,
     private val fileSize: Long,
     private val lightweight: Boolean = false,
-) : ThumbnailSource {
+) : RandomAccessMediaSource, Closeable {
     companion object {
         private const val BLOCK_SIZE_FULL = 1024 * 1024   // 1 MB
         private const val BLOCK_SIZE_LIGHT = 256 * 1024   // 256 KB
@@ -130,7 +131,9 @@ class RandomAccessBridge(
     }
 
     private fun getBlock(blockIdx: Long): BlockData {
+        if (closed) throw CancellationException("SMB source is closed")
         val future = synchronized(cache) {
+            if (closed) throw CancellationException("SMB source is closed")
             cache.getOrPut(blockIdx) {
                 if (lightweight) {
                     CompletableFuture.completedFuture(readBlockFromFile(blockIdx))
@@ -144,6 +147,7 @@ class RandomAccessBridge(
 
     private fun triggerPrefetches(currentBlockIdx: Long) {
         synchronized(cache) {
+            if (closed) return
             // Evict older blocks that are behind the active window to save memory
             val keysToRemove = cache.keys.filter { it < currentBlockIdx - 1 }
             for (key in keysToRemove) {
@@ -166,35 +170,34 @@ class RandomAccessBridge(
     }
 
     private fun readBlockFromFile(blockIdx: Long): BlockData {
+        if (closed) throw CancellationException("SMB source is closed")
         val offset = blockIdx * blockSize
         val data = obtainBuffer()
         var total = 0
 
         // Block on semaphore until a handle is available — avoids busy-wait.
         handleSemaphore.acquire()
-        val handleIdx = try {
-            var idx = -1
+        var handleIdx = -1
+        try {
+            if (closed) throw CancellationException("SMB source is closed")
             for (i in handles.indices) {
                 if (handleLocks[i].tryLock()) {
-                    idx = i
+                    handleIdx = i
                     break
                 }
             }
-            // Semaphore guarantees at least one lock is free.
-            if (idx == -1) {
+            // Semaphore guarantees at least one lock is free, unless close has
+            // started and cancelled the task between acquiring the semaphore and
+            // selecting a handle.
+            if (handleIdx == -1) {
                 for (i in handles.indices) {
                     handleLocks[i].lock()
-                    idx = i
+                    handleIdx = i
                     break
                 }
             }
-            idx
-        } catch (e: Exception) {
-            handleSemaphore.release()
-            throw e
-        }
 
-        try {
+            if (closed) throw CancellationException("SMB source is closed")
             val raf = handles[handleIdx]
             raf.seek(offset)
             while (total < blockSize) {
@@ -204,7 +207,7 @@ class RandomAccessBridge(
                 total += n
             }
         } finally {
-            handleLocks[handleIdx].unlock()
+            if (handleIdx >= 0) handleLocks[handleIdx].unlock()
             handleSemaphore.release()
         }
 
@@ -213,18 +216,32 @@ class RandomAccessBridge(
 
     override fun getSize(): Long = fileSize
 
-    fun close() {
-        closed = true
+    override fun close() {
         synchronized(cache) {
-            cache.values.forEach { future ->
-                if (future.isDone) {
-                    runCatching { recycleBuffer(future.get().bytes) }
-                } else {
-                    future.cancel(true)
-                }
-            }
-            cache.clear()
+            if (closed) return
+            closed = true
         }
+
+        val futures = synchronized(cache) {
+            val pending = cache.values.toList()
+            cache.clear()
+            pending
+        }
+        futures.forEach { future ->
+            if (future.isDone) {
+                runCatching { recycleBuffer(future.get().bytes) }
+            } else {
+                future.cancel(true)
+            }
+        }
+
+        // Cancellation is cooperative. Locking each handle waits for any
+        // already-running read to leave the handle before it is closed.
+        for (lock in handleLocks) {
+            lock.lock()
+            lock.unlock()
+        }
+
         for (i in handles.indices) {
             try {
                 handles[i].close()

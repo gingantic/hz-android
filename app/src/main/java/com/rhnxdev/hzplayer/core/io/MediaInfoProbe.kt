@@ -1,9 +1,10 @@
-package com.rhnxdev.hzplayer.core.thumbnail
+package com.rhnxdev.hzplayer.core.io
 
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.rhnxdev.hzplayer.core.thumbnail.NativeThumbnailExtractor
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
@@ -15,7 +16,7 @@ import java.io.RandomAccessFile
 
 /**
  * Probes a media file's container + codec metadata via the native FFmpeg
- * demuxer, bridging the source bytes through a [ThumbnailSource].
+ * demuxer, bridging the source bytes through a [RandomAccessMediaSource].
  *
  * Supports `content://` URIs, `file://` URIs, plain filesystem paths,
  * `archive://` URIs, and `smb://` URIs. Remote protocols other than SMB are
@@ -85,14 +86,14 @@ object MediaInfoProbe {
         }
 
     /**
-     * Opens [uriOrPath] as a [ThumbnailSource] (scheme-dispatched: local path,
+     * Opens [uriOrPath] as a [RandomAccessMediaSource] (scheme-dispatched: local path,
      * `file://`, `content://`, `smb://`, `archive://`) and runs [block] with it, closing the
      * source afterwards. Returns null for unsupported schemes.
      */
     private fun <T> withSource(
         context: Context,
         uriOrPath: String,
-        block: (ThumbnailSource) -> T?,
+        block: (RandomAccessMediaSource) -> T?,
     ): T? {
         val scheme = uriOrPath.substringBefore("://", "").lowercase()
         return when {
@@ -106,11 +107,11 @@ object MediaInfoProbe {
     }
 
     /** `archive://` URI — open an entry directly inside the compressed container. */
-    private fun <T> withArchiveSource(archiveUriString: String, block: (ThumbnailSource) -> T?): T? {
+    private fun <T> withArchiveSource(archiveUriString: String, block: (RandomAccessMediaSource) -> T?): T? {
         val parsed = ArchiveUri.parse(archiveUriString) ?: return null
         val (container, entry, password) = parsed
         return try {
-            val bridge = ArchiveRandomAccessBridge(container, entry, password)
+            val bridge = ArchiveRandomAccessSource(container, entry, password)
             try {
                 block(bridge)
             } finally {
@@ -123,8 +124,8 @@ object MediaInfoProbe {
     }
 
     /** Local filesystem path — read directly with a [RandomAccessFile]. */
-    private fun <T> withLocalSource(path: String, block: (ThumbnailSource) -> T?): T? {
-        val bridge = LocalRandomAccessBridge(path)
+    private fun <T> withLocalSource(path: String, block: (RandomAccessMediaSource) -> T?): T? {
+        val bridge = LocalRandomAccessSource(path)
         return try {
             block(bridge)
         } finally {
@@ -136,7 +137,7 @@ object MediaInfoProbe {
     private fun <T> withContentSource(
         context: Context,
         uriString: String,
-        block: (ThumbnailSource) -> T?,
+        block: (RandomAccessMediaSource) -> T?,
     ): T? {
         val uri = Uri.parse(uriString)
         val pfd: ParcelFileDescriptor =
@@ -145,7 +146,7 @@ object MediaInfoProbe {
             val channel = FileInputStream(pfd.fileDescriptor).channel
             val size = if (pfd.statSize > 0) pfd.statSize
                        else runCatching { channel.size() }.getOrDefault(0L)
-            val bridge = ChannelRandomAccessBridge(channel, size) { runCatching { pfd.close() } }
+            val bridge = ChannelRandomAccessSource(channel, size) { runCatching { pfd.close() } }
             try {
                 block(bridge)
             } finally {
@@ -160,10 +161,10 @@ object MediaInfoProbe {
 
     /**
      * `smb://` URI — borrow a pooled CIFS context, resolve the file, and read
-     * through a lightweight [RandomAccessBridge]. The context stays borrowed for
+     * through a lightweight [SmbRandomAccessSource]. The context stays borrowed for
      * the whole probe because the bridge reads lazily.
      */
-    private fun <T> withSmbSource(remoteUri: String, block: (ThumbnailSource) -> T?): T? {
+    private fun <T> withSmbSource(remoteUri: String, block: (RandomAccessMediaSource) -> T?): T? {
         val androidUri = Uri.parse(remoteUri)
         val username = Uri.decode(androidUri.userInfo?.substringBefore(':') ?: "")
         val password = Uri.decode(androidUri.userInfo?.substringAfter(':', "") ?: "")
@@ -178,7 +179,7 @@ object MediaInfoProbe {
             try {
                 val file = SmbPathResolver.resolve(ctx, host, port, segments) ?: return null
                 val size = file.length()
-                val bridge = RandomAccessBridge(file, size, lightweight = true)
+                val bridge = SmbRandomAccessSource(file, size, lightweight = true)
                 try {
                     block(bridge)
                 } finally {

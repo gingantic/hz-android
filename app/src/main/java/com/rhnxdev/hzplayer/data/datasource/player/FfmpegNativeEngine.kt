@@ -16,11 +16,11 @@ import android.graphics.SurfaceTexture
 import android.view.View
 import android.widget.FrameLayout
 import androidx.media3.common.Player
-import com.rhnxdev.hzplayer.core.thumbnail.ArchiveRandomAccessBridge
-import com.rhnxdev.hzplayer.core.thumbnail.ChannelRandomAccessBridge
-import com.rhnxdev.hzplayer.core.thumbnail.LocalRandomAccessBridge
-import com.rhnxdev.hzplayer.core.thumbnail.RandomAccessBridge
-import com.rhnxdev.hzplayer.core.thumbnail.ThumbnailSource
+import com.rhnxdev.hzplayer.core.io.ArchiveRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.ChannelRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.LocalRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.SmbRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.RandomAccessMediaSource
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.data.datasource.player.ffmpeg.FfmpegNativePlayer
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
@@ -52,6 +52,7 @@ import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.FileInputStream
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -78,7 +79,17 @@ class FfmpegNativeEngine @Inject constructor(
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var activeSurface: Surface? = null
-    private var activeBridge: ThumbnailSource? = null
+    private var activeBridge: RandomAccessMediaSource? = null
+
+    /**
+     * SMB pool checkout backing [activeBridge] — returned to [ConnectionPool]
+     * when the bridge closes, so the sweeper can evict it when idle.
+     */
+    private data class SmbCheckout(val lease: ConnectionPool.SmbContextLease)
+
+    private var activeSmbCheckout: SmbCheckout? = null
+    private val lifecycleLock = Any()
+    private val playbackGeneration = AtomicLong(0L)
     @Volatile
     private var currentUri: String? = null
     private var currentTitle: String? = null
@@ -296,10 +307,15 @@ class FfmpegNativeEngine @Inject constructor(
         preservePlaylist: Boolean = false,
     ) {
         if (released) return
-        currentUri = uri
-        currentTitle = title
-        currentArtist = artist
-        currentHeaders = headers
+        val requestId = playbackGeneration.incrementAndGet()
+        synchronized(releaseLock) {
+            if (released) return
+            currentUri = uri
+            currentTitle = title
+            currentArtist = artist
+            currentHeaders = headers
+        }
+        if (!isCurrentRequest(requestId, uri)) return
         if (!preservePlaylist) {
             currentPlaylist = null
         }
@@ -320,10 +336,12 @@ class FfmpegNativeEngine @Inject constructor(
 
         playJob?.cancel()
         playJob = engineScope.launch {
-            openAndStart(uri, resumePositionMs, headers)
-            if (currentUri == uri) {
-                val subs = neighborSubtitleDiscoverer.discover(uri)
-                if (subs.isNotEmpty() && currentUri == uri) {
+            val opened = openAndStart(uri, resumePositionMs, headers, requestId)
+            if (opened && isCurrentRequest(requestId, uri)) {
+                // Native playback owns its readiness state. Subtitle discovery
+                // runs after opening and must not overwrite READY with BUFFERING.
+                val subs = neighborSubtitleDiscoverer.discover(uri) { }
+                if (subs.isNotEmpty() && isCurrentRequest(requestId, uri)) {
                     withContext(Dispatchers.Main) {
                         for (sub in subs) {
                             addExternalSubtitle(sub.uri)
@@ -348,14 +366,61 @@ class FfmpegNativeEngine @Inject constructor(
         playPlaylist(list, startIndex, 0L)
     }
 
-    private fun openAndStart(uriString: String, startPositionMs: Long, headers: Map<String, String> = currentHeaders) {
-        (activeBridge as? Closeable)?.let { runCatching { it.close() } }
+    /**
+     * Close [activeBridge] and return its SMB pool checkout (if any). Single
+     * teardown path shared by [openAndStart], [stop] and [release].
+     */
+    private fun closeActiveBridge() {
+        val bridge = activeBridge
         activeBridge = null
+        (bridge as? Closeable)?.let { runCatching { it.close() } }
+        activeSmbCheckout?.lease?.release()
+        activeSmbCheckout = null
+    }
+
+    private fun stopNativeAndCloseBridge(): Boolean {
+        return try {
+            player.stop()
+            closeActiveBridge()
+            true
+        } catch (error: Throwable) {
+            Log.e(TAG, "Native stop failed; source was kept open: ${error.message}", error)
+            false
+        }
+    }
+
+    private fun isCurrentRequest(requestId: Long, uri: String): Boolean =
+        !released && playbackGeneration.get() == requestId && currentUri == uri
+
+    private fun reportOpenFailure(requestId: Long, uri: String) {
+        if (!isCurrentRequest(requestId, uri)) return
+        assHandler.setIsPlaying(false)
+        _playbackState.update {
+            it.copy(
+                state = PlayerState.ERROR,
+                isPlaying = false,
+                errorMessage = "Failed to open media"
+            )
+        }
+    }
+
+    private fun openAndStart(
+        uriString: String,
+        startPositionMs: Long,
+        headers: Map<String, String> = currentHeaders,
+        requestId: Long,
+    ): Boolean = synchronized(lifecycleLock) {
+        if (!isCurrentRequest(requestId, uriString)) return@synchronized false
+        if (!stopNativeAndCloseBridge()) {
+            reportOpenFailure(requestId, uriString)
+            return@synchronized false
+        }
 
         val uri = Uri.parse(uriString)
         val scheme = uri.scheme?.lowercase() ?: ""
 
-        var bridge: ThumbnailSource? = null
+        var bridge: RandomAccessMediaSource? = null
+        var smbCheckout: SmbCheckout? = null
         var directUrl: String? = null
 
         try {
@@ -365,7 +430,7 @@ class FfmpegNativeEngine @Inject constructor(
                     if (pfd != null) {
                         val channel = FileInputStream(pfd.fileDescriptor).channel
                         val size = if (pfd.statSize > 0) pfd.statSize else runCatching { channel.size() }.getOrDefault(0L)
-                        bridge = ChannelRandomAccessBridge(channel, size) { runCatching { pfd.close() } }
+                        bridge = ChannelRandomAccessSource(channel, size) { runCatching { pfd.close() } }
                     }
                 }
                 scheme == "smb" -> {
@@ -375,25 +440,31 @@ class FfmpegNativeEngine @Inject constructor(
                     val host = androidUri.host ?: ""
                     val port = if (androidUri.port > 0) androidUri.port else 445
                     val segments = SmbPathResolver.decodedSegmentsOf(androidUri.encodedPath)
-                    val ctx = ConnectionPool.borrowSmbThumbnailContext(host, port, username, password)
-                    val file = SmbPathResolver.resolve(ctx, host, port, segments)
-                    if (file != null) {
-                        bridge = RandomAccessBridge(file, file.length(), lightweight = false)
+                    val lease = ConnectionPool.borrowSmbContextLease(host, port, username, password)
+                    try {
+                        val file = SmbPathResolver.resolve(lease.context, host, port, segments)
+                        if (file != null) {
+                            bridge = SmbRandomAccessSource(file, file.length(), lightweight = false)
+                            smbCheckout = SmbCheckout(lease)
+                        }
+                    } finally {
+                        // Resolve/bridge-open failed — release the exact lease now.
+                        if (bridge == null) lease.release()
                     }
                 }
                 scheme == "archive" -> {
                     val parsed = ArchiveUri.parse(uriString)
                     if (parsed != null) {
                         val (container, entry, password) = parsed
-                        bridge = ArchiveRandomAccessBridge(container, entry, password)
+                        bridge = ArchiveRandomAccessSource(container, entry, password)
                     }
                 }
                 scheme == "file" -> {
                     val path = uri.path ?: uriString.removePrefix("file://")
-                    bridge = LocalRandomAccessBridge(path)
+                    bridge = LocalRandomAccessSource(path)
                 }
                 scheme.isEmpty() || uriString.startsWith("/") -> {
-                    bridge = LocalRandomAccessBridge(uriString)
+                    bridge = LocalRandomAccessSource(uriString)
                 }
                 scheme == "http" || scheme == "https" -> {
                     directUrl = uriString
@@ -402,40 +473,47 @@ class FfmpegNativeEngine @Inject constructor(
                     directUrl = uriString
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to resolve URI source: ${e.message}", e)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Failed to resolve URI source: ${error.message}", error)
+        }
+
+        if (!isCurrentRequest(requestId, uriString)) {
+            runCatching { (bridge as? Closeable)?.close() }
+            smbCheckout?.lease?.release()
+            return@synchronized false
         }
 
         activeBridge = bridge
+        activeSmbCheckout = smbCheckout
         selectedAudioTrackIndex = 0
 
-        val success = player.open(bridge, directUrl, activeSurface, startPositionMs, headers)
-        if (success) {
-            player.setSpeed(currentSpeed)
-            val audioDelay = getAudioDelay()
-            if (audioDelay != 0L) {
-                player.setAudioDelay(audioDelay)
+        val success = try {
+            if (!player.open(bridge, directUrl, activeSurface, startPositionMs, headers)) {
+                false
+            } else {
+                player.setSpeed(currentSpeed)
+                val audioDelay = getAudioDelay()
+                if (audioDelay != 0L) {
+                    player.setAudioDelay(audioDelay)
+                }
+                val eqInfo = equalizerController.state.value
+                val gains = eqInfo.bands.map { it.levelMb }.toIntArray()
+                player.setEqualizer(eqInfo.enabled, gains)
+                player.play()
+                true
             }
-            val eqInfo = equalizerController.state.value
-            val gains = eqInfo.bands.map { it.levelMb }.toIntArray()
-            player.setEqualizer(eqInfo.enabled, gains)
-            player.play()
-            _playbackState.update {
-                it.copy(
-                    state = PlayerState.BUFFERING,
-                    isPlaying = true
-                )
-            }
-        } else {
-            assHandler.setIsPlaying(false)
-            _playbackState.update {
-                it.copy(
-                    state = PlayerState.ERROR,
-                    isPlaying = false,
-                    errorMessage = "Failed to open media"
-                )
-            }
+        } catch (error: Throwable) {
+            Log.e(TAG, "Failed to start media: ${error.message}", error)
+            false
         }
+
+        if (success && isCurrentRequest(requestId, uriString)) return@synchronized true
+
+        // The native open/start path may have created worker threads before an
+        // exception surfaced. Stop them before closing their Kotlin source.
+        stopNativeAndCloseBridge()
+        reportOpenFailure(requestId, uriString)
+        false
     }
 
     override fun pause() {
@@ -451,12 +529,25 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     override fun stop() {
+        playbackGeneration.incrementAndGet()
         playJob?.cancel()
         playJob = null
-        player.stop()
+
+        val stopped = synchronized(lifecycleLock) {
+            stopNativeAndCloseBridge()
+        }
+        if (!stopped) {
+            _playbackState.update {
+                it.copy(
+                    state = PlayerState.ERROR,
+                    isPlaying = false,
+                    errorMessage = "Failed to stop media"
+                )
+            }
+            return
+        }
+
         assHandler.setIsPlaying(false)
-        (activeBridge as? Closeable)?.let { runCatching { it.close() } }
-        activeBridge = null
         currentUri = null
         currentTitle = null
         selectedAudioTrackIndex = 0
@@ -699,23 +790,28 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     override fun release() {
-        // Disarm the subtitle clock under releaseLock so any in-flight clock pull
-        // completes before the native context is freed — renderFrame invokes the
-        // clock at display cadence on the main thread, and a snapshot taken before
-        // this line could otherwise call into a released player.
+        // Invalidate pending opens before waiting for the lifecycle lock. A
+        // blocking open will stop and close its own source before release gets
+        // the native player.
+        playbackGeneration.incrementAndGet()
         synchronized(releaseLock) {
             released = true
             currentUri = null
         }
+        playJob?.cancel()
+        playJob = null
         engineScope.cancel()
-        // reset() nulls positionClock, stops the render loop and clears overlay
-        // state — must run before player.release() frees the native context.
-        // The `released` flag also blocks the cooperative-cancel window where an
-        // in-flight collector re-enters playInternal and re-arms the clock.
-        assHandler.reset()
-        player.release()
-        (activeBridge as? Closeable)?.let { runCatching { it.close() } }
-        activeBridge = null
+
+        synchronized(lifecycleLock) {
+            // reset() nulls positionClock, stops the render loop and clears
+            // overlay state — it must run before native context teardown.
+            assHandler.reset()
+            val nativeReleased = runCatching { player.release() }
+                .onFailure { error -> Log.e(TAG, "Failed to release native player: ${error.message}", error) }
+            if (nativeReleased.isSuccess) {
+                closeActiveBridge()
+            }
+        }
     }
 
     /**

@@ -30,13 +30,25 @@ class NeighborSubtitleDiscoverer @Inject constructor(
     private val playerHolder: MediaPlayerHolder,
 ) {
     /**
+     * Engine-specific sink for the "discovery in progress" signal. The Exo
+     * path uses the default [MediaPlayerHolder.setDiscovering] callback because
+     * discovery happens before ExoPlayer prepares its new item. Native playback
+     * intentionally does not provide this callback: its native state events
+     * remain the sole source of BUFFERING/READY transitions.
+     */
+    private val defaultOnDiscovering: () -> Unit = { playerHolder.setDiscovering() }
+
+    /**
      * Search for subtitle files next to [videoUri] and load them.
      * Libass-eligible formats (ASS/SSA + convertible SRT/VTT) are loaded
      * directly into [AssHandler]; others are returned as ExoPlayer
      * [MediaItem.SubtitleConfiguration] for the built-in renderer.
      */
-    suspend fun discover(videoUri: String): List<MediaItem.SubtitleConfiguration> {
-        playerHolder.setDiscovering()
+    suspend fun discover(
+        videoUri: String,
+        onDiscovering: () -> Unit = defaultOnDiscovering,
+    ): List<MediaItem.SubtitleConfiguration> {
+        onDiscovering()
         val subUris = try {
             findNeighborSubtitleFiles(videoUri)
         } catch (_: Exception) {
@@ -174,20 +186,24 @@ class NeighborSubtitleDiscoverer @Inject constructor(
             val encodedParentPath = encodedPath.substringBeforeLast('/').ifEmpty { "/" }
             val segments = SmbPathResolver.decodedSegmentsOf(encodedPath)
 
-            val ctx = ConnectionPool.borrowSmbContext(host, port, user, pass)
-            val dir = SmbPathResolver.resolveParent(ctx, host, port, segments)
-                ?: return emptyList()
+            val lease = ConnectionPool.borrowSmbContextLease(host, port, user, pass)
+            try {
+                val dir = SmbPathResolver.resolveParent(lease.context, host, port, segments)
+                    ?: return emptyList()
 
-            val siblings = dir.listFiles()?.toList() ?: return emptyList()
+                val siblings = dir.listFiles()?.toList() ?: return emptyList()
 
-            siblings
-                .filter { file -> isNeighborSubtitleName(file.name.trimEnd('/'), baseName) }
-                .map { file ->
-                    val encodedName = Uri.encode(file.name.trimEnd('/'))
-                    androidUri.buildUpon()
-                        .encodedPath("$encodedParentPath/$encodedName")
-                        .build()
-                }
+                siblings
+                    .filter { file -> isNeighborSubtitleName(file.name.trimEnd('/'), baseName) }
+                    .map { file ->
+                        val encodedName = Uri.encode(file.name.trimEnd('/'))
+                        androidUri.buildUpon()
+                            .encodedPath("$encodedParentPath/$encodedName")
+                            .build()
+                    }
+            } finally {
+                lease.release()
+            }
         } catch (e: Exception) {
             Log.w(TAG, "SMB subtitle discovery failed for $androidUri", e)
             emptyList()

@@ -63,7 +63,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
-import com.rhnxdev.hzplayer.core.thumbnail.MediaInfoProbe
+import com.rhnxdev.hzplayer.core.io.MediaInfoProbe
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
