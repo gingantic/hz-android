@@ -333,7 +333,7 @@ Picked in Settings; persisted via `UserPreferencesRepository.activeEngine`:
 |---|---|---|
 | `EXO_PLAYER` | Media3 ExoPlayer, platform decoders first | Default; best battery + format coverage |
 | `FFMPEG` | Same ExoPlayer pipeline, FFmpeg software renderers preferred (`HzRenderersFactory.preferFfmpeg`) | Formats the platform decoder mishandles |
-| `NATIVE_FFMPEG` | Standalone native player (`FfmpegNativeEngine` + `cpp/FfmpegPlayer.cpp`, `libffplayer.so`) | Instant seeking on local/networked media; AMediaCodec HW decode w/ libdav1d fallback |
+| `NATIVE_FFMPEG` | Standalone native player (`FfmpegNativeEngine` + `cpp/ffplayer/`, `libffplayer.so`) | Instant seeking on local/networked media; AMediaCodec HW decode w/ libdav1d fallback |
 
 Switching stops current playback and rebuilds the render surface
 (`PlayerSurface` keys on `engineType`). The native engine opts out of the

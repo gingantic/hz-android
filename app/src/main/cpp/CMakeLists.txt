@@ -106,9 +106,21 @@ set_target_properties(dav1d PROPERTIES
 
 # Standalone Native FFmpeg player engine: handles full demux, seek, video and audio decode,
 # direct ANativeWindow blit, and instant seeking without ExoPlayer buffering pipelines.
-add_library(ffplayer SHARED FfmpegPlayer.cpp)
+# Module sources live in ffplayer/ (split from the former single FfmpegPlayer.cpp):
+#   PlayerCommon / JniFileIO / FfmpegPlayerContext + the three decode/demux thread
+#   translation units + the JNI export unit; the remaining components are header-only.
+add_library(ffplayer SHARED
+    ffplayer/PlayerCommon.cpp
+    ffplayer/JniFileIO.cpp
+    ffplayer/FfmpegPlayerContext.cpp
+    ffplayer/VideoThread.cpp
+    ffplayer/AudioThread.cpp
+    ffplayer/DemuxThread.cpp
+    ffplayer/FfmpegPlayerJni.cpp
+)
 target_include_directories(ffplayer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ffplayer
 )
 target_link_libraries(ffplayer
     avformat avcodec avutil swscale swresample avfilter dav1d

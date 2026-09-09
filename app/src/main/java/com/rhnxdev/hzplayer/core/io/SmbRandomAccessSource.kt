@@ -7,6 +7,8 @@ import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 
 /**
@@ -23,6 +25,7 @@ class SmbRandomAccessSource(
     private val file: SmbFile,
     private val fileSize: Long,
     private val lightweight: Boolean = false,
+    private val onQuiesced: (() -> Unit)? = null,
 ) : RandomAccessMediaSource, Closeable {
     companion object {
         private const val BLOCK_SIZE_FULL = 1024 * 1024   // 1 MB
@@ -35,6 +38,11 @@ class SmbRandomAccessSource(
     private val prefetchEnabled = !lightweight
 
     @Volatile private var closed = false
+    @Volatile private var abortRequested = false
+    private val activeReads = AtomicInteger(0)
+    private val closeStarted = AtomicBoolean(false)
+    private val handlesClosed = AtomicBoolean(false)
+    private val quiescedNotified = AtomicBoolean(false)
 
     // Buffer pool to avoid frequent 256 KB / 1 MB allocations
     private val bufferPool = java.util.ArrayDeque<ByteArray>()
@@ -81,7 +89,11 @@ class SmbRandomAccessSource(
     /** Read up to [size] bytes at [position] into [buffer]. */
     @Throws(IOException::class)
     override fun readAt(position: Long, buffer: ByteArray, size: Int): Int {
-        if (closed) return -1 // bridge torn down — tell FFmpeg EOF, don't throw into JNI
+        if (abortRequested || closed) {
+            // This is cancellation, not EOF. Throwing makes JniFile map it to
+            // AVERROR_EXIT so native stop does not look like clean playback end.
+            throw CancellationException("SMB read aborted")
+        }
         if (position >= fileSize) return -1
 
         val bytesToRead = size.toLong().coerceAtMost(fileSize - position).toInt()
@@ -91,18 +103,20 @@ class SmbRandomAccessSource(
         var currentPos = position
 
         while (bytesCopied < bytesToRead) {
+            if (abortRequested || closed) {
+                throw CancellationException("SMB read aborted")
+            }
+
             val blockIdx = currentPos / blockSize
             val blockOffset = blockIdx * blockSize
             val offsetInBlock = (currentPos - blockOffset).toInt()
             val remainingInBlock = blockSize - offsetInBlock
             val chunkToCopy = (bytesToRead - bytesCopied).coerceAtMost(remainingInBlock)
 
-            // Fetch current block synchronously without runBlocking
-            val blockData = try {
-                getBlock(blockIdx)
-            } catch (_: Exception) {
-                return -1
-            }
+            // Fetch current block synchronously. getBlock removes failed
+            // futures so a transient SMB failure can be retried on a later
+            // seek/read instead of poisoning this block forever.
+            val blockData = getBlock(blockIdx)
 
             val srcOffset = offsetInBlock
             if (srcOffset < blockData.length) {
@@ -119,7 +133,7 @@ class SmbRandomAccessSource(
         }
 
         // Trigger prefetching of subsequent blocks (full mode only)
-        if (prefetchEnabled) {
+        if (prefetchEnabled && bytesCopied > 0) {
             val currentBlockIdx = position / blockSize
             if (currentBlockIdx != lastReadBlockIdx) {
                 lastReadBlockIdx = currentBlockIdx
@@ -127,22 +141,67 @@ class SmbRandomAccessSource(
             }
         }
 
-        return bytesCopied
+        // A zero-byte result is not a valid progress result for this bridge.
+        // Return EOF only when the source has actually reached its end.
+        return if (bytesCopied == 0) -1 else bytesCopied
     }
 
-    private fun getBlock(blockIdx: Long): BlockData {
-        if (closed) throw CancellationException("SMB source is closed")
-        val future = synchronized(cache) {
-            if (closed) throw CancellationException("SMB source is closed")
-            cache.getOrPut(blockIdx) {
-                if (lightweight) {
-                    CompletableFuture.completedFuture(readBlockFromFile(blockIdx))
-                } else {
-                    CompletableFuture.supplyAsync({ readBlockFromFile(blockIdx) }, Dispatchers.IO.asExecutor())
+    private fun cancelPendingBlocks() {
+        val pending = synchronized(cache) {
+            val values = cache.values.toList()
+            cache.clear()
+            values
+        }
+        pending.forEach { future ->
+            if (future.isDone) {
+                runCatching { recycleBuffer(future.get().bytes) }
+            } else {
+                // CompletableFuture cancellation releases callers waiting in
+                // get(); the supplier remains tracked by activeReads until its
+                // jcifs operation actually returns.
+                future.cancel(true)
+            }
+        }
+    }
+
+    private fun finishCloseIfQuiescent() {
+        if (!closeStarted.get() || !closed || activeReads.get() != 0) return
+
+        if (handlesClosed.compareAndSet(false, true)) {
+            for (handle in handles) {
+                try {
+                    handle.close()
+                } catch (_: Exception) {
+                    // ignore
                 }
             }
         }
-        return future.get()
+
+        if (quiescedNotified.compareAndSet(false, true)) {
+            runCatching { onQuiesced?.invoke() }
+        }
+    }
+
+    private fun getBlock(blockIdx: Long): BlockData {
+        if (closed || abortRequested) throw CancellationException("SMB source is closed")
+        val future = synchronized(cache) {
+            if (closed || abortRequested) throw CancellationException("SMB source is closed")
+            cache.getOrPut(blockIdx) {
+                CompletableFuture.supplyAsync({ readBlockFromFile(blockIdx) }, Dispatchers.IO.asExecutor())
+            }
+        }
+        return try {
+            future.get()
+        } catch (error: Exception) {
+            // Do not leave an exceptional/cancelled future in the block cache.
+            // A later seek or retry must be able to issue a fresh SMB request.
+            synchronized(cache) {
+                if (cache[blockIdx] === future) {
+                    cache.remove(blockIdx)
+                }
+            }
+            throw error
+        }
     }
 
     private fun triggerPrefetches(currentBlockIdx: Long) {
@@ -170,85 +229,97 @@ class SmbRandomAccessSource(
     }
 
     private fun readBlockFromFile(blockIdx: Long): BlockData {
-        if (closed) throw CancellationException("SMB source is closed")
-        val offset = blockIdx * blockSize
-        val data = obtainBuffer()
-        var total = 0
-
-        // Block on semaphore until a handle is available — avoids busy-wait.
-        handleSemaphore.acquire()
-        var handleIdx = -1
+        activeReads.incrementAndGet()
         try {
             if (closed) throw CancellationException("SMB source is closed")
-            for (i in handles.indices) {
-                if (handleLocks[i].tryLock()) {
-                    handleIdx = i
-                    break
-                }
-            }
-            // Semaphore guarantees at least one lock is free, unless close has
-            // started and cancelled the task between acquiring the semaphore and
-            // selecting a handle.
-            if (handleIdx == -1) {
+            val offset = blockIdx * blockSize
+            val data = obtainBuffer()
+            var total = 0
+
+            // Block on semaphore until a handle is available — avoids busy-wait.
+            handleSemaphore.acquire()
+            var handleIdx = -1
+            try {
+                if (closed) throw CancellationException("SMB source is closed")
                 for (i in handles.indices) {
-                    handleLocks[i].lock()
-                    handleIdx = i
-                    break
+                    if (handleLocks[i].tryLock()) {
+                        handleIdx = i
+                        break
+                    }
                 }
+                // Semaphore guarantees at least one lock is free, unless close has
+                // started and cancelled the task between acquiring the semaphore and
+                // selecting a handle.
+                if (handleIdx == -1) {
+                    for (i in handles.indices) {
+                        handleLocks[i].lock()
+                        handleIdx = i
+                        break
+                    }
+                }
+
+                if (closed) throw CancellationException("SMB source is closed")
+                val raf = handles[handleIdx]
+                raf.seek(offset)
+                var zeroReadCount = 0
+                while (total < blockSize) {
+                    val toRead = blockSize - total
+                    val n = raf.read(data, total, toRead)
+                    if (n < 0) break
+                    if (n == 0) {
+                        zeroReadCount++
+                        if (zeroReadCount >= 3) {
+                            throw IOException("SMB read made no progress at offset $offset")
+                        }
+                        Thread.yield()
+                        continue
+                    }
+                    zeroReadCount = 0
+                    total += n
+                }
+            } finally {
+                if (handleIdx >= 0) handleLocks[handleIdx].unlock()
+                handleSemaphore.release()
             }
 
-            if (closed) throw CancellationException("SMB source is closed")
-            val raf = handles[handleIdx]
-            raf.seek(offset)
-            while (total < blockSize) {
-                val toRead = blockSize - total
-                val n = raf.read(data, total, toRead)
-                if (n < 0) break
-                total += n
+            val blockData = BlockData(data, total)
+            if (closed) {
+                // A canceled supplier has no future consumer left to recycle
+                // this buffer after CompletableFuture cancellation.
+                recycleBuffer(data)
+                throw CancellationException("SMB source is closed")
             }
+            return blockData
         } finally {
-            if (handleIdx >= 0) handleLocks[handleIdx].unlock()
-            handleSemaphore.release()
+            activeReads.decrementAndGet()
+            finishCloseIfQuiescent()
         }
-
-        return BlockData(data, total)
     }
 
     override fun getSize(): Long = fileSize
 
+    /**
+     * Cancel callers waiting for a block without waiting for an already-running
+     * jcifs socket operation. Resource closure is deferred until active block
+     * reads have released their handle references.
+     */
+    override fun abortRead() {
+        if (abortRequested) return
+        abortRequested = true
+        closed = true
+        cancelPendingBlocks()
+    }
+
     override fun close() {
-        synchronized(cache) {
-            if (closed) return
-            closed = true
-        }
-
-        val futures = synchronized(cache) {
-            val pending = cache.values.toList()
-            cache.clear()
-            pending
-        }
-        futures.forEach { future ->
-            if (future.isDone) {
-                runCatching { recycleBuffer(future.get().bytes) }
-            } else {
-                future.cancel(true)
-            }
-        }
-
-        // Cancellation is cooperative. Locking each handle waits for any
-        // already-running read to leave the handle before it is closed.
-        for (lock in handleLocks) {
-            lock.lock()
-            lock.unlock()
-        }
-
-        for (i in handles.indices) {
-            try {
-                handles[i].close()
-            } catch (e: Exception) {
-                // ignore
-            }
-        }
+        // Publish the reader-visible state before allowing a last worker to
+        // close the handles. A concurrent read must fail its closed checks,
+        // never enter the handle pool after cleanup begins.
+        closed = true
+        if (!closeStarted.compareAndSet(false, true)) return
+        cancelPendingBlocks()
+        // Do not take handleLocks here: a native teardown must not wait for a
+        // network read. finishCloseIfQuiescent closes handles once their active
+        // read references have drained and then releases the SMB lease.
+        finishCloseIfQuiescent()
     }
 }
-

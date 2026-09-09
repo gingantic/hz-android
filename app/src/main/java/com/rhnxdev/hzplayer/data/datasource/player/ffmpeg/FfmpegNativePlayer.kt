@@ -2,15 +2,17 @@ package com.rhnxdev.hzplayer.data.datasource.player.ffmpeg
 
 import android.view.Surface
 import androidx.annotation.Keep
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * JNI wrapper for the standalone native FFmpeg player (libffplayer.so).
  * Owns the native context pointer, demuxing, decoding, and direct rendering.
  */
 @Keep
-class FfmpegNativePlayer(
-    private val audioSink: FfmpegAudioSink = FfmpegAudioSink()
-) {
+class FfmpegNativePlayer {
     interface Listener {
         fun onVideoSizeChanged(width: Int, height: Int, rotationDegrees: Int = 0, sarNum: Int = 1, sarDen: Int = 1)
         fun onStateChanged(state: Int)
@@ -23,9 +25,52 @@ class FfmpegNativePlayer(
         fun onFrameRendered(ptsUs: Long) {}
     }
 
+    @Volatile
     var listener: Listener? = null
+    @Volatile
     var onAudioSessionId: ((Int) -> Unit)? = null
+
+    // Native callbacks are delivered synchronously from demux/decode threads.
+    // Queue application callbacks so listener code never re-enters native APIs
+    // while native codec, subtitle, or window locks are held.
+    private val callbackExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "FfmpegNativePlayer-callback").apply {
+            isDaemon = true
+        }
+    }
+    @Volatile
+    private var callbacksEnabled = true
+    private val callbackGeneration = AtomicLong(0L)
+
+    private fun dispatchNativeCallback(callback: () -> Unit) {
+        if (!callbacksEnabled) return
+        val generation = callbackGeneration.get()
+        try {
+            callbackExecutor.execute {
+                if (callbacksEnabled && callbackGeneration.get() == generation) {
+                    try {
+                        callback()
+                    } catch (error: Throwable) {
+                        android.util.Log.e("FfmpegNativePlayer", "Listener callback failed", error)
+                    }
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            // Release may close the executor between the flag check and enqueue.
+        }
+    }
+
+    // Every JNI call acquires an in-flight reference before reading this handle.
+    // Release marks the wrapper closed, waits for those calls to finish, and only
+    // then deletes the native context. This avoids check-then-release UAFs without
+    // holding a Kotlin lock while nativeRelease joins callback-owning threads.
+    private val nativeLifecycleLock = ReentrantLock()
+    private val nativeCallsDrained = nativeLifecycleLock.newCondition()
     private var nativeContext: Long = 0L
+    private var nativeCallCount = 0
+    private var releasing = false
+    @Volatile
+    private var audioDelayMs: Long = 0L
 
     companion object {
         init {
@@ -45,9 +90,43 @@ class FfmpegNativePlayer(
     }
 
     init {
-        nativeContext = nativeCreate()
-        audioSink.onAudioSessionId = { sessionId ->
-            onAudioSessionId?.invoke(sessionId)
+        val handle = nativeCreate()
+        nativeLifecycleLock.lock()
+        try {
+            nativeContext = handle
+        } finally {
+            nativeLifecycleLock.unlock()
+        }
+    }
+
+    /**
+     * Run one JNI operation while keeping the native context alive. Calls that
+     * arrive after release begins receive [defaultValue] instead of using the
+     * handle being torn down.
+     */
+    private fun <T> withNativeContext(defaultValue: T, block: (Long) -> T): T {
+        val handle: Long
+        nativeLifecycleLock.lock()
+        try {
+            if (releasing || nativeContext == 0L) return defaultValue
+            handle = nativeContext
+            nativeCallCount++
+        } finally {
+            nativeLifecycleLock.unlock()
+        }
+
+        return try {
+            block(handle)
+        } finally {
+            nativeLifecycleLock.lock()
+            try {
+                nativeCallCount--
+                if (nativeCallCount == 0) {
+                    nativeCallsDrained.signalAll()
+                }
+            } finally {
+                nativeLifecycleLock.unlock()
+            }
         }
     }
 
@@ -58,7 +137,7 @@ class FfmpegNativePlayer(
         startPositionMs: Long,
         headers: Map<String, String>? = null
     ): Boolean {
-        if (nativeContext == 0L) return false
+        callbackGeneration.incrementAndGet()
         val headersArray = if (!headers.isNullOrEmpty()) {
             val list = ArrayList<String>(headers.size * 2)
             for ((k, v) in headers) {
@@ -69,161 +148,193 @@ class FfmpegNativePlayer(
         } else {
             null
         }
-        return nativeOpen(nativeContext, bridge, url, surface, startPositionMs, headersArray)
+        return withNativeContext(false) { handle ->
+            nativeOpen(handle, bridge, url, surface, startPositionMs, headersArray)
+        }
     }
 
     fun setSurface(surface: Surface?) {
-        if (nativeContext != 0L) {
-            nativeSetSurface(nativeContext, surface)
+        withNativeContext(Unit) { handle ->
+            nativeSetSurface(handle, surface)
         }
     }
 
     fun play() {
-        if (nativeContext != 0L) {
-            audioSink.play()
-            nativePlay(nativeContext)
+        withNativeContext(Unit) { handle ->
+            nativePlay(handle)
         }
     }
 
     fun pause() {
-        if (nativeContext != 0L) {
-            audioSink.pause()
-            nativePause(nativeContext)
+        withNativeContext(Unit) { handle ->
+            nativePause(handle)
         }
     }
 
     fun seekTo(positionMs: Long) {
-        if (nativeContext != 0L) {
-            nativeSeek(nativeContext, positionMs)
+        withNativeContext(Unit) { handle ->
+            nativeSeek(handle, positionMs)
         }
     }
 
     fun stop() {
-        if (nativeContext != 0L) {
-            audioSink.pause()
-            audioSink.flush()
-            nativeStop(nativeContext)
+        callbackGeneration.incrementAndGet()
+        withNativeContext(Unit) { handle ->
+            nativeStop(handle)
         }
     }
 
     fun release() {
-        if (nativeContext != 0L) {
-            audioSink.release()
-            nativeRelease(nativeContext)
+        callbackGeneration.incrementAndGet()
+        var handle = 0L
+        var interrupted = false
+
+        nativeLifecycleLock.lock()
+        try {
+            if (releasing || nativeContext == 0L) return
+            releasing = true
+            callbacksEnabled = false
+            handle = nativeContext
             nativeContext = 0L
+
+            while (nativeCallCount > 0) {
+                try {
+                    nativeCallsDrained.await()
+                } catch (_: InterruptedException) {
+                    // Finish the teardown before restoring the interrupt flag.
+                    interrupted = true
+                }
+            }
+        } finally {
+            nativeLifecycleLock.unlock()
+        }
+
+        callbackExecutor.shutdownNow()
+        try {
+            nativeRelease(handle)
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
         }
     }
 
-    fun getDuration(): Long = if (nativeContext != 0L) nativeGetDuration(nativeContext) else 0L
-    fun getPosition(): Long = if (nativeContext != 0L) nativeGetPosition(nativeContext) else 0L
-    fun isPlaying(): Boolean = if (nativeContext != 0L) nativeIsPlaying(nativeContext) else false
+    fun getDuration(): Long = withNativeContext(0L) { handle -> nativeGetDuration(handle) }
+    fun getPosition(): Long = withNativeContext(0L) { handle -> nativeGetPosition(handle) }
+    fun isPlaying(): Boolean = withNativeContext(false) { handle -> nativeIsPlaying(handle) }
 
     fun setSpeed(speed: Float) {
-        if (nativeContext != 0L) {
-            audioSink.setSpeed(speed)
-            nativeSetSpeed(nativeContext, speed)
+        withNativeContext(Unit) { handle ->
+            nativeSetSpeed(handle, speed)
         }
     }
 
     fun setFastSeek(enabled: Boolean) {
-        if (nativeContext != 0L) {
-            nativeSetFastSeek(nativeContext, enabled)
+        withNativeContext(Unit) { handle ->
+            nativeSetFastSeek(handle, enabled)
         }
     }
 
     fun setAudioDelay(delayMs: Long) {
-        audioSink.audioDelayMs = delayMs
-        if (nativeContext != 0L) {
-            nativeSetAudioDelay(nativeContext, delayMs)
+        audioDelayMs = delayMs
+        withNativeContext(Unit) { handle ->
+            nativeSetAudioDelay(handle, delayMs)
         }
     }
 
-    fun getAudioDelay(): Long = audioSink.audioDelayMs
+    fun getAudioDelay(): Long = audioDelayMs
 
     fun getAudioTracks(): List<String> {
-        if (nativeContext == 0L) return emptyList()
-        val arr = nativeGetAudioTracks(nativeContext) ?: return emptyList()
+        val arr = withNativeContext<Array<String>?>(null) { handle ->
+            nativeGetAudioTracks(handle)
+        } ?: return emptyList()
         return arr.toList()
     }
 
-    fun selectAudioTrack(index: Int): Boolean {
-        if (nativeContext == 0L) return false
-        return nativeSelectAudioTrack(nativeContext, index)
-    }
+    fun selectAudioTrack(index: Int): Boolean =
+        withNativeContext(false) { handle -> nativeSelectAudioTrack(handle, index) }
 
-    fun getVideoWidth(): Int = if (nativeContext != 0L) nativeGetVideoWidth(nativeContext) else 0
-    fun getVideoHeight(): Int = if (nativeContext != 0L) nativeGetVideoHeight(nativeContext) else 0
+    fun getVideoWidth(): Int = withNativeContext(0) { handle -> nativeGetVideoWidth(handle) }
+    fun getVideoHeight(): Int = withNativeContext(0) { handle -> nativeGetVideoHeight(handle) }
 
     // ─── Native Callbacks ───────────────────────────────────────────────────
 
     @Keep
-    private fun onAudioInit(sampleRate: Int, channelCount: Int) {
-        audioSink.init(sampleRate, channelCount)
-    }
-
-    @Keep
-    private fun onAudioData(pcm: ByteArray, size: Int): Int {
-        return audioSink.write(pcm, size)
-    }
-
-    @Keep
-    private fun getAudioLatencyUs(): Long {
-        return audioSink.getAudioPlaybackLatencyUs()
-    }
-
-    @Keep
-    private fun onAudioFlush() {
-        audioSink.flush()
-    }
-
-    @Keep
     private fun onVideoSizeChanged(width: Int, height: Int, rotationDegrees: Int, sarNum: Int, sarDen: Int) {
-        listener?.onVideoSizeChanged(width, height, rotationDegrees, sarNum, sarDen)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onVideoSizeChanged(width, height, rotationDegrees, sarNum, sarDen)
+        }
     }
 
     @Keep
     private fun onStateChanged(state: Int) {
-        listener?.onStateChanged(state)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onStateChanged(state)
+        }
     }
 
     @Keep
     private fun onError(message: String) {
-        listener?.onError(message)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onError(message)
+        }
     }
 
     @Keep
     private fun onPositionUpdate(positionMs: Long, durationMs: Long) {
-        listener?.onPositionUpdate(positionMs, durationMs)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onPositionUpdate(positionMs, durationMs)
+        }
     }
 
     @Keep
     private fun onSubtitleHeader(trackId: Int, header: ByteArray, title: String) {
-        listener?.onSubtitleHeader(trackId, header, title)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onSubtitleHeader(trackId, header, title)
+        }
     }
 
     @Keep
     private fun onSubtitleData(trackId: Int, timeUs: Long, durationUs: Long, data: ByteArray) {
-        listener?.onSubtitleData(trackId, timeUs, durationUs, data)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onSubtitleData(trackId, timeUs, durationUs, data)
+        }
     }
 
     @Keep
     private fun onBitmapSubtitle(trackId: Int, startPtsUs: Long, endPtsUs: Long, x: Int, y: Int, w: Int, h: Int, argb: IntArray?, canvasW: Int, canvasH: Int) {
-        listener?.onBitmapSubtitle(trackId, startPtsUs, endPtsUs, x, y, w, h, argb, canvasW, canvasH)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onBitmapSubtitle(trackId, startPtsUs, endPtsUs, x, y, w, h, argb, canvasW, canvasH)
+        }
     }
 
     @Keep
     private fun onFontAttachment(name: String, data: ByteArray) {
-        listener?.onFontAttachment(name, data)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onFontAttachment(name, data)
+        }
     }
 
     @Keep
     private fun onAudioSessionId(sessionId: Int) {
-        onAudioSessionId?.invoke(sessionId)
+        val callback = onAudioSessionId ?: return
+        dispatchNativeCallback {
+            callback(sessionId)
+        }
     }
 
     @Keep
     private fun onFrameRendered(ptsUs: Long) {
-        listener?.onFrameRendered(ptsUs)
+        val callback = listener ?: return
+        dispatchNativeCallback {
+            callback.onFrameRendered(ptsUs)
+        }
     }
 
     data class DebugInfo(
@@ -241,8 +352,9 @@ class FfmpegNativePlayer(
     )
 
     fun getDebugInfo(): DebugInfo? {
-        if (nativeContext == 0L) return null
-        val arr = nativeGetDebugInfo(nativeContext) ?: return null
+        val arr = withNativeContext<Array<String>?>(null) { handle ->
+            nativeGetDebugInfo(handle)
+        } ?: return null
         if (arr.size < 11) return null
         return DebugInfo(
             videoCodec = arr[0] ?: "",
@@ -259,43 +371,45 @@ class FfmpegNativePlayer(
         )
     }
 
-    fun selectSubtitleTrack(index: Int): Boolean {
-        if (nativeContext == 0L) return false
-        return nativeSelectSubtitleTrack(nativeContext, index)
-    }
+    fun selectSubtitleTrack(index: Int): Boolean =
+        withNativeContext(false) { handle -> nativeSelectSubtitleTrack(handle, index) }
 
     fun setHardwareAcceleration(enabled: Boolean) {
-        if (nativeContext != 0L) {
-            nativeSetHardwareAcceleration(nativeContext, enabled)
+        withNativeContext(Unit) { handle ->
+            nativeSetHardwareAcceleration(handle, enabled)
         }
     }
 
     fun setForceSdr(forceSdr: Boolean) {
-        if (nativeContext != 0L) {
-            nativeSetForceSdr(nativeContext, forceSdr)
+        withNativeContext(Unit) { handle ->
+            nativeSetForceSdr(handle, forceSdr)
         }
     }
 
     fun setScrubbing(isScrubbing: Boolean) {
-        if (nativeContext != 0L) {
-            nativeSetScrubbing(nativeContext, isScrubbing)
+        withNativeContext(Unit) { handle ->
+            nativeSetScrubbing(handle, isScrubbing)
         }
     }
 
     fun setEqualizer(enabled: Boolean, bandLevelsMb: IntArray) {
-        if (nativeContext != 0L) {
-            nativeSetEqualizer(nativeContext, enabled, bandLevelsMb)
+        withNativeContext(Unit) { handle ->
+            nativeSetEqualizer(handle, enabled, bandLevelsMb)
         }
     }
 
-    fun getAudioSessionId(): Int {
-        if (nativeContext == 0L) return 0
-        return nativeGetAudioSessionId(nativeContext)
-    }
+    fun getAudioSessionId(): Int =
+        withNativeContext(0) { handle -> nativeGetAudioSessionId(handle) }
 
-    fun getVideoRotation(): Int = if (nativeContext != 0L) nativeGetVideoRotation(nativeContext) else 0
-    fun getSarNum(): Int = if (nativeContext != 0L) nativeGetSarNum(nativeContext) else 1
-    fun getSarDen(): Int = if (nativeContext != 0L) nativeGetSarDen(nativeContext) else 1
+    fun getVideoRotation(): Int =
+        withNativeContext(0) { handle -> nativeGetVideoRotation(handle) }
+
+    fun getSarNum(): Int =
+        withNativeContext(1) { handle -> nativeGetSarNum(handle) }
+
+    fun getSarDen(): Int =
+        withNativeContext(1) { handle -> nativeGetSarDen(handle) }
+
     fun getSampleAspectRatio(): Float {
         val den = getSarDen()
         val num = getSarNum()

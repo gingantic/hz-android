@@ -261,7 +261,7 @@ PlayerPositionController (250ms tick)
 | MediaStore | System media index | `MediaScanner` syncs into Room |
 | DataStore | User preferences (sort, theme, active engine, archive passwords) | Type-safe `Preferences` |
 | Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` (backs `EXO_PLAYER` + `FFMPEG`) |
-| Native FFmpeg player | Standalone playback engine (`NATIVE_FFMPEG`) | `FfmpegNativeEngine` + `ffmpeg/FfmpegNativePlayer.kt` → `cpp/FfmpegPlayer.cpp` (`libffplayer.so`) |
+| Native FFmpeg player | Standalone playback engine (`NATIVE_FFMPEG`) | `FfmpegNativeEngine` + `ffmpeg/FfmpegNativePlayer.kt` → `cpp/ffplayer/` (`libffplayer.so`) |
 | Remote clients | SMB/FTP/SFTP/WebDAV browse + streaming | pooled in `ConnectionPool` |
 | Native FFmpeg | Video thumbnails + codec metadata probe | `core/io/` sources + `core/thumbnail/` JNI + `cpp/` |
 | Native libass | ASS/SSA/SRT/VTT subtitle rendering | JNI in `data/datasource/subtitle/assrender` + `cpp/` |

@@ -82,6 +82,13 @@ class FfmpegNativeEngine @Inject constructor(
     private var activeBridge: RandomAccessMediaSource? = null
 
     /**
+     * Protects active bridge publication/detachment independently of the
+     * lifecycle lock. Release must be able to abort a source while an open
+     * still owns lifecycleLock.
+     */
+    private val bridgeLock = Any()
+
+    /**
      * SMB pool checkout backing [activeBridge] — returned to [ConnectionPool]
      * when the bridge closes, so the sweeper can evict it when idle.
      */
@@ -367,19 +374,41 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     /**
+     * Ask the active source to stop any blocking read without waiting for the
+     * native worker join. This is intentionally separate from lifecycleLock so
+     * release can cancel an open that currently owns that lock.
+     */
+    private fun abortActiveBridge() {
+        val bridge = synchronized(bridgeLock) { activeBridge }
+        runCatching { bridge?.abortRead() }
+            .onFailure { error -> Log.w(TAG, "Failed to abort media source read: ${error.message}", error) }
+    }
+
+    /**
      * Close [activeBridge] and return its SMB pool checkout (if any). Single
      * teardown path shared by [openAndStart], [stop] and [release].
      */
     private fun closeActiveBridge() {
-        val bridge = activeBridge
-        activeBridge = null
+        val detached = synchronized(bridgeLock) {
+            val bridge = activeBridge
+            val checkout = activeSmbCheckout
+            activeBridge = null
+            activeSmbCheckout = null
+            bridge to checkout
+        }
+        val bridge = detached.first
+        val checkout = detached.second
         (bridge as? Closeable)?.let { runCatching { it.close() } }
-        activeSmbCheckout?.lease?.release()
-        activeSmbCheckout = null
+        // SmbRandomAccessSource owns deferred lease release through its
+        // onQuiesced callback; other bridge types can release synchronously.
+        if (bridge !is SmbRandomAccessSource) {
+            checkout?.lease?.release()
+        }
     }
 
     private fun stopNativeAndCloseBridge(): Boolean {
         return try {
+            abortActiveBridge()
             player.stop()
             closeActiveBridge()
             true
@@ -387,6 +416,18 @@ class FfmpegNativeEngine @Inject constructor(
             Log.e(TAG, "Native stop failed; source was kept open: ${error.message}", error)
             false
         }
+    }
+
+    private fun publishActiveBridge(
+        bridge: RandomAccessMediaSource?,
+        smbCheckout: SmbCheckout?,
+        requestId: Long,
+        uri: String,
+    ): Boolean = synchronized(bridgeLock) {
+        if (!isCurrentRequest(requestId, uri)) return@synchronized false
+        activeBridge = bridge
+        activeSmbCheckout = smbCheckout
+        true
     }
 
     private fun isCurrentRequest(requestId: Long, uri: String): Boolean =
@@ -444,7 +485,12 @@ class FfmpegNativeEngine @Inject constructor(
                     try {
                         val file = SmbPathResolver.resolve(lease.context, host, port, segments)
                         if (file != null) {
-                            bridge = SmbRandomAccessSource(file, file.length(), lightweight = false)
+                            bridge = SmbRandomAccessSource(
+                                file = file,
+                                fileSize = file.length(),
+                                lightweight = false,
+                                onQuiesced = { lease.release() },
+                            )
                             smbCheckout = SmbCheckout(lease)
                         }
                     } finally {
@@ -479,12 +525,15 @@ class FfmpegNativeEngine @Inject constructor(
 
         if (!isCurrentRequest(requestId, uriString)) {
             runCatching { (bridge as? Closeable)?.close() }
-            smbCheckout?.lease?.release()
+            if (bridge !is SmbRandomAccessSource) smbCheckout?.lease?.release()
             return@synchronized false
         }
 
-        activeBridge = bridge
-        activeSmbCheckout = smbCheckout
+        if (!publishActiveBridge(bridge, smbCheckout, requestId, uriString)) {
+            runCatching { (bridge as? Closeable)?.close() }
+            if (bridge !is SmbRandomAccessSource) smbCheckout?.lease?.release()
+            return@synchronized false
+        }
         selectedAudioTrackIndex = 0
 
         val success = try {
@@ -529,43 +578,63 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     override fun stop() {
-        playbackGeneration.incrementAndGet()
+        val stopRequestId = playbackGeneration.incrementAndGet()
         playJob?.cancel()
         playJob = null
 
-        val stopped = synchronized(lifecycleLock) {
-            stopNativeAndCloseBridge()
-        }
-        if (!stopped) {
-            _playbackState.update {
-                it.copy(
-                    state = PlayerState.ERROR,
-                    isPlaying = false,
-                    errorMessage = "Failed to stop media"
-                )
-            }
-            return
-        }
-
+        // Stop render-time callbacks immediately, but never wait for native
+        // joins or lifecycleLock on the Android/UI caller thread.
         assHandler.setIsPlaying(false)
-        currentUri = null
-        currentTitle = null
-        selectedAudioTrackIndex = 0
-        videoWidth = 0
-        videoHeight = 0
-        videoRotation = 0
-        sarNum = 1
-        sarDen = 1
-        pendingSeekTargetMs = -1L
-        assHandler.reset()
-        _playbackState.update {
-            it.copy(
-                state = PlayerState.IDLE,
-                isPlaying = false,
-                currentTitle = null,
-                currentArtist = null,
+        assHandler.setIsBuffering(false)
+        abortActiveBridge()
+
+        engineScope.launch(Dispatchers.IO) {
+            val stopped = synchronized(lifecycleLock) {
+                // A newer play/reopen owns the lifecycle now. Its own
+                // openAndStart() will serialize the required old-session stop.
+                if (released || playbackGeneration.get() != stopRequestId) {
+                    true
+                } else {
+                    stopNativeAndCloseBridge()
+                }
+            }
+
+            withContext(Dispatchers.Main.immediate) {
+                // Do not let an old asynchronous stop overwrite a newer open,
+                // or update state after release has begun.
+                if (released || playbackGeneration.get() != stopRequestId) return@withContext
+
+                if (!stopped) {
+                    _playbackState.update {
+                        it.copy(
+                            state = PlayerState.ERROR,
+                            isPlaying = false,
+                            errorMessage = "Failed to stop media"
+                        )
+                    }
+                    return@withContext
+                }
+
                 currentUri = null
-            )
+                currentTitle = null
+                selectedAudioTrackIndex = 0
+                videoWidth = 0
+                videoHeight = 0
+                videoRotation = 0
+                sarNum = 1
+                sarDen = 1
+                pendingSeekTargetMs = -1L
+                assHandler.reset()
+                _playbackState.update {
+                    it.copy(
+                        state = PlayerState.IDLE,
+                        isPlaying = false,
+                        currentTitle = null,
+                        currentArtist = null,
+                        currentUri = null
+                    )
+                }
+            }
         }
     }
 
@@ -801,6 +870,11 @@ class FfmpegNativeEngine @Inject constructor(
         playJob?.cancel()
         playJob = null
         engineScope.cancel()
+
+        // release() cannot use player.release() to interrupt a pending
+        // nativeOpen because the JNI lifecycle guard drains that call first.
+        // Abort the published bridge before waiting for lifecycleLock.
+        abortActiveBridge()
 
         synchronized(lifecycleLock) {
             // reset() nulls positionClock, stops the render loop and clears

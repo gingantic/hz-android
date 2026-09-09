@@ -17,6 +17,13 @@ interface RandomAccessMediaSource {
     /** Read up to [size] bytes at [position] into [buffer]; -1 at EOF. */
     @Keep fun readAt(position: Long, buffer: ByteArray, size: Int): Int
 
+    /**
+     * Request cancellation of a read that may currently be blocked on I/O.
+     * Implementations must return promptly and must not release their backing
+     * resources while an in-flight read still owns them.
+     */
+    @Keep fun abortRead() {}
+
     /** Total byte length of the source. */
     @Keep fun getSize(): Long
 }

@@ -265,11 +265,11 @@ com.rhnxdev.hzplayer/
 - `ArchiveDataSource.kt` — Media3 `DataSource` for `archive://` URIs (open/read/seek/close).
 - `cpp/ArchiveExtractor.cpp` — libarchive list/open/read/seek/close via JNI.
 
-### Native FFmpeg player pipeline (`FfmpegNativeEngine` + `cpp/FfmpegPlayer.cpp`)
+### Native FFmpeg player pipeline (`FfmpegNativeEngine` + `cpp/ffplayer/`)
 - `FfmpegNativeEngine.kt` — `IPlayerEngine` impl for `NATIVE_FFMPEG`; bridges surface
   events, aspect ratio, and data sources (`content://`, `smb://`, `file://`, and
   `archive://`) into the native player via `RandomAccessMediaSource` AVIO callbacks.
-- `ffmpeg/FfmpegNativePlayer.kt` — typed JNI wrapper over `cpp/FfmpegPlayer.cpp`
+- `ffmpeg/FfmpegNativePlayer.kt` — typed JNI wrapper over `cpp/ffplayer/`
   (`libffplayer.so`): demux/decode/AV-sync threads, ANativeWindow blit,
   AMediaCodec hardware decode (H.264/HEVC/VP9/AV1 + HDR) with libdav1d/CPU fallback.
 - `ffmpeg/FfmpegAudioSink.kt` — AudioTrack PCM output with head-position latency tracking.
