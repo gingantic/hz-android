@@ -256,7 +256,7 @@
         <!-- Browser Activity for in-app web browsing -->
         <activity
             android:name=".browser.BrowserActivity"
-            android:exported="false"
+            android:exported="true"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"

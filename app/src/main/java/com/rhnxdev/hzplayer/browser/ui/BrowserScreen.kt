@@ -61,6 +61,7 @@ fun BrowserScreen(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val clearUrlBarFocus = { focusManager.clearFocus() }
     var showTabSidebar by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
@@ -166,7 +167,7 @@ fun BrowserScreen(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = { focusManager.clearFocus() },
+                onClick = clearUrlBarFocus,
             )
     ) {
         // Main content — Top Bar + WebView + Bottom Bar
@@ -188,9 +189,7 @@ fun BrowserScreen(
                 onReload = { viewModel.reload() },
                 onStopLoading = { viewModel.stopLoading() },
                 onFocusChanged = { viewModel.onUrlBarFocusChanged(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(toolbarSwipeModifier),
+                modifier = Modifier.fillMaxWidth(),
             )
             }
 
@@ -222,7 +221,7 @@ fun BrowserScreen(
                             BrowserWebView(
                                 viewModel = viewModel,
                                 tabId = targetTabId,
-                                onTouch = { focusManager.clearFocus() },
+                                onTouch = { clearUrlBarFocus() },
                             )
                         }
 
@@ -234,12 +233,13 @@ fun BrowserScreen(
                         if (isTargetNewTab) {
                             NewTabPage(
                                 onUrlEntered = { url ->
+                                    clearUrlBarFocus()
                                     if (url.isNotBlank()) {
                                         if (targetTabId != null) viewModel.navigate(url)
                                         else viewModel.createTab(url)
                                     }
                                 },
-                                onTapBackground = { focusManager.clearFocus() },
+                                onTapBackground = { clearUrlBarFocus() },
                             )
                         }
                     }
@@ -252,7 +252,7 @@ fun BrowserScreen(
                         suggestions = urlSuggestions,
                         isFiltering = !urlSuggestionQuery.isNullOrBlank(),
                         onSuggestionClick = { url ->
-                            focusManager.clearFocus()
+                            clearUrlBarFocus()
                             viewModel.navigate(url)
                         },
                         onFillUrl = { url -> viewModel.onUrlInputChanged(url) },
@@ -270,22 +270,22 @@ fun BrowserScreen(
                 canGoForward = viewModel.activeTab?.canGoForward == true,
                 tabCount = viewModel.tabCount,
                 isLoading = viewModel.activeTab?.isLoading == true,
-                onBack = { viewModel.goBackOrClosePopup() },
-                onForward = { viewModel.goForward() },
-                onReload = { viewModel.reload() },
-                onStopLoading = { viewModel.stopLoading() },
+                onBack = { clearUrlBarFocus(); viewModel.goBackOrClosePopup() },
+                onForward = { clearUrlBarFocus(); viewModel.goForward() },
+                onReload = { clearUrlBarFocus(); viewModel.reload() },
+                onStopLoading = { clearUrlBarFocus(); viewModel.stopLoading() },
                 onUrlChange = { viewModel.onUrlInputChanged(it) },
-                onUrlSubmit = { viewModel.navigate(viewModel.urlInput) },
-                onNewTab = { viewModel.createTab() },
-                onTabsClick = { showTabSidebar = true },
-                onMenuClick = { /* Handled inside bottom bar 3-dot dropdown */ },
-                onHistoryClick = { showHistory = true },
-                onSettingsClick = { showSettings = true },
-                onPlayerClick = { (context as? Activity)?.finish() },
+                onUrlSubmit = { clearUrlBarFocus(); viewModel.navigate(viewModel.urlInput) },
+                onNewTab = { clearUrlBarFocus(); viewModel.createTab() },
+                onTabsClick = { clearUrlBarFocus(); showTabSidebar = true },
+                onMenuClick = clearUrlBarFocus,
+                onHistoryClick = { clearUrlBarFocus(); showHistory = true },
+                onSettingsClick = { clearUrlBarFocus(); showSettings = true },
+                onPlayerClick = { clearUrlBarFocus(); (context as? Activity)?.finish() },
                 mediaCount = viewModel.activeTabMediaCount,
-                onMediaGrabberClick = { showMediaGrabber = true },
+                onMediaGrabberClick = { clearUrlBarFocus(); showMediaGrabber = true },
                 isDesktopSite = viewModel.isDesktopMode,
-                onToggleDesktopSite = { viewModel.toggleDesktopMode() },
+                onToggleDesktopSite = { clearUrlBarFocus(); viewModel.toggleDesktopMode() },
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
@@ -299,9 +299,10 @@ fun BrowserScreen(
         if (showMediaGrabber) {
             MediaGrabberBottomSheet(
                 mediaItems = viewModel.activeTabMediaItems,
-                onDismissRequest = { showMediaGrabber = false },
-                onClearAll = { viewModel.clearActiveTabMedia() },
+                onDismissRequest = { clearUrlBarFocus(); showMediaGrabber = false },
+                onClearAll = { clearUrlBarFocus(); viewModel.clearActiveTabMedia() },
                 onQualitySelected = { itemId, qualityUrl ->
+                    clearUrlBarFocus()
                     viewModel.updateMediaQuality(itemId, qualityUrl)
                 }
             )
@@ -312,10 +313,10 @@ fun BrowserScreen(
             visible = showTabSidebar,
             tabs = viewModel.tabs,
             activeTabId = viewModel.activeTabId,
-            onTabClick = { viewModel.switchTab(it) },
-            onTabClose = { viewModel.closeTab(it) },
-            onNewTab = { viewModel.createTab() },
-            onDismiss = { showTabSidebar = false },
+            onTabClick = { clearUrlBarFocus(); viewModel.switchTab(it) },
+            onTabClose = { clearUrlBarFocus(); viewModel.closeTab(it) },
+            onNewTab = { clearUrlBarFocus(); viewModel.createTab() },
+            onDismiss = { clearUrlBarFocus(); showTabSidebar = false },
         )
 
         // Browser history overlay
@@ -324,18 +325,18 @@ fun BrowserScreen(
             historyItems = historyItems,
             searchQuery = historySearchQuery,
             onSearchQueryChange = { viewModel.updateHistorySearchQuery(it) },
-            onItemClick = { url -> viewModel.navigate(url) },
+            onItemClick = { url -> clearUrlBarFocus(); viewModel.navigate(url) },
             onDeleteItem = { viewModel.deleteHistoryItem(it) },
             onClearAll = { viewModel.clearAllHistory() },
-            onDismiss = { showHistory = false },
+            onDismiss = { clearUrlBarFocus(); showHistory = false },
         )
 
         // Browser settings overlay
         BrowserSettingsScreen(
             visible = showSettings,
             settings = viewModel.settings,
-            onSave = { viewModel.updateSettings(it) },
-            onDismiss = { showSettings = false },
+            onSave = { clearUrlBarFocus(); viewModel.updateSettings(it) },
+            onDismiss = { clearUrlBarFocus(); showSettings = false },
             isAdBlockUpdating = viewModel.isAdBlockUpdating,
             adBlockStatusMessage = viewModel.adBlockStatusMessage,
             onUpdateAdBlockFilters = { viewModel.refreshAdBlockFilters() },
@@ -344,8 +345,8 @@ fun BrowserScreen(
         // Cross-domain pop-up permission bottom sheet modal
         PopupPermissionBottomSheet(
             request = viewModel.pendingPopupRequest,
-            onAllow = { viewModel.allowPendingPopup() },
-            onDeny = { viewModel.denyPendingPopup() },
+            onAllow = { clearUrlBarFocus(); viewModel.allowPendingPopup() },
+            onDeny = { clearUrlBarFocus(); viewModel.denyPendingPopup() },
         )
 
         // Fullscreen custom video view overlay
@@ -404,7 +405,9 @@ private fun BrowserWebView(
                     }
                     false
                 }
-                if (targetUrl.isNotBlank() && targetUrl != "about:blank" && wv.url != targetUrl) {
+                if (targetUrl.isNotBlank() && targetUrl != "about:blank" &&
+                    !viewModel.tabManager.isSslInterstitialShowing(tabId) && wv.url != targetUrl
+                ) {
                     wv.loadUrl(targetUrl)
                 }
             },

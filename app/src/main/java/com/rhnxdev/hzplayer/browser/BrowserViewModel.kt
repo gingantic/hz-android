@@ -187,7 +187,7 @@ class BrowserViewModel @Inject constructor(
             saveSessionIfEnabled()
         }
 
-        initialize()
+        // BrowserScreen initializes after BrowserActivity has assigned initialUrl.
     }
 
     fun refreshAdBlockFilters() {

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Error</title>
+<!--HZ_PARAMS-->
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0 24px;
+    font-family: Roboto, "Segoe UI", Arial, sans-serif;
+    background: #ffffff;
+    color: #202124;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 512px; width: 100%; padding-top: 14vh; }
+  .icon {
+    width: 76px;
+    height: 76px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 28px;
+    border-radius: 24px;
+    background: #fce8e6;
+  }
+  .icon svg { width: 58px; height: 58px; display: block; }
+  .icon .cloud { fill: #d93025; }
+  .icon .slash { stroke: #ffffff; stroke-width: 2.35; stroke-linecap: round; }
+  h1 { font-size: 22px; font-weight: 400; margin: 0 0 12px; }
+  .desc { font-size: 15px; line-height: 22px; color: #5f6368; margin: 0 0 28px; word-break: break-word; }
+  .desc b { font-weight: 500; color: inherit; }
+  button {
+    background: #1a73e8;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  button:active { background: #1b6ec2; }
+  .code { margin-top: 36px; font-size: 12px; color: #9aa0a6; font-family: monospace; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #202124; color: #e8eaed; }
+    .icon { background: #5a1f1b; }
+    .icon .cloud { fill: #ea4335; }
+    .desc { color: #9aa0a6; }
+    .icon .slash { stroke: #ffffff; }
+    button { background: #8ab4f8; color: #202124; }
+    button:active { background: #aecbfa; }
+    .code { color: #80868b; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="icon">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path class="cloud" d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+      <line class="slash" x1="4" y1="21" x2="21.5" y2="3.5"/>
+    </svg>
+  </div>
+  <h1 id="title">This site can&rsquo;t be reached</h1>
+  <p class="desc" id="desc"></p>
+  <button onclick="retry()">Retry</button>
+  <div class="code" id="code"></div>
+</div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var e = window.HZ_ERR || {};
+  var url = e.url || q.get('url') || '';
+  var title = e.title || q.get('title');
+  var desc = e.desc || q.get('desc');
+  var code = (e.code !== undefined && e.code !== null) ? e.code : q.get('code');
+  var netCode = e.netCode || q.get('netCode') || '';
+  var host = url;
+  try { host = new URL(url).host || url; } catch (err) {}
+
+  if (title) {
+    document.getElementById('title').textContent = title;
+  }
+
+  var line = document.getElementById('desc');
+  var b = document.createElement('b');
+  b.textContent = host ? host + ' ' : '';
+  line.appendChild(b);
+  line.appendChild(document.createTextNode(desc || 'could not be loaded.'));
+
+  var codeEl = document.getElementById('code');
+  var parts = [];
+  if (netCode) {
+    parts.push(String(netCode));
+  }
+  if (code !== '' && code !== null && code !== undefined) {
+    parts.push('ERROR_' + String(code).replace(/^-/, ''));
+  }
+  if (parts.length) {
+    codeEl.textContent = parts.join('  ·  ');
+  }
+
+  document.title = host || 'Error';
+
+  function retry() {
+    if (url) { location.replace(url); }
+  }
+</script>
+</body>
+</html>

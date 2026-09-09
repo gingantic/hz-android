@@ -209,7 +209,10 @@ fun BrowserBottomBar(
 
         // Menu button
         IconButton(
-            onClick = { showMenu = true },
+            onClick = {
+                onMenuClick()
+                showMenu = true
+            },
             modifier = Modifier.size(40.dp),
         ) {
             Icon(

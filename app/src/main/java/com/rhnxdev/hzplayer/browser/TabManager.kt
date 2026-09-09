@@ -47,6 +47,9 @@ class TabManager(
     companion object {
         private const val MAX_LIVE = 6
 
+        /** Local asset shown in place of WebView's stock gray error page. */
+        private const val ERROR_PAGE_URL = "file:///android_asset/error_page.html"
+
         /** Layout width (CSS px) forced on pages in desktop mode — mirrors Chrome's "Desktop site". */
         private const val DESKTOP_VIEWPORT_WIDTH = 1024
 
@@ -61,6 +64,12 @@ class TabManager(
 
     /** The URL currently shown in the URL bar. */
     var urlInput by mutableStateOf("")
+
+    /** Un-answered SslErrorHandlers per tab while the SSL interstitial is showing. */
+    private val pendingSsl = HashMap<String, android.webkit.SslErrorHandler>()
+
+    /** Cached asset HTML for the error / SSL interstitial pages. */
+    private val htmlCache = HashMap<String, String>()
 
     /** Fullscreen custom view (HTML5 video full screen). */
     var customView by mutableStateOf<android.view.View?>(null)
@@ -108,6 +117,7 @@ class TabManager(
     }
 
     fun closeTab(id: String) {
+        clearPendingSsl(id)
         setTabPlaying(id, false)
         if (_tabs.value.size <= 1) {
             _tabs.value = emptyList()
@@ -215,24 +225,35 @@ class TabManager(
     }
 
     fun navigate(tabId: String, url: String) {
+        clearPendingSsl(tabId)
         val safeUrl = sanitizeUrl(url)
-        updateTab(tabId) { it.copy(url = safeUrl, isLoading = true, detectedMedia = emptyList()) }
+        updateTab(tabId) {
+            it.copy(
+                url = safeUrl,
+                isLoading = true,
+                progress = 0,
+                detectedMedia = emptyList(),
+            )
+        }
         urlInput = safeUrl
         liveViews[tabId]?.loadUrl(safeUrl)
     }
 
     fun goBack() {
         val id = activeTabId ?: return
+        clearPendingSsl(id)
         liveViews[id]?.goBack()
     }
 
     fun goForward() {
         val id = activeTabId ?: return
+        clearPendingSsl(id)
         liveViews[id]?.goForward()
     }
 
     fun reload() {
         val id = activeTabId ?: return
+        clearPendingSsl(id)
         liveViews[id]?.reload()
     }
 
@@ -313,7 +334,10 @@ class TabManager(
     fun registerWebView(tabId: String, wv: WebView) {
         // Skip if same instance already registered (tab re-composition)
         if (liveViews[tabId] === wv) return
-        liveViews[tabId]?.destroy()
+        if (liveViews[tabId] != null) {
+            clearPendingSsl(tabId)
+            liveViews[tabId]?.destroy()
+        }
         liveViews[tabId] = wv
 
         applySettingsToView(wv, settings)
@@ -344,6 +368,29 @@ class TabManager(
                 },
             ),
             MediaSnifferBridge.INTERFACE_NAME
+        )
+
+        // JS bridge for the SSL interstitial buttons ("Back to safety" / "Proceed")
+        wv.addJavascriptInterface(
+            object {
+                @android.webkit.JavascriptInterface
+                fun proceed() {
+                    scope.launch(Dispatchers.Main) {
+                        val id = resolveTabId(wv) ?: return@launch
+                        pendingSsl.remove(id)?.proceed()
+                    }
+                }
+
+                @android.webkit.JavascriptInterface
+                fun dismiss() {
+                    scope.launch(Dispatchers.Main) {
+                        val id = resolveTabId(wv) ?: return@launch
+                        clearPendingSsl(id)
+                        if (wv.canGoBack()) wv.goBack() else wv.loadUrl("about:blank")
+                    }
+                }
+            },
+            "HzSsl"
         )
 
         wv.webViewClient = object : WebViewClient() {
@@ -402,15 +449,23 @@ class TabManager(
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 val id = resolveTabId(view) ?: return
+                // Keep the failed URL in the omnibox/tab while the SSL decision page
+                // is active. WebView may expose the synthetic data/asset URL here.
+                val isErrorPage = isErrorPageUrl(url)
+                val isSslInterstitial = isSslInterstitialShowing(id)
+                val keepTabUrl = isErrorPage || isSslInterstitial
                 updateTab(id) {
                     it.copy(
-                        url = url, title = view.title ?: "", icon = favicon,
-                        isLoading = true, canGoBack = view.canGoBack(),
+                        url = if (keepTabUrl) it.url else url,
+                        title = if (keepTabUrl) it.title else (view.title ?: ""),
+                        icon = if (keepTabUrl) it.icon else favicon,
+                        isLoading = true, progress = 0,
+                        canGoBack = view.canGoBack(),
                         canGoForward = view.canGoForward(),
                         detectedMedia = emptyList(),
                     )
                 }
-                urlInput = url
+                if (!keepTabUrl && id == activeTabId) urlInput = url
                 MediaSnifferBridge.injectSnifferJs(view)
                 if (isDesktopMode) injectDesktopModeJs(view)
             }
@@ -419,7 +474,7 @@ class TabManager(
                 val id = resolveTabId(view) ?: return
                 updateTab(id) {
                     it.copy(
-                        title = view.title ?: "", isLoading = false,
+                        title = view.title ?: "", isLoading = false, progress = 100,
                         canGoBack = view.canGoBack(), canGoForward = view.canGoForward(),
                     )
                 }
@@ -446,7 +501,8 @@ class TabManager(
                     }
                 }
 
-                if (url.isNotBlank() && url != "about:blank") {
+                val isSslInterstitial = isSslInterstitialShowing(id)
+                if (url.isNotBlank() && url != "about:blank" && !isErrorPageUrl(url) && !isSslInterstitial) {
                     val pageTitle = view.title?.ifBlank { url } ?: url
                     onPageVisited?.invoke(url, pageTitle)
                 }
@@ -454,7 +510,8 @@ class TabManager(
 
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                if (request.isForMainFrame) {
+                val id = resolveTabId(view)
+                if (request.isForMainFrame && id == activeTabId) {
                     urlInput = request.url.toString()
                 }
                 return false
@@ -462,8 +519,123 @@ class TabManager(
 
             @Suppress("DEPRECATION")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                urlInput = url
+                if (resolveTabId(view) == activeTabId) {
+                    urlInput = url
+                }
                 return false
+            }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: android.webkit.WebResourceError
+            ) {
+                android.util.Log.w(
+                    "HzBrowser",
+                    "onReceivedError code=${error.errorCode} desc=${error.description} " +
+                        "mainFrame=${request.isForMainFrame} url=${request.url}"
+                )
+                val tabId = resolveTabId(view)
+                if (tabId != null && isSslInterstitialShowing(tabId)) return
+                if (!request.isForMainFrame) return
+                val failingUrl = request.url.toString()
+                if (isErrorPageUrl(failingUrl)) return
+                val scheme = request.url.scheme?.lowercase() ?: ""
+                if (scheme != "http" && scheme != "https") return
+
+                val (title, desc) = errorPageText(error.errorCode)
+                val netCode = netErrorCode(error.errorCode)
+                // loadDataWithBaseURL replaces the failed history entry instead of
+                // stacking one entry per retry (Chrome behaviour)
+                view.loadDataWithBaseURL(
+                    failingUrl,
+                    injectedPageHtml(view, "error_page.html", title, desc, failingUrl, error.errorCode, netCode),
+                    "text/html", "utf-8", failingUrl,
+                )
+            }
+
+            // Deprecated int-based callback: still fires on some devices / for
+            // errors that never reach the WebResourceRequest overload. Route it
+            // through the same custom page instead of WebView's stock gray screen.
+            @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+            override fun onReceivedError(
+                view: WebView,
+                errorCode: Int,
+                description: String?,
+                failingUrl: String?
+            ) {
+                android.util.Log.w(
+                    "HzBrowser",
+                    "onReceivedError(legacy) code=$errorCode desc=$description url=$failingUrl"
+                )
+                val tabId = resolveTabId(view)
+                if (tabId != null && isSslInterstitialShowing(tabId)) return
+                val url = failingUrl ?: view.url ?: ""
+                if (url.isBlank() || isErrorPageUrl(url)) return
+                // Only main-frame failures land here; sub-resource errors don't
+                // trigger the deprecated overload, so no isForMainFrame check exists.
+                val scheme = try { android.net.Uri.parse(url).scheme?.lowercase() } catch (_: Exception) { null } ?: ""
+                if (scheme != "http" && scheme != "https") return
+
+                val (title, desc) = errorPageText(errorCode)
+                view.loadDataWithBaseURL(
+                    url,
+                    injectedPageHtml(view, "error_page.html", title, desc, url, errorCode, netErrorCode(errorCode)),
+                    "text/html", "utf-8", url,
+                )
+            }
+
+            // HTTP status failures (404, 500, 502, 503 …). WebView normally renders
+            // the site's own error body here; show our custom page for main-frame
+            // status errors so every failure looks consistent with a clear code.
+            override fun onReceivedHttpError(
+                view: WebView,
+                request: WebResourceRequest,
+                errorResponse: android.webkit.WebResourceResponse
+            ) {
+                val status = errorResponse.statusCode
+                android.util.Log.w(
+                    "HzBrowser",
+                    "onReceivedHttpError status=$status mainFrame=${request.isForMainFrame} url=${request.url}"
+                )
+                val tabId = resolveTabId(view)
+                if (tabId != null && isSslInterstitialShowing(tabId)) return
+                if (!request.isForMainFrame) return
+                val failingUrl = request.url.toString()
+                if (isErrorPageUrl(failingUrl)) return
+                val scheme = request.url.scheme?.lowercase() ?: ""
+                if (scheme != "http" && scheme != "https") return
+
+                val (title, desc) = httpErrorText(status, errorResponse.reasonPhrase)
+                view.loadDataWithBaseURL(
+                    failingUrl,
+                    injectedPageHtml(view, "error_page.html", title, desc, failingUrl, status, "HTTP $status"),
+                    "text/html", "utf-8", failingUrl,
+                )
+            }
+
+            // Renderer process crash / OOM kill. Without handling this the tab goes
+            // blank (or the app is killed). Detach the dead WebView and show the
+            // custom page so the user can retry.
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: android.webkit.RenderProcessGoneDetail?
+            ): Boolean {
+                val crashed = detail?.didCrash() == true
+                android.util.Log.w("HzBrowser", "onRenderProcessGone crashed=$crashed")
+                if (view == null) return true
+                val failingUrl = view.url ?: ""
+                val (title, desc) =
+                    if (crashed) "This page crashed" to " crashed unexpectedly."
+                    else "This page was stopped" to " was stopped to free up memory."
+                // The renderer is dead; loadDataWithBaseURL spins up a fresh one.
+                val safeUrl = if (failingUrl.isBlank() || isErrorPageUrl(failingUrl)) "about:blank" else failingUrl
+                view.loadDataWithBaseURL(
+                    safeUrl,
+                    injectedPageHtml(view, "error_page.html", title, desc, safeUrl, -1, "RENDER_PROCESS_GONE"),
+                    "text/html", "utf-8", safeUrl,
+                )
+                return true // handled — don't let WebView tear down the whole view
             }
 
             override fun onReceivedSslError(
@@ -471,7 +643,31 @@ class TabManager(
                 handler: android.webkit.SslErrorHandler?,
                 error: android.net.http.SslError?
             ) {
-                handler?.proceed()
+                if (view == null || handler == null || error == null) {
+                    handler?.cancel()
+                    return
+                }
+                val id = resolveTabId(view)
+                if (id == null) {
+                    handler.cancel()
+                    return
+                }
+                // WebView can report the same certificate failure more than once
+                // while the warning page is loading. Keep the first handler and
+                // cancel duplicates instead of replacing it and reloading the page.
+                if (isSslInterstitialShowing(id)) {
+                    handler.cancel()
+                    return
+                }
+                pendingSsl[id] = handler
+
+                val failingUrl = error.url.ifBlank { view.url ?: "" }
+                val (code, desc) = sslErrorText(error.primaryError)
+                view.loadDataWithBaseURL(
+                    failingUrl,
+                    injectedPageHtml(view, "ssl_warning.html", "", desc, failingUrl, 0, code),
+                    "text/html", "utf-8", failingUrl,
+                )
             }
         }
 
@@ -493,7 +689,9 @@ class TabManager(
                 val id = resolveTabId(view) ?: return
                 updateTab(id) { it.copy(title = title) }
                 val currentUrl = view.url ?: ""
-                if (currentUrl.isNotBlank() && currentUrl != "about:blank" && title.isNotBlank()) {
+                if (currentUrl.isNotBlank() && currentUrl != "about:blank" &&
+                    !isErrorPageUrl(currentUrl) && !isSslInterstitialShowing(id) && title.isNotBlank()
+                ) {
                     onPageVisited?.invoke(currentUrl, title)
                 }
             }
@@ -601,8 +799,10 @@ class TabManager(
         val tab = _tabs.value.find { it.id == tabId }
         if (tab != null) {
             if (tab.savedState != null) {
+                updateTab(tabId) { it.copy(isLoading = true, progress = 0) }
                 wv.restoreState(tab.savedState)
             } else if (tab.url.isNotBlank()) {
+                updateTab(tabId) { it.copy(isLoading = true, progress = 0) }
                 wv.loadUrl(tab.url)
             }
         }
@@ -619,7 +819,10 @@ class TabManager(
         settings = newSettings
         liveViews.values.forEach { applySettingsToView(it, newSettings) }
         if (renderModeChanged) {
-            liveViews.values.forEach { it.reload() }
+            liveViews.forEach { (id, view) ->
+                clearPendingSsl(id)
+                view.reload()
+            }
         }
     }
 
@@ -700,6 +903,7 @@ class TabManager(
     }
 
     private fun freezeTab(id: String) {
+        clearPendingSsl(id)
         val wv = liveViews[id] ?: return
         setTabPlaying(id, false)
         val bundle = android.os.Bundle()
@@ -715,6 +919,9 @@ class TabManager(
     /** Get the WebView for a specific tab (null if frozen or not yet created). */
     fun getWebView(tabId: String): WebView? = liveViews[tabId]
 
+    /** True while the SSL warning page is displayed and its decision is pending. */
+    fun isSslInterstitialShowing(tabId: String): Boolean = pendingSsl.containsKey(tabId)
+
     // ── Lifecycle ────────────────────────────────────────────────
 
     fun pause() {
@@ -726,6 +933,8 @@ class TabManager(
     }
 
     fun destroy() {
+        pendingSsl.values.forEach { it.cancel() }
+        pendingSsl.clear()
         liveViews.values.forEach { it.destroy() }
         liveViews.clear()
         _tabs.value = emptyList()
@@ -741,6 +950,132 @@ class TabManager(
 
     private fun updateTab(id: String, transform: (BrowserTab) -> BrowserTab) {
         _tabs.value = _tabs.value.map { if (it.id == id) transform(it) else it }
+    }
+
+    private fun isErrorPageUrl(url: String?): Boolean =
+        url != null && (url.startsWith(ERROR_PAGE_URL) || url.startsWith("data:text/html"))
+
+    /** Cancel and forget any pending SSL handler for a tab (tab navigated away/closed/frozen). */
+    private fun clearPendingSsl(tabId: String) {
+        pendingSsl.remove(tabId)?.cancel()
+    }
+
+    /**
+     * Load an interstitial asset and inject its params as a `HZ_ERR` script so the
+     * page works without URL query params (loadDataWithBaseURL has no query string).
+     */
+    private fun injectedPageHtml(
+        wv: WebView,
+        assetName: String,
+        title: String,
+        desc: String,
+        pageUrl: String,
+        code: Int,
+        netCode: String? = null,
+    ): String {
+        val html = htmlCache.getOrPut(assetName) {
+            wv.context.assets.open(assetName).bufferedReader().use { it.readText() }
+        }
+        val script = "<script>var HZ_ERR={title:" + jsString(title) +
+            ",desc:" + jsString(desc) +
+            ",url:" + jsString(pageUrl) +
+            ",code:" + code +
+            (netCode?.let { ",netCode:" + jsString(it) } ?: "") +
+            "};</script>"
+        return html.replace("<!--HZ_PARAMS-->", script)
+    }
+
+    private fun jsString(s: String): String =
+        "'" + s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n") + "'"
+
+    /** Chrome-style NET code + reason for an [android.net.http.SslError] primary error. */
+    private fun sslErrorText(primaryError: Int): Pair<String, String> = when (primaryError) {
+        android.net.http.SslError.SSL_UNTRUSTED ->
+            "NET::ERR_CERT_AUTHORITY_INVALID" to "The server presented a certificate that isn't trusted by your device."
+        android.net.http.SslError.SSL_EXPIRED ->
+            "NET::ERR_CERT_DATE_INVALID" to "The server's certificate expired."
+        android.net.http.SslError.SSL_NOTYETVALID ->
+            "NET::ERR_CERT_DATE_INVALID" to "The server's certificate is not yet valid."
+        android.net.http.SslError.SSL_DATE_INVALID ->
+            "NET::ERR_CERT_DATE_INVALID" to "The server's certificate has an invalid date."
+        android.net.http.SslError.SSL_IDMISMATCH ->
+            "NET::ERR_CERT_COMMON_NAME_INVALID" to "The server's certificate doesn't match this site's name."
+        else ->
+            "NET::ERR_CERT_INVALID" to "The server's certificate is invalid."
+    }
+
+    /** Chrome-style title + host-suffix description for a WebViewClient error code. */
+    private fun errorPageText(errorCode: Int): Pair<String, String> = when (errorCode) {
+        WebViewClient.ERROR_HOST_LOOKUP ->
+            "This site can’t be reached" to "’s server DNS address could not be found."
+        WebViewClient.ERROR_CONNECT ->
+            "This site can’t be reached" to " refused to connect."
+        WebViewClient.ERROR_TIMEOUT ->
+            "This site can’t be reached" to " took too long to respond."
+        WebViewClient.ERROR_IO ->
+            "This site can’t be reached" to " unexpectedly closed the connection."
+        WebViewClient.ERROR_FAILED_SSL_HANDSHAKE ->
+            "This site can’t provide a secure connection" to " sent an invalid response."
+        WebViewClient.ERROR_UNSUPPORTED_SCHEME ->
+            "The address wasn’t understood" to " uses an unsupported scheme."
+        WebViewClient.ERROR_FILE_NOT_FOUND ->
+            "This page could not be found" to " was not found."
+        WebViewClient.ERROR_FILE ->
+            "This page could not be loaded" to " could not be opened."
+        WebViewClient.ERROR_REDIRECT_LOOP ->
+            "This page isn’t redirecting properly" to " redirected you too many times."
+        WebViewClient.ERROR_TOO_MANY_REQUESTS ->
+            "This site can’t be reached" to " has returned too many requests."
+        WebViewClient.ERROR_AUTHENTICATION ->
+            "This site can’t be reached" to " requires authentication that failed."
+        WebViewClient.ERROR_PROXY_AUTHENTICATION ->
+            "This site can’t be reached" to " requires proxy authentication that failed."
+        WebViewClient.ERROR_UNSUPPORTED_AUTH_SCHEME ->
+            "This site can’t be reached" to " uses an unsupported authentication scheme."
+        WebViewClient.ERROR_BAD_URL ->
+            "The address wasn’t understood" to " is not a valid address."
+        WebViewClient.ERROR_UNKNOWN ->
+            "This site can’t be reached" to " could not be loaded due to an unknown error."
+        else ->
+            "This site can’t be reached" to " is currently unreachable."
+    }
+
+    /** Chrome-style NET:: code label for a WebViewClient error code (shown on the error page). */
+    private fun netErrorCode(errorCode: Int): String = when (errorCode) {
+        WebViewClient.ERROR_HOST_LOOKUP -> "NET::ERR_NAME_NOT_RESOLVED"
+        WebViewClient.ERROR_CONNECT -> "NET::ERR_CONNECTION_REFUSED"
+        WebViewClient.ERROR_TIMEOUT -> "NET::ERR_CONNECTION_TIMED_OUT"
+        WebViewClient.ERROR_IO -> "NET::ERR_CONNECTION_CLOSED"
+        WebViewClient.ERROR_FAILED_SSL_HANDSHAKE -> "NET::ERR_SSL_PROTOCOL_ERROR"
+        WebViewClient.ERROR_UNSUPPORTED_SCHEME -> "NET::ERR_UNKNOWN_URL_SCHEME"
+        WebViewClient.ERROR_FILE_NOT_FOUND -> "NET::ERR_FILE_NOT_FOUND"
+        WebViewClient.ERROR_FILE -> "NET::ERR_FILE_NOT_FOUND"
+        WebViewClient.ERROR_REDIRECT_LOOP -> "NET::ERR_TOO_MANY_REDIRECTS"
+        WebViewClient.ERROR_TOO_MANY_REQUESTS -> "NET::ERR_INSUFFICIENT_RESOURCES"
+        WebViewClient.ERROR_AUTHENTICATION -> "NET::ERR_INVALID_AUTH_CREDENTIALS"
+        WebViewClient.ERROR_PROXY_AUTHENTICATION -> "NET::ERR_PROXY_AUTH_REQUESTED"
+        WebViewClient.ERROR_UNSUPPORTED_AUTH_SCHEME -> "NET::ERR_UNSUPPORTED_AUTH_SCHEME"
+        WebViewClient.ERROR_BAD_URL -> "NET::ERR_INVALID_URL"
+        else -> "NET::ERR_FAILED"
+    }
+
+    /** Chrome-style title + host-suffix description for an HTTP status code. */
+    private fun httpErrorText(status: Int, reason: String?): Pair<String, String> {
+        val r = reason?.takeIf { it.isNotBlank() }
+        return when (status) {
+            400 -> "This page isn’t working" to " sent a bad request."
+            401 -> "This page requires sign-in" to " needs authorization to view."
+            403 -> "You don’t have access" to " refused to grant access (forbidden)."
+            404 -> "This page could not be found" to " could not find the requested page."
+            408 -> "This site can’t be reached" to " timed out waiting for the request."
+            429 -> "This site can’t be reached" to " has received too many requests."
+            in 500..599 ->
+                "This page isn’t working" to (r?.let { " responded with an error ($it)." }
+                    ?: " is having a temporary problem or is under maintenance.")
+            else ->
+                "This page isn’t working" to (r?.let { " responded with an error ($it)." }
+                    ?: " returned an unexpected response.")
+        }
     }
 
     private fun sanitizeUrl(input: String): String {

@@ -4,6 +4,7 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,8 +44,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.Row
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -156,50 +155,48 @@ fun BrowserTopBar(
                     )
                 },
                 trailingIcon = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isFocused && url.isNotBlank()) {
-                            IconButton(
-                                onClick = { onUrlChange("") },
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear URL",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                    // Show one stable action while editing: Go when the text
+                    // changed, otherwise Clear.
+                    when {
+                        isLoading -> IconButton(
+                            onClick = onStopLoading,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Stop",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
                         }
-                        when {
-                            isLoading -> IconButton(
-                                onClick = onStopLoading,
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Stop",
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                            urlChanged && url.isNotBlank() -> IconButton(
-                                onClick = submitUrl,
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = "Go",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                            !isFocused && url.isNotBlank() -> IconButton(
-                                onClick = onReload,
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Reload",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                        isFocused && urlChanged && url.isNotBlank() -> IconButton(
+                            onClick = submitUrl,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "Go",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        isFocused && url.isNotBlank() -> IconButton(
+                            onClick = { onUrlChange("") },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear URL",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        !isFocused && url.isNotBlank() -> IconButton(
+                            onClick = onReload,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Reload",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 },
@@ -235,18 +232,26 @@ fun BrowserTopBar(
             label = "PageLoadingProgress",
         )
 
-        if (isLoading && animatedProgress < 1f) {
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp)
-                    .height(2.5.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.Transparent,
-                drawStopIndicator = {},
-                gapSize = 0.dp,
-            )
+        // Always reserve the progress-row height so loading cannot move or
+        // visually collapse the URL bar.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.5.dp)
+                .padding(top = 2.dp),
+        ) {
+            if (isLoading && animatedProgress < 1f) {
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.Transparent,
+                    drawStopIndicator = {},
+                    gapSize = 0.dp,
+                )
+            }
         }
     }
 }

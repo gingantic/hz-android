@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy warning</title>
+<!--HZ_PARAMS-->
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0 24px;
+    font-family: Roboto, "Segoe UI", Arial, sans-serif;
+    background: #ffffff;
+    color: #202124;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 512px; width: 100%; padding-top: 12vh; }
+  .icon {
+    width: 76px;
+    height: 76px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 24px;
+    border-radius: 24px;
+    background: #fce8e6;
+  }
+  .icon svg { width: 58px; height: 58px; display: block; }
+  .icon .shield { fill: #d93025; }
+  .icon .mark { fill: none; stroke: #ffffff; stroke-width: 2.25; stroke-linecap: round; }
+  .icon .dot { fill: #ffffff; }
+  h1 { font-size: 22px; font-weight: 400; margin: 0 0 12px; }
+  .desc { font-size: 15px; line-height: 22px; color: #5f6368; margin: 0 0 8px; word-break: break-word; }
+  .desc b { font-weight: 500; color: inherit; }
+  .code { font-size: 13px; color: #5f6368; margin: 16px 0 28px; font-family: monospace; }
+  button {
+    background: #1a73e8;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  button:active { background: #1b6ec2; }
+  .advanced-toggle {
+    display: block;
+    background: none;
+    border: none;
+    color: #1a73e8;
+    font-size: 14px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+    padding: 0;
+    margin: 24px 0 0;
+  }
+  .advanced { display: none; margin-top: 20px; }
+  .advanced .why {
+    font-size: 14px;
+    line-height: 20px;
+    color: #5f6368;
+    background: #f1f3f4;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+  }
+  .proceed {
+    background: none;
+    border: none;
+    color: #d93025;
+    font-size: 14px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+    padding: 0;
+    text-decoration: underline;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #202124; color: #e8eaed; }
+    .icon { background: #5a1f1b; }
+    .desc, .code { color: #9aa0a6; }
+    button { background: #8ab4f8; color: #202124; }
+    button:active { background: #aecbfa; }
+    .advanced .why { color: #9aa0a6; background: #2f3136; }
+    .proceed { color: #f28b82; }
+    .advanced-toggle { color: #8ab4f8; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="icon">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path class="shield" d="M12 2.25 20.25 5.5v5.15c0 5.15-3.45 9.42-8.25 11.1-4.8-1.68-8.25-5.95-8.25-11.1V5.5L12 2.25z"/>
+      <path class="mark" d="M12 7.2v5.1"/>
+      <circle class="dot" cx="12" cy="16.25" r="1.05"/>
+    </svg>
+  </div>
+  <h1>Your connection is not private</h1>
+  <p class="desc">Attackers may be trying to steal your information from <b id="host"></b> (for example, passwords, messages or credit cards).</p>
+  <p class="desc" id="reason"></p>
+  <div class="code" id="code"></div>
+  <button onclick="dismiss()">Back to safety</button>
+  <button class="advanced-toggle" onclick="toggleAdvanced()">Advanced</button>
+  <div class="advanced" id="advanced">
+    <div class="why">This server could not prove that it is <span id="advhost"></span>; its certificate is not trusted by your device. You should not proceed, especially if you have never seen this warning before.</div>
+    <button class="proceed" onclick="proceed()">Proceed to <span id="proceedhost"></span> (unsafe)</button>
+  </div>
+</div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var e = window.HZ_ERR || {};
+  var url = e.url || q.get('url') || '';
+  var reason = e.desc || q.get('desc') || '';
+  var code = e.netCode || e.code || q.get('code') || '';
+  var host = url;
+  try { host = new URL(url).host || url; } catch (ex) {}
+
+  document.getElementById('host').textContent = host || 'this site';
+  document.getElementById('advhost').textContent = host || 'this site';
+  document.getElementById('proceedhost').textContent = host || 'this site';
+  if (reason) { document.getElementById('reason').textContent = reason; }
+  if (code) { document.getElementById('code').textContent = code; }
+  document.title = host || 'Privacy warning';
+
+  function toggleAdvanced() {
+    var a = document.getElementById('advanced');
+    a.style.display = a.style.display === 'block' ? 'none' : 'block';
+  }
+  function dismiss() {
+    if (window.HzSsl) { HzSsl.dismiss(); } else { history.back(); }
+  }
+  function proceed() {
+    if (window.HzSsl) { HzSsl.proceed(); }
+  }
+</script>
+</body>
+</html>
