@@ -22,7 +22,11 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
         ctx->currentPositionMs.store(0);
         if (ctx->videoStreamIdx >= 0) {
             ctx->videoSeekTargetPtsUs.store(0);
+        }
+        if (ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx) {
             ctx->audioSeekTargetPtsUs.store(0);
+        } else {
+            ctx->audioSeekTargetPtsUs.store(-1);
         }
         int initialSeekRet = av_seek_frame(ctx->fmtCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
         if (initialSeekRet < 0) {
@@ -62,7 +66,11 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
                 ctx->notifyState(env, STATE_BUFFERING);
             } else {
                 ctx->videoSeekTargetPtsUs.store(target * 1000);
-                ctx->audioSeekTargetPtsUs.store(target * 1000);
+                if (ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx) {
+                    ctx->audioSeekTargetPtsUs.store(target * 1000);
+                } else {
+                    ctx->audioSeekTargetPtsUs.store(-1);
+                }
                 ctx->isBuffering.store(true);
                 ctx->notifyState(env, STATE_BUFFERING);
             }
@@ -275,12 +283,18 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
             int64_t curMs;
             if (ctx->seekTargetMs.load() >= 0) {
                 curMs = ctx->seekTargetMs.load();
-            } else if (ctx->videoSeekTargetPtsUs.load() >= 0) {
+            } else if (ctx->videoSeekTargetPtsUs.load() >= 0 && ctx->totalRenderedFrames.load() == 0) {
                 curMs = ctx->videoSeekTargetPtsUs.load() / 1000;
-            } else if (ctx->audioSeekTargetPtsUs.load() >= 0) {
+            } else if (ctx->audioSeekTargetPtsUs.load() >= 0 && ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx) {
                 curMs = ctx->audioSeekTargetPtsUs.load() / 1000;
             } else {
                 curMs = ctx->getMasterClockUs() / 1000;
+                if (curMs <= 0 && ctx->totalRenderedFrames.load() > 0) {
+                    curMs = ctx->currentPositionMs.load();
+                    if (curMs <= 0) {
+                        curMs = ctx->lastVideoPtsUs.load() / 1000;
+                    }
+                }
                 if (curMs < 0) curMs = 0;
                 if (ctx->durationMs > 0 && curMs > ctx->durationMs) curMs = ctx->durationMs;
             }

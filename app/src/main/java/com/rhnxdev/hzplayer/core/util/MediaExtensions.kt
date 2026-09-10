@@ -164,8 +164,10 @@ fun List<RemoteFileItem>.sortedRemote(): List<RemoteFileItem> =
 
 /**
  * Sort a file listing dirs-first, then by the chosen [SortType] (name /
- * date-modified / size). Generic over both [FolderItem] and [RemoteFileItem],
- * which expose the same accessors, so the local and remote VMs share one impl.
+ * date-modified / size / duration). Generic over both [FolderItem] and
+ * [RemoteFileItem], which expose the same accessors, so the local and remote
+ * VMs share one impl. Remote entries use the default duration of zero because
+ * remote protocols do not provide duration metadata during directory listing.
  */
 fun <T> sortFilesByType(
     items: List<T>,
@@ -174,19 +176,24 @@ fun <T> sortFilesByType(
     name: (T) -> String,
     dateModified: (T) -> Long,
     size: (T) -> Long,
+    duration: (T) -> Long = { 0L },
     descending: Boolean = false,
 ): List<T> {
     val (dirs, files) = items.partition(isDirectory)
     val sortDirs = when (sort) {
         SortType.TITLE -> dirs.sortedBy { name(it).lowercase() }
-        SortType.DATE_MODIFIED -> dirs.sortedByDescending(dateModified)
-        SortType.FILE_SIZE -> dirs.sortedByDescending(size)
+        SortType.DATE_MODIFIED -> dirs.sortedBy(dateModified)
+        SortType.FILE_SIZE -> dirs.sortedBy(size)
+        // Directories do not have a duration; keep their name order while
+        // preserving the dirs-first invariant for duration sorting.
+        SortType.DURATION -> dirs.sortedBy { name(it).lowercase() }
         else -> dirs.sortedBy { name(it).lowercase() }
     }
     val sortFiles = when (sort) {
         SortType.TITLE -> files.sortedBy { name(it).lowercase() }
-        SortType.DATE_MODIFIED -> files.sortedByDescending(dateModified)
-        SortType.FILE_SIZE -> files.sortedByDescending(size)
+        SortType.DATE_MODIFIED -> files.sortedBy(dateModified)
+        SortType.FILE_SIZE -> files.sortedBy(size)
+        SortType.DURATION -> files.sortedBy(duration)
         else -> files.sortedBy { name(it).lowercase() }
     }
     val orderedDirs = if (descending) sortDirs.asReversed() else sortDirs

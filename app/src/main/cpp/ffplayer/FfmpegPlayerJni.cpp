@@ -412,6 +412,10 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
         }
     }
 
+    if (ctx->audioStreamIdx < 0 || !ctx->audioCodecCtx) {
+        ctx->audioSeekTargetPtsUs.store(-1);
+    }
+
     ctx->publishMetadataSnapshot(audioTrackNames);
     ctx->isRunning.store(true);
     ctx->isStopped.store(false);
@@ -537,13 +541,19 @@ JNI_FUNC(jlong, nativeGetPosition, jlong handle) {
     if (ctx->seekTargetMs.load() >= 0) {
         return ctx->seekTargetMs.load();
     }
-    if (ctx->videoSeekTargetPtsUs.load() >= 0) {
+    if (ctx->videoSeekTargetPtsUs.load() >= 0 && ctx->totalRenderedFrames.load() == 0) {
         return ctx->videoSeekTargetPtsUs.load() / 1000;
     }
-    if (ctx->audioSeekTargetPtsUs.load() >= 0) {
+    if (ctx->audioSeekTargetPtsUs.load() >= 0 && ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx != nullptr) {
         return ctx->audioSeekTargetPtsUs.load() / 1000;
     }
     int64_t clockMs = ctx->getMasterClockUs() / 1000;
+    if (clockMs <= 0 && ctx->totalRenderedFrames.load() > 0) {
+        clockMs = ctx->currentPositionMs.load();
+        if (clockMs <= 0) {
+            clockMs = ctx->lastVideoPtsUs.load() / 1000;
+        }
+    }
     if (clockMs < 0) clockMs = 0;
     int64_t durationMs = ctx->getMetadataDurationMs();
     if (durationMs > 0 && clockMs > durationMs) clockMs = durationMs;

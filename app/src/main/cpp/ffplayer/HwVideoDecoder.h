@@ -75,7 +75,19 @@ struct HwVideoDecoder {
         if (bsfCtx && bsfCtx->par_out && bsfCtx->par_out->extradata && bsfCtx->par_out->extradata_size > 0) {
             AMediaFormat_setBuffer(format, "csd-0", bsfCtx->par_out->extradata, bsfCtx->par_out->extradata_size);
         } else if (par->extradata && par->extradata_size > 0) {
-            AMediaFormat_setBuffer(format, "csd-0", par->extradata, par->extradata_size);
+            bool isAnnexB = false;
+            if (par->extradata_size >= 4) {
+                if (par->extradata[0] == 0 && par->extradata[1] == 0 &&
+                    ((par->extradata[2] == 1) || (par->extradata[2] == 0 && par->extradata[3] == 1))) {
+                    isAnnexB = true;
+                }
+            }
+            // For HEVC, extradata is typically raw HVCC (starts with version 1) rather than Annex-B.
+            // Feeding raw HVCC directly as csd-0 causes AMediaCodec_configure to fail.
+            // When bsf hevc_mp4toannexb is active, it emits in-band parameter sets on the first packet.
+            if (isAnnexB || par->codec_id != AV_CODEC_ID_HEVC) {
+                AMediaFormat_setBuffer(format, "csd-0", par->extradata, par->extradata_size);
+            }
         }
 
         if (forceSdr) {
@@ -141,13 +153,29 @@ struct HwVideoDecoder {
         return false;
     }
 
-    void flush() {
+    bool flush() {
+        bool success = true;
         if (codec && isConfigured.load()) {
-            AMediaCodec_flush(codec);
+            // AMediaCodec_flush() leaves the codec in the Flushed state. It
+            // must be started again before input buffers can be queued after a
+            // seek, otherwise HDR/zero-copy playback stops producing frames.
+            media_status_t flushStatus = AMediaCodec_flush(codec);
+            if (flushStatus != AMEDIA_OK) {
+                LOGW("HwVideoDecoder: AMediaCodec_flush failed (%d)", flushStatus);
+                success = false;
+            } else {
+                media_status_t startStatus = AMediaCodec_start(codec);
+                // On some Android implementations, calling start after flush is invalid
+                // (AMEDIA_ERROR_INVALID_OPERATION = -10000) because flush keeps the codec executing.
+                if (startStatus != AMEDIA_OK && startStatus != -10000) {
+                    LOGW("HwVideoDecoder: AMediaCodec_start after flush failed (%d)", startStatus);
+                }
+            }
         }
         if (bsfCtx) {
             av_bsf_flush(bsfCtx);
         }
+        return success;
     }
 
     void release() {

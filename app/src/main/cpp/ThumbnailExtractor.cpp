@@ -949,6 +949,12 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeProbeMed
         probePut(kv, "format_long", fmtCtx->iformat->long_name);
     if (fmtCtx->bit_rate > 0)
         probePut(kv, "bitrate", std::to_string(fmtCtx->bit_rate));
+    if (fmtCtx->duration > 0) {
+        const int64_t durationMs = av_rescale_q(
+            fmtCtx->duration, AV_TIME_BASE_Q, AVRational{1, 1000});
+        if (durationMs > 0)
+            probePut(kv, "duration_ms", std::to_string(durationMs));
+    }
 
     // Stream counts
     int videoTrackCount = 0, audioTrackCount = 0, subTrackCount = 0;

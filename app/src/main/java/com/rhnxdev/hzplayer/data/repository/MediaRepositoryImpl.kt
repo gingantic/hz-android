@@ -27,8 +27,9 @@ class MediaRepositoryImpl @Inject constructor(
                 id = index.toLong(),
                 title = item["title"] as? String ?: "",
                 uri = item["uri"] as? String ?: "",
-                durationMs = (item["durationMs"] as? Long) ?: 0,
+                durationMs = (item["durationMs"] as? Number)?.toLong() ?: 0L,
                 resolution = item["resolution"] as? String,
+                dateAdded = System.currentTimeMillis() / 1000L - (index * 86_400L),
             )
         }
     } else emptyList()

@@ -55,18 +55,25 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         int64_t mySeekVersion = ctx->seekVersion.load(std::memory_order_acquire);
 
         int64_t targetPts = ctx->videoSeekTargetPtsUs.load();
+        bool anchorClockForSeek = false;
         if (targetPts >= 0) {
             int64_t frameDurUs = (ctx->sourceFps > 0) ? static_cast<int64_t>(1000000.0f / ctx->sourceFps) : 33333;
             if (ptsUs < targetPts - (frameDurUs / 2)) {
                 // Drop all preroll frames before seek target
                 return false;
             }
-            ctx->videoSeekTargetPtsUs.store(-1);
+            // Consume only the target that this seek generation requested.
+            // A newer seek must never be cleared by an older in-flight frame.
+            int64_t expectedTargetPts = targetPts;
+            if (ctx->seekVersion.load(std::memory_order_acquire) != mySeekVersion ||
+                !ctx->videoSeekTargetPtsUs.compare_exchange_strong(
+                    expectedTargetPts, -1, std::memory_order_acq_rel)) {
+                return false;
+            }
             isSeekFrame = true;
         } else if (ctx->isScrubbing.load() || isSeekFrame) {
             isSeekFrame = true;
-            ctx->setMasterClockUs(ptsUs);
-            ctx->notifyPosition(env, ptsUs / 1000, ctx->durationMs);
+            anchorClockForSeek = true;
         }
 
         ctx->lastVideoPtsUs.store(ptsUs);
@@ -93,7 +100,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 int64_t diffUs  = ptsUs - clockUs;
                 ctx->lastAudioDriftUs.store(diffUs);
 
-                if (ctx->audioStreamIdx >= 0) {
+                if (ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx != nullptr) {
                     // Desync recovery: if video is more than 2 frames late compared to audio clock,
                     // drop this video frame to catch up smoothly
                     if (diffUs < -lateDropThresholdUs && !isSeekFrame) {
@@ -149,6 +156,15 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         // Stale-frame guard: if a newer seek fired during A/V sync wait, discard this frame.
         if (ctx->seekVersion.load(std::memory_order_acquire) != mySeekVersion) {
             return false;
+        }
+        if (anchorClockForSeek) {
+            // Do not publish a scrubbing/seek position until the frame is
+            // known to belong to the current seek generation.
+            if (ctx->seekVersion.load(std::memory_order_acquire) != mySeekVersion) {
+                return false;
+            }
+            ctx->setMasterClockUs(ptsUs);
+            ctx->notifyPosition(env, ptsUs / 1000, ctx->durationMs);
         }
 
         // ── Render ───────────────────────────────────────────────────
@@ -242,6 +258,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         // Capture seek generation so we can discard stale frames after a rapid seek.
         int64_t mySeekVersion = ctx->seekVersion.load(std::memory_order_acquire);
         int64_t targetPts = ctx->videoSeekTargetPtsUs.load();
+        bool anchorClockForSeek = false;
         if (targetPts >= 0) {
             int64_t frameDurUs = (ctx->sourceFps > 0) ? static_cast<int64_t>(1000000.0f / ctx->sourceFps) : 33333;
             if (ptsUs < targetPts - (frameDurUs / 2)) {
@@ -249,12 +266,19 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, false);
                 return false;
             }
-            ctx->videoSeekTargetPtsUs.store(-1);
+            // Consume only the target that this seek generation requested.
+            // A newer seek must never be cleared by an older in-flight frame.
+            int64_t expectedTargetPts = targetPts;
+            if (ctx->seekVersion.load(std::memory_order_acquire) != mySeekVersion ||
+                !ctx->videoSeekTargetPtsUs.compare_exchange_strong(
+                    expectedTargetPts, -1, std::memory_order_acq_rel)) {
+                AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, false);
+                return false;
+            }
             isSeekFrame = true;
         } else if (ctx->isScrubbing.load() || isSeekFrame) {
             isSeekFrame = true;
-            ctx->setMasterClockUs(ptsUs);
-            ctx->notifyPosition(env, ptsUs / 1000, ctx->durationMs);
+            anchorClockForSeek = true;
         }
 
         ctx->lastVideoPtsUs.store(ptsUs);
@@ -264,6 +288,16 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         if (ctx->seekVersion.load(std::memory_order_acquire) != mySeekVersion) {
             AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, false);
             return false;
+        }
+        if (anchorClockForSeek) {
+            // Do not publish a scrubbing/seek position until the frame is
+            // known to belong to the current seek generation.
+            if (ctx->seekVersion.load(std::memory_order_acquire) != mySeekVersion) {
+                AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, false);
+                return false;
+            }
+            ctx->setMasterClockUs(ptsUs);
+            ctx->notifyPosition(env, ptsUs / 1000, ctx->durationMs);
         }
         if (isSeekFrame || ctx->isScrubbing.load()) {
             AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, true);
@@ -288,7 +322,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 int64_t diffUs  = ptsUs - clockUs;
                 ctx->lastAudioDriftUs.store(diffUs);
 
-                if (ctx->audioStreamIdx >= 0) {
+                if (ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx != nullptr) {
                     if (diffUs < -lateDropThresholdUs) {
                         if (diffUs < -500000) {
                             LOGW("Large A/V desync detected in HW decode (diff: %" PRId64 " us); re-aligning master clock", diffUs);
@@ -443,6 +477,45 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
     std::deque<AVFrame*> decodedFrames;
     const size_t maxDecodedFrames = 6;
 
+    // A blocked demux/SMB read leaves both the packet queue and decoded-frame
+    // queue empty. Do not report a single 5 ms scheduling gap as buffering, but
+    // surface a sustained post-startup underrun to the Kotlin player state.
+    const auto videoStarvationThreshold = std::chrono::milliseconds(200);
+    bool videoStarvationPending = false;
+    std::chrono::steady_clock::time_point videoStarvationStarted;
+
+    auto resetVideoStarvation = [&]() {
+        videoStarvationPending = false;
+    };
+
+    auto updateVideoStarvation = [&]() {
+        // Startup and seek buffering are reported by the demux thread. This
+        // detector is only for an underrun after at least one frame was shown.
+        if (ctx->totalRenderedFrames.load(std::memory_order_relaxed) == 0 ||
+            !ctx->isRunning.load() || ctx->isStopped.load() ||
+            ctx->isPaused.load() || ctx->isScrubbing.load() ||
+            ctx->seekTargetMs.load() >= 0 || needSeekFrame ||
+            ctx->videoSeekTargetPtsUs.load() >= 0 ||
+            ctx->demuxEof.load() || ctx->videoFinished.load()) {
+            resetVideoStarvation();
+            return;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        if (!videoStarvationPending) {
+            videoStarvationPending = true;
+            videoStarvationStarted = now;
+            return;
+        }
+        if (now - videoStarvationStarted < videoStarvationThreshold) return;
+
+        if (!ctx->isBuffering.exchange(true)) {
+            LOGW("Video pipeline starved; entering buffering state");
+            ctx->notifyState(env, STATE_BUFFERING);
+            ctx->controlCv.notify_all();
+        }
+    };
+
     auto drainOneDecodedFrame = [&](bool isSeek) -> bool {
         if (decodedFrames.empty()) return false;
         AVFrame* front = decodedFrames.front();
@@ -497,6 +570,13 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                         ctx->setVideoCodecName(ctx->videoCodecCtx ? ctx->videoCodecCtx->codec->name : "Software");
                     }
                 }
+            } else if (ctx->nativeWindow && allowHwNow && ctx->videoCodecPar) {
+                // Surface was recreated (e.g. ActivityInfo.COLOR_MODE_HDR switch).
+                // Re-initialize hardware decoder on the new surface.
+                if (hwDecoder.init(ctx->videoCodecPar, ctx->nativeWindow, ctx->forceSdr.load(), ctx->videoRotation)) {
+                    ctx->setVideoCodecName(hwDecoder.codecName);
+                    LOGI("HwVideoDecoder: Re-initialized hardware decoder on recreated surface");
+                }
             }
             needSeekFrame = true;
         }
@@ -512,22 +592,39 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
 
         if (!ctx->videoQueue.pop(item, 5)) {
             if (!decodedFrames.empty()) {
+                resetVideoStarvation();
                 drainOneDecodedFrame(false);
+            } else {
+                updateVideoStarvation();
             }
             continue;
         }
+        resetVideoStarvation();
 
         if (item.isFlush) {
             hwDecodeConsecutiveFailures = 0;
             fallbackToSoftwareRequested = false;
             if (hwDecoder.isConfigured.load()) {
-                hwDecoder.flush();
-                // Drain and discard any output buffers that were queued before the flush.
-                // Without this, stale pre-seek frames can appear momentarily at the new position.
-                AMediaCodecBufferInfo flushInfo;
-                ssize_t flushIdx;
-                while ((flushIdx = AMediaCodec_dequeueOutputBuffer(hwDecoder.codec, &flushInfo, 0)) >= 0) {
-                    AMediaCodec_releaseOutputBuffer(hwDecoder.codec, flushIdx, false);
+                if (hwDecoder.flush()) {
+                    // Drain and discard any output buffers that were queued before the flush.
+                    // Without this, stale pre-seek frames can appear momentarily at the new position.
+                    AMediaCodecBufferInfo flushInfo;
+                    ssize_t flushIdx;
+                    while ((flushIdx = AMediaCodec_dequeueOutputBuffer(hwDecoder.codec, &flushInfo, 0)) >= 0) {
+                        AMediaCodec_releaseOutputBuffer(hwDecoder.codec, flushIdx, false);
+                    }
+                } else {
+                    // A failed MediaCodec restart must not leave the video
+                    // thread feeding a dead hardware decoder indefinitely.
+                    LOGW("HwVideoDecoder: Seek flush failed; falling back to software decoder");
+                    hwDecoder.release();
+                    if (ctx->videoCodecCtx) {
+                        avcodec_flush_buffers(ctx->videoCodecCtx);
+                        ctx->videoCodecCtx->skip_frame = AVDISCARD_DEFAULT;
+                    }
+                    if (ctx->videoCodecName.rfind("MediaCodec", 0) == 0) {
+                        ctx->setVideoCodecName(ctx->videoCodecCtx ? ctx->videoCodecCtx->codec->name : "Software");
+                    }
                 }
             } else if (ctx->videoCodecCtx) {
                 avcodec_flush_buffers(ctx->videoCodecCtx);

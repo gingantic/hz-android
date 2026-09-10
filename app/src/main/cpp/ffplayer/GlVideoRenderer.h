@@ -116,9 +116,9 @@ private:
             "        vec4 py = texture(u_texY, v_texCoord);\n"
             "        vec4 pu = texture(u_texU, v_texCoord);\n"
             "        vec4 pv = texture(u_texV, v_texCoord);\n"
-            "        y = (py.r + py.a * 256.0) * (255.0 / 1023.0);\n"
-            "        u = (pu.r + pu.a * 256.0) * (255.0 / 1023.0);\n"
-            "        v = (pv.r + pv.a * 256.0) * (255.0 / 1023.0);\n"
+            "        y = (py.r + py.g * 256.0) * (255.0 / 1023.0);\n"
+            "        u = (pu.r + pu.g * 256.0) * (255.0 / 1023.0);\n"
+            "        v = (pv.r + pv.g * 256.0) * (255.0 / 1023.0);\n"
             "    } else {\n"
             "        y = texture(u_texY, v_texCoord).r;\n"
             "        u = texture(u_texU, v_texCoord).r;\n"
@@ -343,9 +343,9 @@ public:
         if (is10Bit) {
             glPixelStorei(GL_UNPACK_ROW_LENGTH, f->linesize[0] / 2);
             if (texWidth != w || texHeight != h || texIs10Bit != 1) {
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, w, h, 0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, f->data[0]);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, w, h, 0, GL_RG, GL_UNSIGNED_BYTE, f->data[0]);
             } else {
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, f->data[0]);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RG, GL_UNSIGNED_BYTE, f->data[0]);
             }
         } else {
             glPixelStorei(GL_UNPACK_ROW_LENGTH, f->linesize[0]);
@@ -362,9 +362,9 @@ public:
         if (is10Bit) {
             glPixelStorei(GL_UNPACK_ROW_LENGTH, f->linesize[1] / 2);
             if (texWidth != w || texHeight != h || texIs10Bit != 1) {
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, uvW, uvH, 0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, f->data[1]);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, uvW, uvH, 0, GL_RG, GL_UNSIGNED_BYTE, f->data[1]);
             } else {
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvW, uvH, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, f->data[1]);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvW, uvH, GL_RG, GL_UNSIGNED_BYTE, f->data[1]);
             }
         } else {
             glPixelStorei(GL_UNPACK_ROW_LENGTH, f->linesize[1]);
@@ -381,9 +381,9 @@ public:
         if (is10Bit) {
             glPixelStorei(GL_UNPACK_ROW_LENGTH, f->linesize[2] / 2);
             if (texWidth != w || texHeight != h || texIs10Bit != 1) {
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, uvW, uvH, 0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, f->data[2]);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, uvW, uvH, 0, GL_RG, GL_UNSIGNED_BYTE, f->data[2]);
             } else {
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvW, uvH, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, f->data[2]);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, uvW, uvH, GL_RG, GL_UNSIGNED_BYTE, f->data[2]);
             }
         } else {
             glPixelStorei(GL_UNPACK_ROW_LENGTH, f->linesize[2]);

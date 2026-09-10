@@ -51,9 +51,9 @@ class VideoLibraryViewModel @Inject constructor(
                 id = index.toLong(),
                 title = item["title"] as? String ?: "",
                 uri = item["uri"] as? String ?: "",
-                durationMs = (item["durationMs"] as? Long) ?: 0,
+                durationMs = (item["durationMs"] as? Number)?.toLong() ?: 0L,
                 resolution = item["resolution"] as? String,
-                dateAdded = System.currentTimeMillis() - (index * 86_400_000L),
+                dateAdded = System.currentTimeMillis() / 1000L - (index * 86_400L),
             )
         }
 
@@ -62,9 +62,9 @@ class VideoLibraryViewModel @Inject constructor(
                 id = (100 + index).toLong(),
                 title = item["title"] as? String ?: "",
                 uri = item["uri"] as? String ?: "",
-                durationMs = (item["durationMs"] as? Long) ?: 0,
-                watchedProgress = ((item["progress"] as? Double)?.toFloat()) ?: 0f,
-                dateAdded = System.currentTimeMillis() - (index * 3_600_000L),
+                durationMs = (item["durationMs"] as? Number)?.toLong() ?: 0L,
+                watchedProgress = ((item["progress"] as? Number)?.toFloat()) ?: 0f,
+                dateAdded = System.currentTimeMillis() / 1000L - (index * 3_600L),
             )
         }
     }
@@ -93,9 +93,9 @@ class VideoLibraryViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
 
             try {
-                // Load initial sort type
                 val sortType = userPreferencesRepository.getSortType("video_library").first()
                 val sortDirection = userPreferencesRepository.getSortDirection("video_library").first()
+                _uiState.update { it.copy(sortType = sortType, sortDirection = sortDirection) }
 
                 // Try real data from MediaStore via repository
                 mediaRepository.getAllVideos(sortType, forceRefresh)
@@ -125,16 +125,17 @@ class VideoLibraryViewModel @Inject constructor(
 
     /** Real data arrived (or an explicitly empty result). */
     private fun emitLoaded(videos: List<VideoItem>) {
-        if (videos.isNotEmpty()) {
-            val cutoff = System.currentTimeMillis() - (7 * 86_400_000L) // 7 days
-            val recent = videos.filter { it.dateAdded >= cutoff }
-            val categories = groupVideosIntoCategories(videos, recent)
+        val state = _uiState.value
+        val sortedVideos = sortVideos(videos, state.sortType, state.sortDirection)
+        if (sortedVideos.isNotEmpty()) {
+            val recent = recentVideos(sortedVideos)
+            val categories = groupVideosIntoCategories(sortedVideos, recent)
             _uiState.update {
                 it.copy(
                     categories = categories,
                     recentVideos = recent,
-                    allVideos = videos,
-                    filteredVideos = videos,
+                    allVideos = sortedVideos,
+                    filteredVideos = sortedVideos,
                     isLoading = false,
                     isEmpty = false,
                 )
@@ -143,20 +144,24 @@ class VideoLibraryViewModel @Inject constructor(
             // Empty result. Only show fictional preview data in debug
             // builds; in release, surface an empty library instead.
             if (BuildConfig.DEBUG) {
-                val categories = groupVideosIntoCategories(PREVIEW_VIDEOS)
+                val previewVideos = sortVideos(PREVIEW_VIDEOS, state.sortType, state.sortDirection)
+                val recent = recentVideos(previewVideos)
+                val categories = groupVideosIntoCategories(previewVideos, recent)
                 _uiState.update {
                     it.copy(
                         categories = categories,
-                        allVideos = PREVIEW_VIDEOS,
-                        filteredVideos = PREVIEW_VIDEOS,
+                        recentVideos = recent,
+                        allVideos = previewVideos,
+                        filteredVideos = previewVideos,
                         isLoading = false,
-                        isEmpty = PREVIEW_VIDEOS.isEmpty(),
+                        isEmpty = previewVideos.isEmpty(),
                     )
                 }
             } else {
                 _uiState.update {
                     it.copy(
                         categories = emptyList(),
+                        recentVideos = emptyList(),
                         allVideos = emptyList(),
                         filteredVideos = emptyList(),
                         isLoading = false,
@@ -170,15 +175,18 @@ class VideoLibraryViewModel @Inject constructor(
     /** Load failed — fall back to preview data only in debug; real error in release. */
     private fun emitFailure(message: String?) {
         if (BuildConfig.DEBUG) {
-            val categories = groupVideosIntoCategories(PREVIEW_VIDEOS, PREVIEW_RECENT)
+            val state = _uiState.value
+            val previewVideos = sortVideos(PREVIEW_VIDEOS, state.sortType, state.sortDirection)
+            val recent = sortVideos(PREVIEW_RECENT, state.sortType, state.sortDirection)
+            val categories = groupVideosIntoCategories(previewVideos, recent)
             _uiState.update {
                 it.copy(
                     categories = categories,
-                    recentVideos = PREVIEW_RECENT,
-                    allVideos = PREVIEW_VIDEOS,
-                    filteredVideos = PREVIEW_VIDEOS,
+                    recentVideos = recent,
+                    allVideos = previewVideos,
+                    filteredVideos = previewVideos,
                     isLoading = false,
-                    error = if (PREVIEW_VIDEOS.isEmpty()) message else null,
+                    error = if (previewVideos.isEmpty()) message else null,
                 )
             }
         } else {
@@ -193,6 +201,25 @@ class VideoLibraryViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    private fun sortVideos(
+        videos: List<VideoItem>,
+        sort: SortType,
+        direction: SortDirection,
+    ): List<VideoItem> {
+        val sorted = when (sort) {
+            SortType.TITLE -> videos.sortedBy { it.title.lowercase() }
+            SortType.DATE_ADDED -> videos.sortedBy { it.dateAdded }
+            SortType.DURATION -> videos.sortedBy { it.durationMs }
+            else -> videos.sortedBy { it.title.lowercase() }
+        }
+        return if (direction == SortDirection.DESCENDING) sorted.asReversed() else sorted
+    }
+
+    private fun recentVideos(videos: List<VideoItem>): List<VideoItem> {
+        val cutoffSeconds = System.currentTimeMillis() / 1000L - (7 * 86_400L)
+        return videos.filter { it.dateAdded >= cutoffSeconds }
     }
 
     private fun observePreferences() {
@@ -291,20 +318,21 @@ class VideoLibraryViewModel @Inject constructor(
         // Only TITLE / DATE_ADDED / DURATION are exposed in the video library sort
         // menu; DATE_MODIFIED / FILE_SIZE are reachable from the file/network
         // browsers, not here.
-        val descending = _uiState.value.sortDirection == SortDirection.DESCENDING
-        val source = _uiState.value.allVideos
-        val sorted = when (sort) {
-            SortType.TITLE -> source.sortedBy { it.title }
-            SortType.DATE_ADDED -> source.sortedBy { it.dateAdded }
-            SortType.DURATION -> source.sortedBy { it.durationMs }
-            else -> source.sortedBy { it.title }
-        }.let { if (descending) it.asReversed() else it }
-        val categories = groupVideosIntoCategories(sorted, _uiState.value.recentVideos)
+        val state = _uiState.value
+        val sorted = sortVideos(state.allVideos, sort, state.sortDirection)
+        val recent = recentVideos(sorted)
+        val query = search.searchQuery.value
+        val filtered = if (search.isSearchActive.value && query.isNotEmpty()) {
+            sorted.filter { it.title.contains(query, ignoreCase = true) }
+        } else {
+            sorted
+        }
         _uiState.update {
             it.copy(
                 allVideos = sorted,
-                categories = categories,
-                filteredVideos = if (search.isSearchActive.value) it.filteredVideos else sorted,
+                recentVideos = recent,
+                categories = groupVideosIntoCategories(sorted, recent),
+                filteredVideos = filtered,
             )
         }
     }

@@ -23,7 +23,7 @@ import java.io.RandomAccessFile
  * not probed (returns null).
  *
  * The returned map uses the keys produced by the native probe, e.g.
- * `format`, `video_codec`, `video_profile`, `video_fps`, `audio_codec`,
+ * `format`, `duration_ms`, `video_codec`, `video_profile`, `video_fps`, `audio_codec`,
  * `audio_sample_rate`, `audio_channels`, `*_bitrate`, … Only keys the demuxer
  * could determine are present.
  */

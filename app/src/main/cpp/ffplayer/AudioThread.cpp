@@ -61,8 +61,12 @@ void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             auto buffStart = std::chrono::steady_clock::now();
             while (ctx->isBuffering.load() && ctx->isRunning.load() && !ctx->isStopped.load() &&
                    !ctx->videoFinished.load() && ctx->nativeWindow != nullptr) {
-                if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - buffStart).count() > 2500) {
-                    LOGW("Buffering timeout in audio thread; releasing audio");
+                // This fallback is only for a stream that has not presented
+                // any video yet. Once playback has rendered a frame, a later
+                // video underrun must keep audio paused until video recovers.
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - buffStart).count() > 2500 &&
+                    ctx->totalRenderedFrames.load(std::memory_order_relaxed) == 0) {
+                    LOGW("Initial buffering timeout in audio thread; releasing audio");
                     if (ctx->isBuffering.exchange(false)) {
                         ctx->setMasterClockUs(ptsUs);
                         ctx->notifyPosition(env, ptsUs / 1000, ctx->durationMs);

@@ -248,6 +248,19 @@ struct FfmpegPlayerContext {
             if (!endNotified.exchange(true)) {
                 LOGI("Playback finished: all streams completed rendering");
                 isPaused.store(true);
+
+                // The last decoded frame can have a timestamp before the
+                // container duration, especially after seeking near EOF. Keep
+                // the public position at the true terminal value so polling
+                // clients (including the hidden-HUD seekbar) do not remain
+                // stuck on that final frame's timestamp.
+                const int64_t endMs = getMetadataDurationMs();
+                if (endMs > 0) {
+                    currentPositionMs.store(endMs);
+                    setMasterClockUs(endMs * 1000);
+                    notifyPosition(env, endMs, endMs);
+                }
+
                 notifyState(env, STATE_ENDED);
             }
         }

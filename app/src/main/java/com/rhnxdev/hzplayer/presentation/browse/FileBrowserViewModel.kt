@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.presentation.browse
 
+import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Environment
@@ -9,11 +10,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
+import com.rhnxdev.hzplayer.core.io.MediaInfoProbe
 import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
 import com.rhnxdev.hzplayer.core.util.buildArchiveBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
+import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isSolidArchiveExtension
 import com.rhnxdev.hzplayer.core.util.sortFilesByType
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
@@ -30,6 +33,7 @@ import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -64,6 +68,7 @@ data class SavedScrollPosition(
 
 @HiltViewModel
 class FileBrowserViewModel @Inject constructor(
+    @ApplicationContext private val applicationContext: Context,
     private val fileRepository: FileRepository,
     private val userPrefs: UserPreferencesRepository,
     private val resumeRepository: ResumeRepository,
@@ -122,6 +127,7 @@ class FileBrowserViewModel @Inject constructor(
             val savedDir = userPrefs.getSortDirection(sortKey).first()
             val savedMediaMode = userPrefs.fileBrowserMediaMode.first()
             _uiState.update { it.copy(sortType = savedSort, sortDirection = savedDir, isMediaMode = savedMediaMode) }
+            reapplySort()
         }
         viewModelScope.launch {
             userPrefs.archivePasswords.collect { persisted ->
@@ -282,6 +288,7 @@ class FileBrowserViewModel @Inject constructor(
                 name = { it.name },
                 dateModified = { it.dateModified },
                 size = { it.fileSize },
+                duration = { it.durationMs },
                 descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
             )
             onReady(sorted.toVideoPlaylist())
@@ -649,12 +656,14 @@ class FileBrowserViewModel @Inject constructor(
         val resolutionMap = localVideos.associate { it.uri to it.resolution }
         val dateAddedMap = localVideos.associate { it.uri to it.dateAdded }
 
-        items.map { item ->
+        val enriched = items.map { item ->
             if (item.isDirectory) {
                 item
             } else {
                 val progress = progressMap[item.path]
-                val duration = progress?.durationMs ?: durationMap[item.path] ?: 0L
+                val duration = progress?.durationMs?.takeIf { it > 0L }
+                    ?: durationMap[item.path]
+                    ?: 0L
                 val position = if (showProgress) progress?.positionMs ?: 0L else 0L
                 item.copy(
                     durationMs = duration,
@@ -663,6 +672,34 @@ class FileBrowserViewModel @Inject constructor(
                     dateAdded = dateAddedMap[item.path] ?: 0L
                 )
             }
+        }
+        enrichArchiveDurations(enriched)
+    }
+
+    /** Probe durations for playable files inside archives before any duration sort. */
+    private suspend fun enrichArchiveDurations(items: List<FolderItem>): List<FolderItem> = coroutineScope {
+        val candidates = items.filter { item ->
+            !item.isDirectory &&
+                item.durationMs <= 0L &&
+                item.path.startsWith("${ArchiveUri.SCHEME}:") &&
+                (isVideoExtension(item.name) || isAudioExtension(item.name))
+        }
+        if (candidates.isEmpty()) return@coroutineScope items
+
+        val durations = candidates.map { item ->
+            async {
+                val duration = runCatching {
+                    MediaInfoProbe.probe(applicationContext, item.path)
+                        ?.get("duration_ms")
+                        ?.toLongOrNull()
+                        ?.takeIf { it > 0L }
+                }.getOrNull()
+                item.path to duration
+            }
+        }.map { it.await() }.toMap()
+
+        items.map { item ->
+            durations[item.path]?.let { item.copy(durationMs = it) } ?: item
         }
     }
 
@@ -676,8 +713,18 @@ class FileBrowserViewModel @Inject constructor(
 
             val cached = cache.get(path)
             if (cached != null) {
+                val sorted = sortFilesByType(
+                    cached,
+                    _uiState.value.sortType,
+                    isDirectory = { it.isDirectory },
+                    name = { it.name },
+                    dateModified = { it.dateModified },
+                    size = { it.fileSize },
+                    duration = { it.durationMs },
+                    descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
+                )
                 updateLayer(layerIndex) {
-                    it.copy(items = cached, isEmpty = cached.isEmpty(), error = null, isLoading = false)
+                    it.copy(items = sorted, isEmpty = sorted.isEmpty(), error = null, isLoading = false)
                 }
                 return@launch
             }
@@ -692,6 +739,8 @@ class FileBrowserViewModel @Inject constructor(
                         name = { it.name },
                         dateModified = { it.dateModified },
                         size = { it.fileSize },
+                        duration = { it.durationMs },
+                        descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
                     )
                     cache.put(path, sorted)
                     updateLayer(layerIndex) {
@@ -712,8 +761,10 @@ class FileBrowserViewModel @Inject constructor(
             search.clear()
 
             cache.get(path)?.let { cached ->
+                val enriched = enrichItemsWithPlaybackMetadata(cached)
+                cache.put(path, enriched)
                 updateLayer(layerIndex) {
-                    it.copy(items = sortArchive(cached), isEmpty = cached.isEmpty(), error = null, isLoading = false)
+                    it.copy(items = sortArchive(enriched), isEmpty = enriched.isEmpty(), error = null, isLoading = false)
                 }
                 return@launch
             }
@@ -723,9 +774,10 @@ class FileBrowserViewModel @Inject constructor(
             archiveRepository.listEntries(container, savedPassword).fold(
                 onSuccess = { entries ->
                     val children = archiveChildren(container, prefix, entries)
-                    cache.put(path, children)
+                    val enriched = enrichItemsWithPlaybackMetadata(children)
+                    cache.put(path, enriched)
                     updateLayer(layerIndex) {
-                        it.copy(items = sortArchive(children), isEmpty = children.isEmpty(), error = null, isLoading = false)
+                        it.copy(items = sortArchive(enriched), isEmpty = enriched.isEmpty(), error = null, isLoading = false)
                     }
                 },
                 onFailure = { e ->
@@ -761,6 +813,7 @@ class FileBrowserViewModel @Inject constructor(
         name = { it.name },
         dateModified = { it.dateModified },
         size = { it.fileSize },
+        duration = { it.durationMs },
         descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
     )
 
@@ -832,6 +885,7 @@ class FileBrowserViewModel @Inject constructor(
                 name = { it.name },
                 dateModified = { it.dateModified },
                 size = { it.fileSize },
+                duration = { it.durationMs },
                 descending = state.sortDirection == SortDirection.DESCENDING,
             ))
         }

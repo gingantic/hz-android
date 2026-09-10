@@ -65,6 +65,7 @@ class NetworkViewModel @Inject constructor(
             val savedSort = networkRepository.getSortType(sortKey).first()
             val savedDir = networkRepository.getSortDirection(sortKey).first()
             _uiState.update { it.copy(sortType = savedSort, sortDirection = savedDir) }
+            reapplyRemoteSort()
         }
         viewModelScope.launch {
             userPreferencesRepository.getViewMode("network_home").collect { mode ->
@@ -344,6 +345,7 @@ class NetworkViewModel @Inject constructor(
                         name = { it.name },
                         dateModified = { it.dateModified },
                         size = { it.fileSize },
+                        descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
                     )
                     updateRemoteLayer(layerIndex) {
                         it.copy(items = sorted, isLoading = false)
@@ -362,6 +364,7 @@ class NetworkViewModel @Inject constructor(
                             name = { it.name },
                             dateModified = { it.dateModified },
                             size = { it.fileSize },
+                            descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
                         )
                         updateRemoteLayer(layerIndex) {
                             it.copy(items = sorted, isEmpty = items.isEmpty(), isLoading = false)
