@@ -131,10 +131,48 @@ CC_LAUNCHER="${CCACHE_BIN:+ccache }"
 
 # ----- Build dav1d dependency --------------------------------------------------
 DAV1D_VER="1.5.1"
+MBEDTLS_VER="3.6.7"
 BUILD_TMP="/tmp/ffmpeg_build_tmp"
 PREFIX="$BUILD_TMP/prefix"
 mkdir -p "$PREFIX/lib/pkgconfig" "$PREFIX/include" "$BUILD_TMP"
 
+# cmake + ninja are needed for mbedTLS (meson is needed for dav1d below).
+SUDO=""
+[ "$(id -u)" -ne 0 ] && SUDO=sudo
+$SUDO apt-get update -qq
+$SUDO apt-get install -y -qq cmake ninja-build wget build-essential
+
+# ----- mbedTLS (TLS backend for FFmpeg's https protocol) ----------------------
+# Pinned to the same LTS as build_libarchive.sh. Static-only; the needed
+# objects are pulled into libavformat.so at link time.
+echo "=== Building mbedTLS $MBEDTLS_VER for $ABI ==="
+if [[ ! -d "$BUILD_TMP/mbedtls" ]]; then
+  git clone --depth 1 --branch "mbedtls-$MBEDTLS_VER" --recurse-submodules \
+    https://github.com/Mbed-TLS/mbedtls.git "$BUILD_TMP/mbedtls"
+fi
+
+cat > "$BUILD_TMP/mbedtls-toolchain.cmake" <<EOF
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR $TARGET_ARCH)
+set(CMAKE_C_COMPILER "$BIN_DIR/$CLANG")
+set(CMAKE_CXX_COMPILER "$BIN_DIR/$CLANGPP")
+set(CMAKE_AR "$BIN_DIR/llvm-ar")
+set(CMAKE_RANLIB "$BIN_DIR/llvm-ranlib")
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_C_FLAGS "-fPIC -Os" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS "-fPIC -Os" CACHE STRING "" FORCE)
+EOF
+
+cmake -S "$BUILD_TMP/mbedtls" -B "$BUILD_TMP/mbedtls-build" -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE="$BUILD_TMP/mbedtls-toolchain.cmake" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF \
+  -DUSE_SHARED_MBEDTLS_LIBRARY=OFF -DUSE_STATIC_MBEDTLS_LIBRARY=ON \
+  -DCMAKE_INSTALL_PREFIX="$PREFIX"
+cmake --build "$BUILD_TMP/mbedtls-build" -j"$(nproc)"
+cmake --install "$BUILD_TMP/mbedtls-build"
 echo "=== Building dav1d $DAV1D_VER for $ABI ==="
 DAV1D_DIR="$BUILD_TMP/dav1d-$DAV1D_VER"
 if [[ ! -d "$DAV1D_DIR" ]]; then
@@ -228,6 +266,7 @@ echo "=== Configuring FFmpeg for $ABI ==="
   --enable-decoder=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1,libdav1d,aac,ac3,eac3,dca,flac,mp3,opus,vorbis,alac,truehd,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,ass,ssa,subrip,mov_text,pgssub,dvdsub \
   --enable-demuxer=matroska,mov,avi,mp4,mpegts,flv,hls,dash,wav,aac,flac,ogg,mp3,m4v,webvtt,srt,ass,rtsp,sdp \
   --enable-protocol=file,http,https,tcp,udp,crypto,tls,hls,pipe,data,concat --enable-swscale --enable-swresample \
+  --enable-mbedtls --enable-version3 \
   --cross-prefix=$CROSS \
   --cc="${CC_LAUNCHER}${CLANG}" \
   --ar="llvm-ar$EXE" \
