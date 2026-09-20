@@ -98,9 +98,8 @@ BrowserActivity (separate activity)
     → PopupPermissionBottomSheet (cross-domain popup approval)
     → Real desktop mode toggle (desktop UA + wide viewport)
     → Web PiP API bridge: site PiP button → native Picture-in-Picture window
-    → Custom error / SSL interstitial pages (TabManager routes main-frame
-      failures to asset error_page.html / ssl_warning.html; renderer crashes
-      reload a fresh renderer with a crash page)
+    → WebView-native certificate handling (invalid certificates are cancelled;
+      renderer crashes reload a fresh blank renderer)
 ```
 
 ---

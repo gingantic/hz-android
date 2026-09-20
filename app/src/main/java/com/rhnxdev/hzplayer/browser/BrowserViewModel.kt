@@ -69,9 +69,11 @@ class BrowserViewModel @Inject constructor(
 
     // ── URL bar (omnibox) suggestions ────────────────────────────
 
-    /** True while the top URL bar has input focus. */
-    var isUrlBarFocused by mutableStateOf(false)
-        private set
+    /**
+     * True while the top URL bar has input focus. Owned by [TabManager] so the
+     * WebView navigation callbacks can avoid clobbering what the user is typing.
+     */
+    val isUrlBarFocused: Boolean get() = tabManager.isUrlBarFocused
 
     // null = suggestions hidden; "" = show most visited; otherwise substring filter
     private val _urlSuggestionQuery = MutableStateFlow<String?>(null)
@@ -93,13 +95,24 @@ class BrowserViewModel @Inject constructor(
         )
 
     fun onUrlBarFocusChanged(focused: Boolean) {
-        isUrlBarFocused = focused
+        tabManager.isUrlBarFocused = focused
+        if (focused) {
+            urlBarEdited = false
+        } else if (!urlBarEdited) {
+            // While focused the navigation callbacks deliberately stopped
+            // updating the bar, so re-sync it rather than leave a stale URL.
+            activeTab?.url?.let { urlInput = it }
+        }
         // Chrome-style: on focus show most visited sites, filter once typing starts
         _urlSuggestionQuery.value = if (focused) "" else null
     }
 
+    /** True once the user has edited the URL bar since it gained focus. */
+    private var urlBarEdited = false
+
     fun onUrlInputChanged(value: String) {
         urlInput = value
+        urlBarEdited = true
         if (isUrlBarFocused) {
             // Strip scheme so matching works against both url and title
             _urlSuggestionQuery.value = value

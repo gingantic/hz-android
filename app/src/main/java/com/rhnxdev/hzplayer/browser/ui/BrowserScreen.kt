@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -118,11 +117,13 @@ fun BrowserScreen(
         }
     }
 
-    // Nav bar gets solid surfaceContainerHigh to match bottom toolbar
+    // Nav bar gets solid surfaceContainerHigh to match bottom toolbar. Keyed on
+    // the colour so it isn't re-written on every recomposition — redundant
+    // system-bar writes make the bars redraw while a page is loading.
     val navColor = MaterialTheme.colorScheme.surfaceContainerHigh.toArgb()
     val currentView = LocalView.current
-    SideEffect {
-        val window = (currentView.context as? Activity)?.window ?: return@SideEffect
+    LaunchedEffect(navColor) {
+        val window = (currentView.context as? Activity)?.window ?: return@LaunchedEffect
         window.navigationBarColor = navColor
     }
 
@@ -371,7 +372,10 @@ private fun BrowserWebView(
     tabId: String,
     onTouch: () -> Unit = {},
 ) {
-    key(tabId) {
+    // Bumped by TabManager when the renderer dies and this WebView must be
+    // rebuilt — re-keying the group makes AndroidView re-run its factory.
+    val generation = viewModel.tabManager.generationOf(tabId)
+    key(tabId, generation) {
         val context = LocalContext.current
         val webView = remember(tabId) {
             val wv = viewModel.tabManager.getWebView(tabId) ?: WebView(context)
@@ -385,8 +389,6 @@ private fun BrowserWebView(
             wv
         }
 
-        val targetUrl = viewModel.tabs.find { it.id == tabId }?.url ?: ""
-
         AndroidView(
             factory = {
                 (webView.parent as? android.view.ViewGroup)?.removeView(webView)
@@ -399,16 +401,15 @@ private fun BrowserWebView(
                 webView
             },
             update = { wv ->
+                // Only re-bind the touch listener. Loading is owned by
+                // TabManager.navigate() and registerWebView(); re-issuing
+                // loadUrl here restarted the page on every recomposition
+                // (wv.url is Chromium's canonical URL and lags tab.url).
                 wv.setOnTouchListener { _, event ->
                     if (event.action == MotionEvent.ACTION_DOWN) {
                         onTouch()
                     }
                     false
-                }
-                if (targetUrl.isNotBlank() && targetUrl != "about:blank" &&
-                    !viewModel.tabManager.isSslInterstitialShowing(tabId) && wv.url != targetUrl
-                ) {
-                    wv.loadUrl(targetUrl)
                 }
             },
             modifier = Modifier.fillMaxSize(),

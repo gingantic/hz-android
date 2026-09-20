@@ -224,8 +224,10 @@ fun BrowserTopBar(
             )
         }
 
-        // Top loading progress bar
-        val targetProgress = if (isLoading) (progress.coerceAtLeast(10) / 100f) else 1f
+        // Top loading progress bar. While loading, the target is capped below
+        // 100% so a progress value that bounces near 100 (pages that keep
+        // loading sub-resources) can't make the bar flicker in and out.
+        val targetProgress = if (isLoading) (progress.coerceIn(5, 95) / 100f) else 1f
         val animatedProgress by animateFloatAsState(
             targetValue = targetProgress,
             animationSpec = tween(durationMillis = 200, easing = LinearOutSlowInEasing),
@@ -240,7 +242,7 @@ fun BrowserTopBar(
                 .height(4.5.dp)
                 .padding(top = 2.dp),
         ) {
-            if (isLoading && animatedProgress < 1f) {
+            if (isLoading) {
                 LinearProgressIndicator(
                     progress = { animatedProgress },
                     modifier = Modifier
