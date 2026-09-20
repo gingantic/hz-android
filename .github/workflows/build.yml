@@ -66,6 +66,11 @@ jobs:
       # Pinned, installed NDK so the shell scripts AND AGP use the SAME one.
       - name: Set up Android SDK + pinned NDK
         uses: android-actions/setup-android@v3
+        with:
+          # v3's action.yml still defaults to 'tools platform-tools', but the
+          # 'tools' package was removed from the SDK repo -> sdkmanager exits 1.
+          # Pin the package list explicitly to sidestep the stale default.
+          packages: platform-tools
       - name: Install pinned NDK
         run: |
           echo "y" | sdkmanager "ndk;${{ env.NDK_VER }}"
