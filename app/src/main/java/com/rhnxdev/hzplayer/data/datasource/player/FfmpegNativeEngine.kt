@@ -68,6 +68,39 @@ class FfmpegNativeEngine @Inject constructor(
 
     companion object {
         private const val TAG = "FfmpegNativeEngine"
+
+        /**
+         * Computes the true display aspect ratio (DAR) as `(width × SAR) : height`, with a
+         * 90°/270° rotation swapping the resulting display width and height.
+         *
+         * Ordering (matches ffmpeg): apply SAR to the source width first, THEN apply the
+         * display-matrix rotation swap. SAR defaults to 1:1 when it is not positive.
+         *
+         * @return the display aspect ratio, or `0f` when width/height are non-positive (or the
+         *   resulting display dimensions are non-positive).
+         */
+        internal fun computeDisplayAspectRatio(
+            videoWidth: Int,
+            videoHeight: Int,
+            sarNum: Int,
+            sarDen: Int,
+            rotationDegrees: Int
+        ): Float {
+            if (videoWidth <= 0 || videoHeight <= 0) return 0f
+
+            val sar = if (sarNum > 0 && sarDen > 0) sarNum.toFloat() / sarDen.toFloat() else 1.0f
+
+            // Apply SAR to width first.
+            val displayW0 = videoWidth.toFloat() * sar
+            val displayH0 = videoHeight.toFloat()
+
+            // Swap display width/height for a 90°/270° rotation.
+            val isRotated90or270 = (rotationDegrees == 90 || rotationDegrees == 270)
+            val displayW = if (isRotated90or270) displayH0 else displayW0
+            val displayH = if (isRotated90or270) displayW0 else displayH0
+
+            return if (displayW > 0f && displayH > 0f) displayW / displayH else 0f
+        }
     }
 
     override val engineType: EngineType = EngineType.NATIVE_FFMPEG
@@ -941,25 +974,29 @@ class FfmpegNativeEngine @Inject constructor(
 
             val (childW, childH) = if (resizeMode == AspectRatioMode.STRETCH) {
                 parentWidth to parentHeight
+            } else if (resizeMode == AspectRatioMode.AUTO && aspectRatio <= 0f) {
+                // AUTO but the true DAR is not yet known: fill the container instead of boxing
+                // to a hardcoded 16:9. applyAspectRatio() re-lays out once the DAR resolves.
+                parentWidth to parentHeight
             } else if (resizeMode == AspectRatioMode.ZOOM) {
                 if (targetRatio > containerRatio) {
                     val h = parentHeight
-                    val w = (h * targetRatio).toInt()
+                    val w = Math.round(h * targetRatio)
                     w to h
                 } else {
                     val w = parentWidth
-                    val h = (w / targetRatio).toInt()
+                    val h = Math.round(w / targetRatio)
                     w to h
                 }
             } else {
                 // FIT / AUTO / specific fixed ratios
                 if (targetRatio > containerRatio) {
                     val w = parentWidth
-                    val h = (w / targetRatio).toInt()
+                    val h = Math.round(w / targetRatio)
                     w to h
                 } else {
                     val h = parentHeight
-                    val w = (h * targetRatio).toInt()
+                    val w = Math.round(h * targetRatio)
                     w to h
                 }
             }
@@ -1103,24 +1140,28 @@ class FfmpegNativeEngine @Inject constructor(
             }
         }
 
-        val sar = if (sarNum > 0 && sarDen > 0) sarNum.toFloat() / sarDen.toFloat() else 1.0f
-        val isRotated90or270 = (videoRotation == 90 || videoRotation == 270)
-
-        // Pixel dimensions adjusted for Sample Aspect Ratio (SAR)
-        val unrotatedWidth = if (vw > 0) vw * sar else 0f
-        val unrotatedHeight = if (vh > 0) vh else 0f
-
-        // Display dimensions adjusted for display matrix rotation
-        val displayW = if (isRotated90or270) unrotatedHeight else unrotatedWidth
-        val displayH = if (isRotated90or270) unrotatedWidth else unrotatedHeight
-        val autoRatio = if (displayW > 0 && displayH > 0) displayW / displayH else 0f
+        // Display aspect ratio: (width × SAR) : height, with a 90°/270° rotation swap applied
+        // in the correct order (SAR first, then rotation). Extracted for unit testing.
+        val autoRatio = computeDisplayAspectRatio(
+            videoWidth = vw.toInt(),
+            videoHeight = vh.toInt(),
+            sarNum = sarNum,
+            sarDen = sarDen,
+            rotationDegrees = videoRotation
+        )
 
         val updateDimensions = Runnable {
             val container = activeContainerRef?.get() as? AspectRatioLayout ?: return@Runnable
+            // Always apply the current mode.
+            container.resizeMode = currentAspectRatioMode
+            // Only commit the AUTO ratio once it is actually known; leave it unset (0f) until
+            // then so onMeasure uses the full-container fallback instead of a wrong ratio.
             if (autoRatio > 0f) {
                 container.aspectRatio = autoRatio
             }
-            container.resizeMode = currentAspectRatioMode
+            // Always re-layout so the interim full-container fallback is corrected to the true
+            // DAR exactly once the dimensions/SAR resolve (the aspectRatio setter short-circuits
+            // equal values, so an unconditional requestLayout is required here).
             container.requestLayout()
         }
 
