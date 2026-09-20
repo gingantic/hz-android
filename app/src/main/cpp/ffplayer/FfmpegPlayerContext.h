@@ -5,6 +5,22 @@
 #include "NativeAudioSink.h"
 #include "NativeEqualizer.h"
 
+// ─── Seek Request (packed, single-transaction seek/scrub publication) ────────
+//
+// A seek/skip/scrub is published as ONE unit so the target the demuxer seeks to
+// and the seekVersion the video/audio threads gate against can never belong to
+// different generations (the root cause of the A/V desync race). See design.md
+// "Changes Required" §1.
+//
+enum class SeekMode : uint8_t { NORMAL = 0, FAST = 1 };
+
+struct SeekRequest {
+    int64_t  generation = 0;    // matches the seekVersion this request belongs to
+    int64_t  targetMs   = -1;   // -1 means "no pending request"
+    SeekMode mode       = SeekMode::NORMAL;
+    bool     scrub      = false; // request originated from a scrubbing toggle
+};
+
 // ─── Player Context ─────────────────────────────────────────────────────────
 
 struct FfmpegPlayerContext {
@@ -111,9 +127,22 @@ struct FfmpegPlayerContext {
     std::atomic<bool> isStopped{false};
     std::atomic<bool> isScrubbing{false};
     std::atomic<bool> fastSeek{false};
+    // Pollable "a seek is pending" signal. Kept as an atomic so the video/audio
+    // hot paths (per-frame render / per-buffer write) can poll it lock-free.
+    // It is now written ONLY together with the rest of the per-generation state,
+    // under seekRequestMutex, so a torn seek transaction is impossible.
     std::atomic<int64_t> seekTargetMs{-1};
+    // videoSeekTargetPtsUs / audioSeekTargetPtsUs are written ONLY by the demux
+    // thread inside its seek block, so the two are always set or cleared together
+    // for a single generation. No other path writes them.
     std::atomic<int64_t> videoSeekTargetPtsUs{-1};
     std::atomic<int64_t> audioSeekTargetPtsUs{-1};
+
+    // Control-path lock ONLY. Guards the packed seek request and the coupled
+    // per-generation state so seek publication and consumption are atomic
+    // transactions. Never taken on the per-frame render or per-buffer audio path.
+    std::mutex seekRequestMutex;
+    SeekRequest pendingSeek;
     std::atomic<float> playbackSpeed{1.0f};
     std::atomic<int64_t> currentPositionMs{0};
     // Monotonically incremented on every seek. Used as a stale-frame guard so that
@@ -334,6 +363,58 @@ struct FfmpegPlayerContext {
         std::lock_guard<std::mutex> lock(clockMutex);
         masterAudioPtsUs.store(ptsUs);
         masterAudioWallTime = std::chrono::steady_clock::now();
+    }
+
+    // ─── Single-transaction seek/scrub publication ──────────────────────────
+    //
+    // Publishes a new seek/scrub request as ONE unit under seekRequestMutex:
+    // bumps seekVersion, records the new generation into the packed request,
+    // and sets the coupled per-generation state (buffering, drift reset,
+    // pollable seekTargetMs signal, reported position, master clock) together.
+    // Because seekVersion and the target are written in the same critical
+    // section, the demuxer's target and the generation the video/audio threads
+    // gate against can never diverge (Req 1.2/2.2), and the targets are always
+    // published together (Req 1.5/2.5). Returns the new generation.
+    //
+    // NOTE: clockMutex is acquired inside setMasterClockUs while seekRequestMutex
+    // is held. This ordering is safe because clockMutex is never held while
+    // calling publishSeekRequest (no lock nesting in the reverse direction).
+    int64_t publishSeekRequest(int64_t targetMs, SeekMode mode, bool scrub) {
+        std::lock_guard<std::mutex> lock(seekRequestMutex);
+        int64_t gen = seekVersion.fetch_add(1, std::memory_order_release) + 1;
+        pendingSeek = SeekRequest{gen, targetMs, mode, scrub};
+        // Coupled per-generation state, published as part of the same transaction.
+        isBuffering.store(true);
+        lastAudioDriftUs.store(0);
+        seekTargetMs.store(targetMs);
+        currentPositionMs.store(targetMs);
+        setMasterClockUs(targetMs * 1000);
+        return gen;
+    }
+
+    // Consumed by the demux thread. Atomically takes the pending request (if any)
+    // and marks it consumed, clearing BOTH the packed struct and the pollable
+    // seekTargetMs flag in one critical section. This replaces the demux thread's
+    // former seekTargetMs.exchange(-1), so the flag and the struct can never be
+    // observed out of step. Returns true and fills `out` when a request was
+    // pending; false otherwise.
+    bool takeSeekRequest(SeekRequest& out) {
+        std::lock_guard<std::mutex> lock(seekRequestMutex);
+        if (pendingSeek.targetMs >= 0) {
+            out = pendingSeek;
+            pendingSeek.targetMs = -1;
+            seekTargetMs.store(-1);
+            return true;
+        }
+        return false;
+    }
+
+    // Read-only accessor used ONLY on control paths (nativeGetPosition and the
+    // demux position-notify / scrub-wait bookkeeping) — never per-frame. Returns
+    // the pending target (or -1) without exposing the raw request struct.
+    int64_t pendingSeekTargetMs() {
+        std::lock_guard<std::mutex> lock(seekRequestMutex);
+        return pendingSeek.targetMs;
     }
 
     void pauseClock() {

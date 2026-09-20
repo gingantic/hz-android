@@ -479,7 +479,9 @@ JNI_FUNC(void, nativePlay, jlong handle) {
     auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
     if (ctx) {
         if (ctx->demuxEof.load() && ctx->videoFinished.load() && ctx->audioFinished.load()) {
-            ctx->seekTargetMs.store(0);
+            // Restart after EOF: publish a proper seek-to-0 transaction so the
+            // restart participates in the seek generation like any other seek.
+            ctx->publishSeekRequest(0, SeekMode::NORMAL, /*scrub=*/false);
         }
         ctx->triggerAudioRampIn(50);
         ctx->resumeClock();
@@ -500,14 +502,13 @@ JNI_FUNC(void, nativePause, jlong handle) {
 JNI_FUNC(void, nativeSeek, jlong handle, jlong posMs) {
     auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
     if (ctx) {
-        // Increment seek version FIRST so that any frame currently mid-render
-        // or mid-write in audio sees the new version and discards itself.
-        ctx->seekVersion.fetch_add(1, std::memory_order_release);
-        ctx->isBuffering.store(true);
-        ctx->lastAudioDriftUs.store(0);
-        ctx->seekTargetMs.store(posMs);
-        ctx->currentPositionMs.store(posMs);
-        ctx->setMasterClockUs(posMs * 1000);
+        // Publish the seek as a SINGLE transaction. publishSeekRequest bumps
+        // seekVersion and writes the target/mode plus the coupled per-generation
+        // state (buffering, drift reset, seekTargetMs, position, master clock)
+        // together under seekRequestMutex, so the demuxer's target and the
+        // seekVersion the video/audio threads gate against always match.
+        ctx->publishSeekRequest(posMs, ctx->fastSeek.load() ? SeekMode::FAST : SeekMode::NORMAL,
+                                /*scrub=*/false);
         ctx->controlCv.notify_all();
         ctx->videoQueue.notFull.notify_all();
         ctx->audioQueue.notFull.notify_all();
@@ -538,8 +539,11 @@ JNI_FUNC(jlong, nativeGetDuration, jlong handle) {
 JNI_FUNC(jlong, nativeGetPosition, jlong handle) {
     auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
     if (!ctx) return 0;
-    if (ctx->seekTargetMs.load() >= 0) {
-        return ctx->seekTargetMs.load();
+    // Control-path read: report the pending seek target while a request is
+    // pending, and the clock-based position after it clears (Req 3.5).
+    int64_t pending = ctx->pendingSeekTargetMs();
+    if (pending >= 0) {
+        return pending;
     }
     if (ctx->videoSeekTargetPtsUs.load() >= 0 && ctx->totalRenderedFrames.load() == 0) {
         return ctx->videoSeekTargetPtsUs.load() / 1000;
@@ -764,10 +768,25 @@ JNI_FUNC(void, nativeSetHardwareAcceleration, jlong handle, jboolean enabled) {
 JNI_FUNC(void, nativeSetScrubbing, jlong handle, jboolean isScrubbing) {
     auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
     if (ctx) {
-        ctx->isScrubbing.store(isScrubbing == JNI_TRUE);
         if (isScrubbing == JNI_TRUE) {
-            ctx->audioQueue.clear();
-            ctx->audioQueue.pushFlush();
+            // Route the scrub flush through publishSeekRequest so it participates
+            // in seekVersion and the demux thread (single owner of the demuxer)
+            // flushes BOTH queues in that one generation. The caller thread no
+            // longer flushes only the audio queue, which was the source of the
+            // partial, cross-thread flush race. Bumping seekVersion also
+            // invalidates any in-flight acoustic master-clock write from a
+            // superseded generation (Req 2.3, 2.4, 2.6).
+            ctx->isScrubbing.store(true);
+            ctx->publishSeekRequest(ctx->currentPositionMs.load(), SeekMode::FAST, /*scrub=*/true);
+            ctx->controlCv.notify_all();
+            ctx->videoQueue.notFull.notify_all();
+            ctx->audioQueue.notFull.notify_all();
+            ctx->videoQueue.notEmpty.notify_all();
+            ctx->audioQueue.notEmpty.notify_all();
+        } else {
+            // Resume: release the demux scrub-wait loop, matching today's behavior.
+            ctx->isScrubbing.store(false);
+            ctx->controlCv.notify_all();
         }
     }
 }

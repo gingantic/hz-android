@@ -52,10 +52,15 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
     };
 
     while (ctx->isRunning.load() && !ctx->isStopped.load()) {
-        int64_t target = ctx->seekTargetMs.exchange(-1);
-        if (target >= 0) {
-            bool scrubbing = ctx->isScrubbing.load();
-            bool isFast = ctx->fastSeek.load() || scrubbing;
+        SeekRequest req;
+        if (ctx->takeSeekRequest(req)) {
+            // The whole seek block runs off the packed request so the target,
+            // mode, and scrub flag all belong to the SAME generation. We no
+            // longer re-read isScrubbing / fastSeek mid-block, which is what
+            // allowed the flush/re-seek to bind to a different generation.
+            int64_t target = req.targetMs;
+            bool scrubbing = req.scrub;
+            bool isFast = (req.mode == SeekMode::FAST) || req.scrub;
             LOGI("Seeking to %" PRId64 " ms (scrubbing=%d, fastSeek=%d)", target, scrubbing ? 1 : 0, isFast ? 1 : 0);
             ctx->setMasterClockUs(target * 1000);
             ctx->currentPositionMs.store(target);
