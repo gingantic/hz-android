@@ -49,6 +49,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.io.Closeable
 import java.io.FileInputStream
 import java.lang.ref.WeakReference
@@ -68,6 +70,14 @@ class FfmpegNativeEngine @Inject constructor(
 
     companion object {
         private const val TAG = "FfmpegNativeEngine"
+
+        /**
+         * Maximum time [openAndStart] waits for a render surface before opening
+         * native playback anyway. Bounds the wait for audio-only playback (no
+         * [createRenderView] call ever happens) and any other case where a
+         * surface legitimately never arrives, so playback isn't blocked forever.
+         */
+        private const val SURFACE_READY_TIMEOUT_MS = 1500L
 
         /**
          * Computes the true display aspect ratio (DAR) as `(width × SAR) : height`, with a
@@ -113,6 +123,19 @@ class FfmpegNativeEngine @Inject constructor(
 
     private var activeSurface: Surface? = null
     private var activeBridge: RandomAccessMediaSource? = null
+
+    /**
+     * Released the first time [createRenderView]'s surface callback attaches a
+     * real [Surface]. `SurfaceView`/`TextureView` surface creation is asynchronous
+     * relative to Compose's `AndroidView` factory, so without this gate
+     * [openAndStart] can call native `open()+play()` before `nativeWindow` exists —
+     * the video thread then silently drops every decoded frame (audio still plays)
+     * until something later flips `surfaceChanged` (e.g. a seek). See docs/PLAYER_ARCHITECTURE.md.
+     * A plain [CountDownLatch] is used (not a coroutine primitive) because
+     * [openAndStart] blocks synchronously under [lifecycleLock] on the IO dispatcher.
+     */
+    @Volatile
+    private var surfaceReadyLatch = CountDownLatch(1)
 
     /**
      * Protects active bridge publication/detachment independently of the
@@ -478,6 +501,18 @@ class FfmpegNativeEngine @Inject constructor(
         }
     }
 
+    /** Releases [surfaceReadyLatch] exactly once per attach; safe to call repeatedly. */
+    private fun markSurfaceReady() {
+        surfaceReadyLatch.countDown()
+    }
+
+    /** Re-arms the surface gate after the render view's surface goes away. */
+    private fun resetSurfaceReady() {
+        if (surfaceReadyLatch.count == 0L) {
+            surfaceReadyLatch = CountDownLatch(1)
+        }
+    }
+
     private fun openAndStart(
         uriString: String,
         startPositionMs: Long,
@@ -568,6 +603,21 @@ class FfmpegNativeEngine @Inject constructor(
             return@synchronized false
         }
         selectedAudioTrackIndex = 0
+
+        // A render view (SurfaceView/TextureView) was attached via createRenderView(),
+        // meaning video output is expected, but its underlying Surface is created
+        // asynchronously by the platform and may not exist yet. Opening native
+        // playback before that Surface lands means nativeWindow stays null: audio
+        // starts fine but every decoded video frame is silently dropped until
+        // something later re-triggers surfaceChanged (e.g. a seek). Block briefly
+        // here so play() only starts once the surface (or the timeout) is reached —
+        // pure-audio playback (no render view ever attached) skips this entirely.
+        if (activeRenderViewRef != null && activeSurface == null) {
+            val arrived = surfaceReadyLatch.await(SURFACE_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            if (!arrived) {
+                Log.w(TAG, "Timed out waiting for render surface; opening without it")
+            }
+        }
 
         val success = try {
             if (!player.open(bridge, directUrl, activeSurface, startPositionMs, headers)) {
@@ -1042,24 +1092,28 @@ class FfmpegNativeEngine @Inject constructor(
                 override fun surfaceCreated(holder: SurfaceHolder) {
                     activeSurface = holder.surface
                     player.setSurface(holder.surface)
+                    markSurfaceReady()
                 }
 
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
                     if (activeSurface == holder.surface) {
                         activeSurface = null
                         player.setSurface(null)
+                        resetSurfaceReady()
                     }
                 }
 
                 override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                     activeSurface = holder.surface
                     player.setSurface(holder.surface)
+                    markSurfaceReady()
                 }
             })
 
             if (surfaceView.holder.surface?.isValid == true) {
                 activeSurface = surfaceView.holder.surface
                 player.setSurface(surfaceView.holder.surface)
+                markSurfaceReady()
             }
 
             surfaceView
@@ -1079,6 +1133,7 @@ class FfmpegNativeEngine @Inject constructor(
                     surf = s
                     activeSurface = s
                     player.setSurface(s)
+                    markSurfaceReady()
                 }
 
                 override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
@@ -1089,6 +1144,7 @@ class FfmpegNativeEngine @Inject constructor(
                     if (activeSurface == surf) {
                         activeSurface = null
                         player.setSurface(null)
+                        resetSurfaceReady()
                     }
                     surf?.release()
                     surf = null
@@ -1102,6 +1158,7 @@ class FfmpegNativeEngine @Inject constructor(
                 val s = Surface(textureView.surfaceTexture)
                 activeSurface = s
                 player.setSurface(s)
+                markSurfaceReady()
             }
 
             textureView
