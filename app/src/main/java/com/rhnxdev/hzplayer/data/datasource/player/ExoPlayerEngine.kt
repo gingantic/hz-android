@@ -64,10 +64,9 @@ class ExoPlayerEngine @Inject constructor(
         assHandler.onExternalTrackListChanged = {
             subtitleTrackChangeListener?.invoke()
         }
-        // Re-point the live PlayerView when the holder swaps its ExoPlayer
-        // (deferred decoder-mode / engine-preference rebuild fires inside
-        // play(), after the view was already bound). Without this the view
-        // keeps the released player and video stays blank until app restart.
+        // Re-point the live PlayerView when the holder swaps its ExoPlayer — the
+        // deferred rebuild fires inside play(), after the view was already bound,
+        // so without this the view keeps the released player and video stays blank.
         // Forwards to the external (MediaSession) listener afterwards.
         playerHolder.setOnPlayerReplacedListener { newPlayer ->
             activePlayerViewRef?.get()?.let { playerView ->
@@ -283,7 +282,7 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.updateSpeed(speed)
     }
 
-    // ── Subtitle delay ─────────────────────────────────────────────────────
+    // ── Subtitle delay ─────────────────────────────────────────
 
     private var subtitleDelayMs: Long = 0
 
@@ -300,7 +299,7 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun getAudioDelay(): Long = playerHolder.audioDelayMs
 
-    // ── Equalizer ──────────────────────────────────────────────────────
+    // ── Equalizer ──────────────────────────────────────────────
 
     override fun getEqualizerState() = equalizerController.state
 
@@ -318,7 +317,7 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun setLoudnessGain(gainMb: Int) = equalizerController.setLoudnessGain(gainMb)
 
-    // ── External subtitles ─────────────────────────────────────────────────
+    // ── External subtitles ─────────────────────────────────────
 
     private val subtitleConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
 

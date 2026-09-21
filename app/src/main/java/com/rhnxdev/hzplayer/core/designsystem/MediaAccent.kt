@@ -7,11 +7,11 @@ import androidx.compose.ui.graphics.Color
 import com.rhnxdev.hzplayer.domain.model.MediaType
 
 /**
- * Theme accent that identifies a media kind: video → primary (the app colour),
- * audio → tertiary, folder → secondary, generic file → neutral.
+ * Theme accent for a media kind: video → primary, audio → tertiary,
+ * folder → secondary, file → neutral.
  *
- * Use it for fills and tints. For a white glyph on top, darken it first — see
- * `MediaIconBadge`.
+ * Use it for fills and tints; for a white glyph on top, darken it first (see
+ * [MediaIconBadge]).
  */
 @Composable
 fun mediaAccentColor(mediaType: MediaType): Color {

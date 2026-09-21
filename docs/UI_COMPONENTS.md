@@ -1,8 +1,14 @@
 # Hz Player — UI Component Catalog
 
 > Every reusable composable in the design system, with spec and states.
-> Last refreshed: 2026-09-09. Lists the components that actually exist today;
-> layouts are representative, not pixel-exact.
+> Verified against code at `8ffb763` — drift check: `git diff 8ffb763..HEAD -- app/src`.
+> Layouts are representative, not pixel-exact.
+
+**House rules.** New sliders use `HzPlayerSlider` (never a raw `Slider`) so track
+thickness, knob ring, and tick suppression stay uniform. Media-type colour comes from
+`mediaAccentColor`; a white glyph on top of it goes through `MediaIconBadge`, which
+darkens the accent until the glyph keeps contrast. Every reusable component takes
+`@Preview` using `PreviewMedia` data — never a ViewModel.
 
 ---
 
@@ -10,64 +16,64 @@
 
 | Component | Path | Purpose |
 |---|---|---|
-| `MediaCard` | `core/components/MediaCard.kt` | Grid card: thumbnail, gradient overlay, duration badge, progress, title/subtitle, 3-dot menu |
-| `MediaListItem` | `core/components/MediaListItem.kt` | Horizontal list row for video/audio/file |
-| `ViewToggleFab` | `core/components/ViewToggleFab.kt` | FAB toggling grid/list, animated crossfade |
-| `MediaEmptyState` | `core/components/MediaEmptyState.kt` | Illustrated empty state + optional action |
-| `MediaLoadingState` | `core/components/MediaLoadingState.kt` | Shimmer for grid/list |
-| `MediaErrorState` | `core/components/MediaErrorState.kt` | Error state + retry |
-| `PermissionRequiredState` | `core/components/PermissionRequiredState.kt` | Storage permission request state |
-| `DurationBadge` | `core/components/DurationBadge.kt` | Pill duration badge (thumbnail corner) |
-| `ThumbnailPlaceholder` | `core/components/ThumbnailPlaceholder.kt` | Theme-aware gradient placeholder by `MediaType` |
-| `MediaPropertiesDialog` | `core/components/MediaPropertiesDialog.kt` | File/codec properties dialog (FFmpeg probe) |
-| `FileItemCard` | `core/components/FileItemCard.kt` | File/folder card for browse (3-dot menu) |
-| `FileOptionsBottomSheet` | `core/components/FileOptionsBottomSheet.kt` | Modal bottom sheet for file/folder context actions (thumbnail, favorite, play all, play as audio, properties) |
-| `ViewSortBottomSheet` | `core/components/ViewSortBottomSheet.kt` | Sort / view-mode / media-type-filter picker bottom sheet |
-| `BreadcrumbBar` | `core/components/BreadcrumbBar.kt` | Directory breadcrumb navigation |
-| `DirectoryBrowsePane` | `core/components/DirectoryBrowsePane.kt` | Shared browse listing (grid/list) |
-| `HzPlayerTopBar` | `core/components/HzPlayerTopBar.kt` | App top bar |
-| `HzPlayerSearchableScaffold` | `core/components/HzPlayerSearchableScaffold.kt` | Scaffold + search integration |
-| `SearchDelegate` | `core/components/SearchDelegate.kt` | Debounced search helper |
-
-All core components take `@Preview` using `PreviewMedia` data (never a ViewModel).
+| `MediaCard` | `MediaCard.kt` | Grid card: thumbnail, gradient overlay, duration badge, progress, title/subtitle, 3-dot menu |
+| `MediaListItem` | `MediaListItem.kt` | Horizontal list row for video/audio/file |
+| `HzPlayerSlider` | `HzPlayerSlider.kt` | House-style slider: chunky gapless track, solid round knob ringed in the colour behind it; ticks + stop indicator suppressed. Accent/size are parameters, so it scales from a settings row to the equalizer's vertical faders |
+| `MediaIconBadge` | `MediaIconBadge.kt` | Rounded gradient badge identifying media by type; accent darkened until a white glyph keeps contrast (holds up in light/dark/dynamic colour) |
+| `ViewToggleFab` | `ViewToggleFab.kt` | FAB toggling grid/list, animated crossfade |
+| `MediaEmptyState` | `MediaEmptyState.kt` | Illustrated empty state + optional action |
+| `MediaLoadingState` | `MediaLoadingState.kt` | Shimmer for grid/list |
+| `MediaErrorState` | `MediaErrorState.kt` | Error state + retry |
+| `PermissionRequiredState` | `PermissionRequiredState.kt` | Storage permission request state |
+| `DurationBadge` | `DurationBadge.kt` | Pill duration badge (thumbnail corner) |
+| `ThumbnailPlaceholder` | `ThumbnailPlaceholder.kt` | Theme-aware gradient placeholder by `MediaType` |
+| `MediaPropertiesDialog` | `MediaPropertiesDialog.kt` | File/codec properties sheet (FFmpeg probe) with cover/thumbnail banner and `MediaIconBadge`-headed section cards |
+| `FileItemCard` | `FileItemCard.kt` | File/folder card for browse (3-dot menu) |
+| `FileOptionsBottomSheet` | `FileOptionsBottomSheet.kt` | File/folder context actions (thumbnail, favourite, play all, play as audio, properties) |
+| `ViewSortBottomSheet` | `ViewSortBottomSheet.kt` | Sort / view-mode / media-type-filter picker |
+| `BreadcrumbBar` | `BreadcrumbBar.kt` | Directory breadcrumb navigation |
+| `DirectoryBrowsePane` | `DirectoryBrowsePane.kt` | Shared browse listing (grid/list) |
+| `HzPlayerTopBar` | `HzPlayerTopBar.kt` | App top bar; inline search mode takes precedence over the back arrow (the leading arrow exits search first) |
+| `HzPlayerSearchableScaffold` | `HzPlayerSearchableScaffold.kt` | Scaffold + search integration |
+| `SearchDelegate` | `SearchDelegate.kt` | Debounced search helper |
 
 ---
 
 ## Player components (`presentation/player/components/`)
 
-| Component | Path | Purpose |
-|---|---|---|
-| `PlayerControlsOverlay` | `PlayerControlsOverlay.kt` | HUD: top bar, seekbar+buffer, center controls, bottom bar (shuffle/repeat/speed) |
-| `PlayerSeekBar` | `PlayerSeekBar.kt` | Styled seekbar with buffered indicator |
-| `PlayerRenderView` | `PlayerRenderView.kt` | Engine render-view helper used by `PlayerSurface` |
-| `PlayerGestures` | `PlayerGestures.kt` | Extracted gesture handler (tap/double-tap/swipe/pinch) |
-| `GestureCueIndicators` | `GestureCueIndicators.kt` | Visual feedback for gesture actions |
-| `MiniPlayerBar` | `MiniPlayerBar.kt` | Persistent bottom bar when media plays; tap → player |
-| `FloatingVideoPlayer` | `FloatingVideoPlayer.kt` | Draggable PiP-style floating video overlay |
-| `AudioPlayerSheet` | `AudioPlayerSheet.kt` | Full-height audio bottom sheet (cover, controls, seek) |
-| `AudioQueueSheet` | `AudioQueueSheet.kt` | Audio "now playing" queue list |
-| `AudioSelectionDialog` | `AudioSelectionDialog.kt` | Audio-track picker |
-| `EqualizerSheet` | `EqualizerSheet.kt` | 10-band equalizer sliders, device presets, bass boost, loudness toggle |
-| `PlaylistDrawer` | `PlaylistDrawer.kt` | Video queue/playlist drawer |
-| `PlayerMoreOptionsSheet` | `PlayerMoreOptionsSheet.kt` | Sleep timer, jump-to-time, chapters, A-B repeat, play-as-audio options sheet |
-| `SleepTimerDialog` | `PlayerMoreOptionsSheet.kt` | Sleep timer preset picker (15/30/45/60/90/120 min + end-of-video + off) |
-| `JumpToTimeDialog` | `PlayerMoreOptionsSheet.kt` | Numpad-based jump-to-position (HH:MM:SS) |
-| `ChapterSelectionDialog` | `PlayerMoreOptionsSheet.kt` | Chapter list with current-position highlight |
-| `SpeedSelectionDialog` | `SpeedSelectionDialog.kt` | Playback speed picker |
-| `SubtitleSelectionDialog` | `SubtitleSelectionDialog.kt` | Subtitle-track picker (with flag icons) |
-| `SubtitleSearchDialog` | `SubtitleSearchDialog.kt` | SubDL search |
-| `SubtitleBrowserContent` | `SubtitleBrowserContent.kt` | Subtitle browser pane content |
-| `SubtitleFileBrowserBottomSheet` | `SubtitleFileBrowserBottomSheet.kt` | Pick local `.srt/.vtt/.ass` |
-| `AssSubtitleOverlay` | `AssSubtitleOverlay.kt` | Compose wrapper for the libass `SubtitleOverlayView` |
-| `TrackSelectionRow` | `TrackSelectionRow.kt` | Reusable horizontal track-selection row |
-| `FlagIcon` | `FlagIcon.kt` | Country flag icon for subtitle language display |
-| `SheetScaffold` | `SheetScaffold.kt` | Reusable bottom-sheet scaffold |
-| `PlaybackErrorOverlay` | `PlaybackErrorOverlay.kt` | Error by `PlaybackErrorKind` + Retry |
-| `DebugOverlay` | `DebugOverlay.kt` | "Stats for nerds" from `getDebugStats()` |
-| `DragSeekIndicator` | `DragSeekIndicator.kt` | Drag-to-seek indicator |
-| `SeekIndicator` / `SeekIndicators` | `SeekIndicator(s).kt` | Seek-forward/back indicators |
-| `SlideIndicator` | `SlideIndicator.kt` | Brightness/volume slide indicator |
-| `UnlockPill` | `UnlockPill.kt` | Swipe-to-unlock lock pill |
+| Component | Purpose |
+|---|---|
+| `PlayerControlsOverlay` | HUD: top bar, seekbar + buffer, centre controls, bottom bar (shuffle/repeat/speed) |
+| `PlayerSeekBar` | Styled seekbar with buffered indicator (the only thing that recomposes per position tick) |
+| `pauseRenderView` / `resumeRenderView` | `PlayerRenderView.kt` — engine render-view helpers used by `PlayerSurface` |
+| `Modifier.playerGestures` | `PlayerGestures.kt` — gesture modifier (tap/double-tap/swipe/pinch/hold-to-speed) with `PlayerGestureState` / `PlayerGestureCallbacks` |
+| `GestureCueIndicators` | Visual feedback for gesture actions |
+| `MiniPlayerBar` | Persistent bottom bar while media plays; tap → player |
+| `FloatingVideoPlayer` | Draggable PiP-style floating video overlay |
+| `AudioPlayerSheet` | Full-height audio bottom sheet (cover, controls, seek) |
+| `AudioQueueSheet` | Audio now-playing queue list |
+| `AudioSelectionDialog` | Audio-track picker |
+| `EqualizerSheet` | 10-band equalizer (vertical `HzPlayerSlider` bank centred in the sheet), device presets, bass boost, loudness |
+| `PlaylistDrawer` | Video queue/playlist drawer |
+| `PlayerMoreOptionsSheet` | Sleep timer, jump-to-time, chapters, A-B repeat, play-as-audio |
+| `SleepTimerDialog` | Sleep-timer presets (15/30/45/60/90/120 min + end-of-video + off) — in `PlayerMoreOptionsSheet.kt` |
+| `JumpToTimeDialog` | Numpad jump-to-position (HH:MM:SS), clamped to the media duration — in `PlayerMoreOptionsSheet.kt` |
+| `ChapterSelectionDialog` | Chapter list with current-position highlight — in `PlayerMoreOptionsSheet.kt` |
+| `SpeedSelectionDialog` | Playback speed picker |
+| `SubtitleSelectionDialog` | Subtitle-track picker (flag icons) |
+| `SubtitleSearchDialog` | SubDL search |
+| `RootsContent` / `LocalBrowseContent` / `RemoteBrowseContent` | `SubtitleBrowserContent.kt` — subtitle browser panes |
+| `SubtitleFileBrowserBottomSheet` | Pick a local `.srt/.vtt/.ass` |
+| `AssSubtitleOverlay` | Compose wrapper for the libass `SubtitleOverlayView` |
+| `TrackSelectionRow` | Reusable horizontal track-selection row |
+| `FlagIcon` | Country flag icon for subtitle-language display |
+| `SheetScaffold` | Reusable bottom-sheet scaffold |
+| `PlaybackErrorOverlay` | Error by `PlaybackErrorKind` + Retry |
+| `DebugOverlay` | "Stats for nerds" from `getDebugStats()` |
+| `DragSeekIndicator` | Drag-to-seek indicator |
+| `SeekIndicator` / `SeekIndicators` | Seek-forward/back indicators |
+| `SlideIndicator` | Brightness/volume slide indicator |
+| `UnlockPill` | Swipe-to-unlock lock pill |
 
 ---
 
@@ -82,19 +88,16 @@ All core components take `@Preview` using `PreviewMedia` data (never a ViewModel
 | `DirectoryStackContent` | `presentation/browse/components/DirectoryStackContent.kt` |
 | `StorageRootsContent` | `presentation/browse/components/StorageRootsContent.kt` |
 | `FileBrowserTopBarActions` | `presentation/browse/components/FileBrowserTopBarActions.kt` |
+| `NewFolderDialog` | `presentation/browse/components/NewFolderDialog.kt` |
 | `PasteActionBar` | `presentation/browse/components/PasteActionBar.kt` (cut/copy/move/delete) |
-| `NewFolderDialog` | `presentation/browse/components/NewFolderDialog.kt` (create-folder dialog) |
-| `NetworkScreenContent` | `presentation/network/components/NetworkScreenContent.kt` |
+| `NetworkHomeContent` / `ServerBrowseStackContent` / `CredentialDialog` | `presentation/network/components/NetworkScreenContent.kt` |
 | `ServerCard` | `presentation/network/components/ServerCard.kt` |
 | `ServerConfigDialog` | `presentation/network/components/ServerConfigDialog.kt` |
 | `StreamHistoryListItem` | `presentation/network/components/StreamHistoryListItem.kt` |
-| `SettingsSection` / `SettingsItem` | `presentation/settings/components/` |
-| `AboutDialog` | `presentation/settings/components/AboutDialog.kt` |
-| `UpdateDialog` | `presentation/settings/components/UpdateDialog.kt` |
-| `EnumSelectionDialog` | `presentation/settings/components/EnumSelectionDialog.kt` |
-| `ColorPickerDialog` | `presentation/settings/components/ColorPickerDialog.kt` |
-| `SubdlApiKeyDialog` | `presentation/settings/components/SubdlApiKeyDialog.kt` |
-| `SettingsDialogs` | `presentation/settings/components/SettingsDialogs.kt` |
+| `SettingsSection` / `SettingsItem` / `SettingsSliderItem` | `presentation/settings/components/` |
+| `AboutDialog` / `UpdateDialog` / `ColorPickerDialog` / `SubdlApiKeyDialog` | `presentation/settings/components/` |
+| `EnumSelectionDialog` | `presentation/settings/components/EnumSelectionDialog.kt` (generic enum picker) |
+| `ThemeSelectionDialog` / `OrientationDialog` / `DecoderModeDialog` / `ResumeModeDialog` | `presentation/settings/components/SettingsDialogs.kt` — thin `EnumSelectionDialog` wrappers |
 
 ---
 
@@ -115,8 +118,10 @@ The in-app browser owns its UI package (hosted by `BrowserActivity`, not the mai
 ---
 
 ## Design system (`core/designsystem/`)
-- `HzPlayerIcons.kt` — media-player icon constants (shuffle, repeat, prev/next, play/pause, folder, video, audio, search, settings, more, star/favorite, network, browser).
-- `Dimens.kt` — exports `Spacing` (4/8/12/16/24/32/48dp), `CornerRadii`, `CardSizes`, `BrowserDimens`, `HzPlayerShapes` (M3 shapes).
+
+- `HzPlayerIcons.kt` — media-player icon constants (shuffle, repeat, prev/next, play/pause, folder, video, audio, search, settings, more, star/favourite, network, browser).
+- `Dimens.kt` — exports `Spacing` (4/8/12/16/24/32/48 dp), `CornerRadii`, `CardSizes`, `BrowserDimens`, `HzPlayerShapes` (M3 shapes).
+- `MediaAccent.kt` — `mediaAccentColor(MediaType)`: video → primary, audio → tertiary, folder → secondary, file → neutral. Use for fills/tints; darken before putting a white glyph on it.
 - `NavBarInsets.kt` — navigation-bar inset helpers.
 
 Theme (M3 dynamic, dark/light) lives in `presentation/theme/` (`Color.kt`, `Type.kt`,
@@ -130,9 +135,7 @@ Theme (M3 dynamic, dark/light) lives in `presentation/theme/` (`Color.kt`, `Type
 ```
 ┌──────────────────────┐
 │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │  ← thumbnail (16:9 video / 1:1 album)
-│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │
 │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 2:15 │  ← gradient overlay + duration badge
-│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │
 ├──────────────────────┤
 │ Title                │
 │ Subtitle             │

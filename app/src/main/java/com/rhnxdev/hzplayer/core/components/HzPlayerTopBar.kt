@@ -75,7 +75,7 @@ fun HzPlayerTopBar(
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
-    // Auto-focus the search field when it appears (VLC-like UX)
+    // Auto-focus the search field when it appears.
     LaunchedEffect(searchQuery) {
         if (searchQuery != null) {
             focusRequester.requestFocus()
@@ -88,8 +88,8 @@ fun HzPlayerTopBar(
             .height(64.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Search mode wins over navigate-up: the leading arrow exits search first,
-        // mirroring the system back-press behaviour.
+        // Search mode wins over navigate-up: the leading arrow exits search
+        // first, mirroring system back-press.
         if (searchQuery != null) {
             SpacingExtra(Spacing.xs)
             IconButton(onClick = {
@@ -117,7 +117,6 @@ fun HzPlayerTopBar(
             SpacingExtra(Spacing.lg)
         }
 
-        // Title or search field
         if (searchQuery != null) {
             TextField(
                 value = searchQuery,
@@ -183,7 +182,6 @@ fun HzPlayerTopBar(
             )
         }
 
-        // Actions
         Row(
             verticalAlignment = Alignment.CenterVertically,
         ) {

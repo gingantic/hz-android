@@ -72,8 +72,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Modern Bottom Modal Sheet presenting file and media properties with a top
- * cover/thumbnail banner preview and compact, high-density grouped metadata cards.
+ * Bottom sheet with file and media properties: cover/thumbnail banner on top,
+ * compact grouped metadata cards below.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -111,7 +111,7 @@ fun MediaPropertiesDialog(
         val uriStr = probeUri
         if (uriStr != null) {
             withContext(Dispatchers.IO) {
-                // 1. Resolve Audio Album Artwork via MediaStore (matching Music tab)
+                // 1. Album art via MediaStore (matches the Music tab).
                 if (thumbnailContent == null && albumArtUri.isNullOrBlank() && (isAudioFile || mimeType?.startsWith("audio") == true || isAudioExtension(title))) {
                     var foundArtUri: String? = null
                     try {
@@ -141,7 +141,7 @@ fun MediaPropertiesDialog(
                     if (!foundArtUri.isNullOrBlank()) {
                         songArtworkModel = foundArtUri
                     } else {
-                        // Fallback: extract embedded picture from ID3 tags using FileDescriptor
+                        // 2. Fallback: embedded picture from the ID3 tags.
                         try {
                             val mmr = MediaMetadataRetriever()
                             val uri = Uri.parse(uriStr)
@@ -167,7 +167,7 @@ fun MediaPropertiesDialog(
                     }
                 }
 
-                // Async FFmpeg metadata probing
+                // 3. FFmpeg metadata probe.
                 codecInfo = MediaInfoProbe.probe(context, uriStr)
             }
         }
@@ -208,7 +208,7 @@ fun MediaPropertiesDialog(
     val audioLanguage = codecInfo?.get("audio_language")
     val formattedChannels = audioChannels?.let { formatChannels(it, audioLayout) }
 
-    // Strict classification: Ignore cover art mjpeg/png picture streams on audio files
+    // Ignore cover-art streams (mjpeg/png/bmp) when classifying audio files.
     val isActualVideoCodec = videoCodecRaw != null && videoCodecRaw != "mjpeg" && videoCodecRaw != "png" && videoCodecRaw != "bmp"
     val isRealVideo = isVideoFile || (effectiveResolution != null && !isAudioFile) || (isActualVideoCodec && !isAudioFile)
     val isRealAudio = isAudioFile || (!isRealVideo && audioCodec != null)
@@ -248,7 +248,7 @@ fun MediaPropertiesDialog(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
         ) {
-            // ── Top Cover Art / Thumbnail Banner with Vertical Gradient Overlay ──
+            // ── Cover art banner ──
             if (hasThumbnailBanner) {
                 Box(
                     modifier = Modifier
@@ -289,7 +289,7 @@ fun MediaPropertiesDialog(
                         )
                     }
 
-                    // Gradient Blend: Fades into sheet container color at bottom
+                    // Fade into the sheet container at the bottom.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -305,7 +305,7 @@ fun MediaPropertiesDialog(
                             )
                     )
 
-                    // Drag Handle overlaid on top of cover art
+                    // Drag handle over the cover art.
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -332,7 +332,6 @@ fun MediaPropertiesDialog(
                     .padding(bottom = Spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm)
             ) {
-                // Header Icon & Title
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -372,7 +371,7 @@ fun MediaPropertiesDialog(
                     )
                 }
 
-                // Quick Spec Chips
+                // Quick spec chips.
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -411,7 +410,7 @@ fun MediaPropertiesDialog(
                     }
                 }
 
-                // Probing indicator (Sleek 2dp line)
+                // Probe progress line.
                 if (probing) {
                     LinearProgressIndicator(
                         modifier = Modifier
@@ -424,7 +423,7 @@ fun MediaPropertiesDialog(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                 }
 
-                // ── Card 1: Video Stream (if Video) ──
+                // ── Video stream ──
                 if (isRealVideo && (videoCodec != null || effectiveResolution != null || container != null || overallBitrate != null || videoFps != null)) {
                     PropCard(
                         title = stringResource(R.string.prop_section_video),
@@ -484,7 +483,7 @@ fun MediaPropertiesDialog(
                     }
                 }
 
-                // ── Card 2: Audio Stream / Audio Format ──
+                // ── Audio stream ──
                 if (isRealAudio || audioCodec != null || audioBitrate != null || audioSampleRate != null || audioChannels != null) {
                     PropCard(
                         title = if (isRealAudio) stringResource(R.string.prop_section_audio_format) else stringResource(R.string.prop_section_audio),
@@ -520,7 +519,7 @@ fun MediaPropertiesDialog(
                     }
                 }
 
-                // ── Card 3: File Details ──
+                // ── File details ──
                 PropCard(
                     title = stringResource(R.string.prop_section_file),
                     mediaType = MediaType.FILE,

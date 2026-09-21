@@ -18,13 +18,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Owns the high-frequency playback position tick, seek bookkeeping, and periodic
+ * Owns the high-frequency position tick, seek bookkeeping, and periodic
  * resume-progress persistence.
  *
- * The 250 ms position is exposed on [position] — a channel separate from the main
- * UI state — so the tick only recomposes the seek bar, not the whole player.
- *
- * Split out of [PlayerViewModel] purely to shrink it — behaviour is unchanged.
+ * [position] is a channel separate from the main UI state, so the 250 ms tick
+ * only recomposes the seek bar, not the whole player.
  */
 internal class PlayerPositionController(
     private val scope: CoroutineScope,
@@ -32,11 +30,7 @@ internal class PlayerPositionController(
     private val resumeProgress: ResumeRepository,
     private val uiState: MutableStateFlow<PlayerUiState>,
 ) {
-    /**
-     * High-frequency playback position (ms). Emitted every 250 ms by
-     * [start]. Kept separate from the UI state so the 250 ms tick
-     * only recomposes the seek bar, not the entire player UI.
-     */
+    /** High-frequency playback position (ms); emitted every 250 ms by [start]. */
     private val _position = MutableStateFlow(0L)
     val position: StateFlow<Long> = _position.asStateFlow()
 
@@ -52,11 +46,8 @@ internal class PlayerPositionController(
     private var accumulatedSeekTarget: Long? = null
     private var seekDebounceJob: Job? = null
 
-    /**
-     * True while the app is in the foreground (ON_START…ON_STOP lifecycle).
-     * The position loop suspends itself when false so we don't burn CPU/IO
-     * in the background.
-     */
+    /** True while the app is foregrounded; the position loop skips engine calls
+     *  and saves while false. */
     @Volatile private var isForegrounded = true
 
     fun start() {
@@ -65,8 +56,7 @@ internal class PlayerPositionController(
             while (isActive) {
                 delay(250)
 
-                // Suspend cheaply while backgrounded — loop wakes every 250 ms but
-                // skips all engine calls and saves until the app returns to the foreground.
+                // Skip all engine calls and saves while backgrounded.
                 if (!isForegrounded) continue
 
                 val engine = playerRepository.activeEngine
@@ -88,7 +78,6 @@ internal class PlayerPositionController(
                 }
                 val effectivePosition = if (isSeeking) seekTargetPosition else position
 
-                // Position flows on its own channel — see [_position] / [position].
                 _position.value = effectivePosition
 
                 uiState.update { state ->
@@ -102,9 +91,8 @@ internal class PlayerPositionController(
                     } else state
                 }
 
-                // Persist progress every ~5 s — but ONLY while actually playing.
-                // When paused, saveTick is reset so the next save is a full 5 s
-                // after the user resumes, not immediately on the first tick.
+                // Persist progress every ~5 s, only while playing. When paused the
+                // counter resets, so the next save is a full 5 s after resuming.
                 val isPlaying = uiState.value.isPlaying
                 if (!isSeeking && isPlaying) {
                     if (++saveTick >= 20) {
@@ -122,18 +110,13 @@ internal class PlayerPositionController(
         }
     }
 
-    /**
-     * Call from the lifecycle observer (ON_RESUME / ON_START) to resume the tick loop.
-     */
+    /** Resume the tick loop (lifecycle ON_RESUME / ON_START). */
     fun onForeground() {
         isForegrounded = true
     }
 
-    /**
-     * Call from the lifecycle observer (ON_STOP) to suspend the tick loop.
-     * Prevents CPU use and unnecessary DB writes while the app is backgrounded.
-     * Also resets the save counter so the first foreground save is a full 5 s away.
-     */
+    /** Suspend the tick loop while backgrounded (lifecycle ON_STOP) and reset the
+     *  save counter, so the first foreground save is a full 5 s away. */
     fun onBackground() {
         isForegrounded = false
         saveTick = 0
@@ -166,19 +149,11 @@ internal class PlayerPositionController(
     }
 
     /**
-     * Clamp a requested position to a safe, seekable range.
-     *
-     * Uses the most reliable duration available: the live engine value, or the UI
-     * state duration (set once the media is prepared). When a duration is known we
-     * stay [SEEK_END_MARGIN_MS] short of the end so we never request a byte at/after
-     * EOF (the extractor reads a little past the seek point, which throws
-     * EOFException on containers without a tail index, e.g. MKV without Cues).
-     * When no duration is known yet we only guard against a negative position — we
-     * never let a huge value like 99999 run off to Long.MAX_VALUE.
+     * Clamp via [clampSeekPosition], preferring the live engine duration and
+     * falling back to the UI-state duration so a transient engine 0 doesn't
+     * disable the clamp.
      */
     private fun clampSeekTarget(positionMs: Long): Long {
-        // Prefer the live engine duration; fall back to the UI state (set once the
-        // media is prepared) so a transient engine 0 doesn't disable the clamp.
         val duration = playerRepository.activeEngine.getDuration().takeIf { it > 0 }
             ?: uiState.value.duration
         return clampSeekPosition(positionMs, duration)

@@ -29,43 +29,21 @@ The application currently packages only the `arm64-v8a` ABI.
 
 ## Build
 
-Open the project in Android Studio, or use the Gradle wrapper from the repository root.
-
-### Debug build
-
-Windows:
-
-```powershell
-gradlew.bat assembleDebug
-```
-
-Linux, macOS, or WSL:
+Open the project in Android Studio, or use the Gradle wrapper from the repository root:
 
 ```sh
-./gradlew assembleDebug
+gradlew.bat assembleDebug      # Windows
+./gradlew assembleDebug        # Linux, macOS, or WSL
+
+gradlew.bat assembleRelease    # Windows
+./gradlew assembleRelease      # Linux, macOS, or WSL
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The debug application uses the package suffix `.debug`.
-
-### Release build
-
-Windows:
-
-```powershell
-gradlew.bat assembleRelease
-```
-
-Linux, macOS, or WSL:
-
-```sh
-./gradlew assembleRelease
-```
-
-Release builds are minified and use the configured release keystore when one is available. If no release keystore is configured, Gradle falls back to debug signing.
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk` and uses the package suffix `.debug`. Release builds are minified and use the configured release keystore when one is available; without one, Gradle falls back to debug signing.
 
 ## Native dependencies
 
-The Android module links prebuilt FFmpeg, libass, libarchive, dav1d, and related libraries. These files are not stored in the repository. A fresh checkout therefore requires the native artifacts to be restored from cache or built before Gradle can link the application.
+The Android module links prebuilt FFmpeg, libass, libarchive, dav1d, and related libraries. These files are not stored in the repository, so a fresh checkout requires the native artifacts to be restored from cache or built before Gradle can link the application.
 
 The native build scripts expect Linux or WSL and the associated Unix build tools. When the artifacts are not available, run the following from the repository root after setting up the Android NDK:
 
@@ -76,17 +54,13 @@ The native build scripts expect Linux or WSL and the associated Unix build tools
 ./build_adblock_rust.sh
 ```
 
-The generated libraries are placed under `app/src/main/jniLibs/arm64-v8a/` and native headers under `app/src/main/cpp/include/`.
+Generated libraries go to `app/src/main/jniLibs/arm64-v8a/` and native headers to `app/src/main/cpp/include/`.
 
 ## Tests
 
-Run the unit test suite with:
-
 ```sh
-./gradlew test
+./gradlew test        # gradlew.bat test on Windows
 ```
-
-On Windows, use `gradlew.bat test`.
 
 ## Configuration notes
 
@@ -103,11 +77,11 @@ app/src/main/assets/     Browser assets and bundled application resources
 docs/                    Project documentation
 ```
 
-The main application package is `com.rhnxdev.hzplayer`.
+The main application package is `com.rhnxdev.hzplayer`. Architecture, player-stack, data-flow, and component detail live in `docs/` (see the index in `AGENTS.md`).
 
 ## Versioning
 
-The version name is generated from Git metadata in the form:
+The version name is generated from Git metadata:
 
 ```text
 0.9.1-build.<commit-count>+<short-hash>

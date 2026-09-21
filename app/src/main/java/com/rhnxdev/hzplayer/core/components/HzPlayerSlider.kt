@@ -23,18 +23,17 @@ import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 /**
- * Slider in the app's house style: a chunky, gapless track filled with [accent]
- * and a solid round knob ringed in the colour behind it.
+ * Slider in the app's house style: chunky gapless track filled with [accent],
+ * solid round knob ringed in [thumbRingColor]. Step ticks and the stop
+ * indicator are suppressed, so a discrete slider reads as a plain bar.
  *
- * Step ticks and the stop indicator are suppressed, so discrete sliders read as
- * a plain bar. Sizes are parameters so the same look scales from a settings row
- * down to the narrow vertical faders in the equalizer.
+ * Sizes are parameters, so the same look scales from a settings row down to the
+ * equalizer's narrow vertical faders.
  *
- * @param accent — fill colour for the played portion and the knob.
- * @param thumbRingColor — colour behind the slider; ring the knob in it for a
- *                        cut-out look (card vs. sheet backgrounds differ).
- * @param trackHeight — bar thickness (the bar width when used vertically).
- * @param thumbSize — knob diameter.
+ * @param accent — fill for the played track and the knob
+ * @param thumbRingColor — colour behind the slider; rings the knob for a cut-out look
+ * @param trackHeight — bar thickness (bar width when used vertically)
+ * @param thumbSize — knob diameter
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

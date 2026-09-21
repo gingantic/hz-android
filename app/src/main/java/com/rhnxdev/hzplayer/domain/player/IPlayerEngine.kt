@@ -13,14 +13,12 @@ import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Abstraction over a media playback engine. This is the ONLY playback contract:
- * no Media3 type crosses the boundary for playback logic or state. The two
- * MediaSession-integration methods ([getMedia3Player], [setOnPlayerReplacedListener])
- * are the sole, deliberate exception — they hand the underlying Media3 [Player]
- * to the system MediaSession for lock-screen controls. Non-Media3 backends leave
- * both as their `null`/no-op defaults and simply opt out. A second backend
- * (libVLC, mpv, …) is added by implementing this interface + binding it in
- * [di.PlayerEngineModule].
+ * Abstraction over a media playback engine — the only playback contract; no
+ * Media3 type crosses it. [getMedia3Player] / [setOnPlayerReplacedListener] are
+ * the deliberate exception, handing the Media3 [Player] to the system
+ * MediaSession for lock-screen controls; non-Media3 backends leave both at their
+ * null/no-op defaults. A new backend = implement this interface + bind it in
+ * `di.PlayerEngineModule`.
  */
 interface IPlayerEngine {
 
@@ -30,17 +28,15 @@ interface IPlayerEngine {
     /** Observable playback state emitted by the engine. */
     val playbackState: StateFlow<PlayerStateInfo>
 
-    // ── Playback control ────────────────────────────────────────
+    // ── Playback control ───────────────────────────────────────
 
     /** Load a URI for playback. Call [resume] to start.
-     *  @param resumePositionMs if > 0, seek to this position right after prepare
-     *         (used to resume where the user left off). The engine applies the
-     *         seek itself once the media item is set, avoiding a race with load.
-     *  @param headers HTTP request headers (e.g. `Authorization` / a stream token
-     *         forwarded from a VIEW intent) applied to network requests for this
-     *         URI. An empty map clears any previously applied headers.
-     *  @param artworkUri optional album-art URI attached to the media metadata so
-     *         the system MediaSession notification shows the artwork. */
+     *  @param resumePositionMs if > 0, seek here right after prepare (resume
+     *         where the user left off); the engine applies it itself to avoid a
+     *         race with load
+     *  @param headers HTTP headers for this URI's requests; an empty map clears
+     *         any previously applied headers
+     *  @param artworkUri album art for the MediaSession notification */
     fun play(uri: String, title: String, artist: String? = null, isVideo: Boolean = false, mimeType: String? = null, resumePositionMs: Long = 0, headers: Map<String, String> = emptyMap(), artworkUri: String? = null)
 
     /** Load a playlist (video) and start at [startIndex] / [startPositionMs]. */
@@ -58,7 +54,7 @@ interface IPlayerEngine {
     /** Stop playback and reset. */
     fun stop()
 
-    // ── Seek ────────────────────────────────────────────────────
+    // ── Seek ───────────────────────────────────────────────────
 
     /** Seek to an absolute position in milliseconds. */
     fun seekTo(positionMs: Long)
@@ -87,7 +83,7 @@ interface IPlayerEngine {
     /** Jump to the media item at [index] in the current playlist (starts from 0 ms). */
     fun seekToMediaItem(index: Int)
 
-    // ── Queries ─────────────────────────────────────────────────
+    // ── Queries ────────────────────────────────────────────────
 
     /** Whether the engine is currently playing. */
     fun isPlaying(): Boolean
@@ -101,7 +97,7 @@ interface IPlayerEngine {
     /** Currently buffered position in ms, or 0 if unknown. */
     fun getBufferedPosition(): Long
 
-    // ── Configuration ───────────────────────────────────────────
+    // ── Configuration ──────────────────────────────────────────
 
     /** Set playback speed (1.0 = normal). */
     fun setPlaybackSpeed(speed: Float)
@@ -126,11 +122,10 @@ interface IPlayerEngine {
     fun setDisableHdr(disabled: Boolean) {}
 
     /** Prefer the FFmpeg software renderers over platform decoders (the
-     *  [EngineType.FFMPEG] selection). Default no-op — only engines with an
-     *  FFmpeg fallback pipeline override it. */
+     *  [EngineType.FFMPEG] selection). Default no-op. */
     fun setFfmpegPreferred(preferred: Boolean) {}
 
-    // ── Subtitle / CC track selection ───────────────────────────
+    // ── Subtitle / CC track selection ──────────────────────────
 
     /** Get the list of subtitle track names/languages. */
     fun getSubtitleTracks(): List<String>
@@ -145,25 +140,18 @@ interface IPlayerEngine {
     fun loadExternalAss(uri: android.net.Uri)
 
     /**
-     * Per-track sample MIME type, aligned 1:1 with [getSubtitleTracks] indices.
-     * Used to detect embedded ASS/SSA tracks that should route to libass instead
-     * of the built-in text renderer. Default empty (engine opts out).
+     * Per-track sample MIME type, aligned 1:1 with [getSubtitleTracks]. Lets the
+     * caller route embedded ASS/SSA tracks to libass instead of the text renderer.
+     * Default empty (engine opts out).
      */
     fun getSubtitleTrackMimeTypes(): List<String?> = emptyList()
 
-    /**
-     * Add an external subtitle file (e.g. .srt, .vtt, .ass) to the current playback.
-     *
-     * @param uri The content URI or file path of the subtitle file.
-     * @return `true` if the subtitle was successfully added, `false` otherwise.
-     */
+    /** Add an external subtitle file (e.g. .srt, .vtt, .ass) to the current
+     *  playback. Returns `true` if it was added. */
     fun addExternalSubtitle(uri: Uri): Boolean
 
-    /**
-     * Fired when the subtitle track list changes (embedded tracks via ExoPlayer,
-     * external tracks via libass). The UI observes this to refresh its merged
-     * track list. Default no-op.
-     */
+    /** Fired when the subtitle track list changes (embedded via ExoPlayer,
+     *  external via libass). Default no-op. */
     var subtitleTrackChangeListener: (() -> Unit)?
 
     /** Set subtitle timing offset in milliseconds (positive = later, negative = earlier). */
@@ -173,7 +161,6 @@ interface IPlayerEngine {
     fun getSubtitleDelay(): Long = 0
 
     // ── Audio track selection ──────────────────────────────────
-
     /** Get the list of audio track names/languages. */
     fun getAudioTracks(): List<String>
 
@@ -213,19 +200,18 @@ interface IPlayerEngine {
     /** Loudness enhancer target gain in millibels (0..1000). */
     fun setLoudnessGain(gainMb: Int) {}
 
-    // ── Engine-specific extras ──────────────────────────────────
+    // ── Engine-specific extras ─────────────────────────────────
 
     /**
      * Engine debug stats for the "stats for nerds" overlay, or `null` if the
-     * engine cannot produce them. Defaults to `null` so engines need not implement.
+     * engine cannot produce them.
      */
     fun getDebugStats(): DebugStats? = null
 
-    // ── Render seam ─────────────────────────────────────────────
-    // These bridge the engine's native view to the Compose surface. They are part
-    // of the contract (not per-engine casts) so a second backend implements them
-    // and the rendering code stays engine-agnostic. Non-Media3 engines MUST
-    // override all four; there is no safe default for a native view.
+    // ── Render seam ────────────────────────────────────────────
+    // Bridges the engine's native view to the Compose surface. Part of the
+    // contract (not per-engine casts) so the rendering code stays engine-agnostic.
+    // Non-Media3 engines MUST override all four; there is no safe default.
 
     /** Create the engine's native render [View] (SurfaceView or TextureView). */
     fun createRenderView(context: Context, useSurfaceView: Boolean): View
@@ -239,30 +225,22 @@ interface IPlayerEngine {
     /** Surface resumed — reattach the underlying view (e.g. PlayerView.onResume). */
     fun onRenderViewResumed(view: View)
 
-    /**
-     * The Media3 [Player] to wrap in a system MediaSession for lock-screen / media
-     * controls, or `null` if this engine cannot back one. Defaults to `null` so a
-     * non-Media3 backend simply opts out and the service skips the MediaSession.
-     */
+    /** Media3 [Player] to wrap in a system MediaSession for lock-screen controls,
+     *  or `null` if unsupported. Default `null`. */
     fun getMedia3Player(): Player? = null
 
-    /**
-     * Register a callback fired when the engine swaps its underlying [Player]
-     * (e.g. a decoder-mode rebuild). The system MediaSession must re-point at the
-     * new player; otherwise lock-screen controls die after the swap. No-op for
-     * engines that never replace their player.
-     */
+    /** Fired when the engine swaps its underlying [Player] (e.g. a decoder-mode
+     *  rebuild), so the MediaSession can re-point — otherwise lock-screen
+     *  controls die after the swap. Default no-op. */
     fun setOnPlayerReplacedListener(listener: ((Player) -> Unit)?) {}
 
-    // ── Lifecycle ───────────────────────────────────────────────
+    // ── Lifecycle ──────────────────────────────────────────────
 
     /** Clear current playback error. */
     fun clearError()
 
-    /**
-     * Re-attempt the last playback after a recoverable error (network/timeout/auth/
-     * file-not-found). No-op if there is no current media item to retry.
-     */
+    /** Re-attempt the last playback after a recoverable error (network/timeout/
+     *  auth/file-not-found). No-op if there is nothing to retry. */
     fun retry()
 
     /** Release all native and framework resources. */
@@ -278,15 +256,10 @@ interface IPlayerEngine {
 const val SEEK_END_MARGIN_MS = 1_000L
 
 /**
- * Clamp a requested seek [positionMs] to a safe, in-range value for any engine.
- *
- * - Never returns a negative position.
- * - When [durationMs] is known (> 0), stays [SEEK_END_MARGIN_MS] short of the end
- *   so the seek never lands at/after EOF (the source reads a little past the seek
- *   point, which otherwise throws EOFException).
- * - When [durationMs] is unknown (<= 0, e.g. still preparing or a live stream),
- *   only guards against a negative position — it must NOT fall back to
- *   `Long.MAX_VALUE`, which maps to a byte offset past the file end and errors out.
+ * Clamp a requested seek to a safe, in-range position: never negative, and kept
+ * [SEEK_END_MARGIN_MS] short of the end when [durationMs] is known (> 0). An
+ * unknown duration only guards against a negative position — falling back to
+ * `Long.MAX_VALUE` maps to a byte offset past the file end and errors out.
  */
 fun clampSeekPosition(positionMs: Long, durationMs: Long): Long =
     if (durationMs > 0) {

@@ -32,16 +32,15 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 /**
  * Rounded, gradient-filled badge that identifies media by type.
  *
- * The accent comes from the theme palette — video → primary, audio → tertiary,
- * folder → secondary, generic file → neutral — and is darkened until a white
- * glyph stays legible, so the badge holds up in light, dark, and dynamic-colour
- * themes (where the accents can be pale).
+ * The accent comes from the theme palette (see [mediaAccentColor]) and is
+ * darkened until a white glyph stays legible, so the badge holds up on pale
+ * dynamic-colour accents.
  *
- * @param mediaType — selects the accent gradient.
- * @param icon — glyph drawn in white on top of the gradient.
- * @param size — badge edge length.
- * @param iconSize — glyph size (defaults to half of [size]).
- * @param cornerRadius — corner rounding (defaults to ~a third of [size]).
+ * @param mediaType — selects the accent gradient
+ * @param icon — glyph drawn in white over the gradient
+ * @param size — badge edge length
+ * @param iconSize — glyph size (defaults to half of [size])
+ * @param cornerRadius — corner rounding (defaults to ~a third of [size])
  */
 @Composable
 fun MediaIconBadge(

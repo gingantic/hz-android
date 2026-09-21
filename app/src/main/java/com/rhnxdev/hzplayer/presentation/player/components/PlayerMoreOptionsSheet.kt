@@ -348,8 +348,8 @@ fun JumpToTimeDialog(
     val rawTargetMs = (padded.substring(0, 2).toLong() * 3600 +
         padded.substring(2, 4).toLong() * 60 +
         padded.substring(4, 6).toLong()) * 1000L
-    // Guardrail: clamp any over-the-limit input (e.g. 99999) to the video's
-    // length so a bogus position never reaches the engine and errors out.
+    // Clamp an over-the-limit entry (e.g. 99999) to the media length so a bogus
+    // position never reaches the engine.
     val targetMs = if (durationMs > 0) rawTargetMs.coerceIn(0L, durationMs) else rawTargetMs
     val onKey: (Char) -> Unit = { c ->
         // Max 6 digits (HH:MM:SS); a leading zero is a no-op.

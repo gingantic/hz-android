@@ -47,11 +47,12 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Equalizer bottom sheet: master switch, preset chips, a classic vertical
- * 10-band slider bank, plus bass boost and loudness enhancer. Band levels are
- * in millibels; sliders keep a local value while dragging and commit on
- * release so a drag doesn't flood the audio effect (and DataStore) with
- * intermediate levels.
+ * Equalizer bottom sheet: master switch, preset chips, a vertical 10-band
+ * slider bank, bass boost, and loudness enhancer.
+ *
+ * Band levels are in millibels. Sliders keep a local value while dragging and
+ * commit on release, so a drag doesn't flood the audio effect (and DataStore)
+ * with intermediate levels.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,11 +147,9 @@ fun EqualizerSheet(
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }
-            // ── Band bank: fixed-width slim columns centered in the sheet;
-            // scrolls horizontally on small screens instead of cramming all
-            // 10 bands into the width. The outer Box centers the bank when it
-            // is narrower than the sheet (e.g. landscape) so it isn't stuck
-            // to the left edge, while the inner Row still scrolls on overflow.
+            // ── Band bank: fixed-width slim columns, centered in the sheet and
+            // scrolled horizontally on overflow. The outer Box centers the bank
+            // when it is narrower than the sheet (e.g. landscape).
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -230,9 +229,9 @@ private fun PresetChip(
 }
 
 /**
- * One vertical EQ band: dB readout on top, bottom-to-top slider, frequency
- * label underneath — the classic graphic-equalizer column. Fixed-width so the
- * bank keeps a uniform slim look and overflows into a horizontal scroll.
+ * One vertical EQ band: dB readout on top, bottom-to-top slider, frequency label
+ * underneath. Fixed-width so the bank keeps a uniform slim look and overflows
+ * into a horizontal scroll.
  */
 @Composable
 private fun BandColumn(
@@ -270,10 +269,9 @@ private fun BandColumn(
 }
 
 /**
- * A slim [HzPlayerSlider] rotated to run bottom-to-top. The rotation only
- * transforms the drawing/touch, so a custom layout swaps the measured
- * width/height back and recenters the placeable — the standard Compose
- * vertical-slider recipe.
+ * A slim [HzPlayerSlider] rotated to run bottom-to-top. The rotation transforms
+ * drawing and touch only, so a custom layout swaps the measured width/height
+ * back and recenters the placeable.
  */
 @Composable
 private fun VerticalSlider(

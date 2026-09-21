@@ -25,7 +25,14 @@ gradlew.bat assembleDebug      # Windows ← use this
 ./gradlew lint                 # static analysis
 ```
 
-Gradle wrapper **8.13** — see `gradle/wrapper/gradle-wrapper.properties`.
+Gradle wrapper **8.13** (`gradle/wrapper/gradle-wrapper.properties`) · NDK **27.0.12077973**
+(pinned; keep in sync with `NDK_VER` in `.github/workflows/build.yml`) · JDK 17.
+
+- `assembleDebug` / `assembleRelease` link against prebuilt native libs in `app/src/main/jniLibs/arm64-v8a/`, which are **not in git**. On a fresh clone, build them first (README → "Native dependencies"). A missing `.so` surfaces as a CMake `IMPORTED_LOCATION` error, not a Gradle one — do not "fix" the Gradle files.
+- `connectedCheck` needs a connected device or emulator; it cannot run headless.
+- `lint` is available but **not** CI-gated. CI (`.github/workflows/build.yml`) runs `test` then `assembleRelease`.
+
+**Before reporting a change as done**, run `./gradlew test` and `./gradlew compileDebugKotlin` (fast) — or `assembleDebug` when native code or resources changed — and state what you ran. Never claim success from reading the code alone.
 
 ---
 
@@ -41,6 +48,7 @@ Native libs (`libarchive.so`, FFmpeg, libass) are built **outside Gradle** by st
 - **`android_lf.h`:** libarchive's copy is a *static* header at `contrib/android/include` (not installed) — add `-I<src>/contrib/android/include` via `CMAKE_C_FLAGS` in the toolchain file (FORCE-set), not the per-project cmake call.
 - **mbedTLS:** pin **`mbedtls-3.6.7`** (LTS) — libarchive master uses the legacy `mbedtls_md_hmac_*` API removed in the mbedTLS dev branch. Build all three (`libmbedtls.a`, `libmbedx509.a`, `libmbedcrypto.a`).
 - **Verify a built `.so`:** `nm` on a *stripped* APK-packed `.so` is empty by design — confirm with `llvm-strings.exe` on the `C:/...` path, grep for distinctive strings (e.g. `Mbed TLS 3.6.7`, `mbedtls_aes_crypt_ecb`).
+- **What Gradle builds vs. what it doesn't:** Gradle compiles `app/src/main/cpp/*.c|cpp` itself (CMake → `libthumbnail-extractor.so`, `libassrender.so`, `libarchive-extractor.so`, `libffcodec.so`, `libffplayer.so`). The third-party libs in `jniLibs/<abi>/` — `libav*`, `libass` + its chain (`freetype`, `harfbuzz`, `fontconfig`, `fribidi`, `expat`), `libarchive`, `libdav1d`, `libadblock_jni`, `libc++_shared` — are only **imported** by CMake. Changing one means re-running its script; editing `cpp/` alone will not rebuild them.
 
 ---
 
@@ -66,7 +74,7 @@ Full detail lives in `docs/ARCHITECTURE.md` — do not duplicate it here.
 - **ViewModel = `@HiltViewModel`** — exposes `StateFlow<XxxUiState>`, calls repositories, owns side effects.
 - **Repository = interface in `domain/`, impl in `data/`** — always inject the interface.
 - **UiState = `@Immutable data class`** — updated only via `copy()`.
-- **Preview data** lives in `presentation/preview/PreviewMedia.kt`.
+- **Sample data** for debug builds lives in `presentation/preview/PreviewMedia.kt`. It is a fake media *library* injected at the repository/ViewModel layer (repositories, `VideoLibraryViewModel`, `AudioBrowserViewModel`) — **not** a `@Preview` fixture.
 - `collectAsStateWithLifecycle()` everywhere; `remember` for local UI state only (animation, menus, scroll position).
 
 ```kotlin
@@ -94,6 +102,7 @@ VideoPlayerScreen → PlayerViewModel → PlayerRepository(Impl)
 ```
 
 - `domain/player/IPlayerEngine` is the **only** playback boundary — no Media3 type crosses it. New backend = implement `IPlayerEngine` + one `@Binds @IntoMap @EngineKey(...)` line in `PlayerEngineModule`. Engines: `EXO_PLAYER`, `FFMPEG` (same ExoPlayer pipeline, FFmpeg renderers preferred), `NATIVE_FFMPEG` (standalone native).
+- **Seek clamping is shared** — route every seek through `clampSeekPosition()` / `SEEK_END_MARGIN_MS` in `IPlayerEngine.kt`; never re-implement the arithmetic per engine. Rationale and edge cases live in `docs/PLAYER_ARCHITECTURE.md` → "Seek clamping".
 - **Position is NOT in `PlayerUiState`** — the 250 ms tick is a separate `StateFlow` in the ViewModel to avoid full recompose.
 - VideoPlayerScreen gestures are **mutually exclusive** — one per touch sequence (hold-to-speed-up, horizontal scrub, brightness left half, volume right half, double-tap seek).
 - Deep-dive: `docs/PLAYER_ARCHITECTURE.md`.
@@ -116,22 +125,29 @@ VideoPlayerScreen → PlayerViewModel → PlayerRepository(Impl)
 
 ## Code Conventions
 
-- Files: `XxxScreen.kt` / `XxxViewModel.kt` / `XxxUiState.kt` / `XxxRepository.kt` / `XxxRepositoryImpl.kt`. Keep files under **~300 lines**; extract reusable Composables to `components/` sub-package.
-- Every public Composable: `modifier: Modifier = Modifier` parameter. Every reusable component: `@Preview` using `PreviewMedia` (no ViewModel in preview).
-- `data class` + `copy()` for models; `sealed interface` for UI events/actions; extension functions → `core/util/` or `core/extensions/`; no `lateinit` in ViewModels — constructor injection only.
+- Files: `XxxScreen.kt` / `XxxViewModel.kt` / `XxxUiState.kt` / `XxxRepository.kt` / `XxxRepositoryImpl.kt`. Keep **new** files under ~300 lines and extract reusable Composables to a `components/` sub-package — but do not split the existing large files (`FfmpegNativeEngine.kt` 1220 lines, `AssHandler.kt`, `PlayerViewModel.kt`, `TabManager.kt`, …) as drive-by cleanup; that is a separate, deliberate change.
+- Every public Composable: `modifier: Modifier = Modifier` parameter.
+- Every reusable component: a private `@PreviewLightDark` + `@Preview` function that wraps the component in `HzPlayerTheme { }` and passes literal values directly (see `MediaCard.kt`, `FileItemCard.kt`). Never a ViewModel or repository in a preview.
+- `data class` + `copy()` for models; `sealed interface` for UI events/actions; extension functions → `core/util/`; no `lateinit` in ViewModels — constructor injection only.
+- **Room schema changes** need three things together: bump `@Database(version = …)`, add a `Migration`, and commit the regenerated `app/schemas/*.json`. Never re-enable `fallbackToDestructiveMigration()` or `exportSchema = false` — that combination silently wiped saved servers, resume positions, and history on every version bump (see the comment in `HzPlayerDatabase.kt`).
+- **Comments:** short and consistent — one-line KDoc summary, an optional ≤3-line why, then `@param name — terse phrase`. Inline `//` explains why, not what. State a non-obvious rationale once at its definition and reference it from other sites.
+- **Shared components:** new sliders use `HzPlayerSlider`, not a raw `Slider`; media-kind colour comes from `mediaAccentColor`, with `MediaIconBadge` when a white glyph sits on top.
 
 Hard rules:
-- ❌ No `LiveData` · no `SharedPreferences` (use `DataStore`) · no `runBlocking` in production
-- ❌ No hardcoded fake data in Composables — use `PreviewMedia`
+- ❌ No `LiveData` · no `SharedPreferences` (use `DataStore`)
+- ❌ No `runBlocking` in production — the single deliberate exception is `MediaPlayerHolder.kt:103`, which seeds `ffmpegPreferred` synchronously because the async collector loses a cold-start race against the eager player build. Leave it; "fixing" it reintroduces the race.
+- ❌ No hardcoded fake data in a Composable body — sample data belongs in the `@Preview`, or in `PreviewMedia` when it has to reach a repository/ViewModel
+- ❌ No user-facing strings in code — every label, title, and message goes in `res/values/strings.xml` (443 entries) and is read with `stringResource(R.string.…)`
 - ❌ No direct `Context` in ViewModels — `@ApplicationContext` only when unavoidable
 - ❌ No Media3 types crossing `IPlayerEngine`
+- ❌ No new dependencies (add, remove, or upgrade) without asking first
 
 ---
 
 ## Research Protocol
 
 1. **Read existing code** — find what already exists and reuse it.
-2. **Check `docs/`** — architecture decisions are documented there.
+2. **Check `docs/`** — architecture decisions are documented there; pick the right file from the Docs Index below.
 3. **Do not guess** — if an API or behaviour is unclear, check official docs before writing a single line. A wrong API call is worse than slow delivery.
 4. **Complex change** (multi-step, architectural, 3+ files)? Run **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) *before* editing — comprehension first, then the smallest diff. Apply the Ponytail ladder after understanding the full flow: reuse existing code → stdlib → platform feature → installed dep → one line → minimum code.
 
@@ -143,24 +159,25 @@ Before modifying existing code: read the **entire file**, understand *why* it's 
 
 | Feature | Status |
 |---|---|
-| HDR→SDR colour correction (`GlEffect` / custom GLSL) | 🔧 In progress — pref wired, pipeline no-op |
+| HDR→SDR colour correction | 🔧 In progress — the `disableHdr` pref is wired through `UserPreferencesRepository` → `PlayerRepositoryImpl` → both engines; the colour-correct pipeline itself is still a no-op |
 | Custom `SubtitleOverlay` (replace built-in PlayerView subtitles) | ⏸ Parked — built-in active for reliability; native engine uses libass overlay |
 
 ---
 
 ## Docs Index
 
-| File | Contents |
-|---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full app architecture, module boundaries |
-| [`docs/PLAYER_ARCHITECTURE.md`](docs/PLAYER_ARCHITECTURE.md) | Player stack deep-dive |
-| [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md) | Data flow diagrams |
-| [`docs/UI_COMPONENTS.md`](docs/UI_COMPONENTS.md) | Composable component catalogue |
+| File | Contents | Read it when |
+|---|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layers, package map, repository/Room tables, DI, navigation | You need to know where code lives or how a layer is wired |
+| [`docs/PLAYER_ARCHITECTURE.md`](docs/PLAYER_ARCHITECTURE.md) | Engines, `PlayerSurface`, seek clamping, subtitles, equalizer, gestures | Touching playback, seeking, tracks, or the player UI |
+| [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md) | Read/write call chains, data-source strategy, threading model | Tracing how a value gets from storage to a screen, or back |
+| [`docs/UI_COMPONENTS.md`](docs/UI_COMPONENTS.md) | Component catalogue, house rules, sample layouts | Building or restyling UI |
 
 ---
 
 ## 🚦 Guidelines for AI Development
 
 * **Minor Features & Bug Fixes:** the AI may implement and verify minor features, bug fixes, refactoring, pipeline adjustments, and styling alignments.
-  * **Versioning Increment:** the AI must always ask for the developer's confirmation before changing version numbers (e.g. `X.Y.Z` → `X.Y.Z+1` for patches, `X.Y.0` → `X.Y+1.0` for minor features) — proposed as examples for approval.
+  * **Versioning Increment:** the AI must always ask for the developer's confirmation before changing version numbers (e.g. `X.Y.Z` → `X.Y.Z+1` for patches, `X.Y.0` → `X.Y+1.0` for minor features) — proposed as examples for approval. Note the base version is hardcoded in `app/build.gradle.kts`; the rest of `versionName` and the whole `versionCode` derive from git.
 * **Major Features & Core Architecture:** only the human developer makes major architecture modifications, structural design changes, or major features.
+* **Boundaries:** do not `git commit`, `git push`, or open PRs unless explicitly asked. Do not run destructive git commands (`reset --hard`, `checkout --`, force-push) at all. Never edit `app/src/main/jniLibs/` or `app/src/main/cpp/include/` by hand — those are generated artifacts.

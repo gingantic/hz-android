@@ -2,11 +2,7 @@
 
 > Media3 ExoPlayer and a standalone native FFmpeg player behind the `IPlayerEngine`
 > contract, rendered through `PlayerSurface`.
-> Last refreshed: 2026-09-09. Reflects three selectable engines, the 10-band
-> equalizer (state shared across engines), the libass subtitle pipeline
-> (zero-flicker), position controller split, audio queue, floating video player,
-> resume-mode support, sleep timer, chapters, A-B repeat, audio delay, and
-> play-as-audio mode.
+> Verified against code at `8ffb763` — drift check: `git diff 8ffb763..HEAD -- app/src`.
 
 ---
 
@@ -14,38 +10,37 @@
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                    MediaPlaybackService                    │
-│                  (Media3 MediaSessionService)              │
-│  • builds MediaSession from engine.getMedia3Player()  │
-│  • Media3 MediaNotificationService → system controls       │
+│  MediaPlaybackService (Media3 MediaSessionService)         │
+│  • MediaSession built from engine.getMedia3Player()        │
+│  • re-points the session when the engine swaps its player   │
+│  • drives the system notification + lock-screen controls    │
 └───────────────────────────┬───────────────────────────────┘
                             │ Media3 Player (via IPlayerEngine)
 ┌───────────────────────────▼───────────────────────────────┐
-│        Active engine (Map<EngineType, IPlayerEngine>)      │
+│  Active engine — Map<EngineType, IPlayerEngine>            │
 │  • EXO_PLAYER / FFMPEG → ExoPlayerEngine                   │
 │    (FFMPEG = same engine, FFmpeg renderers preferred)      │
-│  • NATIVE_FFMPEG → FfmpegNativeEngine                      │
-│    (standalone libffplayer.so, no ExoPlayer)               │
-│  • all rendering via createRenderView/updateRenderView     │
+│  • NATIVE_FFMPEG → FfmpegNativeEngine (libffplayer.so)     │
+│  • all rendering via createRenderView / updateRenderView    │
 └───────────────────────────┬───────────────────────────────┘
                             │ IPlayerEngine calls
 ┌───────────────────────────▼───────────────────────────────┐
-│                    PlayerRepositoryImpl                    │
+│  PlayerRepositoryImpl                                      │
 │  • Map<EngineType, IPlayerEngine> (Hilt @IntoMap)          │
-│  • activeEngine resolved from UserPreferencesRepository     │
+│  • activeEngine resolved from UserPreferencesRepository    │
 │  • delegates every call; exposes playbackStateInfo Flow    │
-│  • network traffic polling for remote URIs                 │
+│  • polls network traffic for remote URIs                   │
 └───────────────────────────┬───────────────────────────────┘
                             │ Flow / callbacks
 ┌───────────────────────────▼───────────────────────────────┐
-│                    PlayerViewModel                         │
+│  PlayerViewModel → StateFlow<PlayerUiState>                │
 │  • maps PlayerStateInfo → PlayerUiState                    │
-│  • exposes StateFlow<PlayerUiState> (activeEngineType etc) │
+│  • position lives in a separate StateFlow (see below)      │
 └───────────────────────────┬───────────────────────────────┘
                             │ collectAsStateWithLifecycle
 ┌───────────────────────────▼───────────────────────────────┐
-│   VideoPlayerScreen / AudioPlayerScreen + PlayerSurface    │
-│  • PlayerSurface(engine) renders; no Media3 import         │
+│  VideoPlayerScreen / AudioPlayerScreen + PlayerSurface     │
+│  • PlayerSurface renders; imports no Media3 type           │
 │  • PlayerControlsOverlay, gestures, sheets, dialogs        │
 └───────────────────────────────────────────────────────────┘
 ```
@@ -54,100 +49,57 @@
 
 ## MediaPlayerHolder (Singleton)
 
-Owns the single `ExoPlayer` (backs both `EXO_PLAYER` and `FFMPEG` engine types).
-Configured for this app:
-- `DefaultTrackSelector` with **tunneling disabled** (4K HDR HEVC tunneled seek stall).
-- `DefaultLoadControl` with larger buffers (50s/90s) for smoother remote streaming.
-- `HzRenderersFactory` (single `RenderersFactory`): ASS renderers + audio delay +
-  equalizer processors, with a `preferFfmpeg` flag that indexes the FFmpeg extension
-  decoders before MediaCodec (`EngineType.FFMPEG`) or keeps platform-first order
-  (`EXO_PLAYER`).
-- `AudioDelaySink` wrapping the default audio sink for A/V sync offset.
-- Chapter probing via native FFmpeg demuxer on READY → `List<ChapterInfo>`.
-- Exposes `PlayerStateInfo` via `playbackState: StateFlow`.
-- `onPlayerError` routes through `PlaybackErrorMapper` → redacted `(kind, message)`.
-- Debug stats extracted via `ExoDebugStatsHelper` (FPS, decoder labels, HDR, SoC).
+Owns the single `ExoPlayer` (backs both `EXO_PLAYER` and `FFMPEG`):
 
-```kotlin
-@Singleton
-class MediaPlayerHolder @Inject constructor(@ApplicationContext context: Context) {
-    var player: ExoPlayer = buildPlayer()   // single instance, private set
-    val playbackState: StateFlow<PlayerStateInfo>
-}
-```
+- `DefaultTrackSelector` with **tunneling disabled** (4K HDR HEVC tunneled seek stall).
+- `DefaultLoadControl` with larger buffers (50 s / 90 s) for smoother remote streaming.
+- `HzRenderersFactory` — one `RenderersFactory` for ASS renderers + audio delay +
+  equalizer processors, with a `preferFfmpeg` flag that indexes the FFmpeg extension
+  decoders before MediaCodec (`FFMPEG`) or keeps platform-first order (`EXO_PLAYER`).
+- `AudioDelaySink` wrapping the default audio sink for A/V sync offset.
+- `playbackState: StateFlow<PlayerStateInfo>`.
+- `onPlayerError` routes through `PlaybackErrorMapper` → redacted `(kind, message)`.
+- Debug stats via `ExoDebugStatsHelper` (FPS, decoder labels, HDR, SoC).
 
 ---
 
 ## Engine seam — `PlayerSurface`
 
-Presentation renders video through one composable. The render seam methods
-(`createRenderView`, `updateRenderView`, `onRenderViewPaused/Resumed`) live directly
-on `IPlayerEngine` — no typed casts or `when` branches needed. Adding a new engine
-requires **zero** changes to `PlayerSurface`.
+Presentation renders video through one composable; the render-seam methods live on
+`IPlayerEngine`, so adding an engine requires **zero** changes here.
 
 ```kotlin
 @Composable
-fun PlayerSurface(engine: IPlayerEngine, uiState: PlayerUiState, modifier: Modifier, onRenderView: (View?) -> Unit) {
-    key(engine.engineType) {
+fun PlayerSurface(engine: IPlayerEngine, uiState: PlayerUiState, …) {
+    key(engine.engineType) {                       // rebuild the surface on engine swap
         AndroidView(
-            factory = { ctx ->
-                val view = engine.createRenderView(ctx, uiState.useSurfaceView)
-                onRenderView(view)
-                view
-            },
-            update = { view ->
-                engine.updateRenderView(view, RenderViewConfig(uiState.aspectRatioMode))
-            },
+            factory = { engine.createRenderView(it, uiState.useSurfaceView) },
+            update = { engine.updateRenderView(it, RenderViewConfig(uiState.aspectRatioMode)) },
         )
     }
 }
 ```
 
-Lifecycle (brightness/volume pause on `ON_STOP`, resume on `ON_RESUME`) lives in
-`VideoPlayerScreen` and calls `engine.onRenderViewPaused(view)` /
-`engine.onRenderViewResumed(view)` directly through the interface.
-
----
+Lifecycle (pause on `ON_STOP`, resume on `ON_RESUME`) lives in `VideoPlayerScreen`,
+calling `engine.onRenderViewPaused(view)` / `onRenderViewResumed(view)` directly.
 
 ---
 
 ## MediaPlaybackService
 
-Built inline in `MediaPlaybackService.kt` — the service calls `engine.getMedia3Player()`
-on the active engine and wraps it in a `Media3 MediaSession`. No separate provider class.
+`MediaPlaybackService.kt` builds the session inline — no separate provider class:
 
 ```kotlin
-@AndroidEntryPoint
-class MediaPlaybackService : MediaSessionService() {
-    @Inject lateinit var playerRepository: PlayerRepository
-    private var mediaSession: MediaSession? = null
-
-    override fun onCreate() {
-        super.onCreate()
-        val engine = playerRepository.activeEngine
-        val player = engine.getMedia3Player()
-        mediaSession = player?.let {
-            MediaSession.Builder(this, it).setSessionActivity(pendingIntent).build()
-        }
-        // Re-point session when the engine swaps its player (decoder rebuild).
-        engine.setOnPlayerReplacedListener { newPlayer ->
-            mediaSession?.setPlayer(newPlayer)
-        }
-    }
-    override fun onGetSession(c: ControllerInfo) = mediaSession
-    override fun onDestroy() {
-        mediaSession?.release().also { mediaSession = null }
-        playerRepository.release()
-        super.onDestroy()
-    }
-}
+val player = playerRepository.activeEngine.getMedia3Player()
+mediaSession = player?.let { MediaSession.Builder(this, it).setSessionActivity(pi).build() }
+playerRepository.activeEngine.setOnPlayerReplacedListener { mediaSession?.setPlayer(it) }
 ```
 
-A `MediaSession` is only built when the active engine's `getMedia3Player()` returns
-non-null (ExoPlayer today). A future non-Media3 backend returns `null` and opts out.
+A `MediaSession` is only built when the active engine returns a non-null
+`getMedia3Player()` (ExoPlayer today). A non-Media3 backend returns `null` and opts
+out — which is why `NATIVE_FFMPEG` has no lock-screen controls.
 
 ---
-
 
 ## PlayerState
 
@@ -168,27 +120,31 @@ data class PlayerStateInfo(
     val currentTitle: String? = null,
     val currentArtist: String? = null,
     val currentUri: String? = null,
+    /** True iff the current MediaItem declares a `drmConfiguration` (Widevine L1 path, etc.). */
     val drmSessionActive: Boolean = false,
-    val chapters: List<ChapterInfo> = emptyList(),  // container chapters from FFmpeg
 )
 ```
 
-Track lists (subtitle/audio) are **not** in `PlayerStateInfo` — they are cached by
-`PlayerTrackCache` and refreshed on READY to avoid per-tick re-queries.
+Two things are deliberately **not** here: track lists (subtitle/audio) — cached by
+`PlayerTrackCache` and refreshed on READY to avoid per-tick re-queries — and chapters,
+which `PlayerViewModel` probes separately into `PlayerUiState.chapters`.
 
 ---
 
 ## PlayerViewModel (engine-agnostic)
 
-The ViewModel is split into focused controllers to keep each class small:
+Split into focused controllers so each class stays small:
 
 | Controller | Responsibility |
 |---|---|
-| `PlayerViewModel` | Orchestrates controllers, maps `PlayerStateInfo` → `PlayerUiState`, sleep timer, A-B repeat loop |
-| `PlayerPositionController` | 250ms position tick (`StateFlow<Long>`), periodic resume-save, A-B loop boundary check |
+| `PlayerViewModel` | Orchestrates controllers, maps `PlayerStateInfo` → `PlayerUiState`, sleep timer, A-B repeat loop, chapter probing |
+| `PlayerPositionController` | 250 ms position tick (`StateFlow<Long>`), seek bookkeeping + clamping, periodic resume-save |
 | `PlayerTrackCache` | Caches subtitle/audio track lists; refreshes on READY |
 | `PlayerPlaylistController` | Video playlist + audio queue management |
 | `PlayerDebugController` | Debug stats polling |
+
+Position is a **separate** `StateFlow<Long>` (`vm.position`), not part of
+`PlayerUiState`, so the 250 ms tick only recomposes the seek bar.
 
 ```kotlin
 @HiltViewModel
@@ -198,53 +154,52 @@ class PlayerViewModel @Inject constructor(
     private val resumeRepository: ResumeRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(PlayerUiState())
-    val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
-
-    // Position is a SEPARATE StateFlow so the 250ms tick only recomposes the seekbar
-    val position: StateFlow<Long>  // from PlayerPositionController
-
-    init {
-        viewModelScope.launch {
-            playerRepository.playbackStateInfo.collect { info ->
-                _uiState.update { state ->
-                    state.copy(
-                        isPlaying = info.isPlaying,
-                        isLoading = info.state == PlayerState.BUFFERING,
-                        duration = info.duration,
-                        bufferedPercentage = ...,
-                        playbackSpeed = info.playbackSpeed,
-                        shuffleMode = info.shuffleModeEnabled,
-                        repeatMode = info.repeatMode,
-                        errorMessage = info.errorMessage,
-                        errorKind = info.errorKind,
-                        currentTitle = info.currentTitle,
-                        currentArtist = info.currentArtist,
-                        activeEngineType = playerRepository.activeEngine.engineType,
-                    )
-                }
-            }
-        }
-    }
-    // onPlayPause / onSeekTo / onSkipForward/Back / onSetSpeed / onToggleShuffle /
+    // init: collect playerRepository.playbackStateInfo → _uiState.update { copy(...) }
+    // onPlayPause / onSeekTo / onSkipForward|Back / onSetSpeed / onToggleShuffle /
     // onCycleRepeatMode / onSelectSubtitleTrack / onSelectAudioTrack / retry / clearError
-    // — all delegate to playerRepository (which delegates to the active engine).
+    // — all delegate to playerRepository → active engine.
 }
 ```
 
 ---
 
+## Seek clamping (shared across engines)
+
+`domain/player/IPlayerEngine.kt` owns the one clamp every engine uses:
+
+```kotlin
+const val SEEK_END_MARGIN_MS = 1_000L          // stay 1 s short of the end
+fun clampSeekPosition(positionMs: Long, durationMs: Long): Long
+```
+
+- Never negative.
+- With a known duration: kept `SEEK_END_MARGIN_MS` short of the end. Landing exactly
+  on the final timestamp makes the demuxer read past EOF (`EOFException` on containers
+  without a tail index — e.g. MKV without Cues).
+- With an unknown duration: only the negative guard applies. It must **not** fall back
+  to `Long.MAX_VALUE`, which maps to a byte offset past the file end and errors out.
+
+Call sites: `ExoPlayerEngine.seekTo` (+ resume-seek on prepare, `skipToNext/Previous`),
+`FfmpegNativeEngine.seekTo`, and `PlayerPositionController.clampSeekTarget()` — which
+prefers the live engine duration and falls back to the UI-state duration, so a
+transient engine `0` doesn't disable the clamp. `skipForward/Backward` just offset from
+the current position and let `seekTo` clamp. `JumpToTimeDialog` clamps the typed
+HH:MM:SS to the media duration before jumping.
+
+---
+
 ## VideoPlayerScreen — Gestures
 
-Gestures are handled by the extracted `PlayerGestures` composable:
+Gestures are applied with the `Modifier.playerGestures(...)` modifier
+(`PlayerGestures.kt`) and are **mutually exclusive** — one per touch sequence:
 
-- **Single tap**: toggle controls overlay (auto-hide ~3s).
-- **Double tap left/right**: seek ∓10s (with `SeekIndicator`/`DragSeekIndicator`).
+- **Single tap**: toggle the controls overlay (auto-hide ~3 s).
+- **Double tap left/right**: seek ∓10 s (`SeekIndicator` / `DragSeekIndicator`).
 - **Swipe left half**: brightness. **Swipe right half**: volume.
-- **Swipe up/down**: dismiss player (portrait).
-- **Pinch / aspect button**: zoom-to-fit / fill (`AspectRatioMode`).
-- Lock pill (`UnlockPill`) disables gestures; swipe to unlock.
-- `GestureCueIndicators` provides visual feedback for all gesture types.
+- **Swipe up/down**: dismiss player (portrait). **Pinch / aspect button**: zoom-to-fit
+  or fill (`AspectRatioMode`).
+- **Hold**: temporary speed-up (ramps 2x→4x).
+- Lock pill (`UnlockPill`) disables gestures; `GestureCueIndicators` gives visual feedback.
 
 ---
 
@@ -252,123 +207,70 @@ Gestures are handled by the extracted `PlayerGestures` composable:
 
 All subtitle rendering goes through native libass for pixel-perfect ASS/SSA output:
 
-1. **Embedded tracks**: `AssExtractorsFactory` + `AssMatroskaExtractor` intercept
-   subtitle samples in ExoPlayer's extractor chain → `AssTrackOutput` buffers them.
-2. **External files**: `NeighborSubtitleDiscoverer` auto-detects sibling `.srt/.ass`
-   files (local + SMB); external ASS loads via `IPlayerEngine.loadExternalAss(uri)`.
-3. **SRT/VTT**: `SubtitleConverters` converts to ASS on-the-fly for unified rendering.
-4. **Rendering**: `AssHandler` feeds data to libass via `AssDirectBridge` (JNI) →
-   renders a bitmap at each frame time → displayed on `SubtitleOverlayView`.
-5. **Compose**: `AssSubtitleOverlay` wraps the overlay view in an `AndroidView`.
+1. **Embedded tracks** — `AssExtractorsFactory` + `AssMatroskaExtractor` intercept
+   subtitle samples in the extractor chain → `AssTrackOutput` buffers them.
+2. **External files** — `NeighborSubtitleDiscoverer` auto-detects sibling `.srt/.ass`
+   (local + SMB); external ASS loads via `IPlayerEngine.loadExternalAss(uri)`.
+3. **SRT/VTT** — `SubtitleConverters` converts to ASS on the fly for unified rendering.
+4. **Rendering** — `AssHandler` feeds libass via `AssDirectBridge` (JNI), renders a
+   bitmap per frame time → `SubtitleOverlayView`.
+5. **Compose** — `AssSubtitleOverlay` wraps the overlay view in an `AndroidView`.
 
-Subtitle track names are resolved to languages + country flags via
-`SubtitleLanguageResolver` and displayed with `FlagIcon` in the selection dialogs.
-
----
-
-## Floating Video Player
-
-`FloatingVideoPlayer` provides a draggable, resizable PiP-style overlay that stays
-on top when the user navigates away from the full-screen player. Includes play/pause,
-close, fullscreen-return buttons, and a progress indicator.
+Track names resolve to languages + country flags via `SubtitleLanguageResolver`
+(`FlagIcon` in the selection dialogs).
 
 ---
 
-## Audio Queue
+## Feature notes
 
-`AudioQueueSheet` shows the current "now playing" list for audio playback. The queue
-is managed by `PlayerPlaylistController` and exposed via `PlayerUiState.audioQueue` /
-`audioQueueIndex`. Users can tap a queue item to jump to it.
+| Feature | Behaviour |
+|---|---|
+| **Floating video player** | `FloatingVideoPlayer` — draggable, resizable PiP-style overlay that stays on top after leaving the full-screen player; play/pause, close, fullscreen-return, progress |
+| **Audio queue** | `AudioQueueSheet` shows the now-playing list from `PlayerPlaylistController` via `PlayerUiState.audioQueue` / `audioQueueIndex`; tap to jump |
+| **Sleep timer** | `SleepTimerDialog` — presets 15/30/45/60/90/120 min, end-of-video (−1), off; 1 Hz countdown via `PlayerViewModel.sleepTimerRemainingMs`; on expiry playback pauses and the timer resets |
+| **A-B repeat** | `PlayerViewModel.onCycleAbRepeat()`: tap 1 sets A, tap 2 sets B (must be > A + 500 ms) and starts the loop, tap 3 clears. `startAbRepeatLoop()` collects the position flow and seeks back to A whenever it reaches B |
+| **Chapters** | `PlayerViewModel.loadChaptersIfNeeded()` probes once per URI on IO via `MediaInfoProbe.probeChapters` (native FFmpeg demuxer: MKV chapters, MP4 chpl, OGG chapters) → `PlayerUiState.chapters`; `ChapterSelectionDialog` highlights the current chapter and seeks to `startMs` |
+| **Audio delay** | `AudioDelaySink` (`ForwardingAudioSink`) shifts the audio clock; since ExoPlayer syncs video to it, A/V sync moves without touching the audio pipeline. Positive = audio heard later. Set via `IPlayerEngine.setAudioDelay`; persisted in `PlayerUiState.audioDelayMs` |
+| **Play-as-audio** | From the video player, "Play as audio" hides the video surface and keeps playing; ViewModel sets `isVideo=false` + `playingVideoAsAudio=true`, `MiniPlayerBar` takes over, and the floating player or back-navigation restores video |
 
----
-
-## Sleep Timer
-
-`SleepTimerDialog` offers fixed presets (15/30/45/60/90/120 min), "end of video" mode
-(-1), and Off. The timer is managed by `PlayerViewModel`:
-- Countdown displayed via `sleepTimerRemainingFlow` (1 Hz `StateFlow<Long>`).
-- "End of video" auto-stops when `PlayerState.ENDED` is reached.
-- On expiry, playback pauses and the timer resets.
-
----
-
-## A-B Repeat Loop
-
-Cycled via `PlayerMoreOptionsSheet.onCycleAbRepeat`:
-1. First tap → `abLoopStartMs = currentPosition` (point A set).
-2. Second tap → `abLoopEndMs = currentPosition` (loop active).
-3. Third tap → both cleared (loop off).
-
-`PlayerPositionController` monitors the 250ms tick: when `position >= abLoopEndMs`,
-it calls `seekTo(abLoopStartMs)` automatically.
-
----
-
-## Chapter Navigation
-
-Chapters are probed from the media container (MKV chapters, MP4 chpl, OGG chapters)
-via the native FFmpeg demuxer when the player reaches READY state. The resulting
-`List<ChapterInfo>` (startMs, endMs, title) flows through `PlayerStateInfo` →
-`PlayerUiState.chapters`. `ChapterSelectionDialog` shows the list with the current
-chapter highlighted; tapping a row seeks to its `startMs`.
-
----
-
-## Audio Delay (A/V Sync Offset)
-
-`AudioDelaySink` (a `ForwardingAudioSink`) shifts the audio clock reported to
-ExoPlayer. Since ExoPlayer syncs video to the audio renderer's clock, offsetting
-`getCurrentPositionUs` shifts A/V sync without touching the audio pipeline.
-- Positive delay → audio heard later (video renders ahead).
-- Controlled via `IPlayerEngine.setAudioDelay(delayMs)`.
-- Persisted in `PlayerUiState.audioDelayMs`.
+Subtitle timing offset is exposed via `IPlayerEngine.setSubtitleDelay/getSubtitleDelay`.
 
 ---
 
 ## Engine Selection (three engines)
 
-Picked in Settings; persisted via `UserPreferencesRepository.activeEngine`:
+Picked in Settings, persisted via `UserPreferencesRepository.activeEngine`:
 
 | Engine | Backing | Use case |
 |---|---|---|
 | `EXO_PLAYER` | Media3 ExoPlayer, platform decoders first | Default; best battery + format coverage |
 | `FFMPEG` | Same ExoPlayer pipeline, FFmpeg software renderers preferred (`HzRenderersFactory.preferFfmpeg`) | Formats the platform decoder mishandles |
-| `NATIVE_FFMPEG` | Standalone native player (`FfmpegNativeEngine` + `cpp/ffplayer/`, `libffplayer.so`) | Instant seeking on local/networked media; AMediaCodec HW decode w/ libdav1d fallback |
+| `NATIVE_FFMPEG` | Standalone native player (`FfmpegNativeEngine` + `cpp/ffplayer/`, `libffplayer.so`) | Instant seeking on local/networked media; AMediaCodec HW decode with libdav1d fallback |
 
-Switching stops current playback and rebuilds the render surface
-(`PlayerSurface` keys on `engineType`). The native engine opts out of the
-system MediaSession (`getMedia3Player() = null`).
+Switching stops current playback and rebuilds the render surface (`PlayerSurface`
+keys on `engineType`). The native engine opts out of the system MediaSession.
 
 ---
 
 ## 10-Band Equalizer
 
 Implemented once, exposed through the engine contract:
-- `EqualizerController` is the single EQ state store for the whole app; both
-  engines' mutators write through it.
-- `ExoPlayerEngine`: `TenBandEqualizerProcessor` in the `AudioProcessor` chain +
-  `EqualizerController` (bass boost, loudness enhancement) on the Exo audio session.
-- `FfmpegNativeEngine`: mirrors the controller's state into its own native EQ and
-  pushes its AudioTrack session id through `MediaPlayerHolder.setAudioSessionId`,
-  so the same platform effects attach to whichever engine is playing.
-- UI: `EqualizerSheet` — per-band sliders, device presets, bass boost, loudness;
-  state flows as `StateFlow<EqualizerInfo>` and persists via `EqualizerSettings`.
 
----
-
-## Play-as-Audio Mode
-
-From the video player, users can tap "Play as audio" (`PlayerMoreOptionsSheet`)
-to hide the video surface and continue playback as audio-only. The ViewModel sets
-`isVideo=false` + `playingVideoAsAudio=true`; the engine keeps playing. The mini
-player bar takes over the UI. Users can return to the video surface via the
-floating player or navigating back to the full-screen player.
+- `EqualizerController` is the single EQ state store for the app; both engines'
+  mutators write through it.
+- `ExoPlayerEngine` — `TenBandEqualizerProcessor` in the `AudioProcessor` chain +
+  `EqualizerController` (bass boost, loudness) on the Exo audio session.
+- `FfmpegNativeEngine` — mirrors the controller state into its native EQ and pushes its
+  AudioTrack session id through `MediaPlayerHolder.setAudioSessionId`, so the same
+  platform effects attach to whichever engine is playing.
+- UI — `EqualizerSheet`: per-band sliders, device presets, bass boost, loudness; state
+  flows as `StateFlow<EqualizerInfo>` and persists via `EqualizerSettings`.
 
 ---
 
 ## ExoPlayer Integration Points
 
-| Feature | Media3 Implementation |
+| Feature | Media3 implementation |
 |---|---|
 | `play()/pause()` | `ExoPlayer.play()/pause()` |
 | `time/length` | `currentPosition` / `duration` |
@@ -380,9 +282,8 @@ floating player or navigating back to the full-screen player.
 | FFmpeg preference | `setFfmpegPreferred(true)` → renderer reorder (`EngineType.FFMPEG`) |
 | Equalizer | `TenBandEqualizerProcessor` + `EqualizerController` in the processor chain |
 | DRM | `drmSessionActive` flag → TextureView for secure decode |
-| ABRepeat | manual (not native) — `PlayerPositionController` loops A→B |
+| Seek clamping | `clampSeekPosition()` + `SEEK_END_MARGIN_MS` (shared, engine-agnostic) |
+| A-B repeat | manual — `PlayerViewModel.startAbRepeatLoop()` loops A→B off the position flow |
 | Sleep timer | manual — `PlayerViewModel` countdown + auto-pause |
-| Chapters | probed via native FFmpeg demuxer → `List<ChapterInfo>` |
+| Chapters | `MediaInfoProbe.probeChapters()` (native FFmpeg demuxer) → `PlayerUiState.chapters` |
 | Audio delay | `AudioDelaySink` (ForwardingAudioSink clock shift) |
-
-Subtitle timing offset is exposed via `IPlayerEngine.setSubtitleDelay/getSubtitleDelay`.
