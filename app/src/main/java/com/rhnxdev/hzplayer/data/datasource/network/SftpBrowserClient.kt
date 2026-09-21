@@ -7,7 +7,6 @@ import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import net.schmizz.sshj.SSHClient
 
 class SftpBrowserClient(
     private val host: String,

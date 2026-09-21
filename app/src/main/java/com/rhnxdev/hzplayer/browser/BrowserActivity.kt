@@ -1,16 +1,11 @@
 package com.rhnxdev.hzplayer.browser
 
-import android.app.Activity
 import android.app.PictureInPictureParams
 import android.os.Bundle
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rhnxdev.hzplayer.browser.ui.BrowserScreen
 import com.rhnxdev.hzplayer.domain.model.ThemeMode

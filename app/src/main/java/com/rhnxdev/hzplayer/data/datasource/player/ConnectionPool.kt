@@ -1,6 +1,5 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
-import android.net.Uri
 import com.rhnxdev.hzplayer.domain.model.RemoteAuthException
 import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
@@ -13,7 +12,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import okhttp3.ConnectionPool as OkHttpConnectionPool
 import okhttp3.OkHttpClient
 import org.apache.commons.net.ftp.FTP

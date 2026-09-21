@@ -7,7 +7,6 @@ import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.apache.commons.net.ftp.FTPClient
 
 class FtpBrowserClient(
     private val host: String,

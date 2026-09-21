@@ -14,7 +14,6 @@ import androidx.compose.runtime.setValue
 import java.util.UUID
 
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
-import com.rhnxdev.hzplayer.browser.media.DetectedMediaItem
 import com.rhnxdev.hzplayer.browser.media.MediaSnifferBridge
 import com.rhnxdev.hzplayer.browser.media.MediaSnifferEngine
 import kotlinx.coroutines.CoroutineScope

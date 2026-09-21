@@ -1,6 +1,5 @@
 package com.rhnxdev.hzplayer.data.datasource.subtitle.assrender
 
-import android.util.Log
 import androidx.media3.common.DataReader
 import androidx.media3.common.Format
 import androidx.media3.common.util.ParsableByteArray
