@@ -1004,9 +1004,19 @@ class FfmpegNativeEngine @Inject constructor(
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-            val parentWidth = measuredWidth
-            val parentHeight = measuredHeight
+            // Size the children off the incoming MeasureSpec, not measuredWidth/Height. During a
+            // rotation transition super.onMeasure() can report a stale/intermediate container size
+            // (the window hasn't finished resizing), and a SurfaceView latches its buffer geometry
+            // from whatever child size we hand it that pass — leaving a stretched frame that never
+            // self-corrects because the DAR/mode don't change on rotation. The spec size is the
+            // dimension the parent is assigning this pass, so it is the authoritative target.
+            val specW = MeasureSpec.getSize(widthMeasureSpec)
+            val specH = MeasureSpec.getSize(heightMeasureSpec)
+            val parentWidth = if (specW > 0) specW else measuredWidth
+            val parentHeight = if (specH > 0) specH else measuredHeight
             if (parentWidth <= 0 || parentHeight <= 0) return
+            // Keep our own measured size in sync with the target so onLayout centers correctly.
+            setMeasuredDimension(parentWidth, parentHeight)
 
             val ratio = if (aspectRatio > 0f) aspectRatio else (16f / 9f)
             val containerRatio = parentWidth.toFloat() / parentHeight.toFloat()
@@ -1069,6 +1079,15 @@ class FfmpegNativeEngine @Inject constructor(
                     child.layout(childLeft, childTop, childLeft + childWidth, childTop + childHeight)
                 }
             }
+        }
+
+        // The DAR and resize mode do not change on device rotation, so the setters that guard
+        // requestLayout() never fire — only the container size changes. Re-request a layout on
+        // every size change so a late/settled post-rotation size re-runs onMeasure with the real
+        // container dimensions instead of leaving the child sized against the pre-rotation pass.
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            super.onSizeChanged(w, h, oldw, oldh)
+            if (w != oldw || h != oldh) requestLayout()
         }
     }
 
