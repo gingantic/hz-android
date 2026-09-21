@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.presentation.player
 
 import com.rhnxdev.hzplayer.domain.model.PlayerState
+import com.rhnxdev.hzplayer.domain.player.clampSeekPosition
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import kotlinx.coroutines.CoroutineScope
@@ -164,9 +165,27 @@ internal class PlayerPositionController(
         }
     }
 
+    /**
+     * Clamp a requested position to a safe, seekable range.
+     *
+     * Uses the most reliable duration available: the live engine value, or the UI
+     * state duration (set once the media is prepared). When a duration is known we
+     * stay [SEEK_END_MARGIN_MS] short of the end so we never request a byte at/after
+     * EOF (the extractor reads a little past the seek point, which throws
+     * EOFException on containers without a tail index, e.g. MKV without Cues).
+     * When no duration is known yet we only guard against a negative position — we
+     * never let a huge value like 99999 run off to Long.MAX_VALUE.
+     */
+    private fun clampSeekTarget(positionMs: Long): Long {
+        // Prefer the live engine duration; fall back to the UI state (set once the
+        // media is prepared) so a transient engine 0 doesn't disable the clamp.
+        val duration = playerRepository.activeEngine.getDuration().takeIf { it > 0 }
+            ?: uiState.value.duration
+        return clampSeekPosition(positionMs, duration)
+    }
+
     fun onSeekTo(positionMs: Long) {
-        val duration = playerRepository.activeEngine.getDuration().takeIf { it > 0 } ?: Long.MAX_VALUE
-        val target = positionMs.coerceIn(0, duration)
+        val target = clampSeekTarget(positionMs)
         accumulatedSeekTarget = target
         markSeekStart(target)
         playerRepository.seekTo(target)
@@ -183,7 +202,7 @@ internal class PlayerPositionController(
     }
 
     fun onScrub(positionMs: Long) {
-        val target = positionMs.coerceIn(0, (playerRepository.activeEngine.getDuration()).takeIf { it > 0 } ?: Long.MAX_VALUE)
+        val target = clampSeekTarget(positionMs)
         accumulatedSeekTarget = target
         markSeekStart(target)
         playerRepository.seekTo(target)
@@ -203,9 +222,8 @@ internal class PlayerPositionController(
     }
 
     fun onSeekBy(deltaMs: Long) {
-        val duration = playerRepository.activeEngine.getDuration().takeIf { it > 0 } ?: Long.MAX_VALUE
         val base = accumulatedSeekTarget ?: (if (isSeeking) seekTargetPosition else _position.value)
-        val target = (base + deltaMs).coerceIn(0, duration)
+        val target = clampSeekTarget(base + deltaMs)
         accumulatedSeekTarget = target
         markSeekStart(target)
         playerRepository.seekTo(target)
@@ -231,4 +249,5 @@ internal class PlayerPositionController(
         saveProgressNow()
         saveScope.cancel()
     }
+
 }

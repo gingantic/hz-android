@@ -337,26 +337,25 @@ fun MediaPropertiesDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            val icon: ImageVector = when {
-                                isDirectory -> Icons.Default.Folder
-                                isRealVideo -> Icons.Default.Movie
-                                isRealAudio -> Icons.Default.Audiotrack
-                                else -> Icons.AutoMirrored.Filled.InsertDriveFile
-                            }
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                    val headerMediaType = when {
+                        isDirectory -> MediaType.FOLDER
+                        isRealVideo -> MediaType.VIDEO
+                        isRealAudio -> MediaType.AUDIO
+                        else -> MediaType.FILE
                     }
+                    val headerIcon: ImageVector = when (headerMediaType) {
+                        MediaType.FOLDER -> Icons.Default.Folder
+                        MediaType.VIDEO -> Icons.Default.Movie
+                        MediaType.AUDIO -> Icons.Default.Audiotrack
+                        MediaType.FILE -> Icons.AutoMirrored.Filled.InsertDriveFile
+                    }
+                    MediaIconBadge(
+                        mediaType = headerMediaType,
+                        icon = headerIcon,
+                        size = 44.dp,
+                        iconSize = 22.dp,
+                        cornerRadius = 14.dp,
+                    )
 
                     Spacer(modifier = Modifier.width(12.dp))
 
@@ -429,6 +428,7 @@ fun MediaPropertiesDialog(
                 if (isRealVideo && (videoCodec != null || effectiveResolution != null || container != null || overallBitrate != null || videoFps != null)) {
                     PropCard(
                         title = stringResource(R.string.prop_section_video),
+                        mediaType = MediaType.VIDEO,
                         icon = Icons.Default.Movie
                     ) {
                         val codecVal = videoCodec ?: container ?: "-"
@@ -488,6 +488,7 @@ fun MediaPropertiesDialog(
                 if (isRealAudio || audioCodec != null || audioBitrate != null || audioSampleRate != null || audioChannels != null) {
                     PropCard(
                         title = if (isRealAudio) stringResource(R.string.prop_section_audio_format) else stringResource(R.string.prop_section_audio),
+                        mediaType = MediaType.AUDIO,
                         icon = Icons.Default.Audiotrack
                     ) {
                         val codecDisplay = audioCodec ?: container ?: "-"
@@ -522,6 +523,7 @@ fun MediaPropertiesDialog(
                 // ── Card 3: File Details ──
                 PropCard(
                     title = stringResource(R.string.prop_section_file),
+                    mediaType = MediaType.FILE,
                     icon = Icons.Default.Info
                 ) {
                     val containerDisplay = container ?: mimeType ?: "-"
@@ -563,6 +565,7 @@ fun MediaPropertiesDialog(
 @Composable
 private fun PropCard(
     title: String,
+    mediaType: MediaType,
     icon: ImageVector,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
@@ -577,15 +580,16 @@ private fun PropCard(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 6.dp)
+                modifier = Modifier.padding(bottom = 8.dp)
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                MediaIconBadge(
+                    mediaType = mediaType,
+                    icon = icon,
+                    size = 24.dp,
+                    iconSize = 14.dp,
+                    cornerRadius = 8.dp,
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),

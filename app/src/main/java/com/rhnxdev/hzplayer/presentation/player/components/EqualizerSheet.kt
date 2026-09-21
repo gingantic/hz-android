@@ -21,8 +21,6 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +39,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.core.components.HzPlayerSlider
 import com.rhnxdev.hzplayer.domain.model.EqualizerBand
 import com.rhnxdev.hzplayer.domain.model.EqualizerInfo
 import kotlinx.coroutines.flow.StateFlow
@@ -147,24 +146,31 @@ fun EqualizerSheet(
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }
-            // ── Band bank: fixed-width slim columns; scrolls horizontally on
-            // small screens instead of cramming all 10 bands into the width.
-            Row(
+            // ── Band bank: fixed-width slim columns centered in the sheet;
+            // scrolls horizontally on small screens instead of cramming all
+            // 10 bands into the width. The outer Box centers the bank when it
+            // is narrower than the sheet (e.g. landscape) so it isn't stuck
+            // to the left edge, while the inner Row still scrolls on overflow.
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
                     .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.Bottom,
+                contentAlignment = Alignment.BottomCenter,
             ) {
-                info.bands.forEach { band ->
-                    BandColumn(
-                        band = band,
-                        minMb = info.minLevelMb,
-                        maxMb = info.maxLevelMb,
-                        enabled = controlsEnabled,
-                        onCommit = { levelMb -> onBandChange(band.index, levelMb) },
-                    )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    info.bands.forEach { band ->
+                        BandColumn(
+                            band = band,
+                            minMb = info.minLevelMb,
+                            maxMb = info.maxLevelMb,
+                            enabled = controlsEnabled,
+                            onCommit = { levelMb -> onBandChange(band.index, levelMb) },
+                        )
+                    }
                 }
             }
 
@@ -264,12 +270,11 @@ private fun BandColumn(
 }
 
 /**
- * A slim [Slider] rotated to run bottom-to-top. The rotation only transforms
- * the drawing/touch, so a custom layout swaps the measured width/height back
- * and recenters the placeable — the standard Compose vertical-slider recipe.
- * A 3dp track and a flat fader-cap thumb replace the chunky M3 defaults.
+ * A slim [HzPlayerSlider] rotated to run bottom-to-top. The rotation only
+ * transforms the drawing/touch, so a custom layout swaps the measured
+ * width/height back and recenters the placeable — the standard Compose
+ * vertical-slider recipe.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VerticalSlider(
     value: Float,
@@ -279,22 +284,13 @@ private fun VerticalSlider(
     enabled: Boolean,
     length: androidx.compose.ui.unit.Dp,
 ) {
-    Slider(
+    HzPlayerSlider(
         value = value,
         onValueChange = onValueChange,
         onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
         enabled = enabled,
-        thumb = {},
-        track = { sliderState ->
-            SliderDefaults.Track(
-                sliderState = sliderState,
-                enabled = enabled,
-                drawStopIndicator = null,
-                thumbTrackGapSize = 0.dp,
-                modifier = Modifier.height(3.dp),
-            )
-        },
+        thumbRingColor = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier
             .graphicsLayer { rotationZ = 270f }
             .layout { measurable, constraints ->
@@ -317,7 +313,6 @@ private fun VerticalSlider(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EffectSlider(
     label: String,
@@ -346,22 +341,14 @@ private fun EffectSlider(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.7f else 0.3f),
         )
     }
-    Slider(
+    HzPlayerSlider(
         value = current,
         onValueChange = { current = it },
         onValueChangeFinished = { onCommit(current.roundToInt()) },
         valueRange = 0f..maxValue.toFloat(),
         enabled = enabled,
+        thumbRingColor = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
-        thumb = {},
-        track = { sliderState ->
-            SliderDefaults.Track(
-                sliderState = sliderState,
-                enabled = enabled,
-                drawStopIndicator = null,
-                thumbTrackGapSize = 0.dp,
-            )
-        },
     )
 }
 

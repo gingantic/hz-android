@@ -14,13 +14,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.core.components.HzPlayerSlider
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
@@ -163,13 +163,13 @@ fun SettingsSliderItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Spacer(modifier = Modifier.height(Spacing.xs))
-            Slider(
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            HzPlayerSlider(
                 value = value,
                 onValueChange = onValueChange,
                 valueRange = valueRange,
                 steps = steps,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -192,6 +192,23 @@ private fun SettingsItemPreview() {
                 subtitle = "Continue from where you left off",
                 checked = true,
                 onCheckedChange = {},
+            )
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            SettingsSliderItem(
+                title = "Gesture sensitivity",
+                subtitle = "Multiplier: 1.00x",
+                value = 1f,
+                onValueChange = {},
+                valueRange = 0.2f..3f,
+            )
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            SettingsSliderItem(
+                title = "Minimum song duration",
+                subtitle = "Hide songs shorter than 30 s",
+                value = 30f,
+                onValueChange = {},
+                valueRange = 0f..90f,
+                steps = 17,
             )
         }
     }

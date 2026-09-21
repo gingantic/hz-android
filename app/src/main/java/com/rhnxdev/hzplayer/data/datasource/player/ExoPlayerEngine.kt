@@ -28,6 +28,7 @@ import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
+import com.rhnxdev.hzplayer.domain.player.clampSeekPosition
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -128,7 +129,7 @@ class ExoPlayerEngine @Inject constructor(
                 playerHolder.flushPendingDecoderRebuild()
                 player.setMediaItem(ExoMediaItemHelper.buildMediaItemWithSubtitles(uri, title, artist, mimeType, subs = subs, artworkUri = artworkUri))
                 player.prepare()
-                if (resumePositionMs > 0) player.seekTo(resumePositionMs)
+                if (resumePositionMs > 0) player.seekTo(clampSeekPosition(resumePositionMs, player.duration))
                 player.play()
             }
         }
@@ -214,16 +215,14 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun seekTo(positionMs: Long) {
-        val duration = player.duration.coerceAtLeast(0)
-        val clamped = positionMs.coerceIn(0, if (duration > 0) duration else Long.MAX_VALUE)
+        val clamped = clampSeekPosition(positionMs, player.duration)
         player.seekTo(clamped)
         assHandler.onSeek(clamped)
     }
 
     override fun skipForward(ms: Long) {
-        val duration = player.duration.coerceAtLeast(0)
-        val newPos = (player.currentPosition + ms).coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE)
-        seekTo(newPos)
+        // seekTo() clamps; just offset from the current position.
+        seekTo(player.currentPosition + ms)
     }
 
     override fun skipBackward(ms: Long) {
@@ -233,12 +232,12 @@ class ExoPlayerEngine @Inject constructor(
 
     override fun skipToNext() {
         if (player.mediaItemCount > 1) player.seekToNextMediaItem()
-        else player.seekTo((player.currentPosition + 10_000).coerceAtMost(player.duration.coerceAtLeast(0)))
+        else seekTo(player.currentPosition + 10_000)
     }
 
     override fun skipToPrevious() {
         if (player.mediaItemCount > 1) player.seekToPreviousMediaItem()
-        else player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+        else seekTo(player.currentPosition - 10_000)
     }
 
     override fun getCurrentMediaItemIndex(): Int = player.currentMediaItemIndex

@@ -345,15 +345,18 @@ fun JumpToTimeDialog(
 ) {
     var digits by rememberSaveable { mutableStateOf("") }
     val padded = digits.padStart(6, '0')
-    val targetMs = (padded.substring(0, 2).toLong() * 3600 +
+    val rawTargetMs = (padded.substring(0, 2).toLong() * 3600 +
         padded.substring(2, 4).toLong() * 60 +
         padded.substring(4, 6).toLong()) * 1000L
+    // Guardrail: clamp any over-the-limit input (e.g. 99999) to the video's
+    // length so a bogus position never reaches the engine and errors out.
+    val targetMs = if (durationMs > 0) rawTargetMs.coerceIn(0L, durationMs) else rawTargetMs
     val onKey: (Char) -> Unit = { c ->
         // Max 6 digits (HH:MM:SS); a leading zero is a no-op.
         if (digits.length < 6 && !(digits.isEmpty() && c == '0')) digits += c
     }
     val submit = {
-        onJump(targetMs.coerceIn(0L, if (durationMs > 0) durationMs else Long.MAX_VALUE))
+        onJump(targetMs)
         onDismiss()
     }
     SheetScaffold(

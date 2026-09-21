@@ -36,6 +36,7 @@ import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
+import com.rhnxdev.hzplayer.domain.player.clampSeekPosition
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -672,8 +673,7 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     override fun seekTo(positionMs: Long) {
-        val duration = getDuration().takeIf { it > 0 } ?: Long.MAX_VALUE
-        val clamped = positionMs.coerceIn(0, duration)
+        val clamped = clampSeekPosition(positionMs, getDuration())
         val targetUs = clamped * 1000L
         val nowUs = SystemClock.elapsedRealtime() * 1000L
         pendingSeekTargetMs = clamped
@@ -686,9 +686,8 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     override fun skipForward(ms: Long) {
-        val duration = getDuration().takeIf { it > 0 } ?: Long.MAX_VALUE
-        val target = (getCurrentPosition() + ms).coerceAtMost(duration)
-        seekTo(target)
+        // seekTo() clamps; just offset from the current position.
+        seekTo(getCurrentPosition() + ms)
     }
 
     override fun skipBackward(ms: Long) {

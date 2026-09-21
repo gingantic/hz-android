@@ -268,3 +268,29 @@ interface IPlayerEngine {
     /** Release all native and framework resources. */
     fun release()
 }
+
+/**
+ * Keep a seek this far (ms) from the end of the media. Landing exactly on the
+ * final timestamp can make the demuxer/extractor read past EOF (EOFException)
+ * on containers without a tail index — e.g. MKV without Cues. Shared by every
+ * engine so the guard is identical across backends.
+ */
+const val SEEK_END_MARGIN_MS = 1_000L
+
+/**
+ * Clamp a requested seek [positionMs] to a safe, in-range value for any engine.
+ *
+ * - Never returns a negative position.
+ * - When [durationMs] is known (> 0), stays [SEEK_END_MARGIN_MS] short of the end
+ *   so the seek never lands at/after EOF (the source reads a little past the seek
+ *   point, which otherwise throws EOFException).
+ * - When [durationMs] is unknown (<= 0, e.g. still preparing or a live stream),
+ *   only guards against a negative position — it must NOT fall back to
+ *   `Long.MAX_VALUE`, which maps to a byte offset past the file end and errors out.
+ */
+fun clampSeekPosition(positionMs: Long, durationMs: Long): Long =
+    if (durationMs > 0) {
+        positionMs.coerceIn(0L, (durationMs - SEEK_END_MARGIN_MS).coerceAtLeast(0L))
+    } else {
+        positionMs.coerceAtLeast(0L)
+    }

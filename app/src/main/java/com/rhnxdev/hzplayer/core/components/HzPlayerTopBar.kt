@@ -49,10 +49,11 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
  * @param actionIcon — optional right-side icon (shown before actions)
  * @param onAction — action icon click
  * @param searchQuery — null = idle; non-null = show search field with this value
+ *                      (the leading arrow then closes search instead of navigating up)
  * @param searchPlaceholder — placeholder text for the search field
  * @param onSearchQueryChanged — search field text changes
  * @param onSearchToggle — called when user taps the search icon to enter search mode (null = no search icon)
- * @param onSearchClose — called when user taps close/back in search mode
+ * @param onSearchClose — called when user taps close/back in search mode (takes precedence over [onBack])
  * @param actions — additional action buttons (shown after the search icon)
  */
 @Composable
@@ -87,19 +88,9 @@ fun HzPlayerTopBar(
             .height(64.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Back arrow or spacer
-        if (showBack) {
-            SpacingExtra(Spacing.xs)
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            SpacingExtra(Spacing.md)
-        } else if (searchQuery != null) {
-            // In search mode, show a close/back arrow to exit search
+        // Search mode wins over navigate-up: the leading arrow exits search first,
+        // mirroring the system back-press behaviour.
+        if (searchQuery != null) {
             SpacingExtra(Spacing.xs)
             IconButton(onClick = {
                 onSearchClose()
@@ -112,6 +103,16 @@ fun HzPlayerTopBar(
                 )
             }
             SpacingExtra(Spacing.sm)
+        } else if (showBack) {
+            SpacingExtra(Spacing.xs)
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            SpacingExtra(Spacing.md)
         } else {
             SpacingExtra(Spacing.lg)
         }

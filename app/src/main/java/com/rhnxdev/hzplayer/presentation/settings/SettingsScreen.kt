@@ -334,8 +334,8 @@ fun SettingsScreen(
                                 else stringResource(R.string.settings_min_song_duration_hidden, minSongDurationSecs),
                                 value = minSongDurationSecs.toFloat(),
                                 onValueChange = { settingsViewModel.saveMinSongDurationSecs(it.toInt()) },
-                                valueRange = 0f..60f,
-                                steps = 11,
+                                valueRange = 0f..90f,
+                                steps = 17,
                             )
                         }
                     },
