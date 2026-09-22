@@ -482,6 +482,21 @@ JNI_FUNC(void, nativePlay, jlong handle) {
             // Restart after EOF: publish a proper seek-to-0 transaction so the
             // restart participates in the seek generation like any other seek.
             ctx->publishSeekRequest(0, SeekMode::NORMAL, /*scrub=*/false);
+        } else if (ctx->isBuffering.load() && ctx->seekTargetMs.load() < 0) {
+            // isBuffering has exactly one clear path: a frame reaching
+            // renderFrame()/renderHwFrame()'s success branch. If playback was
+            // paused/backgrounded while buffering was already stuck (e.g. a
+            // starvation event, or the queue drained while the screen was
+            // away), plain resume has no mechanism to unstick video — audio
+            // resumes fine via resumeClock()/nativeAudioSink.play() below, but
+            // the video thread never gets a forced frame through and the UI
+            // stays on the frozen/buffering frame until the user seeks. Force
+            // the same recovery a manual seek does: re-publish a seek to the
+            // current position so the demux thread flushes+refills both
+            // queues and the video thread's needSeekFrame fast-path renders
+            // and clears isBuffering immediately, instead of waiting on the
+            // pipeline to organically deliver a fresh frame.
+            ctx->publishSeekRequest(ctx->currentPositionMs.load(), SeekMode::NORMAL, /*scrub=*/false);
         }
         ctx->triggerAudioRampIn(50);
         ctx->resumeClock();

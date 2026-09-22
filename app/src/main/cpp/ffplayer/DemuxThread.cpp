@@ -14,9 +14,21 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
     ctx->notifyState(env, STATE_BUFFERING);
 
     if (initialSeekMs > 0) {
-        ctx->setMasterClockUs(initialSeekMs * 1000);
-        ctx->currentPositionMs.store(initialSeekMs);
-        ctx->seekTargetMs.store(initialSeekMs);
+        // A resume-from-saved-position open must perform a REAL demuxer seek,
+        // not a linear decode-from-zero with preroll frames dropped up to the
+        // target. Setting seekTargetMs directly (the old behaviour) does NOT
+        // get picked up by takeSeekRequest() below — that only consumes
+        // requests published via publishSeekRequest()/pendingSeek. Without a
+        // real seek, av_read_frame() below starts from the start of the file
+        // and video/audio decode (and discard) every frame from 0 up to the
+        // resume target as "preroll" — for a resume deep into a long file this
+        // can take a long time, during which video renders nothing (buffering)
+        // while audio's independent starvation-timeout escape hatch lets it
+        // start playing once it catches up to the target, matching the
+        // "audio plays, video frozen/buffering until a seek" symptom. Publish
+        // a proper seek transaction instead so the loop's existing
+        // takeSeekRequest() block runs its real av_seek_frame() jump below.
+        ctx->publishSeekRequest(initialSeekMs, SeekMode::NORMAL, /*scrub=*/false);
     } else {
         ctx->setMasterClockUs(0);
         ctx->currentPositionMs.store(0);
