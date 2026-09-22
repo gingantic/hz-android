@@ -9,6 +9,7 @@ import com.rhnxdev.hzplayer.core.util.NetworkDomainUtils
 import com.rhnxdev.hzplayer.core.util.SUBTITLE_EXTENSIONS
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
+import com.rhnxdev.hzplayer.core.util.storageVolumeLabels
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
@@ -159,7 +160,7 @@ class SubtitleBrowserViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     currentPath = path,
-                    localBreadcrumbs = buildBreadcrumbs(path),
+                    localBreadcrumbs = buildBreadcrumbs(path, storageVolumeLabels(context)),
                     mode = SubtitleBrowserMode.BROWSING_LOCAL,
                     error = null,
                     isLoading = true,

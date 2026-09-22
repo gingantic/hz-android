@@ -31,6 +31,12 @@
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
 
+    <!-- USB On-The-Go: browse/play media from USB drives mounted as storage.
+         Not required so the app still installs on devices without OTG support. -->
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
+
     <application
         android:name=".HzPlayerApplication"
         android:allowBackup="true"

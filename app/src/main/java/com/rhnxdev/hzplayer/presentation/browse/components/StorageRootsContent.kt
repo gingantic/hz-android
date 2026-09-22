@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +48,7 @@ import com.rhnxdev.hzplayer.core.components.ShimmerShape
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.domain.model.FolderItem
+import com.rhnxdev.hzplayer.domain.model.StorageKind
 import com.rhnxdev.hzplayer.presentation.browse.FavoriteShortcut
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,6 +106,7 @@ fun StorageRootsContent(
                         val totalStr = formatFileSize(root.totalSpace)
                         StorageRootCard(
                             name = root.name,
+                            storageKind = root.storageKind,
                             storageInfo = stringResource(R.string.storage_info, freeStr, totalStr),
                             itemCount = root.childCount,
                             onClick = { onRootClicked(root) },
@@ -212,15 +215,19 @@ private fun FavoriteShortcutCard(
 @Composable
 private fun StorageRootCard(
     name: String,
+    storageKind: StorageKind?,
     storageInfo: String,
     itemCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val icon: ImageVector = when {
-        name.contains("SD", ignoreCase = true) -> Icons.Filled.SdStorage
-        name.contains("External", ignoreCase = true) -> Icons.Filled.SdStorage
-        else -> Icons.Filled.Storage
+    // Prefer the classified kind — the display name may be the drive's own
+    // vendor/FAT label (e.g. "SANDISK") rather than a generic "USB Storage"
+    // string, so name matching alone misses real USB/SD drives.
+    val icon: ImageVector = when (storageKind) {
+        StorageKind.USB -> Icons.Filled.Usb
+        StorageKind.SD_CARD -> Icons.Filled.SdStorage
+        StorageKind.INTERNAL, StorageKind.OTHER, null -> Icons.Filled.Storage
     }
 
     Card(

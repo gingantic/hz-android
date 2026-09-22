@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -45,6 +46,7 @@ import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
+import com.rhnxdev.hzplayer.domain.model.StorageKind
 import com.rhnxdev.hzplayer.presentation.player.SubtitleBrowserUiState
 
 @Composable
@@ -72,11 +74,17 @@ internal fun RootsContent(
             )
         }
         items(uiState.localRoots) { root ->
-            val isSdCard = root.name.contains("SD", ignoreCase = true) || root.name.contains("External", ignoreCase = true)
+            // Classified kind, not a name-substring guess — the display name may be
+            // the drive's own vendor/FAT label rather than a generic "SD Card" string.
+            val icon = when (root.storageKind) {
+                StorageKind.USB -> Icons.Default.Usb
+                StorageKind.SD_CARD -> Icons.Default.SdStorage
+                StorageKind.INTERNAL, StorageKind.OTHER, null -> Icons.Default.Storage
+            }
             StorageRootItem(
                 name = root.name,
                 path = stringResource(R.string.local_storage),
-                icon = if (isSdCard) Icons.Default.SdStorage else Icons.Default.Storage,
+                icon = icon,
                 onClick = { onLocalRootClicked(root) },
             )
         }

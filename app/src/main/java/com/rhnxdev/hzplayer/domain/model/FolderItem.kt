@@ -19,4 +19,6 @@ data class FolderItem(
     val resolution: String? = null,
     /** Seconds since Unix epoch (not milliseconds!). */
     val dateAdded: Long = 0,
+    /** Set only for storage-root items (File Browser's top-level volume list); null otherwise. */
+    val storageKind: StorageKind? = null,
 )

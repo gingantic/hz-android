@@ -1,6 +1,10 @@
 package com.rhnxdev.hzplayer.presentation.browse
 
+import android.content.BroadcastReceiver
+import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Environment
@@ -19,6 +23,7 @@ import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isSolidArchiveExtension
 import com.rhnxdev.hzplayer.core.util.sortFilesByType
+import com.rhnxdev.hzplayer.core.util.storageVolumeLabels
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
@@ -110,7 +115,23 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Refreshes the storage roots when an OTG/SD volume mounts or unmounts so a
+     * plugged-in USB drive appears (and a removed one disappears) without a manual
+     * pull-to-refresh. Only acts while showing the roots list; deeper browsing is
+     * left untouched so the user's place in a directory tree is not lost.
+     */
+    private val storageMountReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (_uiState.value.mode == FileBrowserMode.ROOTS) {
+                cache.clear()
+                loadRoots()
+            }
+        }
+    }
+
     init {
+        registerStorageMountReceiver()
         loadRoots()
         viewModelScope.launch {
             userPrefs.quickAccessFolders.collect { paths ->
@@ -623,7 +644,7 @@ class FileBrowserViewModel @Inject constructor(
             val (container, prefix) = ArchiveBrowsePath.parse(path)
             buildArchiveBreadcrumbs(container, prefix)
         } else {
-            buildBreadcrumbs(path)
+            buildBreadcrumbs(path, storageVolumeLabels(applicationContext))
         }
         val layer = DirectoryLayer(
             path = path,
@@ -916,6 +937,25 @@ class FileBrowserViewModel @Inject constructor(
 
     fun saveScrollState(path: String, index: Int, offset: Int, orientation: Int, isAtEnd: Boolean = false) {
         _scrollStates[scrollKey(path, orientation)] = SavedScrollPosition(index, offset, orientation, isAtEnd)
+    }
+
+    private fun registerStorageMountReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_MEDIA_MOUNTED)
+            addAction(Intent.ACTION_MEDIA_UNMOUNTED)
+            addAction(Intent.ACTION_MEDIA_EJECT)
+            addAction(Intent.ACTION_MEDIA_REMOVED)
+            addAction(Intent.ACTION_MEDIA_BAD_REMOVAL)
+            // Storage mount broadcasts carry a file:// data URI, so the filter must
+            // declare the scheme or it never matches.
+            addDataScheme(ContentResolver.SCHEME_FILE)
+        }
+        applicationContext.registerReceiver(storageMountReceiver, filter)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        runCatching { applicationContext.unregisterReceiver(storageMountReceiver) }
     }
 
     companion object {

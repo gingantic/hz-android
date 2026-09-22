@@ -4,11 +4,20 @@ import android.content.ContentResolver
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.os.Environment
+import android.os.storage.StorageManager
 import android.provider.MediaStore
+import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.core.util.classifyVolume
+import com.rhnxdev.hzplayer.core.util.fallbackVolumeKind
+import com.rhnxdev.hzplayer.core.util.fallbackVolumeLabel
+import com.rhnxdev.hzplayer.core.util.hasUsbMassStorage
 import com.rhnxdev.hzplayer.core.util.guessMimeType
 import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.mountDirectory
+import com.rhnxdev.hzplayer.core.util.storageVolumeLabel
 import com.rhnxdev.hzplayer.domain.model.FolderItem
+import com.rhnxdev.hzplayer.domain.model.StorageKind
 import com.rhnxdev.hzplayer.domain.repository.FileRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -87,74 +96,104 @@ class FileRepositoryImpl @Inject constructor(
 
     override fun getStorageRoots(): Flow<List<FolderItem>> = flow {
         val roots = mutableListOf<FolderItem>()
+        val seen = mutableSetOf<String>()
 
         val internalStorage = Environment.getExternalStorageDirectory()
         if (internalStorage.exists()) {
-            val children = try { internalStorage.listFiles() } catch (e: Exception) { null }
-            val folders = children?.count { it.isDirectory } ?: 0
-            val files = (children?.size ?: 0) - folders
-            val media = children?.count {
-                !it.isDirectory && (isVideoExtension(it.name) || isAudioExtension(it.name))
-            } ?: 0
+            seen.add(internalStorage.absolutePath)
             roots.add(
-                FolderItem(
+                buildRootItem(
                     id = 0,
-                    name = "Internal Storage",
-                    path = internalStorage.absolutePath,
-                    isDirectory = true,
-                    freeSpace = internalStorage.freeSpace,
-                    totalSpace = internalStorage.totalSpace,
-                    childCount = children?.size ?: 0,
-                    subfolderCount = folders,
-                    fileCount = files,
-                    mediaCount = media,
+                    name = context.getString(R.string.internal_storage),
+                    dir = internalStorage,
+                    storageKind = StorageKind.INTERNAL,
                 )
             )
         }
 
-        // Use getExternalFilesDirs to discover all real mount points
-        val seen = mutableSetOf(internalStorage.absolutePath)
+        // StorageManager reports every mounted volume with an accurate removable
+        // flag, so SD cards and USB/OTG drives are classified reliably instead of
+        // guessing from a /storage directory scan.
+        val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+        val usbAttached = context.hasUsbMassStorage()
+        val volumeRoots = storageManager?.storageVolumes.orEmpty()
+            .asSequence()
+            .filterNot { it.isPrimary }
+            .filter { it.state == Environment.MEDIA_MOUNTED || it.state == Environment.MEDIA_MOUNTED_READ_ONLY }
+            .mapNotNull { volume -> volume.mountDirectory()?.let { volume to it } }
+            .filter { (_, dir) -> dir.absolutePath !in seen && dir.exists() && dir.isDirectory }
+            .toList()
+
+        volumeRoots.forEachIndexed { index, (volume, dir) ->
+            seen.add(dir.absolutePath)
+            roots.add(
+                buildRootItem(
+                    id = (100 + index).toLong(),
+                    name = storageVolumeLabel(context, volume, dir, index, usbAttached),
+                    dir = dir,
+                    storageKind = classifyVolume(context, volume, dir, usbAttached),
+                )
+            )
+        }
+
+        // Fallback: some OEMs mount OTG/SD volumes that StorageManager omits.
+        // Scan /storage siblings for any mount point not already reported.
         @Suppress("DEPRECATION")
-        val storageDirs = try {
-            Environment.getExternalStorageDirectory().parentFile?.listFiles()
-                ?.filter { it.isDirectory && it.absolutePath !in seen && it.exists() }
-                ?.map { it.absolutePath } ?: emptyList()
+        val fallbackDirs = try {
+            internalStorage.parentFile?.listFiles()
+                ?.filter {
+                    it.isDirectory && it.absolutePath !in seen && it.exists() &&
+                        // /storage/self is an alias of the primary volume, not a volume of its own.
+                        !it.name.equals("self", ignoreCase = true)
+                }
+                ?: emptyList()
         } catch (_: Exception) { emptyList() }
 
-        storageDirs.forEachIndexed { index, path ->
-            seen.add(path)
-            val file = File(path)
-            if (file.exists() && file.isDirectory) {
-                val label = when {
-                    index == 0 -> "External Storage"
-                    file.totalSpace > 1_000_000_000L -> "SD Card"
-                    else -> "Storage ${index + 1}"
-                }
-                val children = try { file.listFiles() } catch (e: Exception) { null }
-                val folders = children?.count { it.isDirectory } ?: 0
-                val files = (children?.size ?: 0) - folders
-                val media = children?.count {
-                    !it.isDirectory && (isVideoExtension(it.name) || isAudioExtension(it.name))
-                } ?: 0
-                roots.add(
-                    FolderItem(
-                        id = (100 + index).toLong(),
-                        name = label,
-                        path = file.absolutePath,
-                        isDirectory = true,
-                        freeSpace = file.freeSpace,
-                        totalSpace = file.totalSpace,
-                        childCount = children?.size ?: 0,
-                        subfolderCount = folders,
-                        fileCount = files,
-                        mediaCount = media,
-                    )
+        fallbackDirs.forEachIndexed { index, dir ->
+            // Skip non-navigable pseudo mounts (empty, no read access).
+            val children = try { dir.listFiles() } catch (_: Exception) { null } ?: return@forEachIndexed
+            roots.add(
+                buildRootItem(
+                    id = (200 + index).toLong(),
+                    name = fallbackVolumeLabel(context, dir, index, usbAttached),
+                    dir = dir,
+                    children = children,
+                    storageKind = fallbackVolumeKind(dir, usbAttached),
                 )
-            }
+            )
         }
 
         emit(roots)
     }.flowOn(Dispatchers.IO)
+
+    /** Build a storage-root [FolderItem] for [dir]; [children] reuses an existing listing. */
+    private fun buildRootItem(
+        id: Long,
+        name: String,
+        dir: File,
+        children: Array<File>? = null,
+        storageKind: StorageKind? = null,
+    ): FolderItem {
+        val kids = children ?: try { dir.listFiles() } catch (_: Exception) { null }
+        val folders = kids?.count { it.isDirectory } ?: 0
+        val files = (kids?.size ?: 0) - folders
+        val media = kids?.count {
+            !it.isDirectory && (isVideoExtension(it.name) || isAudioExtension(it.name))
+        } ?: 0
+        return FolderItem(
+            id = id,
+            name = name,
+            path = dir.absolutePath,
+            isDirectory = true,
+            freeSpace = dir.freeSpace,
+            totalSpace = dir.totalSpace,
+            childCount = kids?.size ?: 0,
+            subfolderCount = folders,
+            fileCount = files,
+            mediaCount = media,
+            storageKind = storageKind,
+        )
+    }
 
     override fun searchFiles(query: String): Flow<List<FolderItem>> = flow {
         val projection = arrayOf(
