@@ -43,14 +43,7 @@ internal class PlayerPlaylistController(
         if (playlist.isEmpty()) return false
         val nextIndex = uiState.value.currentPlaylistIndex + 1
         if (nextIndex >= playlist.size) return false
-        val item = playlist[nextIndex]
-        uiState.update { it.copy(currentPlaylistIndex = nextIndex, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs) }
-        if (playerRepository.getMediaItemCount() > 1) {
-            playerRepository.seekToMediaItem(nextIndex)
-        } else {
-            playerRepository.playPlaylist(playlist.map { it.uri to it.title }, nextIndex, 0L)
-        }
-        trackCache.markNeedsRefresh()
+        moveTo(nextIndex, closeDrawer = false)
         return true
     }
 
@@ -59,22 +52,33 @@ internal class PlayerPlaylistController(
         if (playlist.isEmpty()) return false
         val prevIndex = uiState.value.currentPlaylistIndex - 1
         if (prevIndex < 0) return false
-        val item = playlist[prevIndex]
-        uiState.update { it.copy(currentPlaylistIndex = prevIndex, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs) }
-        if (playerRepository.getMediaItemCount() > 1) {
-            playerRepository.seekToMediaItem(prevIndex)
-        } else {
-            playerRepository.playPlaylist(playlist.map { it.uri to it.title }, prevIndex, 0L)
-        }
-        trackCache.markNeedsRefresh()
+        moveTo(prevIndex, closeDrawer = false)
         return true
     }
 
     fun onPlaylistSelect(index: Int) {
+        if (index !in uiState.value.videoPlaylist.indices) return
+        moveTo(index, closeDrawer = true)
+    }
+
+    /**
+     * Move to [index] in the current playlist: update the now-playing fields, then
+     * either ask the engine to switch (it already holds the whole playlist) or
+     * re-hand it the playlist starting at [index]. [closeDrawer] is set when the
+     * user picked a track directly rather than stepping with next/previous.
+     */
+    private fun moveTo(index: Int, closeDrawer: Boolean) {
         val playlist = uiState.value.videoPlaylist
-        if (index !in playlist.indices) return
         val item = playlist[index]
-        uiState.update { it.copy(currentPlaylistIndex = index, currentTitle = item.title, currentPlaybackUri = item.uri, duration = item.durationMs, showPlaylistDrawer = false) }
+        uiState.update {
+            it.copy(
+                currentPlaylistIndex = index,
+                currentTitle = item.title,
+                currentPlaybackUri = item.uri,
+                duration = item.durationMs,
+                showPlaylistDrawer = if (closeDrawer) false else it.showPlaylistDrawer,
+            )
+        }
         if (playerRepository.getMediaItemCount() > 1) {
             playerRepository.seekToMediaItem(index)
         } else {
