@@ -3,7 +3,6 @@ package com.rhnxdev.hzplayer
 import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -26,7 +25,12 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.browser.BrowserActivity
+import com.rhnxdev.hzplayer.core.util.EXTRA_FROM_BROWSER
+import com.rhnxdev.hzplayer.core.util.EXTRA_MEDIA_TITLE
+import com.rhnxdev.hzplayer.core.util.enterPipIfEligible
 import com.rhnxdev.hzplayer.core.util.extractHttpHeaders
+import com.rhnxdev.hzplayer.core.util.pipPlayPauseReceiver
+import com.rhnxdev.hzplayer.core.util.registerPipReceiver
 import com.rhnxdev.hzplayer.presentation.main.HzPlayerApp
 import com.rhnxdev.hzplayer.presentation.main.MainViewModel
 import com.rhnxdev.hzplayer.presentation.player.PlayerViewModel
@@ -130,48 +134,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(pipReceiver, IntentFilter(ACTION_PIP_PLAY_PAUSE), RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(pipReceiver, IntentFilter(ACTION_PIP_PLAY_PAUSE))
-        }
+        registerPipReceiver(pipReceiver)
     }
 
-    private val pipReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            // Only react while THIS activity is the one in PiP — VideoPlayerActivity
-            // registers a receiver for the same action, and PlayerRepository is a
-            // singleton, so handling it in both would toggle play/pause twice.
-            if (intent?.action == ACTION_PIP_PLAY_PAUSE && isInPictureInPictureMode) {
-                playerViewModel.onPlayPause()
-            }
-        }
-    }
-
-    fun buildPipParams(isPlaying: Boolean): android.app.PictureInPictureParams? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
-        val actions = ArrayList<android.app.RemoteAction>()
-        val actionIntent = Intent(ACTION_PIP_PLAY_PAUSE).setPackage(packageName)
-        val pendingIntent = android.app.PendingIntent.getBroadcast(
-            this,
-            0,
-            actionIntent,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        )
-        val iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-        val title = if (isPlaying) "Pause" else "Play"
-        val action = android.app.RemoteAction(
-            android.graphics.drawable.Icon.createWithResource(this, iconRes),
-            title,
-            title,
-            pendingIntent
-        )
-        actions.add(action)
-        return android.app.PictureInPictureParams.Builder()
-            .setAspectRatio(android.util.Rational(16, 9))
-            .setActions(actions)
-            .build()
-    }
+    private val pipReceiver = pipPlayPauseReceiver(
+        isInPip = { isInPictureInPictureMode },
+        onToggle = { playerViewModel.onPlayPause() },
+    )
 
     override fun onDestroy() {
         try {
@@ -193,8 +162,8 @@ class MainActivity : ComponentActivity() {
             incomingMediaUri = intent.data.toString()
             incomingMediaHeaders = extractHttpHeaders(intent)
             incomingMimeType = intent.type
-            incomingMediaTitle = intent.getStringExtra("extra_media_title")
-            incomingFromBrowser = intent.getBooleanExtra("from_browser", false)
+            incomingMediaTitle = intent.getStringExtra(EXTRA_MEDIA_TITLE)
+            incomingFromBrowser = intent.getBooleanExtra(EXTRA_FROM_BROWSER, false)
             Log.i(TAG, "Received VIEW intent: $incomingMediaUri (fromBrowser=$incomingFromBrowser, type=${incomingMimeType}, headers=${incomingMediaHeaders?.size ?: 0})")
         }
     }
@@ -205,11 +174,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (pipEligible && !isInPictureInPictureMode && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = buildPipParams(playerViewModel.uiState.value.isPlaying)
-                ?: android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()
-            enterPictureInPictureMode(params)
-        }
+        enterPipIfEligible(pipEligible, playerViewModel.uiState.value.isPlaying)
     }
 
     private var wasInPip = false
@@ -284,14 +249,6 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "MainActivity"
 
-        /**
-         * Check whether the app has [android.Manifest.permission.MANAGE_EXTERNAL_STORAGE]
-         * (i.e. full file-system access).
-         */
-        fun isFullStorageGranted(): Boolean =
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
-                android.os.Environment.isExternalStorageManager()
-
         /** True when the app holds the granular media-read permissions it requests. */
         fun isMediaPermissionGranted(context: Context): Boolean {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -331,5 +288,3 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
-private const val ACTION_PIP_PLAY_PAUSE = "com.rhnxdev.hzplayer.ACTION_PIP_PLAY_PAUSE"

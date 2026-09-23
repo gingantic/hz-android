@@ -365,7 +365,9 @@ class TabManager(
                     val id = resolveTabId(wv) ?: return@MediaSnifferBridge
                     val enrichedHeaders = jsHeaders.toMutableMap()
                     val cookie = android.webkit.CookieManager.getInstance().getCookie(mediaUrl)
-                    if (!cookie.isNullOrBlank() && !enrichedHeaders.containsKey("Cookie")) {
+                    if (!cookie.isNullOrBlank() &&
+                        enrichedHeaders.keys.none { it.equals("Cookie", ignoreCase = true) }
+                    ) {
                         enrichedHeaders["Cookie"] = cookie
                     }
                     scope.launch(Dispatchers.Main) {
@@ -427,7 +429,9 @@ class TabManager(
                         if (tabId != null) {
                             val enriched = reqHeaders.toMutableMap()
                             val cookie = android.webkit.CookieManager.getInstance().getCookie(urlStr)
-                            if (!cookie.isNullOrBlank() && !enriched.containsKey("Cookie")) {
+                            if (!cookie.isNullOrBlank() &&
+                                enriched.keys.none { it.equals("Cookie", ignoreCase = true) }
+                            ) {
                                 enriched["Cookie"] = cookie
                             }
                             scope.launch(Dispatchers.Main) {

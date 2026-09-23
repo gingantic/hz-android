@@ -1,11 +1,9 @@
 package com.rhnxdev.hzplayer
 
-import android.app.PictureInPictureParams
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,7 +21,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.rhnxdev.hzplayer.core.util.EXTRA_FROM_BROWSER
+import com.rhnxdev.hzplayer.core.util.EXTRA_HEADERS_JSON
+import com.rhnxdev.hzplayer.core.util.EXTRA_MEDIA_TITLE
+import com.rhnxdev.hzplayer.core.util.EXTRA_PAGE_URL
+import com.rhnxdev.hzplayer.core.util.buildPipParams
+import com.rhnxdev.hzplayer.core.util.enterPipIfEligible
 import com.rhnxdev.hzplayer.core.util.extractHttpHeaders
+import com.rhnxdev.hzplayer.core.util.pipPlayPauseReceiver
+import com.rhnxdev.hzplayer.core.util.registerPipReceiver
 import com.rhnxdev.hzplayer.presentation.main.MainViewModel
 import com.rhnxdev.hzplayer.presentation.player.PlayerViewModel
 import com.rhnxdev.hzplayer.presentation.player.VideoPlayerScreen
@@ -60,7 +66,7 @@ class VideoPlayerActivity : ComponentActivity() {
 
             LaunchedEffect(playerState.isPlaying, pipEligible) {
                 if (pipEligible && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    buildPipParams(playerState.isPlaying)?.let { params ->
+                    buildPipParams(this@VideoPlayerActivity, playerState.isPlaying)?.let { params ->
                         setPictureInPictureParams(params)
                     }
                 }
@@ -99,48 +105,13 @@ class VideoPlayerActivity : ComponentActivity() {
             }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(pipReceiver, android.content.IntentFilter(ACTION_PIP_PLAY_PAUSE), RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(pipReceiver, android.content.IntentFilter(ACTION_PIP_PLAY_PAUSE))
-        }
+        registerPipReceiver(pipReceiver)
     }
 
-    private val pipReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: android.content.Context?, intent: Intent?) {
-            // Only react while THIS activity is the one in PiP — MainActivity
-            // registers a receiver for the same action, and PlayerRepository is a
-            // singleton, so handling it in both would toggle play/pause twice.
-            if (intent?.action == ACTION_PIP_PLAY_PAUSE && isInPictureInPictureMode) {
-                playerViewModel.onPlayPause()
-            }
-        }
-    }
-
-    private fun buildPipParams(isPlaying: Boolean): PictureInPictureParams? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
-        val actions = ArrayList<android.app.RemoteAction>()
-        val actionIntent = Intent(ACTION_PIP_PLAY_PAUSE).setPackage(packageName)
-        val pendingIntent = android.app.PendingIntent.getBroadcast(
-            this,
-            0,
-            actionIntent,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        )
-        val iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-        val title = if (isPlaying) "Pause" else "Play"
-        val action = android.app.RemoteAction(
-            android.graphics.drawable.Icon.createWithResource(this, iconRes),
-            title,
-            title,
-            pendingIntent
-        )
-        actions.add(action)
-        return PictureInPictureParams.Builder()
-            .setAspectRatio(Rational(16, 9))
-            .setActions(actions)
-            .build()
-    }
+    private val pipReceiver = pipPlayPauseReceiver(
+        isInPip = { isInPictureInPictureMode },
+        onToggle = { playerViewModel.onPlayPause() },
+    )
 
     @javax.inject.Inject
     lateinit var networkRepository: com.rhnxdev.hzplayer.domain.repository.NetworkRepository
@@ -156,9 +127,9 @@ class VideoPlayerActivity : ComponentActivity() {
             val uri = intent.data.toString()
             val headers = extractHttpHeaders(intent)
             val mimeType = intent.type
-            val extraTitle = intent.getStringExtra("extra_media_title")
-            val pageUrl = intent.getStringExtra("extra_page_url") ?: headers?.get("Referer") ?: headers?.get("referer") ?: ""
-            val headersJson = intent.getStringExtra("extra_headers_json") ?: headers?.let {
+            val extraTitle = intent.getStringExtra(EXTRA_MEDIA_TITLE)
+            val pageUrl = intent.getStringExtra(EXTRA_PAGE_URL) ?: headers?.get("Referer") ?: headers?.get("referer") ?: ""
+            val headersJson = intent.getStringExtra(EXTRA_HEADERS_JSON) ?: headers?.let {
                 try { org.json.JSONObject(it as Map<*, *>).toString() } catch (_: Exception) { null }
             }
             val fileName = extraTitle ?: uri.substringAfterLast('/').substringBefore('?')
@@ -168,7 +139,7 @@ class VideoPlayerActivity : ComponentActivity() {
             playerViewModel.onVideoStarted()
 
             // Save stream history with full session details (headers, cookies, referer, mime)
-            if (intent.getBooleanExtra("from_browser", false) || !headersJson.isNullOrBlank() || pageUrl.isNotBlank()) {
+            if (intent.getBooleanExtra(EXTRA_FROM_BROWSER, false) || !headersJson.isNullOrBlank() || pageUrl.isNotBlank()) {
                 saveStreamHistory(uri, fileName, headersJson, pageUrl, mimeType)
             }
         }
@@ -198,11 +169,7 @@ class VideoPlayerActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (pipEligible && !isInPictureInPictureMode && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = buildPipParams(playerViewModel.uiState.value.isPlaying)
-                ?: PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
-            enterPictureInPictureMode(params)
-        }
+        enterPipIfEligible(pipEligible, playerViewModel.uiState.value.isPlaying)
     }
 
     private var wasInPip = false
@@ -249,6 +216,5 @@ class VideoPlayerActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "VideoPlayerActivity"
-        private const val ACTION_PIP_PLAY_PAUSE = "com.rhnxdev.hzplayer.ACTION_PIP_PLAY_PAUSE"
     }
 }

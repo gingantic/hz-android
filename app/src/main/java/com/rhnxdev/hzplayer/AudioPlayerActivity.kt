@@ -17,6 +17,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.rhnxdev.hzplayer.core.util.EXTRA_FROM_BROWSER
+import com.rhnxdev.hzplayer.core.util.EXTRA_HEADERS_JSON
+import com.rhnxdev.hzplayer.core.util.EXTRA_MEDIA_TITLE
+import com.rhnxdev.hzplayer.core.util.EXTRA_PAGE_URL
 import com.rhnxdev.hzplayer.core.util.extractHttpHeaders
 import com.rhnxdev.hzplayer.presentation.main.MainViewModel
 import com.rhnxdev.hzplayer.presentation.player.AudioPlayerScreen
@@ -76,9 +80,9 @@ class AudioPlayerActivity : ComponentActivity() {
             val uri = intent.data.toString()
             val headers = extractHttpHeaders(intent)
             val mimeType = intent.type
-            val extraTitle = intent.getStringExtra("extra_media_title")
-            val pageUrl = intent.getStringExtra("extra_page_url") ?: headers?.get("Referer") ?: headers?.get("referer") ?: ""
-            val headersJson = intent.getStringExtra("extra_headers_json") ?: headers?.let {
+            val extraTitle = intent.getStringExtra(EXTRA_MEDIA_TITLE)
+            val pageUrl = intent.getStringExtra(EXTRA_PAGE_URL) ?: headers?.get("Referer") ?: headers?.get("referer") ?: ""
+            val headersJson = intent.getStringExtra(EXTRA_HEADERS_JSON) ?: headers?.let {
                 try { org.json.JSONObject(it as Map<*, *>).toString() } catch (_: Exception) { null }
             }
             val fileName = extraTitle ?: uri.substringAfterLast('/').substringBefore('?')
@@ -87,7 +91,7 @@ class AudioPlayerActivity : ComponentActivity() {
             playerViewModel.playUri(uri, fileName, isVideo = false, mimeType = mimeType, headers = headers ?: emptyMap())
 
             // Save stream history with full session details
-            if (intent.getBooleanExtra("from_browser", false) || !headersJson.isNullOrBlank() || pageUrl.isNotBlank()) {
+            if (intent.getBooleanExtra(EXTRA_FROM_BROWSER, false) || !headersJson.isNullOrBlank() || pageUrl.isNotBlank()) {
                 saveStreamHistory(uri, fileName, headersJson, pageUrl, mimeType)
             }
         }

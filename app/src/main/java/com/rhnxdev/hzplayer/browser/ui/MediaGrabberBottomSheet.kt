@@ -68,6 +68,11 @@ import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.browser.media.DetectedMediaItem
 import com.rhnxdev.hzplayer.browser.media.MediaDownloader
 import com.rhnxdev.hzplayer.browser.media.MediaType
+import com.rhnxdev.hzplayer.core.util.EXTRA_FROM_BROWSER
+import com.rhnxdev.hzplayer.core.util.EXTRA_MEDIA_TITLE
+import com.rhnxdev.hzplayer.core.util.EXTRA_PAGE_URL
+import com.rhnxdev.hzplayer.core.util.putHttpHeaders
+import com.rhnxdev.hzplayer.core.util.withLiveCookies
 
 private enum class MediaFilter {
     ALL, VIDEO, AUDIO, STREAMS
@@ -626,40 +631,16 @@ private fun launchNativePlayer(context: Context, item: DetectedMediaItem) {
         }
 
         // Merge live session cookies and page referer for smooth CDN auth
-        val mergedHeaders = item.headers.toMutableMap()
         val targetPage = item.pageUrl.ifBlank { playTargetUrl }
-        val liveCookies = runCatching {
-            android.webkit.CookieManager.getInstance().getCookie(targetPage)
-        }.getOrNull()
-        if (!liveCookies.isNullOrBlank() && mergedHeaders.keys.none { it.equals("Cookie", ignoreCase = true) }) {
-            mergedHeaders["Cookie"] = liveCookies
-        }
-        if (item.pageUrl.isNotBlank() && mergedHeaders.keys.none { it.equals("Referer", ignoreCase = true) }) {
-            mergedHeaders["Referer"] = item.pageUrl
-        }
+        val mergedHeaders = item.headers.withLiveCookies(item.pageUrl, cookieFallbackUrl = playTargetUrl)
 
         val intent = Intent(context, targetActivity).apply {
             action = Intent.ACTION_VIEW
             setDataAndType(Uri.parse(playTargetUrl), targetMime)
-            putExtra("extra_media_title", item.title)
-            putExtra("extra_page_url", targetPage)
-            putExtra("from_browser", true)
-            val headersList = mutableListOf<String>()
-            val headersBundle = android.os.Bundle()
-            mergedHeaders.forEach { (k, v) ->
-                if (k.isNotBlank() && v.isNotBlank()) {
-                    headersList.add(k)
-                    headersList.add(v)
-                    headersBundle.putString(k, v)
-                }
-            }
-            if (headersList.isNotEmpty()) {
-                putExtra("headers", headersList.toTypedArray())
-                putExtra("android.media.intent.extra.HTTP_HEADERS", headersBundle)
-                try {
-                    putExtra("extra_headers_json", org.json.JSONObject(mergedHeaders as Map<*, *>).toString())
-                } catch (_: Exception) {}
-            }
+            putExtra(EXTRA_MEDIA_TITLE, item.title)
+            putExtra(EXTRA_PAGE_URL, targetPage)
+            putExtra(EXTRA_FROM_BROWSER, true)
+            putHttpHeaders(mergedHeaders)
         }
 
         context.startActivity(intent)

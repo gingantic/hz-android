@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.rhnxdev.hzplayer.MainActivity
+import com.rhnxdev.hzplayer.core.util.buildPipParams
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
 import com.rhnxdev.hzplayer.presentation.main.components.MainTabPager
 import com.rhnxdev.hzplayer.presentation.navigation.MainNavHost
@@ -118,7 +119,7 @@ fun HzPlayerApp(
     LaunchedEffect(playerState.isPlaying, pipEligibleNow) {
         val activity = context as? MainActivity
         if (pipEligibleNow && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
-            activity.buildPipParams(playerState.isPlaying)?.let { params ->
+            buildPipParams(activity, playerState.isPlaying)?.let { params ->
                 activity.setPictureInPictureParams(params)
             }
         }

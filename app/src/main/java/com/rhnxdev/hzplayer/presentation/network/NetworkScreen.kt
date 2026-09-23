@@ -23,6 +23,7 @@ import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
 import com.rhnxdev.hzplayer.core.util.isVideoOrStreamDefault
+import com.rhnxdev.hzplayer.core.util.withLiveCookies
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.network.components.CredentialDialog
@@ -142,17 +143,8 @@ fun NetworkScreen(
                 onDismissDiscoveredServer = viewModel::onDismissDiscoveredServer,
                 onPlayHistoryItem = { item ->
                     val url = viewModel.onPlayHistoryItem(item)
-                    val headersMap = item.headersMap.toMutableMap()
                     val pageUrl = item.pageUrl.orEmpty()
-                    val liveCookies = runCatching {
-                        if (pageUrl.isNotBlank()) android.webkit.CookieManager.getInstance().getCookie(pageUrl) else null
-                    }.getOrNull()
-                    if (!liveCookies.isNullOrBlank() && headersMap.keys.none { it.equals("Cookie", ignoreCase = true) }) {
-                        headersMap["Cookie"] = liveCookies
-                    }
-                    if (pageUrl.isNotBlank() && headersMap.keys.none { it.equals("Referer", ignoreCase = true) }) {
-                        headersMap["Referer"] = pageUrl
-                    }
+                    val headersMap = item.headersMap.withLiveCookies(pageUrl)
                     val mime = item.mimeType?.ifBlank { null }
                     onPlayStream(url, item.title, isVideoOrStreamDefault(url), mime, headersMap)
                 },
