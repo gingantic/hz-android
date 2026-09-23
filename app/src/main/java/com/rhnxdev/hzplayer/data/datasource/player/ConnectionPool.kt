@@ -205,7 +205,9 @@ internal object ConnectionPool {
             defaultTimeout = 15000
             dataTimeout = java.time.Duration.ofMillis(15000)
             connect(host, port)
-            login(user, pass)
+            // Empty user = anonymous FTP: DataSource URIs without stored credentials
+            // arrive here with user="" (see borrowFtpBrowser, which guards the same way).
+            login(user.ifEmpty { "anonymous" }, pass)
             enterLocalPassiveMode()
             setFileType(FTP.BINARY_FILE_TYPE)
         }
