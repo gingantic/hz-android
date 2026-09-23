@@ -10,7 +10,7 @@ import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.VideoItem
-import com.rhnxdev.hzplayer.domain.model.RepeatMode
+import com.rhnxdev.hzplayer.domain.model.next
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleMimeType
@@ -710,12 +710,7 @@ class PlayerViewModel @Inject constructor(
 
     fun onCycleRepeatMode() {
         playerRepository.cycleRepeatMode()
-        val current = _uiState.value.repeatMode
-        val next = when (current) {
-            RepeatMode.NONE -> RepeatMode.ALL
-            RepeatMode.ALL -> RepeatMode.ONE
-            RepeatMode.ONE -> RepeatMode.NONE
-        }
+        val next = _uiState.value.repeatMode.next()
         _uiState.update { it.copy(repeatMode = next) }
     }
 

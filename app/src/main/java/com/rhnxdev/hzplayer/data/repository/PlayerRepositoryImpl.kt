@@ -11,7 +11,7 @@ import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
-import com.rhnxdev.hzplayer.domain.model.RepeatMode
+import com.rhnxdev.hzplayer.domain.model.next
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
@@ -216,12 +216,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override fun cycleRepeatMode() {
-        val next = when (engine().getRepeatMode()) {
-            RepeatMode.NONE -> RepeatMode.ALL
-            RepeatMode.ALL -> RepeatMode.ONE
-            RepeatMode.ONE -> RepeatMode.NONE
-        }
-        engine().setRepeatMode(next)
+        engine().setRepeatMode(engine().getRepeatMode().next())
     }
 
     override fun setActiveEngine(type: EngineType) {

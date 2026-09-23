@@ -32,3 +32,10 @@ enum class RepeatMode {
     ALL,
     ONE,
 }
+
+/** The mode a repeat button advances to: off → repeat-all → repeat-one → off. */
+fun RepeatMode.next(): RepeatMode = when (this) {
+    RepeatMode.NONE -> RepeatMode.ALL
+    RepeatMode.ALL -> RepeatMode.ONE
+    RepeatMode.ONE -> RepeatMode.NONE
+}
