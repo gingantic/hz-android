@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.withoutScheme
 
 @Composable
 fun BrowserTopBar(
@@ -95,12 +96,7 @@ fun BrowserTopBar(
             val isHttps = url.startsWith("https://", ignoreCase = true)
             val isHttp = url.startsWith("http://", ignoreCase = true)
 
-            val displayUrl = when {
-                url == "about:blank" -> ""
-                isHttps -> url.substring(8)
-                isHttp -> url.substring(7)
-                else -> url
-            }
+            val displayUrl = if (url == "about:blank") "" else url.withoutScheme()
 
             OutlinedTextField(
                 value = displayUrl,

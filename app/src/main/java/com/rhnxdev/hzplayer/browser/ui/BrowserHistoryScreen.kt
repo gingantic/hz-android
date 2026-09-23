@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.core.util.withoutScheme
 import com.rhnxdev.hzplayer.domain.model.BrowserHistoryItem
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -241,13 +242,7 @@ private fun HistoryItemRow(
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val displayUrl = remember(item.url) {
-        when {
-            item.url.startsWith("https://", ignoreCase = true) -> item.url.substring(8)
-            item.url.startsWith("http://", ignoreCase = true) -> item.url.substring(7)
-            else -> item.url
-        }
-    }
+    val displayUrl = remember(item.url) { item.url.withoutScheme() }
 
     val formattedTime = remember(item.timestamp) {
         val date = Date(item.timestamp)

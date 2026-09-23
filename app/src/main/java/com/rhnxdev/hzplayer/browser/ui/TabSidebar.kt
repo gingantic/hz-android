@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.browser.BrowserTab
+import com.rhnxdev.hzplayer.core.util.withoutScheme
 
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
@@ -247,12 +248,12 @@ private fun SidebarTabItem(
     val displayTitle = when {
         tab.title.isNotBlank() -> tab.title
         tab.url.isBlank() || tab.url == "about:blank" -> "New Tab"
-        else -> tab.url.removePrefix("https://").removePrefix("http://").substringBefore("/")
+        else -> tab.url.withoutScheme().substringBefore("/")
     }
 
     val displaySubtitle = when {
         tab.url.isBlank() || tab.url == "about:blank" -> "blank page"
-        else -> tab.url.removePrefix("https://").removePrefix("http://").take(32)
+        else -> tab.url.withoutScheme().take(32)
     }
 
     val tabIcon = when {

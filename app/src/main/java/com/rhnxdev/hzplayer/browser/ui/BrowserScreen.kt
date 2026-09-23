@@ -260,8 +260,6 @@ fun BrowserScreen(
             // Bottom toolbar (hidden in PiP)
             if (!isInPip) {
             BrowserBottomBar(
-                url = viewModel.urlInput,
-                currentTabUrl = viewModel.activeTab?.url ?: "",
                 canGoBack = viewModel.activeTab?.canGoBack == true || viewModel.canReturnToParentTab,
                 canGoForward = viewModel.activeTab?.canGoForward == true,
                 tabCount = viewModel.tabCount,
@@ -270,8 +268,6 @@ fun BrowserScreen(
                 onForward = { clearUrlBarFocus(); viewModel.goForward() },
                 onReload = { clearUrlBarFocus(); viewModel.reload() },
                 onStopLoading = { clearUrlBarFocus(); viewModel.stopLoading() },
-                onUrlChange = { viewModel.onUrlInputChanged(it) },
-                onUrlSubmit = { clearUrlBarFocus(); viewModel.navigate(viewModel.urlInput) },
                 onNewTab = { clearUrlBarFocus(); viewModel.createTab() },
                 onTabsClick = { clearUrlBarFocus(); showTabSidebar = true },
                 onMenuClick = clearUrlBarFocus,

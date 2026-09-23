@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.withoutScheme
 import com.rhnxdev.hzplayer.domain.model.UrlSuggestion
 
 /**
@@ -114,9 +115,7 @@ private fun UrlSuggestionRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = suggestion.url
-                    .removePrefix("https://")
-                    .removePrefix("http://"),
+                text = suggestion.url.withoutScheme(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

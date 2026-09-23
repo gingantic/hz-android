@@ -57,8 +57,6 @@ import androidx.compose.ui.text.font.FontWeight
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserBottomBar(
-    url: String,
-    currentTabUrl: String,
     canGoBack: Boolean,
     canGoForward: Boolean,
     tabCount: Int,
@@ -67,8 +65,6 @@ fun BrowserBottomBar(
     onForward: () -> Unit,
     onReload: () -> Unit,
     onStopLoading: () -> Unit,
-    onUrlChange: (String) -> Unit,
-    onUrlSubmit: () -> Unit,
     onTabsClick: () -> Unit,
     onMenuClick: () -> Unit,
     onNewTab: () -> Unit = {},

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockUpdater
+import com.rhnxdev.hzplayer.core.util.withoutScheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -115,10 +116,7 @@ class BrowserViewModel @Inject constructor(
         urlBarEdited = true
         if (isUrlBarFocused) {
             // Strip scheme so matching works against both url and title
-            _urlSuggestionQuery.value = value
-                .removePrefix("https://")
-                .removePrefix("http://")
-                .trim()
+            _urlSuggestionQuery.value = value.withoutScheme().trim()
         }
     }
 

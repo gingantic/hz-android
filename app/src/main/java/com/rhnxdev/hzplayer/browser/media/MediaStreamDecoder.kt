@@ -83,23 +83,4 @@ object MediaStreamDecoder {
         return DISGUISED_HLS_PATTERNS.any { lowerUrl.contains(it) }
     }
 
-    /**
-     * Checks if a URL represents a segment chunk disguised as a font asset (.woff, .woff2).
-     */
-    fun isDisguisedSegment(url: String): Boolean {
-        if (url.isBlank()) return false
-        val lowerUrl = url.lowercase(Locale.ROOT)
-        return (lowerUrl.contains(".woff") || lowerUrl.contains(".woff2")) &&
-                (lowerUrl.contains("seg-") || lowerUrl.contains("segment") || lowerUrl.contains("init-"))
-    }
-
-    /**
-     * Resolves the canonical MIME type for ExoPlayer / Media3 player engine.
-     */
-    fun resolveCanonicalMimeType(url: String, rawMimeType: String = ""): String {
-        if (isDisguisedHlsStream(url, rawMimeType)) {
-            return "application/x-mpegURL"
-        }
-        return rawMimeType
-    }
 }
