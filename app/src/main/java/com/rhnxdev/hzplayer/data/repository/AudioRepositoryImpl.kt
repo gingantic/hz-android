@@ -27,43 +27,17 @@ class AudioRepositoryImpl @Inject constructor(
     private var cachedAlbums: List<Album>? = null
     private var cachedArtists: List<Artist>? = null
 
-    override fun getAllSongs(forceRefresh: Boolean): Flow<List<AudioItem>> = flow {
-        val memCache = cachedSongs
-        if (memCache != null && !forceRefresh) {
-            emit(memCache)
-            return@flow
-        }
-        var emitted = false
-        val cached = mediaDao.getAllAudio().first()
-        if (cached.isNotEmpty()) {
-            val list = cached.map { it.toAudioItem() }
-            cachedSongs = list
-            emit(list)
-            emitted = true
-        } else if (BuildConfig.DEBUG) {
-            // Show preview instantly — debug only
-            emit(PreviewMedia.songs)
-            emitted = true
-        }
-
-        try {
-            val scanned = mediaScanner.scanAudio().first()
-            if (scanned.isNotEmpty()) {
-                mediaDao.replaceAudio(scanned)
-                val list = scanned.map { it.toAudioItem() }
-                cachedSongs = list
-                emit(list)
-                emitted = true
-            } else if (!emitted) {
-                emit(emptyList())
-                emitted = true
-            }
-        } catch (e: Exception) {
-            if (!emitted) {
-                throw e
-            }
-        }
-    }.flowOn(Dispatchers.IO)
+    override fun getAllSongs(forceRefresh: Boolean): Flow<List<AudioItem>> =
+        cachedScanFlow(
+            forceRefresh = forceRefresh,
+            memoryCache = { cachedSongs },
+            preview = PreviewMedia.songs,
+            readRoom = { mediaDao.getAllAudio() },
+            toItem = { it.toAudioItem() },
+            scan = { mediaScanner.scanAudio() },
+            replaceRoom = { mediaDao.replaceAudio(it) },
+            cacheIn = { cachedSongs = it },
+        )
 
     override fun getAlbums(forceRefresh: Boolean, minDurationSecs: Int): Flow<List<Album>> = flow {
         val memCache = cachedAlbums

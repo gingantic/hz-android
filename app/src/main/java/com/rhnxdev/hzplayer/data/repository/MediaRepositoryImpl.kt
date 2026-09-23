@@ -8,11 +8,7 @@ import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
 import com.rhnxdev.hzplayer.BuildConfig
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -38,47 +34,18 @@ class MediaRepositoryImpl @Inject constructor(
     // re-scan and shows instantly. Cleared/repopulated only on a forced refresh.
     private var cachedVideos: List<VideoItem>? = null
 
-    override fun getAllVideos(sortType: SortType, forceRefresh: Boolean): Flow<List<VideoItem>> = flow {
-        // Instant path: serve the in-memory cache unless a forced refresh was requested.
-        val memCache = cachedVideos
-        if (memCache != null && !forceRefresh) {
-            emit(applySort(memCache, sortType))
-            return@flow
-        }
-
-        var emitted = false
-        // Phase 1: Try Room cache (instant — emitted immediately if populated)
-        val cached = mediaDao.getAllVideos().first()
-        if (cached.isNotEmpty()) {
-            val list = cached.map { it.toVideoItem() }
-            cachedVideos = list
-            emit(applySort(list, sortType))
-            emitted = true
-        } else if (BuildConfig.DEBUG) {
-            // Phase 2: No cache — emit preview data immediately so UI never shows a blank shimmer.
-            // Debug only: release builds get empty list until scan completes.
-            emit(applySort(previewVideos, sortType))
-            emitted = true
-        }
-
-        try {
-            val scanned = mediaScanner.scanVideos().first()
-            if (scanned.isNotEmpty()) {
-                mediaDao.replaceVideos(scanned)
-                val list = scanned.map { it.toVideoItem() }
-                cachedVideos = list
-                emit(applySort(list, sortType))
-                emitted = true
-            } else if (!emitted) {
-                emit(emptyList())
-                emitted = true
-            }
-        } catch (e: Exception) {
-            if (!emitted) {
-                throw e
-            }
-        }
-    }.flowOn(Dispatchers.IO)
+    override fun getAllVideos(sortType: SortType, forceRefresh: Boolean): Flow<List<VideoItem>> =
+        cachedScanFlow(
+            forceRefresh = forceRefresh,
+            memoryCache = { cachedVideos },
+            preview = previewVideos,
+            readRoom = { mediaDao.getAllVideos() },
+            toItem = { it.toVideoItem() },
+            scan = { mediaScanner.scanVideos() },
+            replaceRoom = { mediaDao.replaceVideos(it) },
+            cacheIn = { cachedVideos = it },
+            sort = { applySort(it, sortType) },
+        )
 
     override suspend fun getVideoById(id: Long): VideoItem? {
         return mediaDao.getById(id)?.toVideoItem()
