@@ -10,8 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.core.components.HzPlayerSlider
 import kotlin.math.roundToInt
 
 private val SPEED_PRESETS = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
@@ -68,7 +67,7 @@ fun SpeedSelectionDialog(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Slider(
+        HzPlayerSlider(
             value = sliderIndex,
             onValueChange = { sliderIndex = it.roundToPresetIndex() },
             onValueChangeFinished = {
@@ -80,22 +79,7 @@ fun SpeedSelectionDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp),
-            colors = SliderDefaults.colors(
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-            ),
-            thumb = {},
-            track = { sliderState ->
-                SliderDefaults.Track(
-                    sliderState = sliderState,
-                    colors = SliderDefaults.colors(
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                    ),
-                    drawStopIndicator = null,
-                    thumbTrackGapSize = 0.dp,
-                )
-            },
+            showThumb = false,
         )
 
         Spacer(modifier = Modifier.height(4.dp))

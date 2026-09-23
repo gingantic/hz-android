@@ -16,14 +16,7 @@ fun ThemeSelectionDialog(
 ) = EnumSelectionDialog(
     current = currentTheme,
     titleRes = R.string.theme_selection_title,
-    label = {
-        when (it) {
-            ThemeMode.LIGHT -> stringResource(R.string.theme_light)
-            ThemeMode.DARK -> stringResource(R.string.theme_dark)
-            ThemeMode.VOID -> stringResource(R.string.theme_void)
-            ThemeMode.SYSTEM -> stringResource(R.string.theme_system)
-        }
-    },
+    label = { stringResource(it.labelRes()) },
     onDismiss = onDismiss,
     onSelect = onSelect,
 )
@@ -36,13 +29,7 @@ fun OrientationDialog(
 ) = EnumSelectionDialog(
     current = currentMode,
     titleRes = R.string.orientation_selection_title,
-    label = {
-        when (it) {
-            OrientationMode.AUTO -> stringResource(R.string.orientation_auto)
-            OrientationMode.PORTRAIT -> stringResource(R.string.orientation_portrait)
-            OrientationMode.LANDSCAPE -> stringResource(R.string.orientation_landscape)
-        }
-    },
+    label = { stringResource(it.labelRes()) },
     onDismiss = onDismiss,
     onSelect = onSelect,
 )
@@ -55,13 +42,7 @@ fun DecoderModeDialog(
 ) = EnumSelectionDialog(
     current = currentMode,
     titleRes = R.string.decoder_mode_selection_title,
-    label = {
-        when (it) {
-            DecoderMode.AUTO -> stringResource(R.string.decoder_mode_auto)
-            DecoderMode.HARDWARE -> stringResource(R.string.decoder_mode_hardware)
-            DecoderMode.SOFTWARE -> stringResource(R.string.decoder_mode_software)
-        }
-    },
+    label = { stringResource(it.labelRes()) },
     onDismiss = onDismiss,
     onSelect = onSelect,
 )
@@ -74,13 +55,7 @@ fun ResumeModeDialog(
 ) = EnumSelectionDialog(
     current = currentMode,
     titleRes = R.string.resume_mode_selection_title,
-    label = {
-        when (it) {
-            ResumeMode.NONE -> stringResource(R.string.resume_mode_none)
-            ResumeMode.ASK -> stringResource(R.string.resume_mode_ask)
-            ResumeMode.ALWAYS -> stringResource(R.string.resume_mode_always)
-        }
-    },
+    label = { stringResource(it.labelRes()) },
     onDismiss = onDismiss,
     onSelect = onSelect,
 )

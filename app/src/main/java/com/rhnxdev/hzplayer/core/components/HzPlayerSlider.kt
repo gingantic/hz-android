@@ -34,6 +34,7 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
  * @param thumbRingColor — colour behind the slider; rings the knob for a cut-out look
  * @param trackHeight — bar thickness (bar width when used vertically)
  * @param thumbSize — knob diameter
+ * @param showThumb — hide the knob for a stepped picker that should read as a plain bar
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +50,7 @@ fun HzPlayerSlider(
     thumbRingColor: Color = MaterialTheme.colorScheme.surface,
     trackHeight: Dp = 6.dp,
     thumbSize: Dp = 20.dp,
+    showThumb: Boolean = true,
 ) {
     val fill = if (enabled) accent else accent.copy(alpha = 0.38f)
 
@@ -61,12 +63,14 @@ fun HzPlayerSlider(
         enabled = enabled,
         modifier = modifier,
         thumb = {
-            Box(
-                modifier = Modifier
-                    .size(thumbSize)
-                    .background(fill, CircleShape)
-                    .border(thumbSize * 0.15f, thumbRingColor, CircleShape),
-            )
+            if (showThumb) {
+                Box(
+                    modifier = Modifier
+                        .size(thumbSize)
+                        .background(fill, CircleShape)
+                        .border(thumbSize * 0.15f, thumbRingColor, CircleShape),
+                )
+            }
         },
         track = { sliderState ->
             SliderDefaults.Track(

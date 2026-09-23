@@ -19,8 +19,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.core.components.HzPlayerSlider
 
 @Composable
 fun ColorPickerDialog(
@@ -213,14 +212,11 @@ fun ColorPickerDialog(
                             Text(stringResource(R.string.color_red), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("${redValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
-                        Slider(
+                        HzPlayerSlider(
                             value = redValue,
                             onValueChange = { redValue = it },
                             valueRange = 0f..255f,
-                            colors = SliderDefaults.colors(
-                                activeTrackColor = Color.Red,
-                                thumbColor = Color.Red
-                            )
+                            accent = Color.Red,
                         )
                     }
 
@@ -233,14 +229,11 @@ fun ColorPickerDialog(
                             Text(stringResource(R.string.color_green), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("${greenValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
-                        Slider(
+                        HzPlayerSlider(
                             value = greenValue,
                             onValueChange = { greenValue = it },
                             valueRange = 0f..255f,
-                            colors = SliderDefaults.colors(
-                                activeTrackColor = Color.Green,
-                                thumbColor = Color.Green
-                            )
+                            accent = Color.Green,
                         )
                     }
 
@@ -253,14 +246,11 @@ fun ColorPickerDialog(
                             Text(stringResource(R.string.color_blue), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("${blueValue.toInt()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         }
-                        Slider(
+                        HzPlayerSlider(
                             value = blueValue,
                             onValueChange = { blueValue = it },
                             valueRange = 0f..255f,
-                            colors = SliderDefaults.colors(
-                                activeTrackColor = Color.Blue,
-                                thumbColor = Color.Blue
-                            )
+                            accent = Color.Blue,
                         )
                     }
                 }

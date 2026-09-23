@@ -33,10 +33,9 @@ import com.rhnxdev.hzplayer.MainActivity
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
-import com.rhnxdev.hzplayer.domain.model.DecoderMode
-import com.rhnxdev.hzplayer.domain.model.OrientationMode
-import com.rhnxdev.hzplayer.domain.model.ThemeMode
+import com.rhnxdev.hzplayer.core.util.isFullStorageGranted
 import com.rhnxdev.hzplayer.domain.player.EngineType
+import com.rhnxdev.hzplayer.presentation.settings.components.labelRes
 import com.rhnxdev.hzplayer.presentation.settings.components.ColorPickerDialog
 import com.rhnxdev.hzplayer.presentation.settings.components.SubdlApiKeyDialog
 import com.rhnxdev.hzplayer.presentation.settings.components.SettingsItem
@@ -185,12 +184,7 @@ fun SettingsScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
                                 title = stringResource(R.string.settings_theme),
-                                subtitle = when (themeMode) {
-                                    ThemeMode.LIGHT -> stringResource(R.string.theme_light)
-                                    ThemeMode.DARK -> stringResource(R.string.theme_dark)
-                                    ThemeMode.VOID -> stringResource(R.string.theme_void)
-                                    ThemeMode.SYSTEM -> stringResource(R.string.theme_system)
-                                },
+                                subtitle = stringResource(themeMode.labelRes()),
                                 onClick = { showThemeDialog = true },
                             )
                             SettingsItem(
@@ -206,11 +200,7 @@ fun SettingsScreen(
                             )
                             SettingsItem(
                                 title = stringResource(R.string.settings_orientation),
-                                subtitle = when (orientationMode) {
-                                    OrientationMode.AUTO -> stringResource(R.string.orientation_auto)
-                                    OrientationMode.PORTRAIT -> stringResource(R.string.orientation_portrait)
-                                    OrientationMode.LANDSCAPE -> stringResource(R.string.orientation_landscape)
-                                },
+                                subtitle = stringResource(orientationMode.labelRes()),
                                 onClick = { showOrientationDialog = true },
                             )
                         }
@@ -251,11 +241,7 @@ fun SettingsScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             SettingsItem(
                                 title = stringResource(R.string.settings_resume_playback),
-                                subtitle = when (resumeMode) {
-                                    com.rhnxdev.hzplayer.domain.model.ResumeMode.NONE -> stringResource(R.string.resume_mode_none)
-                                    com.rhnxdev.hzplayer.domain.model.ResumeMode.ASK -> stringResource(R.string.resume_mode_ask)
-                                    com.rhnxdev.hzplayer.domain.model.ResumeMode.ALWAYS -> stringResource(R.string.resume_mode_always)
-                                },
+                                subtitle = stringResource(resumeMode.labelRes()),
                                 onClick = { showResumeDialog = true },
                             )
                             SettingsToggleItem(
@@ -272,11 +258,7 @@ fun SettingsScreen(
                             )
                             SettingsItem(
                                 title = stringResource(R.string.settings_decoder_mode),
-                                subtitle = when (decoderMode) {
-                                    DecoderMode.AUTO -> stringResource(R.string.decoder_mode_auto)
-                                    DecoderMode.HARDWARE -> stringResource(R.string.decoder_mode_hardware)
-                                    DecoderMode.SOFTWARE -> stringResource(R.string.decoder_mode_software)
-                                },
+                                subtitle = stringResource(decoderMode.labelRes()),
                                 onClick = { showDecoderDialog = true },
                             )
                             SettingsToggleItem(
@@ -358,12 +340,12 @@ fun SettingsScreen(
                             )
                             SettingsItem(
                                 title = stringResource(R.string.settings_full_storage),
-                                subtitle = if (MainActivity.isFullStorageGranted())
+                                subtitle = if (isFullStorageGranted())
                                     stringResource(R.string.settings_full_storage_granted)
                                 else
                                     stringResource(R.string.settings_full_storage_sub),
                                 onClick = { MainActivity.openFullStorageSettings(context) },
-                                trailing = if (MainActivity.isFullStorageGranted()) {
+                                trailing = if (isFullStorageGranted()) {
                                     { Icon(Icons.Default.Check, null, tint = Color(0xFF4CAF50)) }
                                 } else null,
                             )
