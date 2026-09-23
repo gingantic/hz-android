@@ -65,12 +65,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
-import com.rhnxdev.hzplayer.core.components.BreadcrumbBar
 import com.rhnxdev.hzplayer.core.components.DirectoryBrowsePane
+import com.rhnxdev.hzplayer.core.components.DirectoryHeader
 import com.rhnxdev.hzplayer.core.components.FileItemData
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
-import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import androidx.compose.material3.FloatingActionButton
@@ -470,7 +470,7 @@ internal fun ServerBrowseStackContent(
 
         // Play All FAB
         val hasVideos = uiState.remoteLayers.lastOrNull()?.items?.any {
-            !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name))
+            !it.isDirectory && isVideoMedia(it.name, it.mimeType)
         } == true
         if (hasVideos && !isSearchActive) {
             // Hide the FAB at the bottom of the list so it doesn't cover the last item
@@ -592,33 +592,20 @@ private fun RemoteDirectoryLayerView(
 
     val visibleItems = remember(layer.items, mediaMode) {
         when {
-            mediaMode -> layer.items.filter { it.isDirectory || (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name)) }
+            mediaMode -> layer.items.filter { it.isDirectory || isVideoMedia(it.name, it.mimeType) }
             else -> layer.items.filter { it.isDirectory || (!isDocumentExtension(it.name) && !isBinaryExtension(it.name)) }
         }
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        BreadcrumbBar(
+        // The count stays put across a refresh — items are not cleared while loading.
+        DirectoryHeader(
             breadcrumbs = layer.breadcrumbs,
+            folderCount = visibleItems.count { it.isDirectory },
+            fileCount = visibleItems.count { !it.isDirectory },
+            mediaMode = mediaMode,
             onBreadcrumbClicked = onBreadcrumbClicked,
         )
-
-        // Show whenever items exist. They persist across refresh (not cleared while
-        // isLoading), so the count stays put instead of vanishing and reappearing.
-        if (visibleItems.isNotEmpty()) {
-            val folders = visibleItems.count { it.isDirectory }
-            val others = visibleItems.count { !it.isDirectory }
-            Text(
-                text = if (mediaMode) {
-                    stringResource(R.string.dir_summary_media, folders, others)
-                } else {
-                    stringResource(R.string.dir_summary, folders, others)
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
-            )
-        }
 
         DirectoryBrowsePane(
             items = visibleItems.map { it.toFileItemData(buildPlaybackUri(it.path)) },

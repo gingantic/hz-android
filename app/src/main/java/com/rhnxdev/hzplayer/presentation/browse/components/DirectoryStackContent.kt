@@ -3,10 +3,7 @@ package com.rhnxdev.hzplayer.presentation.browse.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
@@ -14,18 +11,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.stringResource
-import com.rhnxdev.hzplayer.R
-import com.rhnxdev.hzplayer.core.components.BreadcrumbBar
 import com.rhnxdev.hzplayer.core.components.DirectoryBrowsePane
+import com.rhnxdev.hzplayer.core.components.DirectoryHeader
 import com.rhnxdev.hzplayer.core.components.FileItemData
-import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
-import com.rhnxdev.hzplayer.core.util.isAudioExtension
+import com.rhnxdev.hzplayer.core.util.isAudioMedia
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
-import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.presentation.browse.DirectoryLayer
@@ -184,11 +178,11 @@ private fun DirectoryLayerView(
             if (item.isDirectory) true
             else {
                 when (mediaTypeFilter) {
-                    FileMediaTypeFilter.VIDEOS -> item.isVideo()
-                    FileMediaTypeFilter.AUDIO -> item.isAudio()
+                    FileMediaTypeFilter.VIDEOS -> isVideoMedia(item.name, item.mimeType)
+                    FileMediaTypeFilter.AUDIO -> isAudioMedia(item.name, item.mimeType)
                     FileMediaTypeFilter.ARCHIVES -> isArchiveExtension(item.name)
                     FileMediaTypeFilter.ALL -> {
-                        if (mediaMode) item.isVideo()
+                        if (mediaMode) isVideoMedia(item.name, item.mimeType)
                         else (!isDocumentExtension(item.name) && !isBinaryExtension(item.name))
                     }
                 }
@@ -197,25 +191,13 @@ private fun DirectoryLayerView(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        BreadcrumbBar(
+        DirectoryHeader(
             breadcrumbs = layer.breadcrumbs,
+            folderCount = visibleItems.count { it.isDirectory },
+            fileCount = visibleItems.count { !it.isDirectory },
+            mediaMode = mediaMode,
             onBreadcrumbClicked = onBreadcrumbClicked,
         )
-
-        if (visibleItems.isNotEmpty()) {
-            val folders = visibleItems.count { it.isDirectory }
-            val others = visibleItems.count { !it.isDirectory }
-            Text(
-                text = if (mediaMode) {
-                    stringResource(R.string.dir_summary_media, folders, others)
-                } else {
-                    stringResource(R.string.dir_summary, folders, others)
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = Spacing.md, top = Spacing.xs, bottom = Spacing.xs),
-            )
-        }
 
         DirectoryBrowsePane(
             items = remember(visibleItems) { visibleItems.map { it.toFileItemData() } },
@@ -300,9 +282,3 @@ private fun FolderItem.toFileItemData(): FileItemData = FileItemData(
     resolution = resolution,
     dateAdded = dateAdded,
 )
-
-private fun FolderItem.isVideo(): Boolean =
-    mimeType?.startsWith("video") == true || isVideoExtension(name)
-
-private fun FolderItem.isAudio(): Boolean =
-    mimeType?.startsWith("audio") == true || isAudioExtension(name)
