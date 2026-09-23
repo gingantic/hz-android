@@ -7,8 +7,10 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import com.rhnxdev.hzplayer.core.util.isNeighborSubtitleName
+import com.rhnxdev.hzplayer.core.util.userInfoPair
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.SubtitleConverters
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isNonAssSubtitleMimeType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -58,11 +60,11 @@ class NeighborSubtitleDiscoverer @Inject constructor(
         val exoConfigs = mutableListOf<MediaItem.SubtitleConfiguration>()
         for (subUri in subUris) {
             val ext = (subUri.path ?: "").substringAfterLast('.').lowercase()
-            val mimeType = inferSubtitleMimeType(subUri)
+            val mimeType = ExoMediaItemHelper.inferSubtitleMimeType(subUri)
             val displayName = subUri.lastPathSegment ?: subUri.toString()
 
-            if (ext == "ass" || ext == "ssa" || SubtitleConverters.isConvertibleSubtitleFormat(mimeType)) {
-                val data = readUriBytes(subUri)
+            if (ext == "ass" || ext == "ssa" || isNonAssSubtitleMimeType(mimeType)) {
+                val data = ExoMediaItemHelper.readSubtitleUriBytes(appContext, playerHolder, subUri)
                 if (data != null) {
                     val assBytes = if (ext == "ass" || ext == "ssa") {
                         data
@@ -88,25 +90,6 @@ class NeighborSubtitleDiscoverer @Inject constructor(
             }
         }
         return exoConfigs
-    }
-
-    /** Read a subtitle file's bytes, handling both local and remote URIs. */
-    fun readUriBytes(uri: Uri): ByteArray? = runCatching {
-        when (uri.scheme?.lowercase()) {
-            "content", "file" -> appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            else -> playerHolder.readUriBytes(uri)
-        }
-    }.getOrNull()
-
-    fun inferSubtitleMimeType(uri: Uri): String {
-        val ext = uri.path?.substringAfterLast('.')?.lowercase() ?: return MimeTypes.APPLICATION_SUBRIP
-        return when (ext) {
-            "vtt" -> MimeTypes.TEXT_VTT
-            "srt" -> MimeTypes.APPLICATION_SUBRIP
-            "ass", "ssa" -> MimeTypes.TEXT_SSA
-            "sub" -> MimeTypes.APPLICATION_SUBRIP
-            else -> MimeTypes.APPLICATION_SUBRIP
-        }
     }
 
     // ── Neighbor file discovery ──
@@ -171,10 +154,7 @@ class NeighborSubtitleDiscoverer @Inject constructor(
 
     private fun findSmbNeighborSubtitles(androidUri: Uri): List<Uri> {
         return try {
-            val userInfo = androidUri.userInfo ?: ""
-            val parts = userInfo.split(":", limit = 2)
-            val user = Uri.decode(parts.getOrNull(0) ?: "")
-            val pass = Uri.decode(parts.getOrNull(1) ?: "")
+            val (user, pass) = androidUri.userInfoPair()
             val host = androidUri.host ?: return emptyList()
             val port = androidUri.port.takeIf { it > 0 } ?: 445
 

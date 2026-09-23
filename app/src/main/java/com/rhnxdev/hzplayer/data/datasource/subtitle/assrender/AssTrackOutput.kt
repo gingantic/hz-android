@@ -46,8 +46,7 @@ internal class AssTrackOutput(
         if (isLibassTrack) {
             if (isAss && format.initializationData.isNotEmpty()) {
                 for (data in format.initializationData) {
-                    val preview = String(data, 0, minOf(50, data.size), Charsets.UTF_8)
-                    if (preview.contains("[Script Info]") || preview.contains("ScriptType:")) {
+                    if (hasAssScriptHeader(data)) {
                         handler.onTrackHeader(trackId, data, format)
                         break
                     }

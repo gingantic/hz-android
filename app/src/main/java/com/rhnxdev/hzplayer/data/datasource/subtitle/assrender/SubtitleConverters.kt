@@ -26,15 +26,6 @@ object SubtitleConverters {
         return "Style: $DEFAULT_STYLE_NAME,sans-serif,$fontSize,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,$marginV,1"
     }
 
-    /** True for formats we can transform into ASS (SRT, VTT). */
-    fun isConvertibleSubtitleFormat(mime: String?): Boolean {
-        val m = mime?.lowercase() ?: return false
-        return m == MimeTypes.APPLICATION_SUBRIP ||
-            m == "text/x-subrip" ||
-            m == MimeTypes.TEXT_VTT ||
-            m.startsWith("text/vtt")
-    }
-
     /** Pick a converter by MIME type. Returns null for unknown formats. */
     fun convertToAss(data: ByteArray, mime: String?, playResX: Int = 1920, playResY: Int = 1080): ByteArray? {
         val text = String(data, Charsets.UTF_8)
@@ -128,7 +119,7 @@ object SubtitleConverters {
         val durationMs = (cue.endMs - cue.startMs).coerceAtLeast(0L)
         // MKV Dialogue: Start,Duration,ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text
         // Duration is H:MM:SS:CC (colon form → onSubtitleSample takes MKV branch).
-        val body = "0,${msToMkvTime(durationMs)},0,0,$DEFAULT_STYLE_NAME,,0,0,0,,${cue.text}"
+        val body = "0,${AssTimeCodec.format(durationMs, ':')},0,0,$DEFAULT_STYLE_NAME,,0,0,0,,${cue.text}"
         return "Dialogue: $body".toByteArray(Charsets.UTF_8)
     }
 
@@ -217,25 +208,6 @@ object SubtitleConverters {
 
     private fun hmsToH(hh: String): Long = (hh.removeSuffix(":").toLongOrNull() ?: 0L) * 3_600_000L
 
-    private fun msToAssTime(ms: Long): String {
-        val clamped = ms.coerceAtLeast(0L)
-        val h = clamped / 3_600_000L
-        val m = (clamped % 3_600_000L) / 60_000L
-        val s = (clamped % 60_000L) / 1000L
-        val cs = (clamped % 1000L) / 10L
-        return "%d:%02d:%02d.%02d".format(h, m, s, cs)
-    }
-
-    /** Inverse of [parseMkvAssTimeMs]: milliseconds → "H:MM:SS:CC" (colon form). */
-    internal fun msToMkvTime(ms: Long): String {
-        val clamped = ms.coerceAtLeast(0L)
-        val h = clamped / 3_600_000L
-        val m = (clamped % 3_600_000L) / 60_000L
-        val s = (clamped % 60_000L) / 1000L
-        val cs = (clamped % 1000L) / 10L
-        return "%d:%02d:%02d:%02d".format(h, m, s, cs)
-    }
-
     /**
      * Reconstruct a [Cue] from a stored MKV chunk body (ReadOrder,Layer,Style,Name,ML,MR,MV,Effect,Text)
      * plus its start and duration. Used by [AssHandler.selectTrack] to rebuild full ASS docs.
@@ -278,7 +250,7 @@ object SubtitleConverters {
         appendLine("[Events]")
         appendLine("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
         for (cue in cues) {
-            appendLine("Dialogue: 0,${msToAssTime(cue.startMs)},${msToAssTime(cue.endMs)},$DEFAULT_STYLE_NAME,,0,0,0,,${cue.text}")
+            appendLine("Dialogue: 0,${AssTimeCodec.format(cue.startMs, '.')},${AssTimeCodec.format(cue.endMs, '.')},$DEFAULT_STYLE_NAME,,0,0,0,,${cue.text}")
         }
     }
 }

@@ -10,6 +10,7 @@ import com.rhnxdev.hzplayer.core.util.SUBTITLE_EXTENSIONS
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.storageVolumeLabels
+import com.rhnxdev.hzplayer.core.util.userInfoPair
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
@@ -89,14 +90,7 @@ class SubtitleBrowserViewModel @Inject constructor(
             else -> return null
         }
 
-        val userInfo = uri.userInfo
-        var username = ""
-        var password = ""
-        if (userInfo != null) {
-            val parts = userInfo.split(":", limit = 2)
-            username = Uri.decode(parts.getOrElse(0) { "" })
-            password = Uri.decode(parts.getOrElse(1) { "" })
-        }
+        val (username, password) = uri.userInfoPair()
 
         val rawHost = uri.host ?: ""
         val host = NetworkDomainUtils.resolveDomain(null, rawHost)

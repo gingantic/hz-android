@@ -208,10 +208,7 @@ class AssHandler @Inject constructor(
     }
 
     fun onTrackHeader(trackId: Int, headerData: ByteArray, format: Format) {
-        val safeHeader = if (headerData.isNotEmpty() && (
-                String(headerData, 0, minOf(50, headerData.size), Charsets.UTF_8).contains("[Script Info]") ||
-                String(headerData, 0, minOf(50, headerData.size), Charsets.UTF_8).contains("ScriptType:")
-            )) {
+        val safeHeader = if (hasAssScriptHeader(headerData)) {
             headerData
         } else {
             SubtitleConverters.buildMinimalAssHeader(videoWidth, videoHeight)
@@ -284,8 +281,8 @@ class AssHandler @Inject constructor(
                     Log.w(TAG, "[TRACK] standard ASS line has <10 fields, skipping")
                     return
                 }
-                startMs    = parseStandardAssTimeMs(f[1].trim())
-                durationMs = (parseStandardAssTimeMs(f[2].trim()) - startMs).coerceAtLeast(0L)
+                startMs    = AssTimeCodec.parseStandard(f[1].trim())
+                durationMs = (AssTimeCodec.parseStandard(f[2].trim()) - startMs).coerceAtLeast(0L)
 
                 bodyFields = "${f[0].trim()},${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
                             "${f[6].trim()},${f[7].trim()},${f[8].trim()},${f[9]}"
@@ -296,7 +293,7 @@ class AssHandler @Inject constructor(
                     Log.w(TAG, "[TRACK] MKV line has <11 fields, skipping")
                     return
                 }
-                durationMs = parseMkvAssTimeMs(f[1].trim())
+                durationMs = AssTimeCodec.parseMkv(f[1].trim())
                 startMs    = timeUs / 1000
 
                 bodyFields = "${f[3].trim()},${f[4].trim()},${f[5].trim()}," +
@@ -858,36 +855,6 @@ class AssHandler @Inject constructor(
         // Standard: "0:03:51.88" — has exactly 2 colons and 1 dot
         // MKV:      "0:00:03:63" — has exactly 3 colons, no dot
         return time.contains('.')
-    }
-
-    /**
-     * Parse standard ASS timestamp "H:MM:SS.CC" → milliseconds.
-     * The centiseconds part is separated by a dot.
-     */
-    private fun parseStandardAssTimeMs(time: String): Long {
-        return try {
-            val dotIdx = time.lastIndexOf('.')
-            if (dotIdx < 0) return 0L
-            val cs = time.substring(dotIdx + 1).toLongOrNull() ?: 0L
-            val hms = time.substring(0, dotIdx).split(":")
-            val h = hms.getOrNull(0)?.toLongOrNull() ?: 0L
-            val m = hms.getOrNull(1)?.toLongOrNull() ?: 0L
-            val s = hms.getOrNull(2)?.toLongOrNull() ?: 0L
-            h * 3_600_000L + m * 60_000L + s * 1_000L + cs * 10L
-        } catch (e: Exception) { 0L }
-    }
-
-    /**
-     * Parse MKV ASS timestamp "H:MM:SS:CC" (all colon-separated) → milliseconds.
-     */
-    private fun parseMkvAssTimeMs(time: String): Long {
-        val parts = time.split(":")
-        if (parts.size != 4) return 0L
-        val h  = parts[0].toLongOrNull() ?: 0L
-        val m  = parts[1].toLongOrNull() ?: 0L
-        val s  = parts[2].toLongOrNull() ?: 0L
-        val cs = parts[3].toLongOrNull() ?: 0L
-        return h * 3_600_000L + m * 60_000L + s * 1_000L + cs * 10L
     }
 
     /**

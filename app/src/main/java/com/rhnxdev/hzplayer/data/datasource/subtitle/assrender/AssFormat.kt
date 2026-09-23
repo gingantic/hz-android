@@ -31,6 +31,13 @@ fun isNonAssSubtitleMimeType(mime: String?): Boolean {
 fun isLibassSubtitleMimeType(mime: String?): Boolean =
     isAssMimeType(mime) || isNonAssSubtitleMimeType(mime)
 
+/** True when [data] opens with an ASS script header (`[Script Info]` or `ScriptType:`). */
+fun hasAssScriptHeader(data: ByteArray): Boolean {
+    if (data.isEmpty()) return false
+    val preview = String(data, 0, minOf(50, data.size), Charsets.UTF_8)
+    return preview.contains("[Script Info]") || preview.contains("ScriptType:")
+}
+
 /**
  * True if [format] carries ASS/SSA subtitle data, by any signal ExoPlayer
  * exposes: MIME type, codec string, or codec-private [Format.initializationData]
@@ -41,8 +48,7 @@ fun isAssFormat(format: Format): Boolean {
     val codecs = format.codecs?.lowercase() ?: ""
     if ("ass" in codecs || "ssa" in codecs) return true
     for (data in format.initializationData) {
-        val preview = String(data, 0, minOf(50, data.size), Charsets.UTF_8)
-        if (preview.contains("[Script Info]") || preview.contains("ScriptType:")) return true
+        if (hasAssScriptHeader(data)) return true
     }
     return false
 }

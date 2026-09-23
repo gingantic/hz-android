@@ -236,6 +236,5 @@ class SubtitleSearchViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "SubtitleSearchVM"
-        private const val MAX_HISTORY = 10
     }
 }
