@@ -29,13 +29,11 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override val themeMode: Flow<ThemeMode> =
         enumPreference(PrefKey.ThemeMode.key, ThemeMode.SYSTEM)
 
-    override val appColorArgb: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[PrefKey.AppColorArgb.key] ?: 0xFFE85E00.toInt()
-    }.distinctUntilChanged()
+    override val appColorArgb: Flow<Int> =
+        preference(PrefKey.AppColorArgb.key, 0xFFE85E00.toInt())
 
-    override val useDynamicColors: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.DynamicColors.key] ?: false
-    }.distinctUntilChanged()
+    override val useDynamicColors: Flow<Boolean> =
+        preference(PrefKey.DynamicColors.key, false)
 
     override val activeEngine: Flow<EngineType> =
         enumPreference(PrefKey.Engine.key, EngineType.EXO_PLAYER)
@@ -49,28 +47,23 @@ class UserPreferencesRepositoryImpl @Inject constructor(
             ?: DEFAULT_SUBDL_API_KEY
     }.distinctUntilChanged()
 
-    override val seekSensitivity: Flow<Float> = dataStore.data.map { prefs ->
-        prefs[PrefKey.SeekSensitivity.key] ?: 1.0f
-    }.distinctUntilChanged()
+    override val seekSensitivity: Flow<Float> =
+        preference(PrefKey.SeekSensitivity.key, 1.0f)
 
-    override val showHiddenFiles: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.ShowHiddenFiles.key] ?: false
-    }.distinctUntilChanged()
+    override val showHiddenFiles: Flow<Boolean> =
+        preference(PrefKey.ShowHiddenFiles.key, false)
 
-    override val useSurfaceView: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.UseSurfaceView.key] ?: true
-    }.distinctUntilChanged()
+    override val useSurfaceView: Flow<Boolean> =
+        preference(PrefKey.UseSurfaceView.key, true)
 
     override val decoderMode: Flow<DecoderMode> =
         enumPreference(PrefKey.DecoderMode.key, DecoderMode.AUTO)
 
-    override val disableHdr: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.DisableHdr.key] ?: false
-    }.distinctUntilChanged()
+    override val disableHdr: Flow<Boolean> =
+        preference(PrefKey.DisableHdr.key, false)
 
-    override val fileBrowserMediaMode: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.FileBrowserMediaMode.key] ?: false
-    }.distinctUntilChanged()
+    override val fileBrowserMediaMode: Flow<Boolean> =
+        preference(PrefKey.FileBrowserMediaMode.key, false)
 
     override val orientationMode: Flow<OrientationMode> =
         enumPreference(PrefKey.OrientationMode.key, OrientationMode.AUTO)
@@ -78,33 +71,26 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override val resumeMode: Flow<ResumeMode> =
         enumPreference(PrefKey.ResumeMode.key, ResumeMode.ALWAYS)
 
-    override val minSongDurationSecs: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[PrefKey.MinSongDurationSecs.key] ?: 0
-    }.distinctUntilChanged()
+    override val minSongDurationSecs: Flow<Int> =
+        preference(PrefKey.MinSongDurationSecs.key, 0)
 
-    override val debugMode: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.DebugMode.key] ?: false
-    }.distinctUntilChanged()
+    override val debugMode: Flow<Boolean> =
+        preference(PrefKey.DebugMode.key, false)
 
-    override val backgroundPlay: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.BackgroundPlay.key] ?: false
-    }.distinctUntilChanged()
+    override val backgroundPlay: Flow<Boolean> =
+        preference(PrefKey.BackgroundPlay.key, false)
 
-    override val showWatchProgress: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.ShowWatchProgress.key] ?: true
-    }.distinctUntilChanged()
+    override val showWatchProgress: Flow<Boolean> =
+        preference(PrefKey.ShowWatchProgress.key, true)
 
-    override val lastVolume: Flow<Float> = dataStore.data.map { prefs ->
-        prefs[PrefKey.LastVolume.key] ?: -1f
-    }.distinctUntilChanged()
+    override val lastVolume: Flow<Float> =
+        preference(PrefKey.LastVolume.key, -1f)
 
-    override val lastBrightness: Flow<Float> = dataStore.data.map { prefs ->
-        prefs[PrefKey.LastBrightness.key] ?: -1f
-    }.distinctUntilChanged()
+    override val lastBrightness: Flow<Float> =
+        preference(PrefKey.LastBrightness.key, -1f)
 
-    override val saveVolumeBrightnessState: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.SaveVolumeBrightnessState.key] ?: true
-    }.distinctUntilChanged()
+    override val saveVolumeBrightnessState: Flow<Boolean> =
+        preference(PrefKey.SaveVolumeBrightnessState.key, true)
 
     override fun getViewMode(key: String): Flow<ViewMode> =
         enumPreference(stringPreferencesKey("view_mode_$key"), ViewMode.GRID)
@@ -161,9 +147,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         }
     }
 
-    override val selectedTabIndex: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[PrefKey.SelectedTabIndex.key] ?: 0
-    }.distinctUntilChanged()
+    override val selectedTabIndex: Flow<Int> =
+        preference(PrefKey.SelectedTabIndex.key, 0)
 
     override suspend fun setSelectedTabIndex(index: Int) {
         dataStore.edit { prefs -> prefs[PrefKey.SelectedTabIndex.key] = index }
@@ -237,9 +222,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
         dataStore.edit { prefs -> prefs[PrefKey.SaveVolumeBrightnessState.key] = enabled }
     }
 
-    override val dismissedUpdateVersionCode: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[PrefKey.DismissedUpdateVersionCode.key] ?: 0
-    }.distinctUntilChanged()
+    override val dismissedUpdateVersionCode: Flow<Int> =
+        preference(PrefKey.DismissedUpdateVersionCode.key, 0)
 
     override suspend fun setDismissedUpdateVersionCode(versionCode: Int) {
         dataStore.edit { prefs -> prefs[PrefKey.DismissedUpdateVersionCode.key] = versionCode }
@@ -248,12 +232,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     // Archive passwords stored as a single string: entries separated by \x1E,
     // each entry is "container\x1Fpassword". Control chars won't appear in paths/passwords.
     override val archivePasswords: Flow<Map<String, String>> = dataStore.data.map { prefs ->
-        val raw = prefs[PrefKey.ArchivePasswords.key].orEmpty()
-        if (raw.isBlank()) emptyMap()
-        else raw.split("\u001E").mapNotNull { entry ->
-            val parts = entry.split("\u001F", limit = 2)
-            if (parts.size == 2 && parts[0].isNotEmpty()) parts[0] to parts[1] else null
-        }.toMap()
+        decodeArchivePasswords(prefs[PrefKey.ArchivePasswords.key].orEmpty())
     }.distinctUntilChanged()
 
     override suspend fun setArchivePassword(container: String, password: String) {
@@ -273,15 +252,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     }
 
     override val quickAccessFolders: Flow<Set<String>> = dataStore.data.map { prefs ->
-        val raw = prefs[PrefKey.QuickAccessFolders.key]
-        if (raw == null) {
-            val ext = android.os.Environment.getExternalStorageDirectory().absolutePath
-            setOf("$ext/Download", "$ext/Movies", "$ext/Music")
-        } else if (raw.isBlank()) {
-            emptySet()
-        } else {
-            raw.split("\u001E").filter { it.isNotBlank() }.toSet()
-        }
+        decodeQuickAccessFolders(prefs[PrefKey.QuickAccessFolders.key])
     }.distinctUntilChanged()
 
     override suspend fun setQuickAccessFolders(folders: Set<String>) {
@@ -292,23 +263,14 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override suspend fun toggleQuickAccessFolder(path: String) {
         dataStore.edit { prefs ->
-            val raw = prefs[PrefKey.QuickAccessFolders.key]
-            val current = if (raw == null) {
-                val ext = android.os.Environment.getExternalStorageDirectory().absolutePath
-                setOf("$ext/Download", "$ext/Movies", "$ext/Music")
-            } else if (raw.isBlank()) {
-                emptySet()
-            } else {
-                raw.split("\u001E").filter { it.isNotBlank() }.toSet()
-            }
+            val current = decodeQuickAccessFolders(prefs[PrefKey.QuickAccessFolders.key])
             val updated = if (current.contains(path)) current - path else current + path
             prefs[PrefKey.QuickAccessFolders.key] = updated.joinToString("\u001E")
         }
     }
 
-    override val showSolidArchiveWarning: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[PrefKey.ShowSolidArchiveWarning.key] ?: true
-    }.distinctUntilChanged()
+    override val showSolidArchiveWarning: Flow<Boolean> =
+        preference(PrefKey.ShowSolidArchiveWarning.key, true)
 
     override suspend fun setShowSolidArchiveWarning(show: Boolean) {
         dataStore.edit { prefs -> prefs[PrefKey.ShowSolidArchiveWarning.key] = show }
@@ -353,6 +315,23 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     private fun encodeArchivePasswords(map: Map<String, String>): String =
         map.entries.joinToString("\u001E") { "${it.key}\u001F${it.value}" }
+
+    private fun <T> preference(key: Preferences.Key<T>, default: T): Flow<T> =
+        dataStore.data.map { prefs -> prefs[key] ?: default }.distinctUntilChanged()
+
+    /**
+     * Decode the quick-access folder set. A missing key means "never configured",
+     * which seeds the stock storage folders; an empty string means the user
+     * deliberately cleared the list, so it must not be re-seeded.
+     */
+    private fun decodeQuickAccessFolders(raw: String?): Set<String> {
+        if (raw == null) {
+            val ext = android.os.Environment.getExternalStorageDirectory().absolutePath
+            return setOf("$ext/Download", "$ext/Movies", "$ext/Music")
+        }
+        return if (raw.isBlank()) emptySet()
+        else raw.split("\u001E").filter { it.isNotBlank() }.toSet()
+    }
 
     private inline fun <reified T : Enum<T>> enumPreference(
         key: Preferences.Key<String>,
