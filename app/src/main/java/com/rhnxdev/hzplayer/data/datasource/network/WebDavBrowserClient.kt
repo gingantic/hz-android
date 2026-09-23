@@ -1,6 +1,6 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
-import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.remoteFileItem
 import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
@@ -177,16 +177,13 @@ class WebDavBrowserClient(
                                     if (hrefPath.startsWith("/")) hrefPath else "/$hrefPath"
                                 )
                                 items.add(
-                                    RemoteFileItem(
+                                    remoteFileItem(
                                         name = name,
                                         path = filePath,
                                         isDirectory = current.isCollection,
                                         fileSize = current.fileSize,
-                                        childCount = -1,
                                         dateModified = current.dateModified,
-                                        mimeType = if (!current.isCollection) {
-                                            current.mimeType ?: guessMimeType(name)
-                                        } else null,
+                                        mimeType = current.mimeType,
                                     )
                                 )
                             }

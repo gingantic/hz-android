@@ -32,7 +32,7 @@ import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
-import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 
 import androidx.compose.runtime.Immutable
 
@@ -117,7 +117,7 @@ fun DirectoryBrowsePane(
             properties = buildFileProperties(item),
             onDismiss = { propertiesItem = null },
             probeUri = if (item.isDirectory) null else (item.playbackUri ?: item.path),
-            thumbnailContent = if (!item.isDirectory && (item.mimeType?.startsWith("video") == true || isVideoExtension(item.name))) {
+            thumbnailContent = if (!item.isDirectory && isVideoMedia(item.name, item.mimeType)) {
                 {
                     SubcomposeAsyncImage(
                         model = VideoFrame(item.playbackUri ?: item.path, item.dateModified),
@@ -241,7 +241,9 @@ fun DirectoryBrowsePane(
                             onPlayAllClick = if (onPlayAllFolder != null && (item.isDirectory || isArchiveExtension(item.name))) {
                                 { onPlayAllFolder(item) }
                             } else null,
-                            onPlayAsAudioClick = if (onPlayAsAudio != null && !item.isDirectory && (item.mimeType?.startsWith("video") == true || isVideoExtension(item.name) || item.durationMs > 0)) {
+                            onPlayAsAudioClick = if (onPlayAsAudio != null && !item.isDirectory &&
+                                (isVideoMedia(item.name, item.mimeType) || item.durationMs > 0)
+                            ) {
                                 { onPlayAsAudio(item) }
                             } else null,
                             onCutClick = if (onCutItem != null) {

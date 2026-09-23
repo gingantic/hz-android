@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
-import android.os.Build
 import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,11 +20,13 @@ import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
 import com.rhnxdev.hzplayer.core.util.buildArchiveBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isAudioExtension
+import com.rhnxdev.hzplayer.core.util.isFullStorageGranted
 import com.rhnxdev.hzplayer.core.util.isSolidArchiveExtension
 import com.rhnxdev.hzplayer.core.util.sortFilesByType
 import com.rhnxdev.hzplayer.core.util.storageVolumeLabels
 import com.rhnxdev.hzplayer.core.util.buildBreadcrumbs
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
@@ -207,7 +208,7 @@ class FileBrowserViewModel @Inject constructor(
         if (!ArchiveBrowsePath.isRealFilePath(currentPath)) return
 
         // Writing outside app-specific storage on Android 11+ needs "All files access".
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+        if (!isFullStorageGranted()) {
             _uiState.update { it.copy(showAllFilesAccessPrompt = true) }
             return
         }
@@ -302,22 +303,13 @@ class FileBrowserViewModel @Inject constructor(
             // the playlist drawer can show them (cached items are already enriched;
             // re-enriching is harmless and refreshes stale progress).
             val enriched = enrichItemsWithPlaybackMetadata(children)
-            val sorted = sortFilesByType(
-                enriched,
-                _uiState.value.sortType,
-                isDirectory = { it.isDirectory },
-                name = { it.name },
-                dateModified = { it.dateModified },
-                size = { it.fileSize },
-                duration = { it.durationMs },
-                descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
-            )
+            val sorted = enriched.sortFilesByType(_uiState.value.sortType, _uiState.value.sortDirection)
             onReady(sorted.toVideoPlaylist())
         }
     }
 
     private fun List<FolderItem>.toVideoPlaylist(): List<VideoItem> =
-        filter { !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name)) }
+        filter { !it.isDirectory && isVideoMedia(it.name, it.mimeType) }
             .map { item ->
                 VideoItem(
                     id = item.id,
@@ -361,7 +353,7 @@ class FileBrowserViewModel @Inject constructor(
         if (!canPasteInto(destDir)) return
 
         // Writing outside app-specific storage on Android 11+ needs "All files access".
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+        if (!isFullStorageGranted()) {
             _uiState.update { it.copy(showAllFilesAccessPrompt = true) }
             return
         }
@@ -426,7 +418,7 @@ class FileBrowserViewModel @Inject constructor(
         if (state.isDeleting) return
 
         // Deleting outside app-specific storage on Android 11+ needs "All files access".
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+        if (!isFullStorageGranted()) {
             _uiState.update { it.copy(deleteConfirmItem = null, showAllFilesAccessPrompt = true) }
             return
         }
@@ -734,16 +726,7 @@ class FileBrowserViewModel @Inject constructor(
 
             val cached = cache.get(path)
             if (cached != null) {
-                val sorted = sortFilesByType(
-                    cached,
-                    _uiState.value.sortType,
-                    isDirectory = { it.isDirectory },
-                    name = { it.name },
-                    dateModified = { it.dateModified },
-                    size = { it.fileSize },
-                    duration = { it.durationMs },
-                    descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
-                )
+                val sorted = cached.sortFilesByType(_uiState.value.sortType, _uiState.value.sortDirection)
                 updateLayer(layerIndex) {
                     it.copy(items = sorted, isEmpty = sorted.isEmpty(), error = null, isLoading = false)
                 }
@@ -753,16 +736,7 @@ class FileBrowserViewModel @Inject constructor(
             try {
                 fileRepository.listDirectory(path, showHidden).collect { items ->
                     val enriched = enrichItemsWithPlaybackMetadata(items)
-                    val sorted = sortFilesByType(
-                        enriched,
-                        _uiState.value.sortType,
-                        isDirectory = { it.isDirectory },
-                        name = { it.name },
-                        dateModified = { it.dateModified },
-                        size = { it.fileSize },
-                        duration = { it.durationMs },
-                        descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
-                    )
+                    val sorted = enriched.sortFilesByType(_uiState.value.sortType, _uiState.value.sortDirection)
                     cache.put(path, sorted)
                     updateLayer(layerIndex) {
                         it.copy(items = sorted, isEmpty = items.isEmpty(), error = null, isLoading = false)
@@ -827,16 +801,8 @@ class FileBrowserViewModel @Inject constructor(
         }
     }
 
-    private fun sortArchive(items: List<FolderItem>): List<FolderItem> = sortFilesByType(
-        items,
-        _uiState.value.sortType,
-        isDirectory = { it.isDirectory },
-        name = { it.name },
-        dateModified = { it.dateModified },
-        size = { it.fileSize },
-        duration = { it.durationMs },
-        descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
-    )
+    private fun sortArchive(items: List<FolderItem>): List<FolderItem> =
+        items.sortFilesByType(_uiState.value.sortType, _uiState.value.sortDirection)
 
     /**
      * Immediate children of [prefix] within [entries]. Directory levels are
@@ -899,16 +865,7 @@ class FileBrowserViewModel @Inject constructor(
     private fun reapplySort() {
         val state = _uiState.value
         val sortedLayers = state.layers.map { layer ->
-            layer.copy(items = sortFilesByType(
-                layer.items,
-                state.sortType,
-                isDirectory = { it.isDirectory },
-                name = { it.name },
-                dateModified = { it.dateModified },
-                size = { it.fileSize },
-                duration = { it.durationMs },
-                descending = state.sortDirection == SortDirection.DESCENDING,
-            ))
+            layer.copy(items = layer.items.sortFilesByType(state.sortType, state.sortDirection))
         }
         _uiState.update { it.copy(layers = sortedLayers) }
     }

@@ -38,7 +38,7 @@ import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
-import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.browse.components.AllFilesAccessDialog
@@ -175,7 +175,7 @@ fun FileBrowserScreen(
                     val currentLayerItems = uiState.layers.lastOrNull()?.items
                     val hasVideos = remember(currentLayerItems) {
                         currentLayerItems?.any {
-                            !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name))
+                            !it.isDirectory && isVideoMedia(it.name, it.mimeType)
                         } == true
                     }
 

@@ -1,6 +1,6 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
-import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.remoteFileItem
 import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
@@ -66,14 +66,12 @@ class SmbBrowserClient(
                         val name = file.name.trimEnd('/')
                         val isDir = file.isDirectory
                         val filePath = if (path.endsWith("/")) "$path$name" else "$path/$name"
-                        RemoteFileItem(
+                        remoteFileItem(
                             name = name,
                             path = filePath,
                             isDirectory = isDir,
                             fileSize = if (!isDir) file.length() else 0,
-                            childCount = -1,
                             dateModified = file.lastModified(),
-                            mimeType = if (!isDir) guessMimeType(name) else null,
                         )
                     }
                     .sortedRemote()

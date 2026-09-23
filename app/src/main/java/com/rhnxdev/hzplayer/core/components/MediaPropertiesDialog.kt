@@ -65,8 +65,8 @@ import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.io.MediaInfoProbe
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
-import com.rhnxdev.hzplayer.core.util.isAudioExtension
-import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isAudioMedia
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -104,15 +104,15 @@ fun MediaPropertiesDialog(
     val dateModified = propMap[stringResource(R.string.prop_date_modified)]
 
     val isDirectory = mimeType == null && size == null && duration == null
-    val isAudioFile = mimeType?.startsWith("audio") == true || isAudioExtension(title)
-    val isVideoFile = (mimeType?.startsWith("video") == true || isVideoExtension(title)) && !isAudioFile
+    val isAudioFile = isAudioMedia(title, mimeType)
+    val isVideoFile = isVideoMedia(title, mimeType) && !isAudioFile
 
     LaunchedEffect(probeUri) {
         val uriStr = probeUri
         if (uriStr != null) {
             withContext(Dispatchers.IO) {
                 // 1. Album art via MediaStore (matches the Music tab).
-                if (thumbnailContent == null && albumArtUri.isNullOrBlank() && (isAudioFile || mimeType?.startsWith("audio") == true || isAudioExtension(title))) {
+                if (thumbnailContent == null && albumArtUri.isNullOrBlank() && isAudioFile) {
                     var foundArtUri: String? = null
                     try {
                         val projection = arrayOf(MediaStore.Audio.Media.ALBUM_ID)

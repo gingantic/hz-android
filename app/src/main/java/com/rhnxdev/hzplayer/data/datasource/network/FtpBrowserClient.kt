@@ -1,7 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
 import android.util.Log
-import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.remoteFileItem
 import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
@@ -30,14 +30,12 @@ class FtpBrowserClient(
                 .filter { it.name != "." && it.name != ".." }
                 .map { file ->
                     val filePath = if (path.endsWith("/")) "$path${file.name}" else "$path/${file.name}"
-                    RemoteFileItem(
+                    remoteFileItem(
                         name = file.name,
                         path = filePath,
                         isDirectory = file.isDirectory,
                         fileSize = file.size,
-                        childCount = -1,
                         dateModified = file.timestamp?.timeInMillis ?: 0,
-                        mimeType = if (!file.isDirectory) guessMimeType(file.name) else null,
                     )
                 }
                 .sortedRemote()

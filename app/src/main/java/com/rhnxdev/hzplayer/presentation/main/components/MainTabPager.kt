@@ -36,8 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.rhnxdev.hzplayer.core.designsystem.stableContentStartPadding
 import com.rhnxdev.hzplayer.core.designsystem.stableNavBarHorizontalPadding
-import com.rhnxdev.hzplayer.core.util.isAudioExtension
-import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isAudioMedia
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.presentation.audio.AudioBrowserScreen
 import com.rhnxdev.hzplayer.presentation.browse.FileBrowserScreen
 import com.rhnxdev.hzplayer.presentation.navigation.NavRoutes
@@ -191,8 +191,7 @@ fun MainTabPager(
                                         fullScreenOverlay = isFullScreen,
                                         isActive = pagerState.currentPage == page,
                                         onFileClicked = { file ->
-                                            val isVideoFile = file.mimeType?.startsWith("video/") == true ||
-                                                isVideoExtension(file.name)
+                                            val isVideoFile = isVideoMedia(file.name, file.mimeType)
                                             playerViewModel.playUri(file.path, file.name, isVideo = isVideoFile)
                                             when {
                                                 isVideoFile -> {
@@ -200,8 +199,7 @@ fun MainTabPager(
                                                         "video_player/${file.id}"
                                                     )
                                                 }
-                                                file.mimeType?.startsWith("audio/") == true ||
-                                                    isAudioExtension(file.name) -> {
+                                                isAudioMedia(file.name, file.mimeType) -> {
                                                     navController.navigate(NavRoutes.AUDIO_PLAYER)
                                                 }
                                             }

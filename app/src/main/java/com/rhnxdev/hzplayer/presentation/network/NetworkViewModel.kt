@@ -13,6 +13,7 @@ import com.rhnxdev.hzplayer.core.util.guessMimeType
 import com.rhnxdev.hzplayer.core.util.isAudioExtension
 import com.rhnxdev.hzplayer.core.util.isVideoContentType
 import com.rhnxdev.hzplayer.core.util.isVideoExtension
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.core.util.probeContentType
 import com.rhnxdev.hzplayer.core.util.sortFilesByType
 import com.rhnxdev.hzplayer.domain.model.RemoteAuthException
@@ -338,15 +339,7 @@ class NetworkViewModel @Inject constructor(
 
                 val cached = dirCache.get(path)
                 if (cached != null) {
-                    val sorted = sortFilesByType(
-                        cached,
-                        _uiState.value.sortType,
-                        isDirectory = { it.isDirectory },
-                        name = { it.name },
-                        dateModified = { it.dateModified },
-                        size = { it.fileSize },
-                        descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
-                    )
+                    val sorted = cached.sortFilesByType(_uiState.value.sortType, _uiState.value.sortDirection)
                     updateRemoteLayer(layerIndex) {
                         it.copy(items = sorted, isLoading = false)
                     }
@@ -357,15 +350,7 @@ class NetworkViewModel @Inject constructor(
                 result.fold(
                     onSuccess = { items ->
                         dirCache.put(path, items)
-                        val sorted = sortFilesByType(
-                            items,
-                            _uiState.value.sortType,
-                            isDirectory = { it.isDirectory },
-                            name = { it.name },
-                            dateModified = { it.dateModified },
-                            size = { it.fileSize },
-                            descending = _uiState.value.sortDirection == SortDirection.DESCENDING,
-                        )
+                        val sorted = items.sortFilesByType(_uiState.value.sortType, _uiState.value.sortDirection)
                         updateRemoteLayer(layerIndex) {
                             it.copy(items = sorted, isEmpty = items.isEmpty(), isLoading = false)
                         }
@@ -448,15 +433,7 @@ class NetworkViewModel @Inject constructor(
     private fun reapplyRemoteSort() {
         val state = _uiState.value
         val sortedLayers = state.remoteLayers.map { layer ->
-            layer.copy(items = sortFilesByType(
-                layer.items,
-                state.sortType,
-                isDirectory = { it.isDirectory },
-                name = { it.name },
-                dateModified = { it.dateModified },
-                size = { it.fileSize },
-                descending = state.sortDirection == SortDirection.DESCENDING,
-            ))
+            layer.copy(items = layer.items.sortFilesByType(state.sortType, state.sortDirection))
         }
         _uiState.update { it.copy(remoteLayers = sortedLayers) }
     }
@@ -483,11 +460,9 @@ class NetworkViewModel @Inject constructor(
 
     fun collectVideoPlaylist(): List<VideoItem> {
         val currentLayer = _uiState.value.remoteLayers.lastOrNull() ?: return emptyList()
-        var idCounter = 0L
         return currentLayer.items
-            .filter { !it.isDirectory && (it.mimeType?.startsWith("video") == true || isVideoExtension(it.name)) }
+            .filter { !it.isDirectory && isVideoMedia(it.name, it.mimeType) }
             .map { item ->
-                idCounter++
                 val playbackUri = buildPlaybackUri(item.path) ?: item.path
                 VideoItem(
                     id = item.path.hashCode().toLong(),

@@ -1,7 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
 import android.util.Log
-import com.rhnxdev.hzplayer.core.util.guessMimeType
+import com.rhnxdev.hzplayer.core.util.remoteFileItem
 import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
@@ -31,14 +31,12 @@ class SftpBrowserClient(
                     .filter { it.name != "." && it.name != ".." }
                     .map { entry ->
                     val filePath = if (path.endsWith("/")) "$path${entry.name}" else "$path/${entry.name}"
-                    RemoteFileItem(
+                    remoteFileItem(
                         name = entry.name,
                         path = filePath,
                         isDirectory = entry.isDirectory,
                         fileSize = entry.attributes.size,
-                        childCount = -1,
                         dateModified = entry.attributes.mtime * 1000L,
-                        mimeType = if (!entry.isDirectory) guessMimeType(entry.name) else null,
                     )
                 }
                 .sortedRemote()

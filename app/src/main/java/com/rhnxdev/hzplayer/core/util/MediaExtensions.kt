@@ -1,9 +1,12 @@
 ﻿package com.rhnxdev.hzplayer.core.util
 
 import android.util.Log
+import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.NetworkProtocol
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
+import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import kotlin.jvm.JvmName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -66,6 +69,18 @@ fun isDocumentExtension(name: String): Boolean {
     val ext = name.substringAfterLast('.', "").lowercase()
     return ext in DOCUMENT_EXTENSIONS
 }
+
+/**
+ * True when [name] or [mimeType] identifies a video. The MIME prefix wins when
+ * present; the extension is the fallback for servers that report a generic type
+ * (application/octet-stream) for everything.
+ */
+fun isVideoMedia(name: String, mimeType: String?): Boolean =
+    mimeType?.startsWith("video/") == true || isVideoExtension(name)
+
+/** Audio counterpart of [isVideoMedia]. */
+fun isAudioMedia(name: String, mimeType: String?): Boolean =
+    mimeType?.startsWith("audio/") == true || isAudioExtension(name)
 
 fun defaultPort(protocol: NetworkProtocol): Int = when (protocol) {
     NetworkProtocol.FTP -> 21
@@ -163,11 +178,34 @@ fun List<RemoteFileItem>.sortedRemote(): List<RemoteFileItem> =
     )
 
 /**
+ * Build a directory-listing entry for a protocol browser client. [mimeType] is
+ * the server-declared type when the protocol supplies one (WebDAV); otherwise it
+ * is derived from [name]. Directories always carry a null MIME type so the UI
+ * treats them as containers rather than playable media.
+ */
+fun remoteFileItem(
+    name: String,
+    path: String,
+    isDirectory: Boolean,
+    fileSize: Long = 0,
+    dateModified: Long = 0,
+    mimeType: String? = null,
+): RemoteFileItem = RemoteFileItem(
+    name = name,
+    path = path,
+    isDirectory = isDirectory,
+    fileSize = fileSize,
+    dateModified = dateModified,
+    mimeType = if (isDirectory) null else (mimeType ?: guessMimeType(name)),
+)
+
+/**
  * Sort a file listing dirs-first, then by the chosen [SortType] (name /
- * date-modified / size / duration). Generic over both [FolderItem] and
- * [RemoteFileItem], which expose the same accessors, so the local and remote
- * VMs share one impl. Remote entries use the default duration of zero because
- * remote protocols do not provide duration metadata during directory listing.
+ * date-modified / size / duration) in [direction]. Generic over both
+ * [FolderItem] and [RemoteFileItem], which expose the same accessors, so the
+ * local and remote VMs share one impl. Remote entries use the default duration
+ * of zero because remote protocols do not provide duration metadata during
+ * directory listing. Prefer the accessor-wired overloads below.
  */
 fun <T> sortFilesByType(
     items: List<T>,
@@ -177,7 +215,7 @@ fun <T> sortFilesByType(
     dateModified: (T) -> Long,
     size: (T) -> Long,
     duration: (T) -> Long = { 0L },
-    descending: Boolean = false,
+    direction: SortDirection = SortDirection.ASCENDING,
 ): List<T> {
     val (dirs, files) = items.partition(isDirectory)
     val sortDirs = when (sort) {
@@ -196,8 +234,23 @@ fun <T> sortFilesByType(
         SortType.DURATION -> files.sortedBy(duration)
         else -> files.sortedBy { name(it).lowercase() }
     }
+    val descending = direction == SortDirection.DESCENDING
     val orderedDirs = if (descending) sortDirs.asReversed() else sortDirs
     val orderedFiles = if (descending) sortFiles.asReversed() else sortFiles
     return orderedDirs + orderedFiles
 }
+
+// The two overloads below differ only in the receiver's type argument, which is
+// erased — without @JvmName they would clash on the same JVM signature.
+/** [sortFilesByType] wired to [FolderItem]'s accessors. */
+@JvmName("sortFolderItemsByType")
+fun List<FolderItem>.sortFilesByType(sort: SortType, direction: SortDirection) = sortFilesByType(
+    this, sort, { it.isDirectory }, { it.name }, { it.dateModified }, { it.fileSize }, { it.durationMs }, direction,
+)
+
+/** [sortFilesByType] wired to [RemoteFileItem]'s accessors — no duration. */
+@JvmName("sortRemoteFileItemsByType")
+fun List<RemoteFileItem>.sortFilesByType(sort: SortType, direction: SortDirection) = sortFilesByType(
+    this, sort, { it.isDirectory }, { it.name }, { it.dateModified }, { it.fileSize }, direction = direction,
+)
 
