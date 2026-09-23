@@ -3,6 +3,8 @@ package com.rhnxdev.hzplayer.data.datasource.player
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.datasource.BaseDataSource
+import androidx.media3.datasource.DataSpec
+import java.io.EOFException
 import java.io.InputStream
 
 /**
@@ -51,7 +53,54 @@ abstract class RemoteDataSourceBase(isNetwork: Boolean) : BaseDataSource(isNetwo
         bytesRemaining = C.LENGTH_UNSET.toLong()
     }
 
+    /**
+     * URI with user-info stripped — safe for logs and thrown error messages.
+     * The [Uri.getUserInfo] guard matters: without it a credential-free URI
+     * whose path contains `@` (e.g. `smb://host/movie@2x.mp4`) loses its host.
+     */
+    protected fun safeUri(uri: Uri): String {
+        val raw = uri.toString()
+        if (uri.userInfo == null) return raw
+        val at = raw.indexOf('@')
+        if (at < 0) return raw
+        val schemeEnd = raw.indexOf("://")
+        val start = if (schemeEnd >= 0) schemeEnd + 3 else 0
+        return raw.substring(0, start) + raw.substring(at + 1)
+    }
+
+    /**
+     * Bytes left to read for [dataSpec], preferring an explicit length and
+     * otherwise the transport's total minus the requested offset.
+     * [C.LENGTH_UNSET] for [totalLength] means the size is unknown.
+     */
+    protected fun resolveBytesRemaining(dataSpec: DataSpec, totalLength: Long): Long = when {
+        dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
+        totalLength != C.LENGTH_UNSET.toLong() -> totalLength - dataSpec.position
+        else -> C.LENGTH_UNSET.toLong()
+    }
+
+    /**
+     * Seek forward via [InputStream.skip], falling back to read-1-byte when skip returns 0.
+     * [eofMessage] lets the caller name the failing stream in the EOF error.
+     */
+    protected fun skipFully(stream: InputStream, bytes: Long, eofMessage: String = "Unexpected EOF during seek") {
+        var remaining = bytes
+        while (remaining > 0) {
+            val skipped = stream.skip(remaining)
+            if (skipped > 0) {
+                remaining -= skipped
+                continue
+            }
+            // Some InputStreams return 0 from skip; fall back to reading a byte.
+            if (stream.read() == -1) throw EOFException(eofMessage)
+            remaining--
+        }
+    }
+
     companion object {
         private const val TAG = "RemoteDataSource"
     }
 }
+
+/** Backoff for connection-stage retries: one initial attempt plus 3 retries. */
+internal val REMOTE_OPEN_BACKOFF_MS = longArrayOf(250, 750, 2000)

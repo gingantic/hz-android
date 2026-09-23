@@ -1,8 +1,8 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
-import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
+import com.rhnxdev.hzplayer.core.util.userInfoPair
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.BufferedInputStream
@@ -36,10 +36,7 @@ class WebDavDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
 
         val scheme = dataSpec.uri.scheme?.lowercase() ?: throw IOException("No scheme in URI")
         val isTls = scheme == "webdavs"
-        val userInfo = dataSpec.uri.userInfo ?: ""
-        val parts = userInfo.split(":", limit = 2)
-        val user = Uri.decode(parts.getOrNull(0) ?: "")
-        val pass = Uri.decode(parts.getOrNull(1) ?: "")
+        val (user, pass) = dataSpec.uri.userInfoPair()
         webdavUser = user
         webdavPass = pass
         val host = dataSpec.uri.host ?: throw IOException("No host in URI")
@@ -82,7 +79,7 @@ class WebDavDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         // Open with brief retry/backoff for transient network drops (Wi-Fi
         // handoff). Connection-stage only — HTTP status errors are not retried.
         val httpResponse = run {
-            val backoffMs = longArrayOf(250, 750, 2000)
+            val backoffMs = REMOTE_OPEN_BACKOFF_MS
             var lastErr: IOException? = null
             repeat(backoffMs.size + 1) { attempt ->
                 try {
@@ -117,17 +114,7 @@ class WebDavDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         // Some servers ignore the Range header and answer 200 with the *whole*
         // file. Skip to the requested offset so ExoPlayer gets the right bytes.
         if (httpResponse.code == 200 && dataSpec.position > 0) {
-            var remaining = dataSpec.position
-            while (remaining > 0) {
-                val skipped = stream.skip(remaining)
-                if (skipped > 0) {
-                    remaining -= skipped
-                } else if (stream.read() == -1) {
-                    throw IOException("WebDAV unexpected EOF during seek for $safeUrl")
-                } else {
-                    remaining--
-                }
-            }
+            skipFully(stream, dataSpec.position, "WebDAV unexpected EOF during seek for $safeUrl")
         }
         inputStream = stream
 

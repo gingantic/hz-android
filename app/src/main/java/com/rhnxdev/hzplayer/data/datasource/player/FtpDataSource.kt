@@ -1,9 +1,9 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
-import android.net.Uri
 import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
+import com.rhnxdev.hzplayer.core.util.userInfoPair
 import org.apache.commons.net.ftp.FTPClient
 import java.io.BufferedInputStream
 import java.io.IOException
@@ -27,10 +27,7 @@ class FtpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         uriValue = dataSpec.uri
         transferInitializing(dataSpec)
 
-        val userInfo = dataSpec.uri.userInfo ?: ""
-        val parts = userInfo.split(":", limit = 2)
-        val user = Uri.decode(parts.getOrNull(0) ?: "anonymous")
-        val pass = Uri.decode(parts.getOrNull(1) ?: "")
+        val (user, pass) = dataSpec.uri.userInfoPair()
         val host = dataSpec.uri.host ?: throw IOException("No host in URI")
         val port = dataSpec.uri.port.takeIf { it > 0 } ?: 21
         val path = dataSpec.uri.path ?: "/"
@@ -65,11 +62,7 @@ class FtpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             throw e
         }
 
-        bytesRemaining = when {
-            dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
-            fileLength != C.LENGTH_UNSET.toLong() -> fileLength - dataSpec.position
-            else -> C.LENGTH_UNSET.toLong()
-        }
+        bytesRemaining = resolveBytesRemaining(dataSpec, fileLength)
 
         transferStarted(dataSpec)
         return bytesRemaining
@@ -88,11 +81,6 @@ class FtpDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             ConnectionPool.returnFtp(host, ftpPort, ftpUser ?: "", ftpPass ?: "")
         }
         transferEnded()
-    }
-
-    private fun safeUri(uri: android.net.Uri): String {
-        val s = uri.toString()
-        return s.substringBefore("@") + "@<redacted>"
     }
 
     companion object {

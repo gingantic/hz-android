@@ -1,12 +1,11 @@
 package com.rhnxdev.hzplayer.data.datasource.player
 
-import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
+import com.rhnxdev.hzplayer.core.util.userInfoPair
 import jcifs.smb.SmbException
 import jcifs.smb.SmbFile
 import java.io.BufferedInputStream
-import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 
@@ -31,16 +30,6 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         activeSmbLease = null
     }
 
-    /** URI with user-info stripped — safe for logs and thrown error messages. */
-    private fun safeUri(u: Uri): String {
-        val s = u.toString()
-        val at = s.indexOf('@')
-        if (at < 0) return s
-        val schemeEnd = s.indexOf("://")
-        val start = if (schemeEnd >= 0) schemeEnd + 3 else 0
-        return s.substring(0, start) + s.substring(at + 1)
-    }
-
     override fun open(dataSpec: DataSpec): Long {
         
         uriValue = dataSpec.uri
@@ -49,9 +38,7 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
 
         try {
             val uriStr = dataSpec.uri
-            val userInfo = uriStr.userInfo ?: ""
-            val username = Uri.decode(userInfo.substringBefore(':'))
-            val password = Uri.decode(userInfo.substringAfter(':', ""))
+            val (username, password) = uriStr.userInfoPair()
             val host = uriStr.host ?: throw IOException("No host in URI: ${safeUri(dataSpec.uri)}")
             val port = uriStr.port.takeIf { it > 0 } ?: 445
 
@@ -82,10 +69,7 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             // round-trip, capping at ~45 KB/s regardless of server speed.
             inputStream = BufferedInputStream(rawStream, 512 * 1024)
 
-            bytesRemaining = when {
-                dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
-                else -> fileLength - dataSpec.position
-            }
+            bytesRemaining = resolveBytesRemaining(dataSpec, fileLength)
 
             
             transferStarted(dataSpec)
@@ -120,21 +104,6 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         transferEnded()
     }
 
-    /** Seek forward via InputStream.skip(), falling back to read-1-byte if skip returns 0. */
-    private fun skipFully(stream: InputStream, bytes: Long) {
-        var remaining = bytes
-        while (remaining > 0) {
-            val skipped = stream.skip(remaining)
-            if (skipped > 0) {
-                remaining -= skipped
-                continue
-            }
-            // Some InputStreams return 0 from skip; fallback to read-1
-            if (stream.read() == -1) throw EOFException("Unexpected EOF during seek")
-            remaining--
-        }
-    }
-
     /**
      * Resolve + open the SMB file with transient-failure retry/backoff.
      * Retries connection-stage [IOException]s (network blips) up to 3 times
@@ -151,7 +120,7 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
         cacheKey: String,
         dataSpec: DataSpec,
     ): Triple<SmbFile, Long, InputStream> {
-        val backoffMs = longArrayOf(250, 750, 2000)
+        val backoffMs = REMOTE_OPEN_BACKOFF_MS
         var activeLease = initialLease
         var activeContext = initialLease.context
         var lastErr: IOException? = null
