@@ -19,19 +19,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.SubcomposeAsyncImage
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.core.components.AlbumArtImage
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.components.MediaListItem
-import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.domain.model.AudioItem
-import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.presentation.audio.components.AlbumCard
 import com.rhnxdev.hzplayer.presentation.audio.components.AudioDetailHeader
 
@@ -102,18 +99,10 @@ fun ArtistDetailScreen(
                     durationMs = song.durationMs,
                     isSquareThumbnail = true,
                     thumbnailContent = {
-                        if (song.albumArtUri != null) {
-                            SubcomposeAsyncImage(
-                                model = song.albumArtUri,
-                                contentDescription = song.title,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                                error = { ThumbnailPlaceholder(mediaType = MediaType.AUDIO) },
-                                loading = { ThumbnailPlaceholder(mediaType = MediaType.AUDIO) },
-                            )
-                        } else {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        }
+                        AlbumArtImage(
+                            albumArtUri = song.albumArtUri,
+                            contentDescription = song.title,
+                        )
                     },
                     onClick = {
                         onPlaySongs(uiState.songs, index)

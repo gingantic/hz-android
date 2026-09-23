@@ -32,6 +32,7 @@ import com.rhnxdev.hzplayer.domain.model.Album
 import com.rhnxdev.hzplayer.domain.model.Artist
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.VideoItem
+import com.rhnxdev.hzplayer.core.components.AlbumArtImage
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
@@ -219,22 +220,10 @@ private fun SearchResults(
                     durationMs = song.durationMs,
                     isSquareThumbnail = true,
                     thumbnailContent = {
-                        if (song.albumArtUri != null) {
-                            SubcomposeAsyncImage(
-                                model = song.albumArtUri,
-                                contentDescription = song.title,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                                error = {
-                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                },
-                                loading = {
-                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                }
-                            )
-                        } else {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        }
+                        AlbumArtImage(
+                            albumArtUri = song.albumArtUri,
+                            contentDescription = song.title,
+                        )
                     },
                     onClick = { onAudioClicked(song) },
                     modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -269,22 +258,10 @@ private fun SearchResults(
                     subtitle = albumSubtitle,
                     isSquareThumbnail = true,
                     thumbnailContent = {
-                        if (album.albumArtUri != null) {
-                            SubcomposeAsyncImage(
-                                model = album.albumArtUri,
-                                contentDescription = album.title,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                                error = {
-                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                },
-                                loading = {
-                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                }
-                            )
-                        } else {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        }
+                        AlbumArtImage(
+                            albumArtUri = album.albumArtUri,
+                            contentDescription = album.title,
+                        )
                     },
                     onClick = { onAlbumClicked(album) },
                     modifier = Modifier.padding(horizontal = Spacing.lg),
@@ -312,22 +289,10 @@ private fun SearchResults(
                     subtitle = stringResource(R.string.artist_subtitle, artist.albumCount, artist.trackCount),
                     isSquareThumbnail = true,
                     thumbnailContent = {
-                        if (artist.albumArtUri != null) {
-                            SubcomposeAsyncImage(
-                                model = artist.albumArtUri,
-                                contentDescription = artist.name,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                                error = {
-                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                },
-                                loading = {
-                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                }
-                            )
-                        } else {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        }
+                        AlbumArtImage(
+                            albumArtUri = artist.albumArtUri,
+                            contentDescription = artist.name,
+                        )
                     },
                     onClick = { onArtistClicked(artist) },
                     modifier = Modifier.padding(horizontal = Spacing.lg),

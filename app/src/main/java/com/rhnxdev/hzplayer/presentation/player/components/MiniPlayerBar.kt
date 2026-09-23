@@ -7,8 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import coil3.compose.SubcomposeAsyncImage
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,8 +53,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
-import com.rhnxdev.hzplayer.domain.model.MediaType
-import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
+import com.rhnxdev.hzplayer.core.components.AlbumArtImage
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
@@ -199,22 +196,10 @@ fun MiniPlayerBar(
                                     .size(44.dp)
                                     .clip(RoundedCornerShape(Spacing.sm)),
                             ) {
-                                if (artworkUri != null) {
-                                    SubcomposeAsyncImage(
-                                        model = artworkUri,
-                                        contentDescription = title,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                        error = {
-                                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                        },
-                                        loading = {
-                                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                        }
-                                    )
-                                } else {
-                                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                                }
+                                AlbumArtImage(
+                                    albumArtUri = artworkUri,
+                                    contentDescription = title,
+                                )
                             }
 
                             Spacer(modifier = Modifier.width(Spacing.sm))

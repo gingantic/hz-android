@@ -46,12 +46,9 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
 import androidx.compose.ui.unit.sp
-import com.rhnxdev.hzplayer.domain.model.MediaType
-import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
+import com.rhnxdev.hzplayer.core.components.AlbumArtImage
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
-import coil3.compose.SubcomposeAsyncImage
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import android.content.res.Configuration
 import com.rhnxdev.hzplayer.presentation.player.PlayerUiState
@@ -91,22 +88,10 @@ fun AudioPlayerSheet(
                 contentAlignment = Alignment.Center,
             ) {
                 val artModel = uiState.currentArtworkUri ?: uiState.currentPlaybackUri
-                if (artModel != null) {
-                    SubcomposeAsyncImage(
-                        model = artModel,
-                        contentDescription = title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        error = {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        },
-                        loading = {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        }
-                    )
-                } else {
-                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                }
+                AlbumArtImage(
+                    albumArtUri = artModel,
+                    contentDescription = title,
+                )
             }
 
             // Right side: Track info, seekbar, controls
@@ -212,10 +197,7 @@ fun AudioPlayerSheet(
 
                     IconButton(onClick = onCycleRepeat) {
                         Icon(
-                            imageVector = when (uiState.repeatMode) {
-                                RepeatMode.ONE -> Icons.Default.RepeatOne
-                                else -> Icons.Default.Repeat
-                            },
+                            imageVector = repeatIcon(uiState.repeatMode),
                             contentDescription = stringResource(R.string.repeat),
                             tint = if (uiState.repeatMode != RepeatMode.NONE) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -253,22 +235,10 @@ fun AudioPlayerSheet(
                 contentAlignment = Alignment.Center,
             ) {
                 val artModel = uiState.currentArtworkUri ?: uiState.currentPlaybackUri
-                if (artModel != null) {
-                    SubcomposeAsyncImage(
-                        model = artModel,
-                        contentDescription = title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        error = {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        },
-                        loading = {
-                            ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                        }
-                    )
-                } else {
-                    ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
-                }
+                AlbumArtImage(
+                    albumArtUri = artModel,
+                    contentDescription = title,
+                )
             }
 
             Spacer(modifier = Modifier.height(Spacing.xl))
@@ -390,10 +360,7 @@ fun AudioPlayerSheet(
 
                 IconButton(onClick = onCycleRepeat) {
                     Icon(
-                        imageVector = when (uiState.repeatMode) {
-                            RepeatMode.ONE -> Icons.Default.RepeatOne
-                            else -> Icons.Default.Repeat
-                        },
+                        imageVector = repeatIcon(uiState.repeatMode),
                         contentDescription = stringResource(R.string.repeat),
                         tint = if (uiState.repeatMode != RepeatMode.NONE) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -405,6 +372,15 @@ fun AudioPlayerSheet(
             Spacer(modifier = Modifier.weight(1f))
         }
     }
+}
+
+/**
+ * Repeat-button icon. The button tint already signals on/off, so only ONE needs
+ * a distinct glyph — unlike the 3-state mapping in `PlayerMoreOptionsSheet`.
+ */
+private fun repeatIcon(mode: RepeatMode) = when (mode) {
+    RepeatMode.ONE -> Icons.Default.RepeatOne
+    else -> Icons.Default.Repeat
 }
 
 /**

@@ -16,18 +16,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.SubcomposeAsyncImage
+import com.rhnxdev.hzplayer.core.components.AlbumArtImage
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
 import com.rhnxdev.hzplayer.core.components.MediaListItem
-import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.domain.model.AudioItem
-import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.presentation.audio.components.AudioDetailHeader
 
 @Composable
@@ -94,16 +91,7 @@ private fun TrackNumber(trackNumber: Int, albumArtUri: String?, title: String) {
                 textAlign = TextAlign.Center,
             )
         }
-    } else if (albumArtUri != null) {
-        SubcomposeAsyncImage(
-            model = albumArtUri,
-            contentDescription = title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-            error = { ThumbnailPlaceholder(mediaType = MediaType.AUDIO) },
-            loading = { ThumbnailPlaceholder(mediaType = MediaType.AUDIO) },
-        )
     } else {
-        ThumbnailPlaceholder(mediaType = MediaType.AUDIO)
+        AlbumArtImage(albumArtUri = albumArtUri, contentDescription = title)
     }
 }

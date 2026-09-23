@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,16 +22,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.SubcomposeAsyncImage
 import com.rhnxdev.hzplayer.R
-import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
+import com.rhnxdev.hzplayer.core.components.AlbumArtImage
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
-import com.rhnxdev.hzplayer.domain.model.MediaType
 
 /**
  * Shared header for album / artist detail: large art, title, subtitle, and
@@ -60,18 +56,11 @@ fun AudioDetailHeader(
             .fillMaxWidth(0.6f)
             .aspectRatio(1f)
             .clip(artShape)
-        if (albumArtUri != null) {
-            SubcomposeAsyncImage(
-                model = albumArtUri,
-                contentDescription = title,
-                modifier = artModifier,
-                contentScale = ContentScale.Crop,
-                error = { ThumbnailPlaceholder(mediaType = MediaType.AUDIO, modifier = Modifier.fillMaxSize()) },
-                loading = { ThumbnailPlaceholder(mediaType = MediaType.AUDIO, modifier = Modifier.fillMaxSize()) },
-            )
-        } else {
-            ThumbnailPlaceholder(mediaType = MediaType.AUDIO, modifier = artModifier)
-        }
+        AlbumArtImage(
+            albumArtUri = albumArtUri,
+            contentDescription = title,
+            modifier = artModifier,
+        )
 
         Spacer(modifier = Modifier.height(Spacing.md))
 
