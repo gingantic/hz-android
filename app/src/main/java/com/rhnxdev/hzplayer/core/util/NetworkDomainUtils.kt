@@ -62,3 +62,14 @@ object NetworkDomainUtils {
         return false
     }
 }
+
+/**
+ * Drop a leading `http://` / `https://` so the URL reads as host + path in a
+ * compact UI (tab title, address bar, history row). Case-insensitive; any other
+ * scheme (`about:`, `file:`, `content:`) passes through untouched.
+ */
+fun String.withoutScheme(): String = when {
+    startsWith("https://", ignoreCase = true) -> substring(8)
+    startsWith("http://", ignoreCase = true) -> substring(7)
+    else -> this
+}

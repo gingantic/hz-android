@@ -247,3 +247,11 @@ fun StorageVolume.mountDirectory(): File? {
         null
     }
 }
+
+/**
+ * Whether the app holds [android.Manifest.permission.MANAGE_EXTERNAL_STORAGE]
+ * (i.e. full file-system access). Always true below Android 11, where the
+ * permission does not exist.
+ */
+fun isFullStorageGranted(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
