@@ -11,6 +11,7 @@ import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.next
+import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleMimeType
@@ -316,8 +317,14 @@ class PlayerViewModel @Inject constructor(
 
     private fun observeActiveEngine() {
         viewModelScope.launch {
-            userPreferencesRepository.activeEngine
-                .distinctUntilChanged()
+            combine(
+                userPreferencesRepository.activeEngine,
+                userPreferencesRepository.disableHdr
+            ) { type, disableHdr ->
+                // Mirror the repository's effective engine: Force SDR routes to
+                // NATIVE_FFMPEG, the only engine that can tone-map HDR to SDR.
+                if (disableHdr) EngineType.NATIVE_FFMPEG else type
+            }.distinctUntilChanged()
                 .collect { type -> _uiState.update { it.copy(activeEngineType = type) } }
         }
     }
@@ -330,17 +337,11 @@ class PlayerViewModel @Inject constructor(
 
     private fun observeUseSurfaceView() {
         viewModelScope.launch {
-            combine(
-                userPreferencesRepository.useSurfaceView,
-                userPreferencesRepository.disableHdr
-            ) { useSurface, disableHdr ->
-                // When Force SDR mode is enabled, route through TextureView so Android's
-                // RenderThread composites into the window's standard 8-bit SDR surface without
-                // triggering display panel HDR brightness.
-                if (disableHdr) false else useSurface
-            }.distinctUntilChanged().collect { useSurface ->
-                _uiState.update { it.copy(useSurfaceView = useSurface) }
-            }
+            userPreferencesRepository.useSurfaceView
+                .distinctUntilChanged()
+                .collect { useSurface ->
+                    _uiState.update { it.copy(useSurfaceView = useSurface) }
+                }
         }
     }
 

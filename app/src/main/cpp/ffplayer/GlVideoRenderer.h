@@ -24,7 +24,6 @@ private:
     GLint locIs10Bit = -1;
     GLint locColorStd = -1;
     GLint locHdrTransfer = -1;
-    GLint locForceSdr = -1;
 
     static GLuint compileShader(GLenum type, const char* src) {
         GLuint shader = glCreateShader(type);
@@ -73,7 +72,6 @@ private:
             "uniform int u_is10Bit;\n"
             "uniform int u_colorStd;\n"
             "uniform int u_hdrTransfer;\n"
-            "uniform int u_forceSdr;\n"
             "\n"
             "vec3 hableCurve(vec3 x) {\n"
             "    const float A = 0.15;\n"
@@ -145,7 +143,7 @@ private:
             "    }\n"
             "    rgb = clamp(rgb, 0.0, 1.0);\n"
             "\n"
-            "    if (u_hdrTransfer == 1 || u_hdrTransfer == 2 || u_forceSdr == 1) {\n"
+            "    if (u_hdrTransfer == 1 || u_hdrTransfer == 2) {\n"
             "        vec3 lin;\n"
             "        if (u_hdrTransfer == 2) {\n"
             "            lin = hlgToLinear(rgb) * 3.8;\n"
@@ -186,7 +184,6 @@ private:
         locIs10Bit = glGetUniformLocation(program, "u_is10Bit");
         locColorStd = glGetUniformLocation(program, "u_colorStd");
         locHdrTransfer = glGetUniformLocation(program, "u_hdrTransfer");
-        locForceSdr = glGetUniformLocation(program, "u_forceSdr");
     }
 
     void initTextures() {
@@ -319,7 +316,7 @@ public:
         texIs10Bit = -1;
     }
 
-    bool render(AVFrame* f, bool forceSdr, int rotation = 0) {
+    bool render(AVFrame* f, int rotation = 0) {
         if (!f || !f->data[0] || !isReady() || !program) return false;
         if (!eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) return false;
 
@@ -403,6 +400,10 @@ public:
         if (f->color_primaries == AVCOL_PRI_BT2020) colorStd = 2;
         else if (f->color_primaries == AVCOL_PRI_BT709 || w >= 1280 || h >= 720) colorStd = 1;
 
+        // Keyed off the frame's own transfer function, never off the global
+        // Force-SDR flag: forcing the PQ EOTF over SDR data crushes midtones to
+        // near-black. Force-SDR belongs at decoder-config level (HwVideoDecoder),
+        // where the frame's transfer function is not yet known.
         int hdrTransfer = 0;
         if (f->color_trc == AVCOL_TRC_SMPTE2084) hdrTransfer = 1;
         else if (f->color_trc == AVCOL_TRC_ARIB_STD_B67) hdrTransfer = 2;
@@ -413,7 +414,6 @@ public:
         glUniform1i(locIs10Bit, is10Bit ? 1 : 0);
         glUniform1i(locColorStd, colorStd);
         glUniform1i(locHdrTransfer, hdrTransfer);
-        glUniform1i(locForceSdr, forceSdr ? 1 : 0);
 
         EGLint surfW = 0, surfH = 0;
         eglQuerySurface(eglDisplay, eglSurface, EGL_WIDTH, &surfW);

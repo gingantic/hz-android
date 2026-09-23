@@ -13,6 +13,8 @@ import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -100,8 +102,11 @@ class SettingsViewModel @Inject constructor(
     /** Engines registered via Hilt multibinding. */
     val availableEngines: List<EngineType> get() = playerRepository.availableEngines
 
-    /** Currently selected playback engine (persisted preference). */
-    val activeEngine: StateFlow<EngineType> = prefs.activeEngine
+    /** Engine actually in use. Force SDR overrides the persisted choice with the
+     *  native engine — the only one that can tone-map HDR to SDR. */
+    val activeEngine: StateFlow<EngineType> = combine(prefs.activeEngine, prefs.disableHdr) { type, disableHdr ->
+        if (disableHdr) EngineType.NATIVE_FFMPEG else type
+    }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), EngineType.EXO_PLAYER)
 
     /** Switch the active engine. Stops current playback; takes effect on next play. */

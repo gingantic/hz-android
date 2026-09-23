@@ -159,7 +159,7 @@ Before modifying existing code: read the **entire file**, understand *why* it's 
 
 | Feature | Status |
 |---|---|
-| HDR→SDR colour correction | 🔧 In progress — the `disableHdr` pref is wired through `UserPreferencesRepository` → `PlayerRepositoryImpl` → both engines; the colour-correct pipeline itself is still a no-op |
+| HDR→SDR colour correction | ✅ Done for `NATIVE_FFMPEG` — HW via MediaCodec tone-map keys, SW via the GL/CPU tone mapper. Force SDR routes playback to that engine; the Exo engines have no tone mapping (Media3 has no playback API for it) |
 | Custom `SubtitleOverlay` (replace built-in PlayerView subtitles) | ⏸ Parked — built-in active for reliability; native engine uses libass overlay |
 
 ---

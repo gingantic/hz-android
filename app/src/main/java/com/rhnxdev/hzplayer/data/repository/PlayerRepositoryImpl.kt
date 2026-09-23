@@ -26,6 +26,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -57,7 +59,16 @@ class PlayerRepositoryImpl @Inject constructor(
 
     init {
         scope.launch {
-            userPreferencesRepository.activeEngine.collect { type ->
+            combine(
+                userPreferencesRepository.activeEngine,
+                userPreferencesRepository.disableHdr
+            ) { type, disableHdr ->
+                // Force SDR only exists on the native engine. Media3 has no
+                // playback tone-mapping API, so the Exo engines can do nothing
+                // but "interpret HDR as SDR" — which Google documents as washed
+                // out. Routing to native is the only correct tone-map path.
+                if (disableHdr) EngineType.NATIVE_FFMPEG else type
+            }.distinctUntilChanged().collect { type ->
                 if (engines.containsKey(type)) {
                     _activeEngineType.value = type
                     // FFMPEG shares the ExoPlayer pipeline; the flag reorders the

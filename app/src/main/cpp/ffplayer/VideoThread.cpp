@@ -174,7 +174,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             if (!glRendererInitialized || sChanged) {
                 glRendererInitialized = glRenderer.init(ctx->nativeWindow, sChanged);
             }
-            if (glRendererInitialized && glRenderer.render(f, ctx->forceSdr.load(), ctx->videoRotation)) {
+            if (glRendererInitialized && glRenderer.render(f, ctx->videoRotation)) {
                 ctx->totalRenderedFrames.fetch_add(1, std::memory_order_relaxed);
                 ctx->notifyFrameRendered(env, ptsUs);
                 if (ctx->isBuffering.exchange(false) || isSeekFrame) {
@@ -196,6 +196,8 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 }
                 ANativeWindow_Buffer wb;
                 if (ANativeWindow_lock(ctx->nativeWindow, &wb, nullptr) == 0) {
+                    // Same rule as the GL path: only tone-map when the frame
+                    // actually carries HDR, so Force-SDR never darkens SDR video.
                     bool isHdr = (f->color_trc == AVCOL_TRC_SMPTE2084 ||
                                   f->color_trc == AVCOL_TRC_ARIB_STD_B67 ||
                                   f->color_primaries == AVCOL_PRI_BT2020 ||
@@ -203,8 +205,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                                   f->format == AV_PIX_FMT_YUV420P10BE ||
                                   f->format == AV_PIX_FMT_YUV422P10LE ||
                                   f->format == AV_PIX_FMT_YUV444P10LE ||
-                                  f->format == AV_PIX_FMT_YUV420P12LE ||
-                                  ctx->forceSdr.load());
+                                  f->format == AV_PIX_FMT_YUV420P12LE);
 
                     if (isHdr) {
                         bool isHlg = (f->color_trc == AVCOL_TRC_ARIB_STD_B67);

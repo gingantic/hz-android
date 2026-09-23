@@ -79,14 +79,6 @@ class MediaPlayerHolder @Inject constructor(
             requestDecoderRebuild()
         }
 
-    /** When true, forces HDR to SDR tone-mapping. */
-    @Volatile var disableHdr: Boolean = false
-        set(value) {
-            if (field == value) return
-            field = value
-            requestDecoderRebuild()
-        }
-
     /** When true (the "FFmpeg" engine selection), the FFmpeg software renderers
      *  are indexed before the MediaCodec ones, forcing every FFmpeg-supported
      *  codec through software decode. Same deferred-rebuild semantics as

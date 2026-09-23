@@ -118,7 +118,9 @@ interface IPlayerEngine {
      *  Default no-op — only engines with selectable decoders override it. */
     fun setDecoderMode(mode: com.rhnxdev.hzplayer.domain.model.DecoderMode) {}
 
-    /** Toggle forced SDR tone-mapping for HDR content. Default false. */
+    /** Toggle forced SDR tone-mapping for HDR content. Default false.
+     *  Only [EngineType.NATIVE_FFMPEG] implements it — Media3 has no playback
+     *  tone-mapping API, so the Exo engines cannot. */
     fun setDisableHdr(disabled: Boolean) {}
 
     /** Prefer the FFmpeg software renderers over platform decoders (the

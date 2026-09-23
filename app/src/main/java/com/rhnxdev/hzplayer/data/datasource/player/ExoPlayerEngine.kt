@@ -90,10 +90,6 @@ class ExoPlayerEngine @Inject constructor(
         playerHolder.decoderMode = mode
     }
 
-    override fun setDisableHdr(disabled: Boolean) {
-        playerHolder.disableHdr = disabled
-    }
-
     /** Toggle FFmpeg-first renderer ordering (the "FFmpeg" engine selection).
      *  Forwards to the holder; rebuilt player applies it on the next play. */
     override fun setFfmpegPreferred(preferred: Boolean) {
