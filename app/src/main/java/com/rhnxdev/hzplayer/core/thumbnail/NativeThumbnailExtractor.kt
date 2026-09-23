@@ -30,18 +30,8 @@ object NativeThumbnailExtractor {
         positionPercent: Float,
         maxWidth: Int,
         fastMode: Boolean = false,
-    ): Bitmap? {
-        if (!loaded) return null
-        return try {
-            nativeExtract(bridge, positionPercent, maxWidth, fastMode)
-        } catch (e: Exception) {
-            android.util.Log.e(TAG, "nativeExtract failed", e)
-            null
-        } catch (e: UnsatisfiedLinkError) {
-            android.util.Log.e(TAG, "nativeExtract linkage error", e)
-            loaded = false
-            null
-        }
+    ): Bitmap? = guarded("nativeExtract") {
+        nativeExtract(bridge, positionPercent, maxWidth, fastMode)
     }
 
     private external fun nativeExtract(
@@ -57,9 +47,8 @@ object NativeThumbnailExtractor {
      * the demuxer could determine are present. Returns null when the native lib
      * is unavailable or the source can't be parsed.
      */
-    fun probeMediaInfo(bridge: RandomAccessMediaSource): Map<String, String>? {
-        if (!loaded) return null
-        return try {
+    fun probeMediaInfo(bridge: RandomAccessMediaSource): Map<String, String>? =
+        guarded("nativeProbeMediaInfo") {
             nativeProbeMediaInfo(bridge)?.let { arr ->
                 buildMap {
                     var i = 0
@@ -69,15 +58,7 @@ object NativeThumbnailExtractor {
                     }
                 }.takeIf { it.isNotEmpty() }
             }
-        } catch (e: Exception) {
-            android.util.Log.e(TAG, "nativeProbeMediaInfo failed", e)
-            null
-        } catch (e: UnsatisfiedLinkError) {
-            android.util.Log.e(TAG, "nativeProbeMediaInfo linkage error", e)
-            loaded = false
-            null
         }
-    }
 
     private external fun nativeProbeMediaInfo(bridge: RandomAccessMediaSource): Array<String>?
 
@@ -87,9 +68,8 @@ object NativeThumbnailExtractor {
      * native lib is unavailable, the source can't be parsed, or it has no
      * chapters.
      */
-    fun probeChapters(bridge: RandomAccessMediaSource): List<Triple<Long, Long, String>>? {
-        if (!loaded) return null
-        return try {
+    fun probeChapters(bridge: RandomAccessMediaSource): List<Triple<Long, Long, String>>? =
+        guarded("nativeProbeChapters") {
             nativeProbeChapters(bridge)?.let { arr ->
                 buildList {
                     var i = 0
@@ -103,17 +83,29 @@ object NativeThumbnailExtractor {
                     }
                 }.takeIf { it.isNotEmpty() }
             }
+        }
+
+    private external fun nativeProbeChapters(bridge: RandomAccessMediaSource): Array<String>?
+
+    /**
+     * Run a native call behind the library-loaded check. A mid-flight
+     * [UnsatisfiedLinkError] marks the lib unavailable so later calls short-circuit,
+     * and any other failure is logged; both become null so callers degrade instead
+     * of crashing.
+     */
+    private inline fun <T> guarded(name: String, block: () -> T?): T? {
+        if (!loaded) return null
+        return try {
+            block()
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "nativeProbeChapters failed", e)
+            android.util.Log.e(TAG, "$name failed", e)
             null
         } catch (e: UnsatisfiedLinkError) {
-            android.util.Log.e(TAG, "nativeProbeChapters linkage error", e)
+            android.util.Log.e(TAG, "$name linkage error", e)
             loaded = false
             null
         }
     }
-
-    private external fun nativeProbeChapters(bridge: RandomAccessMediaSource): Array<String>?
 
     private const val TAG = "NativeThumbnailExtractor"
 }

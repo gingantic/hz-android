@@ -15,10 +15,10 @@ import coil3.key.Keyer
 import coil3.request.Options
 import com.rhnxdev.hzplayer.core.io.ArchiveRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.LocalRandomAccessSource
-import com.rhnxdev.hzplayer.core.io.SmbRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.withSmbSource
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
+import com.rhnxdev.hzplayer.core.util.userInfoPair
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
-import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
 import jcifs.smb.SmbFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -164,49 +164,12 @@ class VideoFrameFetcher(
         }
     }
 
-    private fun extractSmbFrame(remoteUri: String): Bitmap? {
-        val androidUri = Uri.parse(remoteUri)
-        val username = Uri.decode(androidUri.userInfo?.substringBefore(':') ?: "")
-        val password = Uri.decode(androidUri.userInfo?.substringAfter(':', "") ?: "")
-        val host = androidUri.host ?: run {
-            return null
+    private fun extractSmbFrame(remoteUri: String): Bitmap? =
+        withSmbSource(remoteUri, TAG) { bridge ->
+            NativeThumbnailExtractor.extractThumbnail(
+                bridge, 0.40f, THUMB_MAX_WIDTH_NETWORK, fastMode = true
+            )
         }
-        val port = androidUri.port.takeIf { it > 0 } ?: 445
-        
-        // Resolve the target by walking the directory tree via listFiles() rather
-        // than constructing an SmbFile from a URL containing the path. jcifs
-        // mis-handles %-encoded segments (spaces → "file not found", emoji /
-        // fullwidth CJK → "syntax incorrect"). See [SmbPathResolver], which also
-        // caches directory listings so a burst of thumbnails in one folder shares
-        // a single listFiles() round-trip.
-        val segments = SmbPathResolver.decodedSegmentsOf(androidUri.encodedPath)
-        if (segments.isEmpty()) {
-            Log.w(TAG, "extractSmbFrame: no path in $remoteUri"); return null
-        }
-
-        return try {
-            val ctx = ConnectionPool.borrowSmbThumbnailContext(host, port, username, password)
-            try {
-                val file = SmbPathResolver.resolve(ctx, host, port, segments) ?: run {
-                    Log.w(TAG, "extractSmbFrame: file not found: $remoteUri"); return null
-                }
-                val size = file.length()
-                val bridge = SmbRandomAccessSource(file, size, lightweight = true)
-                try {
-                    NativeThumbnailExtractor.extractThumbnail(
-                        bridge, 0.40f, THUMB_MAX_WIDTH_NETWORK, fastMode = true
-                    )
-                } finally {
-                    bridge.close()
-                }
-            } finally {
-                ConnectionPool.returnSmbThumbnailContext(host, port, username, password)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "extractSmbFrame: failed", e)
-            null
-        }
-    }
 
     private fun extractRemoteFrame(remoteUri: String): Bitmap? {
         val tempFile = try {
@@ -387,10 +350,7 @@ class VideoFrameFetcher(
         val uri = Uri.parse(url)
         val host = uri.host ?: return
         val port = uri.port.takeIf { it > 0 } ?: if (scheme == "webdavs") 443 else 80
-        val userInfo = uri.userInfo ?: ""
-        val parts = userInfo.split(":", limit = 2)
-        val user = Uri.decode(parts.getOrNull(0) ?: "")
-        val pass = Uri.decode(parts.getOrNull(1) ?: "")
+        val (user, pass) = uri.userInfoPair()
         val httpUrl = url
             .replaceFirst("webdav://", "http://", ignoreCase = true)
             .replaceFirst("webdavs://", "https://", ignoreCase = true)

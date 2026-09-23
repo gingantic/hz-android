@@ -6,8 +6,6 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.rhnxdev.hzplayer.core.thumbnail.NativeThumbnailExtractor
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
-import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
-import com.rhnxdev.hzplayer.data.datasource.player.SmbPathResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.rhnxdev.hzplayer.domain.model.ChapterInfo
@@ -98,7 +96,7 @@ object MediaInfoProbe {
         val scheme = uriOrPath.substringBefore("://", "").lowercase()
         return when {
             scheme == "archive" -> withArchiveSource(uriOrPath, block)
-            scheme == "smb" -> withSmbSource(uriOrPath, block)
+            scheme == "smb" -> withSmbSource(uriOrPath, TAG, block)
             scheme == "content" -> withContentSource(context, uriOrPath, block)
             scheme == "file" -> Uri.parse(uriOrPath).path?.let { withLocalSource(it, block) }
             scheme.isEmpty() -> withLocalSource(uriOrPath, block)
@@ -159,38 +157,4 @@ object MediaInfoProbe {
         }
     }
 
-    /**
-     * `smb://` URI — borrow a pooled CIFS context, resolve the file, and read
-     * through a lightweight [SmbRandomAccessSource]. The context stays borrowed for
-     * the whole probe because the bridge reads lazily.
-     */
-    private fun <T> withSmbSource(remoteUri: String, block: (RandomAccessMediaSource) -> T?): T? {
-        val androidUri = Uri.parse(remoteUri)
-        val username = Uri.decode(androidUri.userInfo?.substringBefore(':') ?: "")
-        val password = Uri.decode(androidUri.userInfo?.substringAfter(':', "") ?: "")
-        val host = androidUri.host ?: return null
-        val port = androidUri.port.takeIf { it > 0 } ?: 445
-
-        val segments = SmbPathResolver.decodedSegmentsOf(androidUri.encodedPath)
-        if (segments.isEmpty()) return null
-
-        return try {
-            val ctx = ConnectionPool.borrowSmbThumbnailContext(host, port, username, password)
-            try {
-                val file = SmbPathResolver.resolve(ctx, host, port, segments) ?: return null
-                val size = file.length()
-                val bridge = SmbRandomAccessSource(file, size, lightweight = true)
-                try {
-                    block(bridge)
-                } finally {
-                    bridge.close()
-                }
-            } finally {
-                ConnectionPool.returnSmbThumbnailContext(host, port, username, password)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "withSmbSource failed: ${e.message}")
-            null
-        }
-    }
 }
