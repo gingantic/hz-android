@@ -59,6 +59,7 @@ import com.rhnxdev.hzplayer.core.designsystem.stableStatusBarTopDp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.formatDebugSpeed
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.presentation.player.PlayerUiState
@@ -401,7 +402,7 @@ fun PlayerControlsOverlay(
 private fun NetworkSpeedChip(trafficFlow: StateFlow<NetworkTraffic>) {
     val traffic by trafficFlow.collectAsStateWithLifecycle()
     Text(
-        text = stringResource(R.string.network_speed_format, formatSpeed(traffic.speedDown)),
+        text = stringResource(R.string.network_speed_format, formatDebugSpeed(traffic.speedDown)),
         color = Color.White.copy(alpha = 0.85f),
         fontSize = 11.sp,
         fontWeight = FontWeight.Medium,
@@ -441,12 +442,6 @@ private fun SeekProgressRow(
         onSeekEnd = onSeekEnd,
         onScrub = onScrub,
     )
-}
-
-private fun formatSpeed(bytesPerSec: Long): String = when {
-    bytesPerSec < 1024 -> "$bytesPerSec B/s"
-    bytesPerSec < 1024 * 1024 -> "%.1f KB/s".format(bytesPerSec / 1024.0)
-    else -> "%.1f MB/s".format(bytesPerSec / (1024.0 * 1024.0))
 }
 
 // ponytail: keep in sync with PlayerRepositoryImpl.startTrafficPolling

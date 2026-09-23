@@ -21,9 +21,11 @@ import com.rhnxdev.hzplayer.core.io.LocalRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.SmbRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.RandomAccessMediaSource
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
+import com.rhnxdev.hzplayer.core.util.userInfoPair
 import com.rhnxdev.hzplayer.data.datasource.player.ffmpeg.FfmpegNativePlayer
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.SubtitleConverters
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isNonAssSubtitleMimeType
 import com.rhnxdev.hzplayer.domain.model.AspectRatioMode
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
@@ -544,8 +546,7 @@ class FfmpegNativeEngine @Inject constructor(
                 }
                 scheme == "smb" -> {
                     val androidUri = uri
-                    val username = Uri.decode(androidUri.userInfo?.substringBefore(':') ?: "")
-                    val password = Uri.decode(androidUri.userInfo?.substringAfter(':', "") ?: "")
+                    val (username, password) = androidUri.userInfoPair()
                     val host = androidUri.host ?: ""
                     val port = if (androidUri.port > 0) androidUri.port else 445
                     val segments = SmbPathResolver.decodedSegmentsOf(androidUri.encodedPath)
@@ -734,16 +735,6 @@ class FfmpegNativeEngine @Inject constructor(
         assHandler.onSeek(clamped)
     }
 
-    override fun skipForward(ms: Long) {
-        // seekTo() clamps; just offset from the current position.
-        seekTo(getCurrentPosition() + ms)
-    }
-
-    override fun skipBackward(ms: Long) {
-        val target = (getCurrentPosition() - ms).coerceAtLeast(0L)
-        seekTo(target)
-    }
-
     override fun setScrubbing(isScrubbing: Boolean) {
         player.setScrubbing(isScrubbing)
     }
@@ -867,7 +858,7 @@ class FfmpegNativeEngine @Inject constructor(
             val data = ExoMediaItemHelper.readSubtitleUriBytes(appContext, playerHolder, uri) ?: return@launch
             val assBytes = if (ext == "ass" || ext == "ssa") {
                 data
-            } else if (SubtitleConverters.isConvertibleSubtitleFormat(mimeType)) {
+            } else if (isNonAssSubtitleMimeType(mimeType)) {
                 SubtitleConverters.convertToAss(data, mimeType, videoWidth, videoHeight)
             } else {
                 null

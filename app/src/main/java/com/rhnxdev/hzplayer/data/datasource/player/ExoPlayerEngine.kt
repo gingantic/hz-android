@@ -20,6 +20,7 @@ import androidx.media3.ui.PlayerView
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.SubtitleConverters
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleFormat
+import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isNonAssSubtitleMimeType
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.DecoderMode
@@ -219,16 +220,6 @@ class ExoPlayerEngine @Inject constructor(
         assHandler.onSeek(clamped)
     }
 
-    override fun skipForward(ms: Long) {
-        // seekTo() clamps; just offset from the current position.
-        seekTo(player.currentPosition + ms)
-    }
-
-    override fun skipBackward(ms: Long) {
-        val newPos = (player.currentPosition - ms).coerceAtLeast(0)
-        seekTo(newPos)
-    }
-
     override fun skipToNext() {
         if (player.mediaItemCount > 1) player.seekToNextMediaItem()
         else seekTo(player.currentPosition + 10_000)
@@ -326,7 +317,7 @@ class ExoPlayerEngine @Inject constructor(
         val mimeType = ExoMediaItemHelper.inferSubtitleMimeType(uri)
         val displayName = uri.lastPathSegment ?: uri.toString()
 
-        if (ext == "ass" || ext == "ssa" || SubtitleConverters.isConvertibleSubtitleFormat(mimeType)) {
+        if (ext == "ass" || ext == "ssa" || isNonAssSubtitleMimeType(mimeType)) {
             subtitleDiscoveryScope.launch {
                 val data = ExoMediaItemHelper.readSubtitleUriBytes(appContext, playerHolder, uri)
                 withContext(Dispatchers.Main) {

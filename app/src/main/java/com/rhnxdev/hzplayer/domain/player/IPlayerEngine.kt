@@ -59,11 +59,11 @@ interface IPlayerEngine {
     /** Seek to an absolute position in milliseconds. */
     fun seekTo(positionMs: Long)
 
-    /** Skip forward by [ms] milliseconds. */
-    fun skipForward(ms: Long = 10000)
+    /** Skip forward by [ms] milliseconds. Clamping is inherited from [seekTo]. */
+    fun skipForward(ms: Long = 10000) = seekTo(getCurrentPosition() + ms)
 
-    /** Skip backward by [ms] milliseconds. */
-    fun skipBackward(ms: Long = 10000)
+    /** Skip backward by [ms] milliseconds. Clamping is inherited from [seekTo]. */
+    fun skipBackward(ms: Long = 10000) = seekTo((getCurrentPosition() - ms).coerceAtLeast(0L))
 
     /** Set whether fast keyframe live scrubbing is actively in progress. */
     fun setScrubbing(isScrubbing: Boolean) {}
