@@ -222,6 +222,7 @@
     <string name="about_tech_hilt">Hilt (DI) &amp; Coil</string>
     <string name="about_copyright">© %1$d Hz Player. Free &amp; open source.</string>
     <string name="about_build_date">Build date: %1$s</string>
+    <string name="about_github_link">github.com/gingantic</string>
     <!-- Server config dialog -->
     <string name="label_name">Name</string>
     <string name="placeholder_name">My Server</string>
