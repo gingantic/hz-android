@@ -85,7 +85,7 @@ android {
         val commitCount = getGitCommitCount()
         val commitHash = getGitCommitHash()
         versionCode = commitCount
-        versionName = "0.9.1-build.$commitCount+$commitHash"
+        versionName = "0.9.6-build.$commitCount+$commitHash"
 
         val r2BaseUrl = (project.findProperty("R2_UPDATE_BASE_URL") as? String)
             ?: System.getenv("R2_UPDATE_BASE_URL")

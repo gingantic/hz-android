@@ -84,7 +84,7 @@ The main application package is `com.rhnxdev.hzplayer`. Architecture, player-sta
 The version name is generated from Git metadata:
 
 ```text
-0.9.1-build.<commit-count>+<short-hash>
+0.9.6-build.<commit-count>+<short-hash>
 ```
 
 The version code is the number of commits in the repository.
