@@ -11,7 +11,6 @@ import com.rhnxdev.hzplayer.domain.model.OrientationMode
 import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.next
-import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleMimeType
@@ -25,7 +24,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -317,14 +315,11 @@ class PlayerViewModel @Inject constructor(
 
     private fun observeActiveEngine() {
         viewModelScope.launch {
-            combine(
-                userPreferencesRepository.activeEngine,
-                userPreferencesRepository.disableHdr
-            ) { type, disableHdr ->
-                // Mirror the repository's effective engine: Force SDR routes to
-                // NATIVE_FFMPEG, the only engine that can tone-map HDR to SDR.
-                if (disableHdr) EngineType.NATIVE_FFMPEG else type
-            }.distinctUntilChanged()
+            // Mirror the repository's effective engine — the persisted choice.
+            // Force SDR no longer masks this; enabling it switches the engine to
+            // NATIVE_FFMPEG at the source, so the persisted value already reflects it.
+            userPreferencesRepository.activeEngine
+                .distinctUntilChanged()
                 .collect { type -> _uiState.update { it.copy(activeEngineType = type) } }
         }
     }

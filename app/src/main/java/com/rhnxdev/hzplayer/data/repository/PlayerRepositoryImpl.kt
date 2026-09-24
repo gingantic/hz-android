@@ -26,7 +26,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.isActive
@@ -59,23 +58,23 @@ class PlayerRepositoryImpl @Inject constructor(
 
     init {
         scope.launch {
-            combine(
-                userPreferencesRepository.activeEngine,
-                userPreferencesRepository.disableHdr
-            ) { type, disableHdr ->
-                // Force SDR only exists on the native engine. Media3 has no
-                // playback tone-mapping API, so the Exo engines can do nothing
-                // but "interpret HDR as SDR" — which Google documents as washed
-                // out. Routing to native is the only correct tone-map path.
-                if (disableHdr) EngineType.NATIVE_FFMPEG else type
-            }.distinctUntilChanged().collect { type ->
-                if (engines.containsKey(type)) {
-                    _activeEngineType.value = type
-                    // FFMPEG shares the ExoPlayer pipeline; the flag reorders the
-                    // renderers (FFmpeg-first) on the next play.
-                    engine().setFfmpegPreferred(type == EngineType.FFMPEG)
+            // The effective engine follows the persisted choice directly. Force
+            // SDR no longer masks it here: enabling Force SDR switches the engine
+            // to native at the source (SettingsViewModel), so there is nothing to
+            // override. Force SDR only exists on the native engine — Media3 has no
+            // playback tone-mapping API, so the Exo engines can only "interpret HDR
+            // as SDR" (Google-documented washed-out), which is why Force SDR routes
+            // to native rather than being applied on an Exo engine.
+            userPreferencesRepository.activeEngine
+                .distinctUntilChanged()
+                .collect { type ->
+                    if (engines.containsKey(type)) {
+                        _activeEngineType.value = type
+                        // FFMPEG shares the ExoPlayer pipeline; the flag reorders the
+                        // renderers (FFmpeg-first) on the next play.
+                        engine().setFfmpegPreferred(type == EngineType.FFMPEG)
+                    }
                 }
-            }
         }
         scope.launch {
             userPreferencesRepository.decoderMode.collect { mode ->

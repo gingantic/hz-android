@@ -13,7 +13,7 @@ import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -102,16 +102,23 @@ class SettingsViewModel @Inject constructor(
     /** Engines registered via Hilt multibinding. */
     val availableEngines: List<EngineType> get() = playerRepository.availableEngines
 
-    /** Engine actually in use. Force SDR overrides the persisted choice with the
-     *  native engine — the only one that can tone-map HDR to SDR. */
-    val activeEngine: StateFlow<EngineType> = combine(prefs.activeEngine, prefs.disableHdr) { type, disableHdr ->
-        if (disableHdr) EngineType.NATIVE_FFMPEG else type
-    }.distinctUntilChanged()
+    /** Engine actually in use — the persisted choice, shown as-is. Force SDR no
+     *  longer masks this: enabling it switches the engine to native outright
+     *  (see [saveDisableHdr]), and picking a non-native engine turns it off. */
+    val activeEngine: StateFlow<EngineType> = prefs.activeEngine
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), EngineType.EXO_PLAYER)
 
-    /** Switch the active engine. Stops current playback; takes effect on next play. */
+    /** Switch the active engine. Stops current playback; takes effect on next play.
+     *  Force SDR only exists on the native engine, so picking any other engine
+     *  turns it off rather than being silently overridden back to native. */
     fun selectEngine(type: EngineType) {
-        viewModelScope.launch { playerRepository.setActiveEngine(type) }
+        viewModelScope.launch {
+            if (type != EngineType.NATIVE_FFMPEG && prefs.disableHdr.first()) {
+                prefs.setDisableHdr(false)
+            }
+            playerRepository.setActiveEngine(type)
+        }
     }
 
     fun saveThemeMode(mode: ThemeMode) {
@@ -169,8 +176,14 @@ class SettingsViewModel @Inject constructor(
     val disableHdr: StateFlow<Boolean> = prefs.disableHdr
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    /** Force SDR (HDR tone-mapping) only exists on the native engine, so turning
+     *  it on switches the active engine to native. Turning it off leaves the
+     *  engine as-is — the user can pick another one afterwards. */
     fun saveDisableHdr(disabled: Boolean) {
-        viewModelScope.launch { prefs.setDisableHdr(disabled) }
+        viewModelScope.launch {
+            prefs.setDisableHdr(disabled)
+            if (disabled) playerRepository.setActiveEngine(EngineType.NATIVE_FFMPEG)
+        }
     }
 
     fun saveDecoderMode(mode: DecoderMode) {
