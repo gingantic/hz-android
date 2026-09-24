@@ -97,9 +97,9 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
             ctx->endNotified.store(false);
             ctx->lastAudioDriftUs.store(0);
             ctx->videoQueue.clear();
-            ctx->videoQueue.pushFlush();
+            ctx->videoQueue.pushFlush(req.generation);
             ctx->audioQueue.clear();
-            ctx->audioQueue.pushFlush();
+            ctx->audioQueue.pushFlush(req.generation);
             ctx->nativeAudioSink.flush();
 
             int64_t targetUs = target * 1000;

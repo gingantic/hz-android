@@ -30,6 +30,12 @@ internal class PlayerPositionController(
     private val resumeProgress: ResumeRepository,
     private val uiState: MutableStateFlow<PlayerUiState>,
 ) {
+    companion object {
+        /** How long [accumulatedSeekTarget] outlives the last seek, so the tick keeps
+         *  reporting the requested position until the engine has landed on it. */
+        private const val SEEK_SETTLE_MS = 800L
+    }
+
     /** High-frequency playback position (ms); emitted every 250 ms by [start]. */
     private val _position = MutableStateFlow(0L)
     val position: StateFlow<Long> = _position.asStateFlow()
@@ -164,15 +170,13 @@ internal class PlayerPositionController(
         accumulatedSeekTarget = target
         markSeekStart(target)
         playerRepository.seekTo(target)
-
-        seekDebounceJob?.cancel()
-        seekDebounceJob = scope.launch {
-            delay(800)
-            accumulatedSeekTarget = null
-        }
+        scheduleTargetClear()
     }
 
     fun onScrubStart() {
+        // A clear left over from an earlier seek or scrub would drop the target
+        // mid-scrub and let the tick follow the jumpy fast-seek position.
+        seekDebounceJob?.cancel()
         playerRepository.setScrubbing(true)
     }
 
@@ -184,8 +188,8 @@ internal class PlayerPositionController(
     }
 
     fun onScrubEnd() {
-        accumulatedSeekTarget = null
         playerRepository.setScrubbing(false)
+        scheduleTargetClear()
     }
 
     fun onSkipForward() {
@@ -202,10 +206,15 @@ internal class PlayerPositionController(
         accumulatedSeekTarget = target
         markSeekStart(target)
         playerRepository.seekTo(target)
+        scheduleTargetClear()
+    }
 
+    /** Keeps [accumulatedSeekTarget] (and so the position the tick reports) alive
+     *  until the last seek has had time to land. */
+    private fun scheduleTargetClear() {
         seekDebounceJob?.cancel()
         seekDebounceJob = scope.launch {
-            delay(800)
+            delay(SEEK_SETTLE_MS)
             accumulatedSeekTarget = null
         }
     }

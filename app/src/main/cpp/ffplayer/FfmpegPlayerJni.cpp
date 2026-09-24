@@ -706,9 +706,12 @@ JNI_FUNC(jboolean, nativeSelectAudioTrack, jlong handle, jint targetTrackIndex) 
     ctx->updateAudioSelectionMetadata(aCodec->name, newAudioLanguage, newAudioBitrate,
                                       newSampleRate, newChannels);
 
-    // Flush audio queue so audio thread reconfigures resampler & sink smoothly without restarting demuxer
+    // Flush audio queue so audio thread reconfigures resampler & sink smoothly without restarting demuxer.
+    // Tagged with the current generation: this flush replaces whatever the queue held,
+    // including a pending seek's flush marker, so an untagged one would leave the audio
+    // thread dropping every frame until the next seek.
     ctx->audioQueue.clear();
-    ctx->audioQueue.pushFlush();
+    ctx->audioQueue.pushFlush(ctx->seekVersion.load(std::memory_order_acquire));
     ctx->triggerAudioRampIn(60);
 
     LOGI("Successfully switched to audio track %d (stream %d, %s, %d Hz) without seeking demuxer",

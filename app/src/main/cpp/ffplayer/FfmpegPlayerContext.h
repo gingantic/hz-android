@@ -134,7 +134,8 @@ struct FfmpegPlayerContext {
     std::atomic<int64_t> seekTargetMs{-1};
     // videoSeekTargetPtsUs / audioSeekTargetPtsUs are written ONLY by the demux
     // thread inside its seek block, so the two are always set or cleared together
-    // for a single generation. No other path writes them.
+    // for a single generation. Decode threads consume them only after the matching
+    // generation-tagged flush marker. No other path writes them.
     std::atomic<int64_t> videoSeekTargetPtsUs{-1};
     std::atomic<int64_t> audioSeekTargetPtsUs{-1};
 
@@ -147,6 +148,10 @@ struct FfmpegPlayerContext {
     std::atomic<int64_t> currentPositionMs{0};
     // Monotonically incremented on every seek. Used as a stale-frame guard so that
     // frames decoded before a seek are not rendered after the flush fires.
+    // The decode threads seed their local flushGeneration from this at thread start,
+    // which is load-bearing: the startup targets (nativeOpen, the initialSeekMs == 0
+    // path) are set with no generation bump and no flush marker, so a zero seed
+    // would drop every frame until the first real seek.
     std::atomic<int64_t> seekVersion{0};
 
     // Stream termination & EOF tracking

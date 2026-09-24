@@ -113,6 +113,23 @@ class FfmpegNativeEngine @Inject constructor(
 
             return if (displayW > 0f && displayH > 0f) displayW / displayH else 0f
         }
+
+        /**
+         * True when [positionMs] has reached [targetMs] from the direction of travel:
+         * at or below it for a backward seek, at or above it for a forward one.
+         * [toleranceMs] absorbs container/PTS rounding; a stale pre-seek position on
+         * the far side of the target therefore stays rejected.
+         */
+        internal fun hasSeekLanded(
+            positionMs: Long,
+            targetMs: Long,
+            seekBackward: Boolean,
+            toleranceMs: Long = 500L,
+        ): Boolean = if (seekBackward) {
+            positionMs <= targetMs + toleranceMs
+        } else {
+            positionMs >= targetMs - toleranceMs
+        }
     }
 
     override val engineType: EngineType = EngineType.NATIVE_FFMPEG
@@ -178,8 +195,14 @@ class FfmpegNativeEngine @Inject constructor(
     private var sarDen: Int = 1
     private val mainHandler = Handler(Looper.getMainLooper())
     private var playJob: Job? = null
+    /**
+     * Pending seek target (ms), or -1 when none. Cleared only by a
+     * [AtomicLong.compareAndSet] that still matches the target it was read with, so a
+     * callback racing a newer [seekTo] cannot drop that seek's filter.
+     */
+    private val pendingSeekTargetMs = AtomicLong(-1L)
     @Volatile
-    private var pendingSeekTargetMs: Long = -1L
+    private var pendingSeekBackward = false
     /** Set once in [release]; afterwards clock pulls return -1 and playInternal is a no-op. */
     @Volatile
     private var released = false
@@ -250,9 +273,12 @@ class FfmpegNativeEngine @Inject constructor(
 
                 if (mappedState == PlayerState.READY) {
                     val curPos = player.getPosition()
-                    val seekTarget = pendingSeekTargetMs
-                    if (seekTarget < 0L || curPos >= seekTarget - 500L) {
-                        pendingSeekTargetMs = -1L
+                    val seekTarget = pendingSeekTargetMs.get()
+                    val seekBackward = pendingSeekBackward
+                    if (seekTarget < 0L ||
+                        (hasSeekLanded(curPos, seekTarget, seekBackward) &&
+                            pendingSeekTargetMs.compareAndSet(seekTarget, -1L))
+                    ) {
                         val nowUs = SystemClock.elapsedRealtime() * 1000L
                         assHandler.updatePosition(curPos * 1000L, nowUs)
                     }
@@ -280,14 +306,14 @@ class FfmpegNativeEngine @Inject constructor(
             }
 
             override fun onPositionUpdate(positionMs: Long, durationMs: Long) {
-                val seekTarget = pendingSeekTargetMs
-                if (seekTarget >= 0L) {
-                    if (positionMs < seekTarget - 500L) {
-                        // Drop stale position updates from pre-seek frames or callbacks
-                        return
-                    } else {
-                        pendingSeekTargetMs = -1L
-                    }
+                val seekTarget = pendingSeekTargetMs.get()
+                val seekBackward = pendingSeekBackward
+                if (seekTarget >= 0L &&
+                    (!hasSeekLanded(positionMs, seekTarget, seekBackward) ||
+                        !pendingSeekTargetMs.compareAndSet(seekTarget, -1L))
+                ) {
+                    // Drop stale position updates from pre-seek frames or callbacks.
+                    return
                 }
                 val nowUs = SystemClock.elapsedRealtime() * 1000L
                 assHandler.updatePosition(positionMs * 1000L, nowUs)
@@ -384,7 +410,8 @@ class FfmpegNativeEngine @Inject constructor(
         if (!preservePlaylist) {
             currentPlaylist = null
         }
-        pendingSeekTargetMs = -1L
+        pendingSeekTargetMs.set(-1L)
+        pendingSeekBackward = false
         assHandler.player = null
         assHandler.playbackSpeed = currentSpeed
         assHandler.reset()
@@ -707,7 +734,8 @@ class FfmpegNativeEngine @Inject constructor(
                 videoRotation = 0
                 sarNum = 1
                 sarDen = 1
-                pendingSeekTargetMs = -1L
+                pendingSeekTargetMs.set(-1L)
+                pendingSeekBackward = false
                 assHandler.reset()
                 _playbackState.update {
                     it.copy(
@@ -726,7 +754,9 @@ class FfmpegNativeEngine @Inject constructor(
         val clamped = clampSeekPosition(positionMs, getDuration())
         val targetUs = clamped * 1000L
         val nowUs = SystemClock.elapsedRealtime() * 1000L
-        pendingSeekTargetMs = clamped
+        val currentPosition = player.getPosition()
+        pendingSeekBackward = clamped < currentPosition
+        pendingSeekTargetMs.set(clamped)
         _playbackState.update { it.copy(state = PlayerState.BUFFERING) }
         assHandler.setIsBuffering(true)
         assHandler.setIsPlaying(false)

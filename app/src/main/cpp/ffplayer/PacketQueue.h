@@ -9,6 +9,7 @@ struct PacketQueue {
         int64_t ptsUs = -1;
         bool isFlush = false;
         bool isEof = false;
+        int64_t generation = -1; // seek generation for flush markers
     };
 
     std::deque<Item> items;
@@ -94,9 +95,12 @@ struct PacketQueue {
         notEmpty.notify_one();
     }
 
-    void pushFlush() {
+    // `generation` is mandatory: the decode threads only accept a seek target
+    // once they have popped the flush marker carrying that target's generation,
+    // so an untagged flush would desync flushGeneration from seekVersion.
+    void pushFlush(int64_t generation) {
         std::lock_guard<std::mutex> lk(mtx);
-        items.push_back({nullptr, -1, true, false});
+        items.push_back({nullptr, -1, true, false, generation});
         notEmpty.notify_one();
     }
 

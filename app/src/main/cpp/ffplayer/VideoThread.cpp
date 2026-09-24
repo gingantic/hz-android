@@ -16,6 +16,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
     AVFrame* vFrame = av_frame_alloc();
     PacketQueue::Item item{};
     bool needSeekFrame = false;
+    int64_t flushGeneration = ctx->seekVersion.load(std::memory_order_acquire);
 
     HdrToneMapper toneMapper;
     std::vector<uint16_t> hdrBuffer;
@@ -57,6 +58,10 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         int64_t targetPts = ctx->videoSeekTargetPtsUs.load();
         bool anchorClockForSeek = false;
         if (targetPts >= 0) {
+            if (flushGeneration != ctx->seekVersion.load(std::memory_order_acquire)) {
+                // Pre-flush frame: do not consume the current seek target.
+                return false;
+            }
             int64_t frameDurUs = (ctx->sourceFps > 0) ? static_cast<int64_t>(1000000.0f / ctx->sourceFps) : 33333;
             if (ptsUs < targetPts - (frameDurUs / 2)) {
                 // Drop all preroll frames before seek target
@@ -72,6 +77,10 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             }
             isSeekFrame = true;
         } else if (ctx->isScrubbing.load() || isSeekFrame) {
+            if (flushGeneration != ctx->seekVersion.load(std::memory_order_acquire)) {
+                // Pre-flush frame: do not let it anchor the clock to a pre-scrub PTS.
+                return false;
+            }
             isSeekFrame = true;
             anchorClockForSeek = true;
         }
@@ -261,6 +270,11 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         int64_t targetPts = ctx->videoSeekTargetPtsUs.load();
         bool anchorClockForSeek = false;
         if (targetPts >= 0) {
+            if (flushGeneration != ctx->seekVersion.load(std::memory_order_acquire)) {
+                // Pre-flush frame: do not consume the current seek target.
+                AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, false);
+                return false;
+            }
             int64_t frameDurUs = (ctx->sourceFps > 0) ? static_cast<int64_t>(1000000.0f / ctx->sourceFps) : 33333;
             if (ptsUs < targetPts - (frameDurUs / 2)) {
                 // Drop all preroll frames before seek target without rendering
@@ -278,6 +292,11 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             }
             isSeekFrame = true;
         } else if (ctx->isScrubbing.load() || isSeekFrame) {
+            if (flushGeneration != ctx->seekVersion.load(std::memory_order_acquire)) {
+                // Pre-flush frame: do not let it anchor the clock to a pre-scrub PTS.
+                AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, false);
+                return false;
+            }
             isSeekFrame = true;
             anchorClockForSeek = true;
         }
@@ -603,6 +622,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         resetVideoStarvation();
 
         if (item.isFlush) {
+            if (item.generation >= 0) flushGeneration = item.generation;
             hwDecodeConsecutiveFailures = 0;
             fallbackToSoftwareRequested = false;
             if (hwDecoder.isConfigured.load()) {

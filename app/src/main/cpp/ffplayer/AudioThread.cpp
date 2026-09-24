@@ -29,6 +29,7 @@ void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
     ctx->nativeEqualizer.init(ctx->outSampleRate, ctx->outChannels);
 
     PacketQueue::Item item{};
+    int64_t flushGeneration = ctx->seekVersion.load(std::memory_order_acquire);
     uint8_t* audioOutBuf = nullptr;
     int audioOutBufSize = 0;
     int64_t smoothedDriftUs = 0;
@@ -43,6 +44,10 @@ void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
 
         int64_t targetPts = ctx->audioSeekTargetPtsUs.load();
         if (targetPts >= 0) {
+            if (flushGeneration != ctx->seekVersion.load(std::memory_order_acquire)) {
+                // Pre-flush frame: do not consume the current seek target.
+                return;
+            }
             int64_t frameDurUs = (f->nb_samples > 0 && f->sample_rate > 0)
                 ? (static_cast<int64_t>(f->nb_samples) * 1000000LL / f->sample_rate)
                 : 0;
@@ -50,7 +55,12 @@ void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 // Preroll: drop audio before seek target
                 return;
             }
-            ctx->audioSeekTargetPtsUs.store(-1);
+            int64_t expectedTargetPts = targetPts;
+            if (!ctx->audioSeekTargetPtsUs.compare_exchange_strong(
+                    expectedTargetPts, -1, std::memory_order_acq_rel)) {
+                // A newer seek replaced the target: this frame is stale.
+                return;
+            }
         }
 
         if (ctx->videoStreamIdx < 0) {
@@ -358,6 +368,7 @@ void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         if (!ctx->audioQueue.pop(item, 50)) continue;
 
         if (item.isFlush) {
+            if (item.generation >= 0) flushGeneration = item.generation;
             std::lock_guard<std::mutex> lk(ctx->audioCodecMutex);
             if (ctx->audioCodecCtx) avcodec_flush_buffers(ctx->audioCodecCtx);
             audioFilter.release();

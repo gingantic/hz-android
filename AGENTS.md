@@ -169,7 +169,7 @@ Before modifying existing code: read the **entire file**, understand *why* it's 
 | File | Contents | Read it when |
 |---|---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layers, package map, repository/Room tables, DI, navigation | You need to know where code lives or how a layer is wired |
-| [`docs/PLAYER_ARCHITECTURE.md`](docs/PLAYER_ARCHITECTURE.md) | Engines, `PlayerSurface`, seek clamping, subtitles, equalizer, gestures | Touching playback, seeking, tracks, or the player UI |
+| [`docs/PLAYER_ARCHITECTURE.md`](docs/PLAYER_ARCHITECTURE.md) | Engines, `PlayerSurface`, seek clamping + transactions, subtitles, equalizer, gestures | Touching playback, seeking, tracks, or the player UI |
 | [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md) | Read/write call chains, data-source strategy, threading model | Tracing how a value gets from storage to a screen, or back |
 | [`docs/UI_COMPONENTS.md`](docs/UI_COMPONENTS.md) | Component catalogue, house rules, sample layouts | Building or restyling UI |
 

@@ -188,6 +188,41 @@ HH:MM:SS to the media duration before jumping.
 
 ---
 
+## Seek transactions (native engine)
+
+`NATIVE_FFMPEG` publishes a seek as one transaction and tags every queue flush with that
+transaction's generation, so a frame decoded before the flush can never consume or clear
+the new target.
+
+- `publishSeekRequest(targetMs, mode, scrub)` (`cpp/ffplayer/FfmpegPlayerContext.h`) bumps
+  `seekVersion` and records `SeekRequest{generation, targetMs, mode, scrub}` together with
+  the coupled state (buffering, drift reset, `seekTargetMs`, reported position, master
+  clock) under `seekRequestMutex`. The demux thread consumes it via `takeSeekRequest()`, so
+  the target and the generation can never belong to different seeks.
+- The demux thread then sets `videoSeekTargetPtsUs` / `audioSeekTargetPtsUs`, clears both
+  queues and pushes a generation-tagged flush marker — `pushFlush(req.generation)`, where
+  the argument is mandatory. `nativeSelectAudioTrack` tags its audio-queue flush with the
+  current `seekVersion` for the same reason: an untagged flush can discard a pending
+  seek's marker and leave the audio thread dropping frames until the next seek.
+- Each decode thread keeps a local `flushGeneration`, seeded from `seekVersion` at thread
+  start. The seed is load-bearing — `nativeOpen` and the `initialSeekMs == 0` demux path
+  set startup targets with no generation bump and no marker. It advances only when the
+  thread pops a tagged marker, and a pending target is ignored while
+  `flushGeneration != seekVersion`, i.e. while the frame in hand predates the flush. The
+  gate covers accurate seeks and scrubs on both the software and the AMediaCodec video
+  path; the audio thread applies it in `processAudioFrame` (a scrub queues no audio).
+
+Kotlin mirrors the same rule (`FfmpegNativeEngine`, `PlayerPositionController`):
+`pendingSeekTargetMs` is an `AtomicLong` cleared only by a `compareAndSet` that still
+matches the target it was read with, so a callback racing a newer `seekTo()` cannot drop
+that seek's filter; `hasSeekLanded()` requires the position to have reached the target
+from the seek's direction (500 ms tolerance), so a pre-seek position cannot satisfy a
+backward seek; and `accumulatedSeekTarget` is held for `SEEK_SETTLE_MS` (800 ms) after the
+last seek or scrub, so the 250 ms tick keeps reporting the requested position until the
+engine lands on it.
+
+---
+
 ## VideoPlayerScreen — Gestures
 
 Gestures are applied with the `Modifier.playerGestures(...)` modifier

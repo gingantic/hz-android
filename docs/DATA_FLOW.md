@@ -197,6 +197,7 @@ Seek path — every engine clamps through the shared guard:
       → clampSeekPosition(ms, duration)            // ≥ 0, and 1 s short of the end
         → PlayerRepository.seekTo → activeEngine.seekTo → ExoPlayerEngine / FfmpegNativeEngine
   JumpToTimeDialog clamps the typed HH:MM:SS to the duration before calling onJump.
+  Native seek landing is generation-gated — `docs/PLAYER_ARCHITECTURE.md` → "Seek transactions".
 ```
 
 ### Track selection / errors
