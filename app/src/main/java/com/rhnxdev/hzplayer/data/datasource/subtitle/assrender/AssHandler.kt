@@ -719,7 +719,24 @@ class AssHandler @Inject constructor(
 
         val positionMs: Long
         val clock = positionClock
-        if (clock != null && isPlaying) {
+        if (isExoActive) {
+            // ExoPlayer path: read the player's position directly every Choreographer
+            // tick. renderFrame() runs on the main thread (Choreographer callback), so
+            // player.currentPosition is a legal, always-fresh read.
+            //
+            // We intentionally do NOT extrapolate from updatePosition() anchors here:
+            // that clock was fed by AssTimeRenderer (a NoSampleRenderer). ExoPlayer's
+            // internal loop stops calling a renderer's render() once it reports
+            // isReady()==true && isEnded()==true, so the anchor went stale during
+            // steady playback — the position froze until a seek/state change forced
+            // one more render() call. Reading the player directly removes that
+            // dependency and keeps subtitles advancing frame-to-frame.
+            val posMs = p!!.currentPosition.coerceAtLeast(0L)
+            lastPositionUs = posMs * 1000L
+            currentTimeUs = lastPositionUs
+            lastRenderedPositionMs = posMs
+            positionMs = if (mediaDurationMs < Long.MAX_VALUE) posMs.coerceAtMost(mediaDurationMs) else posMs
+        } else if (clock != null && isPlaying) {
             // Direct master-clock pull (native FFmpeg engine): the position is read
             // from the audio-mastered native clock on every tick — no stale anchors,
             // no extrapolation cap, no monotonic ratchet. This is what eliminates

@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.view.LayoutInflater
+import android.view.SurfaceView
 import android.view.View
 import androidx.annotation.OptIn
 import androidx.media3.common.C
@@ -668,6 +669,19 @@ class ExoPlayerEngine @Inject constructor(
         playerView.player = player
         playerView.useController = false
         activePlayerViewRef = WeakReference(playerView)
+
+        // A PlayerView backed by a SurfaceView renders on a dedicated Hardware
+        // Composer layer that, by default, sits BEHIND the app window and punches
+        // a transparent hole through it. The libass SubtitleOverlayView is a plain
+        // window-composited sibling view, so without intervention whether the
+        // overlay lands above or below the punched-through video is compositor-
+        // dependent — on some devices the video hid the subtitles entirely.
+        // setZOrderMediaOverlay(true) lifts the video layer just above the default
+        // window background but keeps it below the window's own views, so the
+        // transparent subtitle overlay reliably composites on top.
+        if (useSurfaceView) {
+            (playerView.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
+        }
         val subtitleView = playerView.subtitleView
         if (subtitleView != null) {
             subtitleView.setStyle(
