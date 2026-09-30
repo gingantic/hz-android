@@ -7,6 +7,7 @@ import com.rhnxdev.hzplayer.data.repository.FileRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.MediaRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.NetworkRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.PlayerRepositoryImpl
+import com.rhnxdev.hzplayer.data.repository.PlayHistoryRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.RemoteBrowseRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.ResumeRepositoryImpl
 import com.rhnxdev.hzplayer.data.repository.SubtitleRepositoryImpl
@@ -18,6 +19,7 @@ import com.rhnxdev.hzplayer.domain.repository.FileRepository
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
 import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
+import com.rhnxdev.hzplayer.domain.repository.PlayHistoryRepository
 import com.rhnxdev.hzplayer.domain.repository.RemoteBrowseRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.domain.repository.SubtitleRepository
@@ -97,4 +99,10 @@ abstract class RepositoryModule {
     abstract fun bindBrowserHistoryRepository(
         impl: BrowserHistoryRepositoryImpl,
     ): BrowserHistoryRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPlayHistoryRepository(
+        impl: PlayHistoryRepositoryImpl,
+    ): PlayHistoryRepository
 }

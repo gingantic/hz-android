@@ -6,6 +6,7 @@ import com.rhnxdev.hzplayer.data.datasource.local.room.HzPlayerDatabase
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.BrowserHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlaybackPositionDao
+import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlayHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.ServerConfigDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.StreamHistoryDao
 import dagger.Module
@@ -35,6 +36,7 @@ object DatabaseModule {
             HzPlayerDatabase.MIGRATION_3_4,
             HzPlayerDatabase.MIGRATION_4_5,
             HzPlayerDatabase.MIGRATION_5_6,
+            HzPlayerDatabase.MIGRATION_6_7,
         )
         .fallbackToDestructiveMigrationOnDowngrade()
         // TODO: add Migration(1,2), Migration(2,3), … as the schema evolves.
@@ -56,4 +58,8 @@ object DatabaseModule {
     @Provides
     fun provideBrowserHistoryDao(database: HzPlayerDatabase): BrowserHistoryDao =
         database.browserHistoryDao()
+
+    @Provides
+    fun providePlayHistoryDao(database: HzPlayerDatabase): PlayHistoryDao =
+        database.playHistoryDao()
 }

@@ -75,6 +75,17 @@
     <string name="nav_browse">Browse</string>
     <string name="nav_network">Network</string>
     <string name="nav_settings">Settings</string>
+    <!-- History -->
+    <string name="history_title">History</string>
+    <string name="history_open_cd">History</string>
+    <string name="history_clear_all_cd">Clear history</string>
+    <string name="history_empty_title">Nothing played yet</string>
+    <string name="history_empty_subtitle">Media you play shows up here.</string>
+    <string name="history_kind_video">Video</string>
+    <string name="history_kind_audio">Audio</string>
+    <string name="history_clear_dialog_title">Clear history?</string>
+    <string name="history_clear_dialog_message">This removes every item from your playback history. This can\'t be undone.</string>
+    <string name="history_clear_dialog_confirm">Clear</string>
     <!-- Player common -->
     <string name="back_cd">Back</string>
     <!-- Server list / cards -->

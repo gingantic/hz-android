@@ -61,6 +61,7 @@ fun HzPlayerApp(
     val isFullScreen by remember(currentRoute) {
         derivedStateOf {
             currentRoute == NavRoutes.SEARCH ||
+                currentRoute == NavRoutes.HISTORY ||
                 currentRoute == NavRoutes.AUDIO_PLAYER ||
                 currentRoute?.startsWith("video_player") == true ||
                 currentRoute?.startsWith("album_detail") == true ||

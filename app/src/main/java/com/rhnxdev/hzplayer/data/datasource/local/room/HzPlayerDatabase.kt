@@ -7,11 +7,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.BrowserHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlaybackPositionDao
+import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlayHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.ServerConfigDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.StreamHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.BrowserHistoryEntity
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.MediaEntity
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.PlaybackPositionEntity
+import com.rhnxdev.hzplayer.data.datasource.local.room.entities.PlayHistoryEntity
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.ServerConfigEntity
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.StreamHistoryEntity
 
@@ -22,8 +24,9 @@ import com.rhnxdev.hzplayer.data.datasource.local.room.entities.StreamHistoryEnt
         StreamHistoryEntity::class,
         PlaybackPositionEntity::class,
         BrowserHistoryEntity::class,
+        PlayHistoryEntity::class,
     ],
-    version = 6,
+    version = 7,
     // Schema exported to app/schemas so versioned Migrations can be authored and
     // reviewed in source control. exportSchema=false + fallbackToDestructiveMigration()
     // silently wiped all saved servers / resume positions / history on every bump.
@@ -35,6 +38,7 @@ abstract class HzPlayerDatabase : RoomDatabase() {
     abstract fun streamHistoryDao(): StreamHistoryDao
     abstract fun playbackPositionDao(): PlaybackPositionDao
     abstract fun browserHistoryDao(): BrowserHistoryDao
+    abstract fun playHistoryDao(): PlayHistoryDao
 
     companion object {
         /** Migration 3→4: add indices on media and stream_history tables. */
@@ -73,6 +77,25 @@ abstract class HzPlayerDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `stream_history` ADD COLUMN `headersJson` TEXT DEFAULT NULL")
                 db.execSQL("ALTER TABLE `stream_history` ADD COLUMN `pageUrl` TEXT DEFAULT NULL")
                 db.execSQL("ALTER TABLE `stream_history` ADD COLUMN `mimeType` TEXT DEFAULT NULL")
+            }
+        }
+
+        /** Migration 6→7: add play_history table ("recently played" media). */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `play_history` (
+                        `uri` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `isVideo` INTEGER NOT NULL,
+                        `playedAt` INTEGER NOT NULL,
+                        `artist` TEXT,
+                        `mimeType` TEXT,
+                        `thumbnailUri` TEXT,
+                        PRIMARY KEY(`uri`)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_play_history_playedAt` ON `play_history` (`playedAt`)")
             }
         }
     }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -70,6 +71,7 @@ fun VideoLibraryScreen(
     onVideoClicked: (VideoItem) -> Unit = {},
     onPlayVideoPlaylist: ((List<VideoItem>, Int) -> Unit)? = null,
     onPlayAsAudio: (VideoItem) -> Unit = {},
+    onOpenHistory: () -> Unit = {},
     isActive: Boolean = true,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -128,6 +130,12 @@ fun VideoLibraryScreen(
             onClearSearch = viewModel::onClearSearch,
             searchPlaceholder = stringResource(R.string.search_videos_placeholder),
             actions = {
+                IconButton(onClick = onOpenHistory) {
+                    Icon(
+                        imageVector = Icons.Filled.History,
+                        contentDescription = stringResource(R.string.history_open_cd),
+                    )
+                }
                 var showViewSortSheet by remember { mutableStateOf(false) }
                 IconButton(onClick = { showViewSortSheet = true }) {
                     Icon(

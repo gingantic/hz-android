@@ -177,6 +177,7 @@ fun MainTabPager(
                                             playerViewModel.playUri(video.uri, video.title, isVideo = false)
                                             navController.navigate(NavRoutes.AUDIO_PLAYER)
                                         },
+                                        onOpenHistory = { navController.navigate(NavRoutes.HISTORY) },
                                     )
                                     1 -> AudioBrowserScreen(
                                         isActive = pagerState.currentPage == page,

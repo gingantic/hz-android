@@ -5,6 +5,7 @@ object NavRoutes {
     const val VIDEO_PLAYER_NO_ID = "video_player/-1"
     const val AUDIO_PLAYER = "audio_player"
     const val SEARCH = "search"
+    const val HISTORY = "history"
     const val ALBUM_DETAIL = "album_detail/{title}"
     const val ARTIST_DETAIL = "artist_detail/{name}"
 

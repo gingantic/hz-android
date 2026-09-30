@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.rhnxdev.hzplayer.presentation.audio.AlbumDetailScreen
 import com.rhnxdev.hzplayer.presentation.audio.ArtistDetailScreen
+import com.rhnxdev.hzplayer.presentation.history.HistoryScreen
 import com.rhnxdev.hzplayer.presentation.player.AudioPlayerScreen
 import com.rhnxdev.hzplayer.presentation.player.PlayerViewModel
 import com.rhnxdev.hzplayer.presentation.player.VideoPlayerScreen
@@ -62,6 +63,31 @@ fun MainNavHost(
                 },
                 onArtistClicked = { artist ->
                     navController.navigate(NavRoutes.artistDetail(artist.name))
+                },
+            )
+        }
+
+        composable(
+            route = NavRoutes.HISTORY,
+            enterTransition = { slideInHorizontally { it } },
+            exitTransition = { slideOutHorizontally { -it } },
+            popEnterTransition = { slideInHorizontally { -it } },
+            popExitTransition = { slideOutHorizontally { it } },
+        ) {
+            HistoryScreen(
+                onBack = { navController.popBackStack() },
+                onPlay = { item ->
+                    playerViewModel.playUri(
+                        item.uri,
+                        item.title,
+                        isVideo = item.isVideo,
+                        mimeType = item.mimeType,
+                    )
+                    if (item.isVideo) {
+                        navController.navigate(NavRoutes.VIDEO_PLAYER_NO_ID)
+                    } else {
+                        navController.navigate(NavRoutes.AUDIO_PLAYER)
+                    }
                 },
             )
         }

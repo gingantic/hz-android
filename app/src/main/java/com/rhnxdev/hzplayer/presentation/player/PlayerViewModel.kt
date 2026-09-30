@@ -13,6 +13,7 @@ import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.next
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
+import com.rhnxdev.hzplayer.domain.repository.PlayHistoryRepository
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.isLibassSubtitleMimeType
 import com.rhnxdev.hzplayer.core.io.MediaInfoProbe
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
@@ -40,6 +41,7 @@ class PlayerViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val resumeProgress: ResumeRepository,
+    private val playHistory: PlayHistoryRepository,
     private val mediaDao: MediaDao,
     val assHandler: com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler,
 ) : ViewModel() {
@@ -590,6 +592,9 @@ class PlayerViewModel @Inject constructor(
         id: Long = 0,
         play: (Long) -> Unit,
     ) {
+        // Log to "recently played" once per play start — this is the common funnel
+        // for playVideo/playUri/playAudio. Artwork comes from the state just set.
+        recordHistory(uri, title, isVideo, artist, mimeType)
         val hasProgress = savedPositionMs > RESUME_THRESHOLD_MS
         when (resumeMode) {
             com.rhnxdev.hzplayer.domain.model.ResumeMode.NONE -> play(0)
@@ -613,6 +618,28 @@ class PlayerViewModel @Inject constructor(
                     play(0)
                 }
             }
+        }
+    }
+
+    /** Persist a "recently played" entry off the main thread. */
+    private fun recordHistory(
+        uri: String,
+        title: String,
+        isVideo: Boolean,
+        artist: String?,
+        mimeType: String?,
+    ) {
+        if (uri.isBlank()) return
+        val thumbnail = _uiState.value.currentArtworkUri
+        viewModelScope.launch {
+            playHistory.recordPlay(
+                uri = uri,
+                title = title,
+                isVideo = isVideo,
+                artist = artist,
+                mimeType = mimeType,
+                thumbnailUri = thumbnail,
+            )
         }
     }
 
@@ -674,6 +701,7 @@ class PlayerViewModel @Inject constructor(
                 audioQueueIndex = startIndex.coerceIn(0, items.lastIndex),
             )
         }
+        recordHistory(item.uri, item.title, isVideo = false, artist = item.artist, mimeType = item.mimeType)
         playerRepository.playAudioPlaylist(items, startIndex)
         trackCache.markNeedsRefresh()
     }
@@ -948,8 +976,12 @@ class PlayerViewModel @Inject constructor(
         playUri(uri, title, isVideo, mimeType = mimeType, headers = headers)
     }
 
-    fun playVideoPlaylist(items: List<VideoItem>, startIndex: Int = 0) =
+    fun playVideoPlaylist(items: List<VideoItem>, startIndex: Int = 0) {
+        items.getOrNull(startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)))?.let { item ->
+            recordHistory(item.uri, item.title, isVideo = true, artist = null, mimeType = item.mimeType)
+        }
         playlistController.playVideoPlaylist(items, startIndex)
+    }
 
     fun onPlaylistNext(): Boolean = playlistController.onPlaylistNext()
 
