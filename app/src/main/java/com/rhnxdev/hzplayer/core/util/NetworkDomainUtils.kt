@@ -44,6 +44,33 @@ object NetworkDomainUtils {
     }
 
     /**
+     * Verify a candidate hostname is usable in place of a numeric IP by confirming it resolves
+     * back to [expectedIp]. Tries the bare [candidate] first, then `candidate.local` (mDNS) for
+     * a dot-less NetBIOS-style name. Returns the first form that resolves to [expectedIp], or null.
+     *
+     * Why the round-trip check: a NetBIOS/reverse-DNS name is worthless if the device can't later
+     * connect to it, so we only swap in a name we just proved reachable.
+     */
+    fun verifiedHostName(candidate: String, expectedIp: String): String? {
+        val name = candidate.trim()
+        if (name.isBlank() || isNumericIp(name)) return null
+
+        val forms = if (name.contains(".")) listOf(name) else listOf(name, "$name.local")
+        for (form in forms) {
+            try {
+                val resolved = InetAddress.getByName(form)
+                if (resolved.hostAddress == expectedIp) {
+                    Log.d(TAG, "verifiedHostName: $form resolves to $expectedIp")
+                    return form
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "verifiedHostName: $form did not resolve: ${e.message}")
+            }
+        }
+        return null
+    }
+
+    /**
      * Checks if a string is a numerical IPv4 or IPv6 address.
      */
     fun isNumericIp(host: String): Boolean {

@@ -306,28 +306,33 @@ class ServerDiscoverer @Inject constructor(
     }
 
     private fun probeHost(host: String) {
-        val domainHost = NetworkDomainUtils.resolveDomain(null, host)
-        // Probe SMB (445)
-        if (isPortOpen(host, 445, 1200)) {
-            Log.d(TAG, "probeHost: discovered active SMB service on $host:445")
-            val resolvedName = resolveComputerName(host)
-            val displayName = if (!resolvedName.isNullOrEmpty()) resolvedName else domainHost
+        val smbOpen = isPortOpen(host, 445, 1200)
+        val ftpOpen = isPortOpen(host, 21, 1200)
+        if (!smbOpen && !ftpOpen) return
+
+        // Resolve the computer name once and prefer it (verified reachable) as the stored host,
+        // so the saved server uses a domain instead of a numeric IP. Fall back: reverse-DNS
+        // domain (resolveDomain) → the numeric IP.
+        val resolvedName = resolveComputerName(host)
+        val verifiedHost = resolvedName?.let { NetworkDomainUtils.verifiedHostName(it, host) }
+        val storedHost = verifiedHost ?: NetworkDomainUtils.resolveDomain(null, host)
+        val displayName = resolvedName?.takeIf { it.isNotEmpty() } ?: storedHost
+
+        if (smbOpen) {
+            Log.d(TAG, "probeHost: discovered active SMB service on $host:445 (stored as $storedHost)")
             addDiscoveredServer(
-                name = "SMB ($displayName)",
+                name = displayName,
                 protocol = NetworkProtocol.SMB,
-                host = domainHost,
+                host = storedHost,
                 port = 445
             )
         }
-        // Probe FTP (21)
-        if (isPortOpen(host, 21, 1200)) {
-            Log.d(TAG, "probeHost: discovered active FTP service on $host:21")
-            val resolvedName = resolveComputerName(host)
-            val displayName = if (!resolvedName.isNullOrEmpty()) resolvedName else domainHost
+        if (ftpOpen) {
+            Log.d(TAG, "probeHost: discovered active FTP service on $host:21 (stored as $storedHost)")
             addDiscoveredServer(
-                name = "FTP ($displayName)",
+                name = displayName,
                 protocol = NetworkProtocol.FTP,
-                host = domainHost,
+                host = storedHost,
                 port = 21
             )
         }
@@ -515,13 +520,18 @@ class ServerDiscoverer @Inject constructor(
             return
         }
 
-        val domainHost = NetworkDomainUtils.resolveDomain(info.host, hostAddress)
         val displayName = name.removeSuffix(".$type").removeSuffix(".")
+
+        // Prefer the mDNS service name (→ name.local) as the stored host when it verifiably
+        // resolves to this IP, so the saved server uses a domain. Fall back: reverse-DNS
+        // domain (resolveDomain, seeded with the already-resolved InetAddress) → the numeric IP.
+        val verifiedHost = NetworkDomainUtils.verifiedHostName(displayName, hostAddress)
+        val storedHost = verifiedHost ?: NetworkDomainUtils.resolveDomain(info.host, hostAddress)
 
         addDiscoveredServer(
             name = displayName,
             protocol = serviceTypeToProtocol(type),
-            host = domainHost,
+            host = storedHost,
             port = port
         )
     }
