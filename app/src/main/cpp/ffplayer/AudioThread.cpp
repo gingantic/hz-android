@@ -67,10 +67,10 @@ void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             ctx->currentPositionMs.store(ptsUs / 1000);
         }
 
-        if (ctx->videoStreamIdx >= 0 && ctx->nativeWindow != nullptr) {
+        if (ctx->videoStreamIdx >= 0 && ctx->hasSurface.load()) {
             auto buffStart = std::chrono::steady_clock::now();
             while (ctx->isBuffering.load() && ctx->isRunning.load() && !ctx->isStopped.load() &&
-                   !ctx->videoFinished.load() && ctx->nativeWindow != nullptr) {
+                   !ctx->videoFinished.load() && ctx->hasSurface.load()) {
                 // This fallback is only for a stream that has not presented
                 // any video yet. Once playback has rendered a frame, a later
                 // video underrun must keep audio paused until video recovers.
@@ -88,7 +88,7 @@ void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 std::unique_lock<std::mutex> lk(ctx->controlMutex);
                 ctx->controlCv.wait_for(lk, std::chrono::milliseconds(10), [&] {
                     return !ctx->isBuffering.load() || !ctx->isRunning.load() || ctx->isStopped.load() ||
-                           ctx->videoFinished.load() || ctx->nativeWindow == nullptr || ctx->seekTargetMs.load() >= 0;
+                           ctx->videoFinished.load() || !ctx->hasSurface.load() || ctx->seekTargetMs.load() >= 0;
                 });
                 if (ctx->seekTargetMs.load() >= 0 || !ctx->isRunning.load() || ctx->isStopped.load()) break;
             }
@@ -404,8 +404,12 @@ void audioDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             continue;
         }
 
+        // Keep draining and retrying until the packet is accepted; a single
+        // resend can still return EAGAIN and would drop item.pkt unsent (an
+        // audible gap). Bail only on teardown or a superseding seek.
         int sendRet = avcodec_send_packet(ctx->audioCodecCtx, item.pkt);
-        if (sendRet == AVERROR(EAGAIN)) {
+        while (sendRet == AVERROR(EAGAIN) &&
+               ctx->isRunning.load() && !ctx->isStopped.load() && ctx->seekTargetMs.load() < 0) {
             while (avcodec_receive_frame(ctx->audioCodecCtx, aFrame) == 0) {
                 processAudioFrame(aFrame);
                 av_frame_unref(aFrame);

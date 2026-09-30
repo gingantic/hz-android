@@ -779,8 +779,13 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             }
         }
 
+        // A single drain-then-resend can still return EAGAIN if the receive loop
+        // did not free enough decoder capacity, which would drop item.pkt unsent
+        // (a visible decode hiccup). Keep draining and retrying until the packet
+        // is accepted, the thread is torn down, or a seek supersedes it.
         int sendRet = avcodec_send_packet(ctx->videoCodecCtx, item.pkt);
-        if (sendRet == AVERROR(EAGAIN)) {
+        while (sendRet == AVERROR(EAGAIN) &&
+               ctx->isRunning.load() && !ctx->isStopped.load() && ctx->seekTargetMs.load() < 0) {
             while (avcodec_receive_frame(ctx->videoCodecCtx, vFrame) == 0) {
                 queueDecodedFrame(vFrame, needSeekFrame);
                 av_frame_unref(vFrame);

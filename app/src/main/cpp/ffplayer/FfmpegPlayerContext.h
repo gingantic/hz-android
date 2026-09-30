@@ -112,6 +112,12 @@ struct FfmpegPlayerContext {
     // Surface / Window
     std::mutex windowMutex;
     ANativeWindow* nativeWindow = nullptr;
+    // Lock-free "a surface is currently attached" mirror of nativeWindow != nullptr.
+    // nativeWindow itself is a plain pointer guarded by windowMutex; the audio thread
+    // must not touch it directly (data race on setSurface/closeMedia null-out). It polls
+    // this flag instead. Written ONLY while windowMutex is held, next to every
+    // nativeWindow assignment, so the two never disagree.
+    std::atomic<bool> hasSurface{false};
     std::atomic<bool> surfaceChanged{false};
 
     // Queues
@@ -276,6 +282,14 @@ struct FfmpegPlayerContext {
     std::condition_variable controlCv;
 
     void checkPlaybackFinished(JNIEnv* env) {
+        // A seek landing exactly as both decode threads finish their EOF drain can
+        // race: demux clears videoFinished/audioFinished/endNotified for the new
+        // generation, but a decode thread still inside its drain block then calls
+        // this with a stale *Finished=true, emitting a spurious STATE_ENDED at the
+        // seek target. Suppress the terminal transition while any seek is pending.
+        if (seekTargetMs.load() >= 0 || pendingSeekTargetMs() >= 0) {
+            return;
+        }
         bool vDone = (videoStreamIdx < 0) || videoFinished.load();
         bool aDone = (audioStreamIdx < 0) || audioFinished.load();
         if (vDone && aDone && isRunning.load() && !isStopped.load()) {
@@ -518,6 +532,7 @@ struct FfmpegPlayerContext {
             nativeWindow = ANativeWindow_fromSurface(env, surface);
             LOGD("setSurface: acquired ANativeWindow %p", nativeWindow);
         }
+        hasSurface.store(nativeWindow != nullptr);
         surfaceChanged.store(true);
         controlCv.notify_all();
     }
@@ -557,6 +572,7 @@ struct FfmpegPlayerContext {
                 ANativeWindow_release(nativeWindow);
                 nativeWindow = nullptr;
             }
+            hasSurface.store(false);
             if (swsCtx) {
                 sws_freeContext(swsCtx);
                 swsCtx = nullptr;
@@ -577,10 +593,7 @@ struct FfmpegPlayerContext {
             avcodec_parameters_free(&videoCodecPar);
             videoCodecPar = nullptr;
         }
-        if (swsCtx) {
-            sws_freeContext(swsCtx);
-            swsCtx = nullptr;
-        }
+        // swsCtx is already freed above under windowMutex; no second free here.
         if (fmtCtx) {
             avformat_close_input(&fmtCtx);
             fmtCtx = nullptr;
