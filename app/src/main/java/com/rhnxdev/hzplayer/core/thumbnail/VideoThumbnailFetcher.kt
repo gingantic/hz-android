@@ -41,11 +41,14 @@ data class VideoFrame(val path: String, val dateModified: Long)
 /** Frame timestamp at 40% of the clip, in microseconds (MediaMetadataRetriever unit). */
 fun frameTimeUs(durationMs: Long): Long = durationMs * 1000L * 40 / 100
 
-/** Longest edge of the cached thumbnail; keeps WebP files small. */
-private const val THUMB_MAX_WIDTH = 720
+/** Longest edge of the cached thumbnail; sized for the ~40%-row grid display, keeps WebP files small. */
+internal const val THUMB_MAX_WIDTH = 512
 
-/** Smaller target for network (SMB) thumbnails — less decode/transfer work. */
+/** Smaller target for network (SMB) thumbnails — less decode/transfer work; already at/below the local target. */
 private const val THUMB_MAX_WIDTH_NETWORK = 480
+
+/** WebP compression quality (0–100). 68 trades a hair of quality for meaningfully smaller cache files. */
+internal const val THUMB_WEBP_QUALITY = 68
 
 /** How many bytes to download from a remote video for thumbnail extraction. */
 private const val REMOTE_HEAD_BYTES = 512_000L // 512 KB — enough for the moov atom; smaller range = faster thumbnail fetch on slow links
@@ -112,7 +115,7 @@ class VideoFrameFetcher(
         try {
             cacheFile.parentFile?.mkdirs()
             cacheFile.outputStream().use { out ->
-                bitmap.compress(webpFormat(), 75, out)
+                bitmap.compress(webpFormat(), THUMB_WEBP_QUALITY, out)
             }
             knownExistFiles.add(cachePath)
         } finally {
@@ -411,7 +414,7 @@ private fun Exception.isMmfrParseFailure(): Boolean =
     this is RuntimeException && message?.contains("setDataSource failed") == true
 
 /** Fit within [THUMB_MAX_WIDTH] preserving aspect; default 16:9 when source size is unknown. */
-private fun scaledDimensions(srcW: Int, srcH: Int): Pair<Int, Int> {
+internal fun scaledDimensions(srcW: Int, srcH: Int): Pair<Int, Int> {
     if (srcW <= 0 || srcH <= 0) return THUMB_MAX_WIDTH to (THUMB_MAX_WIDTH * 9 / 16)
     if (srcW <= THUMB_MAX_WIDTH) return srcW to srcH
     val dstH = (srcH.toLong() * THUMB_MAX_WIDTH / srcW).toInt().coerceAtLeast(1)

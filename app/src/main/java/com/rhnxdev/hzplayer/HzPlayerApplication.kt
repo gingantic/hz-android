@@ -10,19 +10,36 @@ import coil3.PlatformContext
 import coil3.request.crossfade
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.rhnxdev.hzplayer.core.thumbnail.THUMB_MAX_AGE_MS
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrameFetcher
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrameKeyer
+import com.rhnxdev.hzplayer.core.thumbnail.pruneOldThumbnails
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import okio.Path.Companion.toPath
 
 @HiltAndroidApp
 class HzPlayerApplication : Application(), SingletonImageLoader.Factory {
 
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "onCreate — app init")
         ConnectionPool.sftpKnownHostsFile = File(filesDir, "sftp_known_hosts")
+
+        // Fire-and-forget: prune stale thumbnails so video_thumbs stays bounded.
+        // Wrapped so any failure is logged and never affects startup.
+        appScope.launch {
+            runCatching {
+                val pruned = pruneOldThumbnails(File(cacheDir, "video_thumbs"), THUMB_MAX_AGE_MS)
+                if (pruned > 0) Log.i(TAG, "pruned $pruned stale thumbnail(s)")
+            }.onFailure { Log.w(TAG, "thumbnail prune failed", it) }
+        }
     }
 
     override fun onTerminate() {
