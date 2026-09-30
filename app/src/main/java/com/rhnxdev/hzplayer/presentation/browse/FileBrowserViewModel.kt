@@ -358,12 +358,16 @@ class FileBrowserViewModel @Inject constructor(
             return
         }
 
-        _uiState.update { it.copy(isPasting = true) }
+        _uiState.update { it.copy(isPasting = true, pasteProgress = 0f) }
         viewModelScope.launch {
+            // The repo reports from a background thread; hop back to update state.
+            val onProgress: (Float) -> Unit = { fraction ->
+                _uiState.update { it.copy(pasteProgress = fraction.coerceIn(0f, 1f)) }
+            }
             val result = if (clipboard.isCut) {
-                fileRepository.moveEntry(clipboard.item.path, destDir)
+                fileRepository.moveEntry(clipboard.item.path, destDir, onProgress)
             } else {
-                fileRepository.copyEntry(clipboard.item.path, destDir)
+                fileRepository.copyEntry(clipboard.item.path, destDir, onProgress)
             }
             result.fold(
                 onSuccess = { newPath ->
@@ -376,6 +380,7 @@ class FileBrowserViewModel @Inject constructor(
                         it.copy(
                             clipboard = null,
                             isPasting = false,
+                            pasteProgress = null,
                             fileOpMessage = if (clipboard.isCut) {
                                 "Moved \"${File(newPath).name}\""
                             } else {
@@ -387,7 +392,11 @@ class FileBrowserViewModel @Inject constructor(
                 },
                 onFailure = { e ->
                     _uiState.update {
-                        it.copy(isPasting = false, fileOpMessage = e.message ?: "Operation failed")
+                        it.copy(
+                            isPasting = false,
+                            pasteProgress = null,
+                            fileOpMessage = e.message ?: "Operation failed",
+                        )
                     }
                 },
             )

@@ -60,6 +60,7 @@
     <string name="delete_grace_message">Deleting \"%1$s\"…</string>
     <string name="undo">Undo</string>
     <string name="paste_here">Paste</string>
+    <string name="paste_progress_percent">%1$d%%</string>
     <string name="all_files_access_title">Allow file management</string>
     <string name="all_files_access_message">Moving and copying files requires “All files access”. Grant it in system settings, then paste again.</string>
     <string name="all_files_access_grant">Open settings</string>

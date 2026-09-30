@@ -243,7 +243,11 @@ class FileRepositoryImpl @Inject constructor(
         if (results.isEmpty()) emit(emptyList()) else emit(results)
     }.flowOn(Dispatchers.IO)
 
-    override suspend fun copyEntry(sourcePath: String, destDirPath: String): Result<String> =
+    override suspend fun copyEntry(
+        sourcePath: String,
+        destDirPath: String,
+        onProgress: (Float) -> Unit,
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val source = File(sourcePath)
@@ -251,13 +255,19 @@ class FileRepositoryImpl @Inject constructor(
                 validateOperation(source, destDir)
 
                 val target = uniqueTarget(destDir, source.name)
-                copyRecursively(source, target)
+                val progress = CopyProgress(totalBytes(source), onProgress)
+                copyRecursively(source, target, progress)
+                progress.finish()
                 scanPaths(collectFilePaths(target))
                 target.absolutePath
             }
         }
 
-    override suspend fun moveEntry(sourcePath: String, destDirPath: String): Result<String> =
+    override suspend fun moveEntry(
+        sourcePath: String,
+        destDirPath: String,
+        onProgress: (Float) -> Unit,
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val source = File(sourcePath)
@@ -273,10 +283,13 @@ class FileRepositoryImpl @Inject constructor(
 
                 // Fast path: atomic rename works when both ends are on the same volume.
                 if (source.renameTo(target)) {
+                    onProgress(1f)
                     movedFilePaths = collectFilePaths(target)
                 } else {
                     // Cross-volume: copy then delete the original.
-                    copyRecursively(source, target)
+                    val progress = CopyProgress(totalBytes(source), onProgress)
+                    copyRecursively(source, target, progress)
+                    progress.finish()
                     if (!source.deleteRecursively()) {
                         // Copy succeeded but cleanup didn't — keep the copy, report the leftover.
                         throw IOException("Moved, but could not remove the original at $sourcePath")
@@ -361,16 +374,22 @@ class FileRepositoryImpl @Inject constructor(
         return candidate
     }
 
-    private fun copyRecursively(source: File, target: File) {
+    private fun copyRecursively(source: File, target: File, progress: CopyProgress) {
         if (source.isDirectory) {
             if (!target.mkdirs()) throw IOException("Could not create folder ${target.name}")
             source.listFiles()?.forEach { child ->
-                copyRecursively(child, File(target, child.name))
+                copyRecursively(child, File(target, child.name), progress)
             }
         } else {
+            val buffer = ByteArray(256 * 1024)
             source.inputStream().use { input ->
                 target.outputStream().use { output ->
-                    input.copyTo(output, bufferSize = 256 * 1024)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                        progress.advance(read.toLong())
+                    }
+                    output.flush()
                 }
             }
             if (target.length() != source.length()) {
@@ -379,6 +398,37 @@ class FileRepositoryImpl @Inject constructor(
             }
         }
         target.setLastModified(source.lastModified())
+    }
+
+    /** Total byte size of a file, or of every file under a directory (recursively). */
+    private fun totalBytes(root: File): Long = when {
+        root.isDirectory -> root.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        else -> root.length()
+    }
+
+    /**
+     * Tracks bytes copied against a known total and reports a 0f..1f fraction.
+     * Reports are throttled to whole-percent steps so a large tree doesn't flood
+     * the UI with StateFlow updates; [finish] guarantees a final 1f.
+     */
+    private class CopyProgress(
+        private val totalBytes: Long,
+        private val onProgress: (Float) -> Unit,
+    ) {
+        private var copied = 0L
+        private var lastReportedPercent = -1
+
+        fun advance(bytes: Long) {
+            if (totalBytes <= 0L) return
+            copied += bytes
+            val percent = ((copied * 100) / totalBytes).toInt().coerceIn(0, 100)
+            if (percent != lastReportedPercent) {
+                lastReportedPercent = percent
+                onProgress(percent / 100f)
+            }
+        }
+
+        fun finish() = onProgress(1f)
     }
 
     private fun collectFilePaths(root: File): List<String> = when {

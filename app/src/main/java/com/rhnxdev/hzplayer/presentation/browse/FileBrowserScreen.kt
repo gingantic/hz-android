@@ -206,6 +206,7 @@ fun FileBrowserScreen(
                         isPasting = uiState.isPasting,
                         onPaste = viewModel::onPasteClipboard,
                         onCancel = viewModel::onCancelClipboard,
+                        pasteProgress = uiState.pasteProgress,
                     )
                 }
             }

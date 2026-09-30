@@ -4,9 +4,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,7 +20,6 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.core.components.HzPlayerProgressBar
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.presentation.browse.FileClipboard
 
@@ -48,6 +50,7 @@ fun PasteActionBar(
     onPaste: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    pasteProgress: Float? = null,
 ) {
     Surface(
         modifier = modifier
@@ -58,44 +61,65 @@ fun PasteActionBar(
         tonalElevation = 3.dp,
         shadowElevation = 6.dp,
     ) {
-        Row(
-            modifier = Modifier.padding(start = Spacing.md, end = Spacing.sm, top = Spacing.xs, bottom = Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.padding(
+                start = Spacing.md,
+                end = Spacing.sm,
+                top = Spacing.xs,
+                bottom = Spacing.xs,
+            ),
         ) {
-            Icon(
-                imageVector = if (clipboard.isCut) Icons.Default.ContentCut else Icons.Default.ContentCopy,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.width(Spacing.sm))
-            Text(
-                text = clipboard.item.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(modifier = Modifier.width(Spacing.sm))
-            if (isPasting) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(horizontal = Spacing.md)
-                        .size(24.dp),
-                    strokeWidth = 2.dp,
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (clipboard.isCut) Icons.Default.ContentCut else Icons.Default.ContentCopy,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
                 )
-            } else {
-                IconButton(onClick = onCancel) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = stringResource(R.string.dialog_cancel),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                Spacer(modifier = Modifier.width(Spacing.sm))
+                Text(
+                    text = clipboard.item.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(modifier = Modifier.width(Spacing.sm))
+                if (isPasting) {
+                    // Percentage label pairs with the determinate bar below.
+                    Text(
+                        text = stringResource(
+                            R.string.paste_progress_percent,
+                            ((pasteProgress ?: 0f) * 100).toInt(),
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = Spacing.sm),
                     )
+                } else {
+                    IconButton(onClick = onCancel) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.dialog_cancel),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Button(onClick = onPaste, enabled = canPaste) {
+                        Text(stringResource(R.string.paste_here))
+                    }
                 }
-                Button(onClick = onPaste, enabled = canPaste) {
-                    Text(stringResource(R.string.paste_here))
-                }
+            }
+
+            if (isPasting) {
+                Spacer(modifier = Modifier.height(Spacing.xs))
+                // Custom house-style bar; a null fraction (e.g. atomic move) is indeterminate.
+                HzPlayerProgressBar(
+                    progress = pasteProgress,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Spacing.xs),
+                )
             }
         }
     }

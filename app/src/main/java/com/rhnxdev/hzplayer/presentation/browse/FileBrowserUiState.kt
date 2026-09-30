@@ -64,6 +64,11 @@ data class FileBrowserUiState(
     val clipboard: FileClipboard? = null,
     /** True while a paste (copy/move) is running on disk. */
     val isPasting: Boolean = false,
+    /**
+     * Fraction (0f..1f) of the running paste. Null when not pasting; a null value
+     * while [isPasting] is true means progress is indeterminate (e.g. atomic move).
+     */
+    val pasteProgress: Float? = null,
     /** One-shot user feedback for file operations; cleared via onFileOpMessageShown(). */
     val fileOpMessage: String? = null,
     /** True when a paste was blocked because "All files access" is not granted. */
