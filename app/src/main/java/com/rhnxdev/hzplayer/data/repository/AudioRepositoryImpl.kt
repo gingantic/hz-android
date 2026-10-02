@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.repository
 
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.MediaDao
+import com.rhnxdev.hzplayer.data.datasource.local.room.entities.MediaEntity
 import com.rhnxdev.hzplayer.data.datasource.media.MediaScanner
 import com.rhnxdev.hzplayer.data.mapper.toAudioItem
 import com.rhnxdev.hzplayer.domain.model.Album
@@ -39,52 +40,76 @@ class AudioRepositoryImpl @Inject constructor(
             cacheIn = { cachedSongs = it },
         )
 
-    override fun getAlbums(forceRefresh: Boolean, minDurationSecs: Int): Flow<List<Album>> = flow {
-        val memCache = cachedAlbums
-        if (memCache != null && !forceRefresh) {
-            emit(memCache)
-            return@flow
-        }
-        val songs = loadFilteredSongs(minDurationSecs)
-        if (songs.isNotEmpty()) {
-            val albums = buildAlbums(songs)
-            cachedAlbums = albums
-            emit(albums)
-        } else if (BuildConfig.DEBUG) {
-            // Preview fallback — debug only; will be replaced when songs are scanned
-            val albums = PreviewMedia.albums
-            cachedAlbums = albums
-            emit(albums)
-        } else {
-            emit(emptyList())
+    override fun getAlbums(forceRefresh: Boolean, minDurationSecs: Int): Flow<List<Album>> =
+        roomBackedFlow(
+            readRoom = { mediaDao.getAllAudio() },
+            preview = PreviewMedia.albums,
+            build = ::buildAlbums,
+            memoryCache = { cachedAlbums },
+            cacheIn = { cachedAlbums = it },
+            forceRefresh = forceRefresh,
+            filter = { minDurationSecs <= 0 || it.durationMs >= minDurationSecs * 1000L },
+        )
+
+    override fun getArtists(forceRefresh: Boolean, minDurationSecs: Int): Flow<List<Artist>> =
+        roomBackedFlow(
+            readRoom = { mediaDao.getAllAudio() },
+            preview = PreviewMedia.artists,
+            build = ::buildArtists,
+            memoryCache = { cachedArtists },
+            cacheIn = { cachedArtists = it },
+            forceRefresh = forceRefresh,
+            filter = { minDurationSecs <= 0 || it.durationMs >= minDurationSecs * 1000L },
+        )
+
+    /**
+     * Room is the source of truth and is **observed**, not read once. The song scan
+     * (`cachedScanFlow` → `replaceAudio`) rewrites the audio table after a screen has
+     * loaded; a one-shot read pinned the list to the pre-scan snapshot and cached it,
+     * so even a tab re-focus kept serving stale data.
+     *
+     * @param readRoom the query to observe — the whole audio table, or one album/artist.
+     * @param preview placeholder for an empty Room; debug builds only, and never cached
+     *   — it must not outlive the scan that fills Room. Room's rows always win, so a
+     *   preview name colliding with a real album/artist cannot shadow the real tracks.
+     * @param build maps the rows into the caller's model.
+     * @param memoryCache read lazily and emitted first for an instant value; Room's
+     *   current contents follow on the same collection, so the cache cannot pin a
+     *   stale list.
+     * @param cacheIn writes a freshly built list back to the in-memory cache.
+     * @param forceRefresh skip the memory cache and wait for Room.
+     * @param filter narrows the rows *before* the empty check, so a list that is empty
+     *   only because of filtering still falls back to the preview.
+     */
+    private fun <T> roomBackedFlow(
+        readRoom: () -> Flow<List<MediaEntity>>,
+        preview: List<T>,
+        build: (List<AudioItem>) -> List<T>,
+        memoryCache: () -> List<T>? = { null },
+        cacheIn: (List<T>) -> Unit = {},
+        forceRefresh: Boolean = false,
+        filter: (AudioItem) -> Boolean = { true },
+    ): Flow<List<T>> = flow {
+        val memCache = memoryCache()
+        if (memCache != null && !forceRefresh) emit(memCache)
+        var emitted = memCache != null && !forceRefresh
+
+        readRoom().collect { entities ->
+            val songs = entities.map { it.toAudioItem() }.filter(filter)
+            if (songs.isEmpty() && !emitted && BuildConfig.DEBUG) {
+                // Placeholder only — never cached; a cached preview would outlive the
+                // scan that populates Room and mask the real library.
+                emit(preview)
+            } else {
+                // Also the "library emptied" path: no songs → nothing to build, so the
+                // UI clears rather than freezing on the last known list.
+                val list = build(songs)
+                cacheIn(list)
+                emit(list)
+            }
+            emitted = true
         }
     }.flowOn(Dispatchers.IO)
-
-    override fun getArtists(forceRefresh: Boolean, minDurationSecs: Int): Flow<List<Artist>> = flow {
-        val memCache = cachedArtists
-        if (memCache != null && !forceRefresh) {
-            emit(memCache)
-            return@flow
-        }
-        val songs = loadFilteredSongs(minDurationSecs)
-        if (songs.isNotEmpty()) {
-            val artists = buildArtists(songs)
-            cachedArtists = artists
-            emit(artists)
-        } else if (BuildConfig.DEBUG) {
-            // Preview fallback — debug only
-            val artists = PreviewMedia.artists
-            cachedArtists = artists
-            emit(artists)
-        } else {
-            emit(emptyList())
-        }
-    }.flowOn(Dispatchers.IO)
-
-    /** Full song list from Room, filtered by the minimum-duration preference. */
-    private suspend fun loadFilteredSongs(minDurationSecs: Int): List<AudioItem> =
-        mediaDao.getAllAudio().first().map { it.toAudioItem() }
-            .filter { minDurationSecs <= 0 || it.durationMs >= minDurationSecs * 1000L }
 
     // Group by album title only. A single album can have per-track artist tags
     // (compilations, "feat." credits) — DISTINCT album+artist would split it into
@@ -122,25 +147,21 @@ class AudioRepositoryImpl @Inject constructor(
         }
         .sortedBy { it.name.lowercase() }
 
-    override fun getSongsByAlbum(albumTitle: String): Flow<List<AudioItem>> {
-        if (BuildConfig.DEBUG) {
-            val preview = PreviewMedia.songs.filter { it.album == albumTitle }
-            if (preview.isNotEmpty()) return flow { emit(preview) }
-        }
-        return mediaDao.getSongsByAlbum(albumTitle).map { entities ->
-            entities.map { it.toAudioItem() }
-        }
-    }
+    override fun getSongsByAlbum(albumTitle: String): Flow<List<AudioItem>> =
+        roomBackedFlow(
+            readRoom = { mediaDao.getSongsByAlbum(albumTitle) },
+            // Only reached while Room has no such album: the placeholder behind a card
+            // the grid showed before the scan landed.
+            preview = PreviewMedia.songs.filter { it.album == albumTitle },
+            build = { it },
+        )
 
-    override fun getSongsByArtist(artistName: String): Flow<List<AudioItem>> {
-        if (BuildConfig.DEBUG) {
-            val preview = PreviewMedia.songs.filter { it.artist == artistName }
-            if (preview.isNotEmpty()) return flow { emit(preview) }
-        }
-        return mediaDao.getSongsByArtist(artistName).map { entities ->
-            entities.map { it.toAudioItem() }
-        }
-    }
+    override fun getSongsByArtist(artistName: String): Flow<List<AudioItem>> =
+        roomBackedFlow(
+            readRoom = { mediaDao.getSongsByArtist(artistName) },
+            preview = PreviewMedia.songs.filter { it.artist == artistName },
+            build = { it },
+        )
 
     override suspend fun toggleFavorite(songId: Long, isFavorite: Boolean) {
         mediaDao.updateFavorite(songId, isFavorite)
