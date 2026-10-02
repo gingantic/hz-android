@@ -44,6 +44,14 @@ case "$ABI" in
   arm64-v8a)
     API=28
     TRIPLE="aarch64-linux-android"
+    MESON_CPU_FAMILY="aarch64"
+    MESON_CPU="aarch64"
+    ;;
+  x86_64)
+    API=28
+    TRIPLE="x86_64-linux-android"
+    MESON_CPU_FAMILY="x86_64"
+    MESON_CPU="x86_64"
     ;;
   *)
     echo "ERROR: unsupported ABI '$ABI'" >&2; exit 1 ;;
@@ -166,8 +174,10 @@ fi
 tar -xf "harfbuzz-${HARFBUZZ_VER}.tar.gz"
 pushd "harfbuzz-${HARFBUZZ_VER}"
 mkdir -p build && cd build
-# HarfBuzz uses meson
-pip3 install --quiet meson ninja
+# HarfBuzz uses meson (pip only when meson/ninja are missing; CI installs them via apt).
+if ! command -v meson >/dev/null 2>&1 || ! command -v ninja >/dev/null 2>&1; then
+  pip3 install --quiet meson ninja
+fi
 meson setup .. \
   --cross-file <(cat << EOF
 [binaries]
@@ -182,8 +192,8 @@ pkg_config_libdir = '$PREFIX/lib/pkgconfig'
 
 [host_machine]
 system     = 'android'
-cpu_family = 'aarch64'
-cpu        = 'aarch64'
+cpu_family = '$MESON_CPU_FAMILY'
+cpu        = '$MESON_CPU'
 endian     = 'little'
 EOF
 ) \

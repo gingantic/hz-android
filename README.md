@@ -48,13 +48,22 @@ The Android module links prebuilt FFmpeg, libass, libarchive, dav1d, and related
 The native build scripts expect Linux or WSL and the associated Unix build tools. When the artifacts are not available, run the following from the repository root after setting up the Android NDK:
 
 ```sh
+# Device (arm64-v8a)
 ./ffmpeg_build_android.sh --abi arm64-v8a
 ./libass_build_android.sh --abi arm64-v8a
 ./build_libarchive.sh --abi arm64-v8a --ndk-path "$ANDROID_NDK_ROOT"
-./build_adblock_rust.sh
+./build_adblock_rust.sh --abi arm64-v8a
+
+# Emulator (x86_64)
+./ffmpeg_build_android.sh --abi x86_64
+./libass_build_android.sh --abi x86_64
+./build_libarchive.sh --abi x86_64 --ndk-path "$ANDROID_NDK_ROOT"
+./build_adblock_rust.sh --abi x86_64
 ```
 
-Generated libraries go to `app/src/main/jniLibs/arm64-v8a/` and native headers to `app/src/main/cpp/include/`.
+Also copy the NDK's `libc++_shared.so` for each ABI from the sysroot (`$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/<host>/sysroot/usr/lib/<triple>/libc++_shared.so`) into `app/src/main/jniLibs/<abi>/`.
+
+Generated libraries go to `app/src/main/jniLibs/<abi>/` and native headers to `app/src/main/cpp/include/`. Debug builds package both `arm64-v8a` and `x86_64` (x86_64 is for emulator testing); release builds are `arm64-v8a` only.
 
 ## Tests
 

@@ -146,6 +146,8 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+            // Emulator ABI for debug only; release stays arm64-v8a so the OTA APK stays small.
+            ndk { abiFilters += "x86_64" }
         }
     }
     compileOptions {

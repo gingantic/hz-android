@@ -95,7 +95,7 @@ for a in "\$@"; do
 done
 exec "$clangpp_real" "\${ARGS[@]}"
 WRAPEOF
-  for tool in aarch64-linux-android-{as,ld,objcopy,objdump,readelf} llvm-{ar,nm,strip,ranlib,objcopy,objdump,readobj}; do
+  for tool in ${CROSS}{as,ld,objcopy,objdump,readelf} llvm-{ar,nm,strip,ranlib,objcopy,objdump,readobj}; do
     real="$TC/${tool}${EXE}"
     if [[ -f "$real" ]]; then
       cat > "$WRAPPER_DIR/$tool" << WRAPEOF
@@ -116,7 +116,7 @@ WRAPEOF
       ln -sf "$WRAPPER_DIR/$tool" "$WRAPPER_DIR/${tool}${EXE}" 2>/dev/null || true
     fi
   done
-  ln -sf "$WRAPPER_DIR/$CLANG" "$WRAPPER_DIR/aarch64-linux-android-ld" 2>/dev/null || true
+  ln -sf "$WRAPPER_DIR/$CLANG" "$WRAPPER_DIR/${CROSS}ld" 2>/dev/null || true
   chmod +x "$WRAPPER_DIR/"*
   export PATH="$WRAPPER_DIR:$PATH"
   BIN_DIR="$WRAPPER_DIR"
@@ -136,11 +136,11 @@ BUILD_TMP="/tmp/ffmpeg_build_tmp"
 PREFIX="$BUILD_TMP/prefix"
 mkdir -p "$PREFIX/lib/pkgconfig" "$PREFIX/include" "$BUILD_TMP"
 
-# cmake + ninja are needed for mbedTLS (meson is needed for dav1d below).
+# cmake + ninja are needed for mbedTLS (meson for dav1d; nasm/yasm for x86 asm).
 SUDO=""
 [ "$(id -u)" -ne 0 ] && SUDO=sudo
 $SUDO apt-get update -qq
-$SUDO apt-get install -y -qq cmake ninja-build wget build-essential
+$SUDO apt-get install -y -qq cmake ninja-build wget build-essential nasm yasm
 
 # ----- mbedTLS (TLS backend for FFmpeg's https protocol) ----------------------
 # Pinned to the same LTS as build_libarchive.sh. Static-only; the needed
@@ -184,7 +184,9 @@ if [[ ! -d "$DAV1D_DIR" ]]; then
 fi
 
 MESON_CPU_FAMILY="$TARGET_ARCH"
+MESON_CPU="$TARGET_ARCH"
 [[ "$TARGET_ARCH" == "arm64" ]] && MESON_CPU_FAMILY="aarch64"
+[[ "$TARGET_ARCH" == "arm64" ]] && MESON_CPU="armv8-a"
 
 cat > "$BUILD_TMP/cross_$ABI.meson" <<EOF
 [binaries]
@@ -244,9 +246,22 @@ fi
 
 cd "$FFMPEG_DIR"
 export TMPDIR=/tmp
-# Only clean on explicit force; otherwise keep prior .o files so `make` is
-# incremental across CI runs (ffmpeg-src is cached with its build objects).
-[ -n "${FFMPEG_FORCE_REBUILD:-}" ] && make clean 2>/dev/null || true
+# Keep prior .o files so `make` stays incremental across CI runs (ffmpeg-src is
+# cached with its build objects), but purge when the tree was last configured
+# for another ABI: reusing its objects fails the link ("... is incompatible
+# with elf_x86_64"), and `make clean` alone misses the per-arch source dirs
+# (e.g. libavutil/aarch64/*.o) because they are not in the current config.
+PREV_ABI=""
+if grep -q '^ARCH_AARCH64=yes' ffbuild/config.mak 2>/dev/null; then
+  PREV_ABI="arm64-v8a"
+elif grep -q '^ARCH_X86_64=yes' ffbuild/config.mak 2>/dev/null; then
+  PREV_ABI="x86_64"
+fi
+if [[ -n "${FFMPEG_FORCE_REBUILD:-}" || ( -n "$PREV_ABI" && "$PREV_ABI" != "$ABI" ) ]]; then
+  echo "=== Purging objects (forced or ABI switch: ${PREV_ABI:-unknown} -> $ABI) ==="
+  make clean 2>/dev/null || true
+  find . -name '*.o' -delete 2>/dev/null || true
+fi
 
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"

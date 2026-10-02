@@ -28,7 +28,7 @@ gradlew.bat assembleDebug      # Windows ← use this
 Gradle wrapper **8.13** (`gradle/wrapper/gradle-wrapper.properties`) · NDK **27.0.12077973**
 (pinned; keep in sync with `NDK_VER` in `.github/workflows/build.yml`) · JDK 17.
 
-- `assembleDebug` / `assembleRelease` link against prebuilt native libs in `app/src/main/jniLibs/arm64-v8a/`, which are **not in git**. On a fresh clone, build them first (README → "Native dependencies"). A missing `.so` surfaces as a CMake `IMPORTED_LOCATION` error, not a Gradle one — do not "fix" the Gradle files.
+- `assembleDebug` / `assembleRelease` link against prebuilt native libs in `app/src/main/jniLibs/<abi>/`, which are **not in git**. Debug builds package `arm64-v8a` + `x86_64` (emulator testing); release builds are `arm64-v8a` only. On a fresh clone, build them first (README → "Native dependencies"). A missing `.so` surfaces as a CMake `IMPORTED_LOCATION` error, not a Gradle one — do not "fix" the Gradle files.
 - `connectedCheck` needs a connected device or emulator; it cannot run headless.
 - `lint` is available but **not** CI-gated. CI (`.github/workflows/build.yml`) runs `test` then `assembleRelease`.
 
