@@ -86,6 +86,52 @@ class TabManager(
         customView = null
     }
 
+    // ── JavaScript dialogs (alert / confirm / prompt / beforeunload) ──────
+
+    /**
+     * The JS dialog currently awaiting the user. WebView blocks the page's JS
+     * thread until the matching [android.webkit.JsResult] is confirmed/cancelled,
+     * so exactly one can be live at a time — a second request while one is open
+     * is auto-cancelled rather than queued.
+     */
+    var jsDialog by mutableStateOf<JsDialogRequest?>(null)
+        private set
+
+    /** Resolve the open JS dialog: positive = OK/leave, else cancel. [input] applies to prompt only. */
+    fun resolveJsDialog(confirmed: Boolean, input: String? = null) {
+        val d = jsDialog ?: return
+        jsDialog = null
+        when (val r = d.result) {
+            is JsDialogResult.Confirm -> if (confirmed) r.result.confirm() else r.result.cancel()
+            is JsDialogResult.Prompt  -> if (confirmed) r.result.confirm(input ?: d.defaultValue) else r.result.cancel()
+        }
+    }
+
+    private fun showJsDialog(request: JsDialogRequest): Boolean {
+        // Only one modal JS dialog at a time; reject extras so WebView unblocks.
+        if (jsDialog != null) return false
+        jsDialog = request
+        return true
+    }
+
+    // ── File upload (<input type="file">) ─────────────────────────────────
+
+    private var fileChooserCallback: android.webkit.ValueCallback<Array<android.net.Uri>>? = null
+
+    /**
+     * Fired when a page opens a file picker. The host Activity owns the
+     * ActivityResultLauncher (the WebChromeClient has no Activity context), so it
+     * launches the chooser with [FileChooserParams] and later calls
+     * [deliverFileChooserResult]. Returns false here if a chooser is already open.
+     */
+    var onShowFileChooser: ((FileChooserRequest) -> Unit)? = null
+
+    /** Deliver the picked URIs (or null if cancelled) back to the waiting page. */
+    fun deliverFileChooserResult(uris: Array<android.net.Uri>?) {
+        fileChooserCallback?.onReceiveValue(uris)
+        fileChooserCallback = null
+    }
+
     // ── Video playback / PiP state ────────────────────────────
 
     /** Tab IDs with at least one actively playing HTML5 video. */
@@ -178,8 +224,18 @@ class TabManager(
 
     var onTabSwitched: ((tabId: String) -> Unit)? = null
     var onPageVisited: ((url: String, title: String) -> Unit)? = null
-    var onCrossDomainPopupBlocked: ((blockedUrl: String, blockedDomain: String) -> Unit)? = null
+    /** Fired when a cross-domain pop-up needs user approval (raises the Allow/Deny sheet). */
     var onCrossDomainPopupRequested: ((PendingPopupRequest) -> Unit)? = null
+    /** Fired when a tel:/mailto:/market:/intent:-style link has no app to handle it. */
+    var onExternalSchemeFailed: ((url: String) -> Unit)? = null
+    /** Fired when an intent:// link is dropped because [BrowserSettings.allowIntentLinks] is off. */
+    var onIntentLinkBlocked: ((url: String) -> Unit)? = null
+    /**
+     * Fired when a page load is blocked by an SSL/certificate error (always
+     * cancelled — no bypass). Carries the raw `SslError.SSL_*` code; the UI maps
+     * it to a human-readable reason. Null when WebView reported no error object.
+     */
+    var onSslErrorBlocked: ((host: String, primaryError: Int?) -> Unit)? = null
 
     /** True when settings request full desktop rendering (viewport + JS spoofing, not just UA). */
     private val isDesktopMode: Boolean
@@ -505,15 +561,18 @@ class TabManager(
 
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val urlStr = request.url.toString()
+                if (handleExternalScheme(view, urlStr)) return true
                 val id = resolveTabId(view)
                 if (request.isForMainFrame && id == activeTabId && !isUrlBarFocused) {
-                    urlInput = request.url.toString()
+                    urlInput = urlStr
                 }
                 return false
             }
 
             @Suppress("DEPRECATION")
             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                if (handleExternalScheme(view, url)) return true
                 if (resolveTabId(view) == activeTabId && !isUrlBarFocused) {
                     urlInput = url
                 }
@@ -590,7 +649,12 @@ class TabManager(
                     "HzBrowser",
                     "onReceivedSslError url=${error?.url} primaryError=${error?.primaryError}"
                 )
+                // Always cancel — no "proceed anyway" bypass, matching a safety-first
+                // posture. Unlike a silent cancel, tell the user why the page didn't
+                // load instead of leaving them looking at a blank/default error page.
                 handler?.cancel()
+                val host = try { android.net.Uri.parse(error?.url).host ?: "" } catch (_: Exception) { "" }
+                onSslErrorBlocked?.invoke(host, error?.primaryError)
             }
         }
 
@@ -633,13 +697,78 @@ class TabManager(
                 updateTab(id) { it.copy(icon = icon) }
             }
 
+            // ── JavaScript dialogs ─────────────────────────────────────
+            // Default WebChromeClient returns false for these, which makes
+            // WebView silently auto-dismiss the dialog — breaking login gates,
+            // confirm flows and "leave site?" prompts. Surface a real dialog.
+
+            override fun onJsAlert(
+                view: WebView, url: String?, message: String?, result: android.webkit.JsResult
+            ): Boolean = showJsDialog(
+                JsDialogRequest(JsDialogType.ALERT, url ?: "", message ?: "",
+                    result = JsDialogResult.Confirm(result))
+            )
+
+            override fun onJsConfirm(
+                view: WebView, url: String?, message: String?, result: android.webkit.JsResult
+            ): Boolean = showJsDialog(
+                JsDialogRequest(JsDialogType.CONFIRM, url ?: "", message ?: "",
+                    result = JsDialogResult.Confirm(result))
+            )
+
+            override fun onJsPrompt(
+                view: WebView, url: String?, message: String?, defaultValue: String?,
+                result: android.webkit.JsPromptResult
+            ): Boolean = showJsDialog(
+                JsDialogRequest(JsDialogType.PROMPT, url ?: "", message ?: "",
+                    defaultValue = defaultValue ?: "", result = JsDialogResult.Prompt(result))
+            )
+
+            override fun onJsBeforeUnload(
+                view: WebView, url: String?, message: String?, result: android.webkit.JsResult
+            ): Boolean = showJsDialog(
+                JsDialogRequest(JsDialogType.BEFORE_UNLOAD, url ?: "", message ?: "",
+                    result = JsDialogResult.Confirm(result))
+            )
+
+            // ── File upload (<input type="file">) ──────────────────────
+
+            override fun onShowFileChooser(
+                webView: WebView,
+                filePathCallback: android.webkit.ValueCallback<Array<android.net.Uri>>,
+                fileChooserParams: FileChooserParams
+            ): Boolean {
+                val handler = onShowFileChooser ?: return false
+                // Only one picker at a time — releasing the previous callback with
+                // null tells its page the earlier chooser was cancelled.
+                fileChooserCallback?.onReceiveValue(null)
+                fileChooserCallback = filePathCallback
+                val accept = fileChooserParams.acceptTypes
+                    ?.filter { it.isNotBlank() } ?: emptyList()
+                handler(
+                    FileChooserRequest(
+                        acceptTypes = accept,
+                        allowMultiple = fileChooserParams.mode ==
+                            FileChooserParams.MODE_OPEN_MULTIPLE,
+                        captureEnabled = fileChooserParams.isCaptureEnabled,
+                        params = fileChooserParams,
+                    )
+                )
+                return true
+            }
+
             override fun onCreateWindow(
                 view: WebView,
                 isDialog: Boolean,
                 isUserGesture: Boolean,
                 resultMsg: android.os.Message?
             ): Boolean {
-                if (!settings.javaScriptEnabled || !settings.javaScriptCanOpenWindows) return false
+                if (!settings.javaScriptEnabled) return false
+                // A real tap (target="_blank", "Login with Google", etc.) always
+                // opens a new tab, same as Chrome/Firefox/Brave — popup blocking
+                // only applies to script-triggered windows with no user gesture
+                // behind them (settings.javaScriptCanOpenWindows gates those).
+                if (!isUserGesture && !settings.javaScriptCanOpenWindows) return false
                 if (resultMsg == null) return false
                 val parentUrl = view.url ?: ""
                 // Remember opener tab so back can return to it when the popup closes
@@ -651,15 +780,24 @@ class TabManager(
                 var isEvaluated = false
 
                 tempWebView.webViewClient = object : WebViewClient() {
-                    private fun handleCrossDomainPopup(v: WebView, popupUrl: String) {
-                        val domain = getRootDomain(popupUrl)
-                        v.post {
-                            try {
-                                v.stopLoading()
-                                v.destroy()
-                            } catch (_: Exception) {}
-                            onCrossDomainPopupBlocked?.invoke(popupUrl, domain)
-                        }
+                    /**
+                     * Cross-domain pop-up: halt the temp WebView and hand it to the
+                     * UI as a pending request so the user can Allow (→ opens as a new
+                     * tab) or Deny (→ the WebView is destroyed). The WebView is kept
+                     * ALIVE here — destroying it would strand the Allow path with
+                     * nothing to register — so denyPendingPopup() owns teardown.
+                     */
+                    private fun promptCrossDomainPopup(v: WebView, popupUrl: String) {
+                        v.post { v.stopLoading() }
+                        onCrossDomainPopupRequested?.invoke(
+                            PendingPopupRequest(
+                                tempWebView = v,
+                                parentUrl = parentUrl,
+                                targetUrl = popupUrl,
+                                targetDomain = getRootDomain(popupUrl),
+                                sourceTabId = openerTabId,
+                            )
+                        )
                     }
 
                     override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
@@ -667,7 +805,7 @@ class TabManager(
                         if (!isEvaluated && settings.blockCrossDomainPopups && isCrossDomain(parentUrl, popupUrl)) {
                             isEvaluated = true
                             v.stopLoading()
-                            handleCrossDomainPopup(v, popupUrl)
+                            promptCrossDomainPopup(v, popupUrl)
                             return true
                         }
                         if (!isEvaluated) {
@@ -682,7 +820,7 @@ class TabManager(
                         if (!isEvaluated && settings.blockCrossDomainPopups && isCrossDomain(parentUrl, url)) {
                             isEvaluated = true
                             v.stopLoading()
-                            handleCrossDomainPopup(v, url)
+                            promptCrossDomainPopup(v, url)
                             return
                         }
                         if (!isEvaluated) {
@@ -696,7 +834,7 @@ class TabManager(
                         val popupUrl = request.url?.toString() ?: ""
                         if (!isEvaluated && settings.blockCrossDomainPopups && isCrossDomain(parentUrl, popupUrl)) {
                             isEvaluated = true
-                            handleCrossDomainPopup(v, popupUrl)
+                            promptCrossDomainPopup(v, popupUrl)
                             return createDummyResponse(popupUrl)
                         }
                         return super.shouldInterceptRequest(v, request)
@@ -759,7 +897,14 @@ class TabManager(
         wv.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         wv.settings.javaScriptEnabled                  = s.javaScriptEnabled
         wv.settings.javaScriptCanOpenWindowsAutomatically = s.javaScriptCanOpenWindows
-        wv.settings.setSupportMultipleWindows(s.javaScriptEnabled && s.javaScriptCanOpenWindows)
+        // Must be enabled whenever JS is on, independent of the "auto pop-up"
+        // toggle above — this is what lets WebView create a new-window request
+        // at all for target="_blank" links / window.open(). If it's off, WebView
+        // doesn't call onCreateWindow; it swallows the request into the current
+        // page (hijacking the origin tab) instead of opening a new one, even for
+        // an ordinary user-tapped link. onCreateWindow's own isUserGesture check
+        // is where automatic (gesture-less) pop-ups actually get blocked.
+        wv.settings.setSupportMultipleWindows(s.javaScriptEnabled)
         wv.settings.domStorageEnabled                  = s.domStorageEnabled
         wv.settings.databaseEnabled                    = true
         wv.settings.mediaPlaybackRequiresUserGesture   = s.mediaPlaybackRequiresGesture
@@ -781,10 +926,14 @@ class TabManager(
         wv.settings.setSupportZoom(true)
         wv.settings.allowFileAccess                    = true
         wv.settings.allowContentAccess                 = true
+        // Deliberately left off (WebView default is already false): this browser
+        // loads arbitrary remote pages, and allowing file:// content universal/
+        // cross-origin access is a known WebView foot-gun — Chrome exposes no
+        // equivalent capability to web content at all.
         @Suppress("DEPRECATION")
-        wv.settings.allowFileAccessFromFileURLs        = true
+        wv.settings.allowFileAccessFromFileURLs        = false
         @Suppress("DEPRECATION")
-        wv.settings.allowUniversalAccessFromFileURLs   = true
+        wv.settings.allowUniversalAccessFromFileURLs   = false
         wv.settings.mixedContentMode = if (s.blockMixedContent)
             android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
         else
@@ -898,6 +1047,10 @@ class TabManager(
     }
 
     fun destroy() {
+        // Release any modal still awaiting a result so its blocked page thread
+        // doesn't linger, and so no ghost dialog survives into a new session.
+        jsDialog?.let { resolveJsDialog(confirmed = false) }
+        deliverFileChooserResult(null)
         liveViews.values.forEach { it.destroy() }
         liveViews.clear()
         webViewGenerations.value = emptyMap()
@@ -927,6 +1080,47 @@ class TabManager(
 
     private fun isSyntheticPageUrl(url: String?): Boolean =
         url != null && url.startsWith("data:text/html")
+
+    /** Schemes WebView cannot render itself — must be handed off to another app. */
+    private val externalSchemes = listOf(
+        "tel:", "mailto:", "sms:", "smsto:", "geo:", "market:", "intent:",
+    )
+
+    /**
+     * Chrome/Firefox/Brave all intercept non-http(s) links (phone numbers, email,
+     * SMS, map coordinates, Play Store, custom app deep links) and hand them off
+     * to the matching Android app instead of letting WebView fail to load them.
+     * Returns true if the URL was handled (navigation should be cancelled).
+     */
+    private fun handleExternalScheme(view: WebView, url: String): Boolean {
+        val isIntent = url.startsWith("intent:", ignoreCase = true)
+        val isExternal = isIntent || externalSchemes.any { url.startsWith(it, ignoreCase = true) }
+        if (!isExternal) return false
+
+        // intent:// is the scheme malicious/ad pages abuse most to jump apps
+        // (or the Play Store) without pop-up-blocker or same-origin checks
+        // applying — let the user turn it off while keeping tel:/mailto:/etc.
+        if (isIntent && !settings.allowIntentLinks) {
+            android.util.Log.w("HzBrowser", "Blocked intent:// link (disabled in settings): $url")
+            onIntentLinkBlocked?.invoke(url)
+            return true
+        }
+
+        try {
+            val intent = if (isIntent) {
+                android.content.Intent.parseUri(url, android.content.Intent.URI_INTENT_SCHEME)
+            } else {
+                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            }
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            view.context.startActivity(intent)
+        } catch (_: android.content.ActivityNotFoundException) {
+            onExternalSchemeFailed?.invoke(url)
+        } catch (_: Exception) {
+            onExternalSchemeFailed?.invoke(url)
+        }
+        return true
+    }
 
     private fun sanitizeUrl(input: String): String {
         val trimmed = input.trim()

@@ -26,6 +26,27 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+/**
+ * Transient warning raised by a WebView callback. Carries data only — the UI
+ * resolves it to a string so no user-facing text lives in the ViewModel.
+ */
+sealed interface BrowserWarning {
+    /** A tel:/mailto:/market: link had no app to handle it. */
+    data object NoAppForLink : BrowserWarning
+
+    /** An intent:// link was dropped because the user disabled app links. */
+    data object IntentLinkBlocked : BrowserWarning
+
+    /** @param primaryError one of the `SslError.SSL_*` codes (null = unreported), mapped to text by the UI. */
+    data class SslErrorBlocked(val host: String, val primaryError: Int?) : BrowserWarning
+}
+
+/** Outcome of a manual ad-block filter-list refresh, shown in the settings screen. */
+sealed interface AdBlockStatus {
+    data class Updated(val ruleCount: Int) : AdBlockStatus
+    data object Failed : AdBlockStatus
+}
+
 @HiltViewModel
 class BrowserViewModel @Inject constructor(
     application: Application,
@@ -120,14 +141,14 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
-    var popupWarningMessage by mutableStateOf<String?>(null)
+    var popupWarning by mutableStateOf<BrowserWarning?>(null)
         private set
 
     var pendingPopupRequest by mutableStateOf<PendingPopupRequest?>(null)
         private set
 
     fun clearPopupWarning() {
-        popupWarningMessage = null
+        popupWarning = null
     }
 
     fun allowPendingPopup() {
@@ -153,7 +174,7 @@ class BrowserViewModel @Inject constructor(
     var isAdBlockUpdating by mutableStateOf(false)
         private set
 
-    var adBlockStatusMessage by mutableStateOf<String?>(null)
+    var adBlockStatus by mutableStateOf<AdBlockStatus?>(null)
         private set
 
     init {
@@ -178,8 +199,12 @@ class BrowserViewModel @Inject constructor(
             }
         }
 
-        tabManager.onCrossDomainPopupBlocked = { _, blockedDomain ->
-            popupWarningMessage = "Blocked cross-domain pop-up ($blockedDomain)"
+        tabManager.onExternalSchemeFailed = { popupWarning = BrowserWarning.NoAppForLink }
+
+        tabManager.onIntentLinkBlocked = { popupWarning = BrowserWarning.IntentLinkBlocked }
+
+        tabManager.onSslErrorBlocked = { host, primaryError ->
+            popupWarning = BrowserWarning.SslErrorBlocked(host, primaryError)
         }
 
         tabManager.onCrossDomainPopupRequested = { request ->
@@ -204,7 +229,7 @@ class BrowserViewModel @Inject constructor(
     fun refreshAdBlockFilters() {
         if (isAdBlockUpdating) return
         isAdBlockUpdating = true
-        adBlockStatusMessage = "Updating filter lists..."
+        adBlockStatus = null
         viewModelScope.launch(Dispatchers.IO) {
             val result = AdBlockUpdater.updateLists(getApplication(), settings.enabledFilterLists)
             val now = System.currentTimeMillis()
@@ -214,9 +239,9 @@ class BrowserViewModel @Inject constructor(
                 settingsStore.save(updatedSettings)
                 AdBlockEngine.reload(getApplication(), updatedSettings)
                 isAdBlockUpdating = false
-                adBlockStatusMessage = when (result) {
-                    is AdBlockUpdater.UpdateResult.Success -> "Updated successfully (${AdBlockEngine.totalRuleCount} active rules)"
-                    is AdBlockUpdater.UpdateResult.Error -> result.message
+                adBlockStatus = when (result) {
+                    is AdBlockUpdater.UpdateResult.Success -> AdBlockStatus.Updated(AdBlockEngine.totalRuleCount)
+                    is AdBlockUpdater.UpdateResult.Error -> AdBlockStatus.Failed
                 }
             }
         }

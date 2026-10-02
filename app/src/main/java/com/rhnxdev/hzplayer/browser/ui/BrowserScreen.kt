@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.browser.ui
 
 import android.app.Activity
+import android.net.http.SslError
 import android.widget.Toast
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
@@ -34,9 +35,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.annotation.StringRes
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.browser.BrowserViewModel
+import com.rhnxdev.hzplayer.browser.BrowserWarning
 
 import android.view.MotionEvent
 import androidx.compose.foundation.clickable
@@ -104,10 +109,26 @@ fun BrowserScreen(
         viewModel.initialize()
     }
 
-    val popupWarning = viewModel.popupWarningMessage
+    // Resolved to text here rather than in the ViewModel — no user-facing string
+    // lives there, so warnings travel as typed data.
+    val popupWarning = viewModel.popupWarning
+    val popupWarningText = popupWarning?.let { warning ->
+        when (warning) {
+            BrowserWarning.NoAppForLink -> stringResource(R.string.browser_no_app_for_link)
+            BrowserWarning.IntentLinkBlocked -> stringResource(R.string.browser_intent_link_blocked)
+            is BrowserWarning.SslErrorBlocked -> {
+                val reason = stringResource(sslErrorReasonRes(warning.primaryError))
+                if (warning.host.isBlank()) {
+                    stringResource(R.string.browser_ssl_blocked_this_site, reason)
+                } else {
+                    stringResource(R.string.browser_ssl_blocked, warning.host, reason)
+                }
+            }
+        }
+    }
     LaunchedEffect(popupWarning) {
-        if (!popupWarning.isNullOrBlank()) {
-            Toast.makeText(context, popupWarning, Toast.LENGTH_SHORT).show()
+        if (!popupWarningText.isNullOrBlank()) {
+            Toast.makeText(context, popupWarningText, Toast.LENGTH_SHORT).show()
             viewModel.clearPopupWarning()
         }
     }
@@ -330,7 +351,7 @@ fun BrowserScreen(
             onSave = { clearUrlBarFocus(); viewModel.updateSettings(it) },
             onDismiss = { clearUrlBarFocus(); showSettings = false },
             isAdBlockUpdating = viewModel.isAdBlockUpdating,
-            adBlockStatusMessage = viewModel.adBlockStatusMessage,
+            adBlockStatus = viewModel.adBlockStatus,
             onUpdateAdBlockFilters = { viewModel.refreshAdBlockFilters() },
         )
 
@@ -339,6 +360,15 @@ fun BrowserScreen(
             request = viewModel.pendingPopupRequest,
             onAllow = { clearUrlBarFocus(); viewModel.allowPendingPopup() },
             onDeny = { clearUrlBarFocus(); viewModel.denyPendingPopup() },
+        )
+
+        // JavaScript alert / confirm / prompt / beforeunload dialog
+        JsDialog(
+            request = viewModel.tabManager.jsDialog,
+            onResult = { confirmed, input ->
+                clearUrlBarFocus()
+                viewModel.tabManager.resolveJsDialog(confirmed, input)
+            },
         )
 
         // Fullscreen custom video view overlay
@@ -356,6 +386,18 @@ fun BrowserScreen(
     }
 }
 
+
+/** Reason text for an [SslError] primary error code (null = WebView reported none). */
+@StringRes
+private fun sslErrorReasonRes(primaryError: Int?): Int = when (primaryError) {
+    SslError.SSL_EXPIRED      -> R.string.browser_ssl_reason_expired
+    SslError.SSL_IDMISMATCH   -> R.string.browser_ssl_reason_mismatch
+    SslError.SSL_NOTYETVALID  -> R.string.browser_ssl_reason_not_yet_valid
+    SslError.SSL_UNTRUSTED    -> R.string.browser_ssl_reason_untrusted
+    SslError.SSL_DATE_INVALID -> R.string.browser_ssl_reason_date_invalid
+    SslError.SSL_INVALID      -> R.string.browser_ssl_reason_invalid
+    else -> R.string.browser_ssl_reason_generic
+}
 
 @Composable
 private fun BrowserWebView(

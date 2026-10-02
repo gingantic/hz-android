@@ -1,5 +1,8 @@
 package com.rhnxdev.hzplayer.browser
 
+import androidx.annotation.StringRes
+import com.rhnxdev.hzplayer.R
+
 /**
  * All user-configurable browser settings.
  * Defaults mirror the current hard-coded behaviour in [TabManager].
@@ -18,9 +21,14 @@ data class BrowserSettings(
     val customAdBlockRules: String = "",
     val lastAdBlockUpdateTimestamp: Long = 0L,
     val cookiesEnabled: Boolean = true,
-    val thirdPartyCookiesEnabled: Boolean = true,
-    val blockMixedContent: Boolean = false,       // false = MIXED_CONTENT_ALWAYS_ALLOW (current)
+    val thirdPartyCookiesEnabled: Boolean = false,
+    val blockMixedContent: Boolean = true,        // true = MIXED_CONTENT_NEVER_ALLOW, matches Chrome's default since v79
     val safeBrowsingEnabled: Boolean = true,
+    // intent:// links are the one external scheme malicious ads commonly abuse
+    // to jump to another app / Play Store without a real user gesture, bypassing
+    // pop-up blocking. tel:/mailto:/sms:/geo:/market: stay always-on — those are
+    // expected, low-abuse browser behaviour standard on Chrome/Firefox/Brave.
+    val allowIntentLinks: Boolean = true,
 
     // ── User Agent ───────────────────────────────────────────────
     val userAgentMode: UserAgentMode = UserAgentMode.MOBILE,
@@ -44,14 +52,14 @@ data class BrowserSettings(
     val restoreTabsOnStartup: Boolean = true,
 )
 
-enum class UserAgentMode(val label: String) {
-    MOBILE("Mobile"),
-    DESKTOP("Desktop"),
-    CUSTOM("Custom"),
+enum class UserAgentMode(@StringRes val labelRes: Int) {
+    MOBILE(R.string.browser_ua_mobile),
+    DESKTOP(R.string.browser_ua_desktop),
+    CUSTOM(R.string.browser_ua_custom),
 }
 
-enum class BrowserCacheMode(val label: String) {
-    NORMAL("Normal"),
-    NO_CACHE("No Cache"),
-    CACHE_ONLY("Cache Only"),
+enum class BrowserCacheMode(@StringRes val labelRes: Int) {
+    NORMAL(R.string.browser_cache_normal),
+    NO_CACHE(R.string.browser_cache_no_cache),
+    CACHE_ONLY(R.string.browser_cache_only),
 }

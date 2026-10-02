@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material.icons.filled.Refresh
@@ -56,8 +57,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.R
+import com.rhnxdev.hzplayer.browser.AdBlockStatus
 import com.rhnxdev.hzplayer.browser.BrowserCacheMode
 import com.rhnxdev.hzplayer.browser.BrowserSettings
 import com.rhnxdev.hzplayer.browser.UserAgentMode
@@ -79,7 +83,7 @@ fun BrowserSettingsScreen(
     onSave: (BrowserSettings) -> Unit,
     onDismiss: () -> Unit,
     isAdBlockUpdating: Boolean = false,
-    adBlockStatusMessage: String? = null,
+    adBlockStatus: AdBlockStatus? = null,
     onUpdateAdBlockFilters: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -92,7 +96,7 @@ fun BrowserSettingsScreen(
     ) {
         // Toolbar with back navigation
         HzPlayerTopBar(
-            title = "Browser Settings",
+            title = stringResource(R.string.browser_settings_title),
             showBack = true,
             onBack = onDismiss,
         )
@@ -103,12 +107,17 @@ fun BrowserSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
             // ── JavaScript ──────────────────────────────────────
-            item { SettingsSectionHeader(title = "JavaScript", icon = Icons.Default.Code) }
+            item {
+                SettingsSectionHeader(
+                    title = stringResource(R.string.browser_js_section),
+                    icon = Icons.Default.Code,
+                )
+            }
 
             item {
                 BrowserSettingsToggleCard(
-                    title = "Enable JavaScript",
-                    subtitle = "Required for most modern websites",
+                    title = stringResource(R.string.browser_enable_js),
+                    subtitle = stringResource(R.string.browser_enable_js_sub),
                     checked = settings.javaScriptEnabled,
                     onCheckedChange = { onSave(settings.copy(javaScriptEnabled = it)) },
                 )
@@ -120,8 +129,8 @@ fun BrowserSettingsScreen(
                     exit = shrinkVertically(),
                 ) {
                     BrowserSettingsToggleCard(
-                        title = "Allow pop-up windows",
-                        subtitle = "JS can open new windows automatically",
+                        title = stringResource(R.string.browser_allow_popups),
+                        subtitle = stringResource(R.string.browser_allow_popups_sub),
                         checked = settings.javaScriptCanOpenWindows,
                         onCheckedChange = { onSave(settings.copy(javaScriptCanOpenWindows = it)) },
                     )
@@ -129,7 +138,12 @@ fun BrowserSettingsScreen(
             }
 
             // ── Ad Blocker Engine ──────────────────────
-            item { SettingsSectionHeader(title = "Ad Blocker Engine (uBlock-style)", icon = Icons.Default.Block) }
+            item {
+                SettingsSectionHeader(
+                    title = stringResource(R.string.browser_adblock_section),
+                    icon = Icons.Default.Block,
+                )
+            }
 
             if (!AdBlockEngine.isAvailable) {
                 item {
@@ -151,7 +165,7 @@ fun BrowserSettingsScreen(
                                 tint = MaterialTheme.colorScheme.error
                             )
                             Text(
-                                text = AdBlockEngine.unavailableReason,
+                                text = stringResource(R.string.browser_adblock_unavailable),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
@@ -161,8 +175,8 @@ fun BrowserSettingsScreen(
             } else {
                 item {
                     BrowserSettingsToggleCard(
-                        title = "Enable Ad Blocker",
-                        subtitle = "Block network ads and unwanted trackers using native adblock-rust",
+                        title = stringResource(R.string.browser_enable_adblock),
+                        subtitle = stringResource(R.string.browser_enable_adblock_sub),
                         checked = settings.adBlockEnabled,
                         onCheckedChange = { onSave(settings.copy(adBlockEnabled = it)) },
                         icon = Icons.Default.Block,
@@ -181,16 +195,16 @@ fun BrowserSettingsScreen(
                     ) {
                         // Dynamic Cosmetic Element Hiding toggle
                         BrowserSettingsToggleCard(
-                            title = "Cosmetic Element Hiding",
-                            subtitle = "Inject CSS to hide empty ad placeholders dynamically",
+                            title = stringResource(R.string.browser_cosmetic_hiding),
+                            subtitle = stringResource(R.string.browser_cosmetic_hiding_sub),
                             checked = settings.cosmeticFilteringEnabled,
                             onCheckedChange = { onSave(settings.copy(cosmeticFilteringEnabled = it)) },
                         )
 
                         // Block Cross Domain Popups toggle
                         BrowserSettingsToggleCard(
-                            title = "Block Cross-Domain Pop-ups",
-                            subtitle = "Automatically block pop-up windows opening from external domains",
+                            title = stringResource(R.string.browser_block_cross_domain_popups),
+                            subtitle = stringResource(R.string.browser_block_cross_domain_popups_sub),
                             checked = settings.blockCrossDomainPopups,
                             onCheckedChange = { onSave(settings.copy(blockCrossDomainPopups = it)) },
                         )
@@ -214,19 +228,34 @@ fun BrowserSettingsScreen(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "Filter Lists Status",
+                                            text = stringResource(R.string.browser_filter_lists_status),
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
-                                            text = "${AdBlockEngine.totalRuleCount} active rules in memory",
+                                            text = stringResource(
+                                                R.string.browser_active_rules,
+                                                AdBlockEngine.totalRuleCount,
+                                            ),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        if (!adBlockStatusMessage.isNullOrBlank()) {
+                                        val statusText = when {
+                                            isAdBlockUpdating ->
+                                                stringResource(R.string.browser_adblock_updating)
+                                            adBlockStatus is AdBlockStatus.Updated ->
+                                                stringResource(
+                                                    R.string.browser_adblock_updated,
+                                                    adBlockStatus.ruleCount,
+                                                )
+                                            adBlockStatus is AdBlockStatus.Failed ->
+                                                stringResource(R.string.browser_adblock_update_failed)
+                                            else -> null
+                                        }
+                                        if (statusText != null) {
                                             Text(
-                                                text = adBlockStatusMessage,
+                                                text = statusText,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
@@ -246,12 +275,12 @@ fun BrowserSettingsScreen(
                                         } else {
                                             Icon(
                                                 imageVector = Icons.Default.Refresh,
-                                                contentDescription = "Update Filter Lists",
+                                                contentDescription = stringResource(R.string.browser_update_filter_lists),
                                                 modifier = Modifier.size(18.dp)
                                             )
                                             Spacer(modifier = Modifier.width(Spacing.xs))
                                         }
-                                        Text("Update Now")
+                                        Text(stringResource(R.string.browser_update_now))
                                     }
                                 }
                             }
@@ -259,7 +288,7 @@ fun BrowserSettingsScreen(
 
                         // Filter Subscriptions Toggles
                         Text(
-                            text = "Filter Subscriptions",
+                            text = stringResource(R.string.browser_filter_subscriptions),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary,
@@ -269,8 +298,8 @@ fun BrowserSettingsScreen(
                         AdBlockListManager.BUILTIN_LISTS.forEach { list ->
                             val isEnabled = settings.enabledFilterLists.contains(list.id)
                             BrowserSettingsToggleCard(
-                                title = list.name,
-                                subtitle = list.description,
+                                title = stringResource(list.nameRes),
+                                subtitle = stringResource(list.descriptionRes),
                                 checked = isEnabled,
                                 onCheckedChange = { checked ->
                                     val newLists = if (checked) {
@@ -285,7 +314,7 @@ fun BrowserSettingsScreen(
 
                         // Custom Rules Input
                         Text(
-                            text = "Custom User Filter Rules",
+                            text = stringResource(R.string.browser_custom_filter_rules),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary,
@@ -296,7 +325,7 @@ fun BrowserSettingsScreen(
                             value = settings.customAdBlockRules,
                             onValueChange = { onSave(settings.copy(customAdBlockRules = it)) },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("e.g. ||example.com^\n##.custom-ad-class") },
+                            placeholder = { Text(stringResource(R.string.browser_custom_filter_rules_hint)) },
                             maxLines = 5,
                             singleLine = false,
                             colors = OutlinedTextFieldDefaults.colors(
@@ -309,12 +338,17 @@ fun BrowserSettingsScreen(
             }
 
             // ── Privacy & Security ──────────────────────────────
-            item { SettingsSectionHeader(title = "Privacy & Security", icon = Icons.Default.Security) }
+            item {
+                SettingsSectionHeader(
+                    title = stringResource(R.string.browser_privacy_section),
+                    icon = Icons.Default.Security,
+                )
+            }
 
             item {
                 BrowserSettingsToggleCard(
-                    title = "Enable Cookies",
-                    subtitle = "Store cookies from websites",
+                    title = stringResource(R.string.browser_enable_cookies),
+                    subtitle = stringResource(R.string.browser_enable_cookies_sub),
                     checked = settings.cookiesEnabled,
                     onCheckedChange = { onSave(settings.copy(cookiesEnabled = it)) },
                     icon = Icons.Default.Cookie,
@@ -327,8 +361,8 @@ fun BrowserSettingsScreen(
                     exit = shrinkVertically(),
                 ) {
                     BrowserSettingsToggleCard(
-                        title = "Allow Third-Party Cookies",
-                        subtitle = "Cookies from sites other than current page",
+                        title = stringResource(R.string.browser_third_party_cookies),
+                        subtitle = stringResource(R.string.browser_third_party_cookies_sub),
                         checked = settings.thirdPartyCookiesEnabled,
                         onCheckedChange = { onSave(settings.copy(thirdPartyCookiesEnabled = it)) },
                     )
@@ -336,8 +370,8 @@ fun BrowserSettingsScreen(
             }
             item {
                 BrowserSettingsToggleCard(
-                    title = "Block Mixed Content",
-                    subtitle = "Block HTTP on HTTPS pages",
+                    title = stringResource(R.string.browser_block_mixed_content),
+                    subtitle = stringResource(R.string.browser_block_mixed_content_sub),
                     checked = settings.blockMixedContent,
                     onCheckedChange = { onSave(settings.copy(blockMixedContent = it)) },
                     icon = Icons.Default.Lock,
@@ -345,24 +379,38 @@ fun BrowserSettingsScreen(
             }
             item {
                 BrowserSettingsToggleCard(
-                    title = "Safe Browsing",
-                    subtitle = "Warn about dangerous sites",
+                    title = stringResource(R.string.browser_safe_browsing),
+                    subtitle = stringResource(R.string.browser_safe_browsing_sub),
                     checked = settings.safeBrowsingEnabled,
                     onCheckedChange = { onSave(settings.copy(safeBrowsingEnabled = it)) },
                     icon = Icons.Default.Security,
                 )
             }
+            item {
+                BrowserSettingsToggleCard(
+                    title = stringResource(R.string.browser_allow_app_links),
+                    subtitle = stringResource(R.string.browser_allow_app_links_sub),
+                    checked = settings.allowIntentLinks,
+                    onCheckedChange = { onSave(settings.copy(allowIntentLinks = it)) },
+                    icon = Icons.Default.OpenInNew,
+                )
+            }
 
             // ── User Agent ──────────────────────────────────────
-            item { SettingsSectionHeader(title = "User Agent", icon = Icons.Default.PhoneAndroid) }
+            item {
+                SettingsSectionHeader(
+                    title = stringResource(R.string.browser_ua_section),
+                    icon = Icons.Default.PhoneAndroid,
+                )
+            }
 
             item {
                 BrowserSettingsSelectorCard(
-                    title = "User Agent Mode",
-                    subtitle = "Browser identity sent to websites",
+                    title = stringResource(R.string.browser_ua_mode),
+                    subtitle = stringResource(R.string.browser_ua_mode_sub),
                     options = UserAgentMode.entries,
                     selectedOption = settings.userAgentMode,
-                    optionLabel = { it.label },
+                    optionLabel = { stringResource(it.labelRes) },
                     onSelect = { onSave(settings.copy(userAgentMode = it)) },
                     icon = Icons.Default.PhoneAndroid,
                     extraContent = {
@@ -380,8 +428,13 @@ fun BrowserSettingsScreen(
                                     draftUa = it
                                     onSave(settings.copy(customUserAgent = it))
                                 },
-                                label = { Text("Custom User-Agent String") },
-                                placeholder = { Text("Mozilla/5.0 …", style = MaterialTheme.typography.bodySmall) },
+                                label = { Text(stringResource(R.string.browser_custom_ua)) },
+                                placeholder = {
+                                    Text(
+                                        stringResource(R.string.browser_custom_ua_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = Spacing.sm),
@@ -401,12 +454,17 @@ fun BrowserSettingsScreen(
             }
 
             // ── Content ─────────────────────────────────────────
-            item { SettingsSectionHeader(title = "Content", icon = Icons.Default.TextFields) }
+            item {
+                SettingsSectionHeader(
+                    title = stringResource(R.string.browser_content_section),
+                    icon = Icons.Default.TextFields,
+                )
+            }
 
             item {
                 BrowserSettingsToggleCard(
-                    title = "DOM Storage",
-                    subtitle = "LocalStorage & SessionStorage for web apps",
+                    title = stringResource(R.string.browser_dom_storage),
+                    subtitle = stringResource(R.string.browser_dom_storage_sub),
                     checked = settings.domStorageEnabled,
                     onCheckedChange = { onSave(settings.copy(domStorageEnabled = it)) },
                     icon = Icons.Default.Storage,
@@ -414,8 +472,8 @@ fun BrowserSettingsScreen(
             }
             item {
                 BrowserSettingsToggleCard(
-                    title = "Load Images",
-                    subtitle = "Download and display images",
+                    title = stringResource(R.string.browser_load_images),
+                    subtitle = stringResource(R.string.browser_load_images_sub),
                     checked = settings.loadImagesAutomatically,
                     onCheckedChange = { onSave(settings.copy(loadImagesAutomatically = it)) },
                     icon = Icons.Default.Image,
@@ -423,8 +481,8 @@ fun BrowserSettingsScreen(
             }
             item {
                 BrowserSettingsToggleCard(
-                    title = "Autoplay Media",
-                    subtitle = "Allow video/audio to play without tapping",
+                    title = stringResource(R.string.browser_autoplay_media),
+                    subtitle = stringResource(R.string.browser_autoplay_media_sub),
                     checked = !settings.mediaPlaybackRequiresGesture,
                     onCheckedChange = { onSave(settings.copy(mediaPlaybackRequiresGesture = !it)) },
                     icon = Icons.Default.PlayCircleOutline,
@@ -432,9 +490,9 @@ fun BrowserSettingsScreen(
             }
             item {
                 BrowserSettingsSliderCard(
-                    title = "Text Zoom",
-                    subtitle = "Adjust web page font scaling",
-                    formattedValue = "${settings.textZoom}%",
+                    title = stringResource(R.string.browser_text_zoom),
+                    subtitle = stringResource(R.string.browser_text_zoom_sub),
+                    formattedValue = stringResource(R.string.browser_text_zoom_value, settings.textZoom),
                     value = settings.textZoom.toFloat(),
                     onValueChange = { onSave(settings.copy(textZoom = it.toInt())) },
                     valueRange = 50f..200f,
@@ -444,27 +502,37 @@ fun BrowserSettingsScreen(
             }
 
             // ── Cache ───────────────────────────────────────────
-            item { SettingsSectionHeader(title = "Cache", icon = Icons.Default.Storage) }
+            item {
+                SettingsSectionHeader(
+                    title = stringResource(R.string.browser_cache_section),
+                    icon = Icons.Default.Storage,
+                )
+            }
 
             item {
                 BrowserSettingsSelectorCard(
-                    title = "Cache Mode",
-                    subtitle = "Controls how web pages are cached",
+                    title = stringResource(R.string.browser_cache_mode),
+                    subtitle = stringResource(R.string.browser_cache_mode_sub),
                     options = BrowserCacheMode.entries,
                     selectedOption = settings.cacheMode,
-                    optionLabel = { it.label },
+                    optionLabel = { stringResource(it.labelRes) },
                     onSelect = { onSave(settings.copy(cacheMode = it)) },
                     icon = Icons.Default.Storage,
                 )
             }
 
             // ── Tabs & Session ──────────────────────────────────
-            item { SettingsSectionHeader(title = "Tabs & Session", icon = Icons.Default.Tab) }
+            item {
+                SettingsSectionHeader(
+                    title = stringResource(R.string.browser_tabs_session_section),
+                    icon = Icons.Default.Tab,
+                )
+            }
 
             item {
                 BrowserSettingsToggleCard(
-                    title = "Restore Tabs on Startup",
-                    subtitle = "Automatically reopen tabs from your previous session",
+                    title = stringResource(R.string.browser_restore_tabs),
+                    subtitle = stringResource(R.string.browser_restore_tabs_sub),
                     checked = settings.restoreTabsOnStartup,
                     onCheckedChange = { onSave(settings.copy(restoreTabsOnStartup = it)) },
                     icon = Icons.Default.Tab,
@@ -660,7 +728,7 @@ private fun <T> BrowserSettingsSelectorCard(
     subtitle: String,
     options: List<T>,
     selectedOption: T,
-    optionLabel: (T) -> String,
+    optionLabel: @Composable (T) -> String,
     onSelect: (T) -> Unit,
     icon: ImageVector,
     modifier: Modifier = Modifier,

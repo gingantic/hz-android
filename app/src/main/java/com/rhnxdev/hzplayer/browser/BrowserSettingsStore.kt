@@ -23,8 +23,9 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         lastAdBlockUpdateTimestamp = p.getLong(KEY_LAST_UPDATE, 0L),
         cookiesEnabled             = p.getBoolean(KEY_COOKIES, true),
         thirdPartyCookiesEnabled   = p.getBoolean(KEY_3P_COOKIES, false),
-        blockMixedContent          = p.getBoolean(KEY_BLOCK_MIXED, false),
+        blockMixedContent          = p.getBoolean(KEY_BLOCK_MIXED, true),
         safeBrowsingEnabled        = p.getBoolean(KEY_SAFE_BROWSING, true),
+        allowIntentLinks           = p.getBoolean(KEY_INTENT_LINKS, true),
         userAgentMode              = UserAgentMode.entries.find {
                                         it.name == p.getString(KEY_UA_MODE, null)
                                      } ?: UserAgentMode.MOBILE,
@@ -57,6 +58,7 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
             .putBoolean(KEY_3P_COOKIES,      s.thirdPartyCookiesEnabled)
             .putBoolean(KEY_BLOCK_MIXED,     s.blockMixedContent)
             .putBoolean(KEY_SAFE_BROWSING,   s.safeBrowsingEnabled)
+            .putBoolean(KEY_INTENT_LINKS,    s.allowIntentLinks)
             .putString( KEY_UA_MODE,         s.userAgentMode.name)
             .putString( KEY_CUSTOM_UA,       s.customUserAgent)
             .putBoolean(KEY_DOM_STORAGE,     s.domStorageEnabled)
@@ -86,6 +88,7 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         private const val KEY_3P_COOKIES     = "third_party_cookies"
         private const val KEY_BLOCK_MIXED    = "block_mixed"
         private const val KEY_SAFE_BROWSING  = "safe_browsing"
+        private const val KEY_INTENT_LINKS   = "intent_links"
         private const val KEY_UA_MODE        = "ua_mode"
         private const val KEY_CUSTOM_UA      = "custom_ua"
         private const val KEY_DOM_STORAGE    = "dom_storage"

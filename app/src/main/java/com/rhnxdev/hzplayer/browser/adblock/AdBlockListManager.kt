@@ -1,12 +1,14 @@
 package com.rhnxdev.hzplayer.browser.adblock
 
 import android.content.Context
+import androidx.annotation.StringRes
+import com.rhnxdev.hzplayer.R
 import java.io.File
 
 data class FilterListDescriptor(
     val id: String,
-    val name: String,
-    val description: String,
+    @StringRes val nameRes: Int,
+    @StringRes val descriptionRes: Int,
     val rawUrl: String,
     val assetPath: String? = null,
     val defaultEnabled: Boolean = true,
@@ -17,30 +19,30 @@ object AdBlockListManager {
     val BUILTIN_LISTS = listOf(
         FilterListDescriptor(
             id = "easylist",
-            name = "EasyList",
-            description = "Standard ad-blocking list (ads, popups, banners)",
+            nameRes = R.string.browser_filter_easylist,
+            descriptionRes = R.string.browser_filter_easylist_desc,
             rawUrl = "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist.txt",
             assetPath = "adblock/default_easylist.txt",
             defaultEnabled = true,
         ),
         FilterListDescriptor(
             id = "easyprivacy",
-            name = "EasyPrivacy",
-            description = "Blocks telemetry, tracking scripts, and analytics",
+            nameRes = R.string.browser_filter_easyprivacy,
+            descriptionRes = R.string.browser_filter_easyprivacy_desc,
             rawUrl = "https://raw.githubusercontent.com/easylist/easylist/master/easyprivacy/easyprivacy.txt",
             defaultEnabled = true,
         ),
         FilterListDescriptor(
             id = "peter_lowe",
-            name = "Peter Lowe's Ad & Tracking List",
-            description = "Adservers and tracker hostname list",
+            nameRes = R.string.browser_filter_peter_lowe,
+            descriptionRes = R.string.browser_filter_peter_lowe_desc,
             rawUrl = "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext",
             defaultEnabled = true,
         ),
         FilterListDescriptor(
             id = "ublock_filters",
-            name = "uBlock Filters (Core)",
-            description = "Core fixes and unbreak rules from uBlock Origin",
+            nameRes = R.string.browser_filter_ublock,
+            descriptionRes = R.string.browser_filter_ublock_desc,
             rawUrl = "https://raw.githubusercontent.com/gorhill/uBlock/master/assets/ublock/filters.txt",
             defaultEnabled = true,
         ),

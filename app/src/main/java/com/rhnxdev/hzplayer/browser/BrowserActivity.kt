@@ -1,11 +1,16 @@
 package com.rhnxdev.hzplayer.browser
 
+import android.app.Activity
 import android.app.PictureInPictureParams
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rhnxdev.hzplayer.browser.ui.BrowserScreen
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
@@ -16,6 +21,16 @@ import dagger.hilt.android.AndroidEntryPoint
 class BrowserActivity : ComponentActivity() {
     private var browserViewModel: BrowserViewModel? = null
 
+    /** True while the system file picker launched for a page's <input type=file> is open. */
+    private var awaitingFileChooser = false
+
+    // Launches the WebView's own file-chooser intent (accept types / multiple /
+    // capture already encoded by FileChooserParams), then hands the result back.
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            awaitingFileChooser = false
+            browserViewModel?.tabManager?.deliverFileChooserResult(parseFileChooserResult(result))
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,6 +53,18 @@ class BrowserActivity : ComponentActivity() {
 
             // Site PiP button (web Picture-in-Picture API) → native PiP
             viewModel.tabManager.onPipRequested = { enterBrowserPip() }
+
+            // <input type="file"> → launch the system picker the WebView built
+            viewModel.tabManager.onShowFileChooser = { request ->
+                try {
+                    awaitingFileChooser = true
+                    fileChooserLauncher.launch(request.params.createIntent())
+                } catch (_: Exception) {
+                    // No activity can satisfy the chooser — unblock the page.
+                    awaitingFileChooser = false
+                    viewModel.tabManager.deliverFileChooserResult(null)
+                }
+            }
 
             HzPlayerTheme(
                 themeMode = themeMode,
@@ -98,6 +125,28 @@ class BrowserActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         browserViewModel?.onResume()
+    }
+
+    override fun onDestroy() {
+        // If a file picker was still open, the page's JS is blocked waiting on
+        // the callback — release it with null so it doesn't hang after teardown.
+        if (awaitingFileChooser) {
+            browserViewModel?.tabManager?.deliverFileChooserResult(null)
+            awaitingFileChooser = false
+        }
+        super.onDestroy()
+    }
+
+    /** Turn a chooser Activity result into the Uri[] WebView expects (null = cancelled). */
+    private fun parseFileChooserResult(result: ActivityResult): Array<Uri>? {
+        if (result.resultCode != Activity.RESULT_OK) return null
+        val data: Intent = result.data ?: return null
+        // Multiple selection comes back as ClipData; single as the data Uri.
+        val clip = data.clipData
+        if (clip != null && clip.itemCount > 0) {
+            return Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
+        }
+        return data.data?.let { arrayOf(it) }
     }
 
 
