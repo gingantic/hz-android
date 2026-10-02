@@ -39,6 +39,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +49,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.withoutScheme
 
@@ -120,7 +122,7 @@ fun BrowserTopBar(
                 singleLine = true,
                 placeholder = {
                     Text(
-                        "Search or enter URL",
+                        stringResource(R.string.browser_search_or_url),
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = fontSize),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -139,9 +141,9 @@ fun BrowserTopBar(
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     val leadingIconDesc = when {
-                        isHttps -> "Secure connection (HTTPS)"
-                        isHttp -> "Insecure connection (HTTP)"
-                        else -> "Search or enter URL"
+                        isHttps -> stringResource(R.string.browser_secure_connection)
+                        isHttp -> stringResource(R.string.browser_insecure_connection)
+                        else -> stringResource(R.string.browser_search_or_url)
                     }
                     Icon(
                         imageVector = leadingIcon,
@@ -160,7 +162,7 @@ fun BrowserTopBar(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "Stop",
+                                contentDescription = stringResource(R.string.browser_stop),
                                 tint = MaterialTheme.colorScheme.error,
                             )
                         }
@@ -170,7 +172,7 @@ fun BrowserTopBar(
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "Go",
+                                contentDescription = stringResource(R.string.browser_go),
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -180,7 +182,7 @@ fun BrowserTopBar(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "Clear URL",
+                                contentDescription = stringResource(R.string.browser_clear_url),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -190,7 +192,7 @@ fun BrowserTopBar(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = "Reload",
+                                contentDescription = stringResource(R.string.browser_reload),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

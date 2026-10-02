@@ -243,7 +243,9 @@ object MediaSnifferEngine {
                                         url = candidateUrl,
                                         selectedQualityUrl = best?.url ?: candidateUrl,
                                         subQualities = sorted,
-                                        qualityLabel = best?.resolution ?: "Master Stream"
+                                        // Null when the playlist carries no RESOLUTION; the badge
+                                        // then falls back to the master-stream label in the UI.
+                                        qualityLabel = best?.resolution?.takeIf { it.isNotBlank() }
                                     )
                                 }
                             }
@@ -426,8 +428,9 @@ object MediaSnifferEngine {
     }
 
     fun formatFileSize(bytes: Long): String {
-        // Unknown length means a live/chunked stream, not a 0-byte file.
-        if (bytes <= 0) return "Stream / Unknown"
+        // Unknown length means a live/chunked stream, not a 0-byte file. Blank
+        // rather than text — the UI supplies the "unknown" label.
+        if (bytes <= 0) return ""
         return com.rhnxdev.hzplayer.core.util.formatFileSize(bytes)
     }
 

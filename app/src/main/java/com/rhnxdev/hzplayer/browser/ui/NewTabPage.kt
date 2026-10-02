@@ -20,26 +20,29 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.annotation.StringRes
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 
 private data class QuickShortcut(
-    val title: String,
+    @StringRes val titleRes: Int,
     val url: String,
     val initial: String,
 )
 
 private val defaultShortcuts = listOf(
-    QuickShortcut("Google", "https://www.google.com", "G"),
-    QuickShortcut("YouTube", "https://www.youtube.com", "Y"),
-    QuickShortcut("DuckDuckGo", "https://duckduckgo.com", "D"),
-    QuickShortcut("Wikipedia", "https://www.wikipedia.org", "W"),
+    QuickShortcut(R.string.browser_shortcut_google, "https://www.google.com", "G"),
+    QuickShortcut(R.string.browser_shortcut_youtube, "https://www.youtube.com", "Y"),
+    QuickShortcut(R.string.browser_shortcut_duckduckgo, "https://duckduckgo.com", "D"),
+    QuickShortcut(R.string.browser_shortcut_wikipedia, "https://www.wikipedia.org", "W"),
 )
 
 @Composable
@@ -62,7 +65,7 @@ fun NewTabPage(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "Hz Browser",
+            text = stringResource(R.string.browser_new_tab_title),
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -104,7 +107,7 @@ fun NewTabPage(
                     }
                     Spacer(modifier = Modifier.height(Spacing.xs))
                     Text(
-                        text = shortcut.title,
+                        text = stringResource(shortcut.titleRes),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,

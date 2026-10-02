@@ -29,9 +29,11 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.browser.PendingPopupRequest
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 
@@ -93,13 +95,13 @@ fun PopupPermissionBottomSheet(
                 )
                 Column {
                     Text(
-                        text = "Cross-Domain Pop-up Request",
+                        text = stringResource(R.string.browser_cross_domain_popup_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "A website is requesting to open an external pop-up",
+                        text = stringResource(R.string.browser_cross_domain_popup_message),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -119,12 +121,12 @@ fun PopupPermissionBottomSheet(
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs)
             ) {
                 Text(
-                    text = "Source Page:",
+                    text = stringResource(R.string.browser_source_page),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = request.parentUrl.ifBlank { "Current Page" },
+                    text = request.parentUrl.ifBlank { stringResource(R.string.browser_current_page) },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -135,7 +137,7 @@ fun PopupPermissionBottomSheet(
                 Spacer(modifier = Modifier.height(Spacing.xs))
 
                 Text(
-                    text = "Target Pop-up Domain:",
+                    text = stringResource(R.string.browser_target_popup_domain),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -166,7 +168,7 @@ fun PopupPermissionBottomSheet(
                     ) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = null)
                         Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text("Deny")
+                        Text(stringResource(R.string.browser_deny))
                     }
 
                     Button(
@@ -178,7 +180,7 @@ fun PopupPermissionBottomSheet(
                     ) {
                         Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null)
                         Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text("Allow")
+                        Text(stringResource(R.string.browser_allow))
                     }
                 }
             }

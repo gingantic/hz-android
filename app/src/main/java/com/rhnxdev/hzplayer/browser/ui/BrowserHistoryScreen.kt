@@ -49,10 +49,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.util.withoutScheme
 import com.rhnxdev.hzplayer.domain.model.BrowserHistoryItem
 import java.text.SimpleDateFormat
@@ -83,7 +85,7 @@ fun BrowserHistoryScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "History",
+                            text = stringResource(R.string.history_title),
                             style = MaterialTheme.typography.titleLarge,
                         )
                     },
@@ -91,7 +93,7 @@ fun BrowserHistoryScreen(
                         IconButton(onClick = onDismiss) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
+                                contentDescription = stringResource(R.string.back_cd),
                             )
                         }
                     },
@@ -100,7 +102,7 @@ fun BrowserHistoryScreen(
                             IconButton(onClick = { showClearDialog = true }) {
                                 Icon(
                                     imageVector = Icons.Default.DeleteSweep,
-                                    contentDescription = "Clear all history",
+                                    contentDescription = stringResource(R.string.browser_clear_all_history),
                                     tint = MaterialTheme.colorScheme.error,
                                 )
                             }
@@ -130,11 +132,11 @@ fun BrowserHistoryScreen(
                         value = searchQuery,
                         onValueChange = onSearchQueryChange,
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Search history") },
+                        placeholder = { Text(stringResource(R.string.browser_search_history)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
+                                contentDescription = stringResource(R.string.search),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         },
@@ -143,7 +145,7 @@ fun BrowserHistoryScreen(
                                 IconButton(onClick = { onSearchQueryChange("") }) {
                                     Icon(
                                         imageVector = Icons.Default.Clear,
-                                        contentDescription = "Clear search",
+                                        contentDescription = stringResource(R.string.browser_clear_search),
                                     )
                                 }
                             }
@@ -178,7 +180,10 @@ fun BrowserHistoryScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = if (searchQuery.isBlank()) "No search history yet" else "No matching results",
+                                text = stringResource(
+                                    if (searchQuery.isBlank()) R.string.browser_no_search_history
+                                    else R.string.browser_no_matching_results
+                                ),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -213,8 +218,8 @@ fun BrowserHistoryScreen(
             if (showClearDialog) {
                 AlertDialog(
                     onDismissRequest = { showClearDialog = false },
-                    title = { Text("Clear browsing history?") },
-                    text = { Text("This will permanently delete all browsing history records.") },
+                    title = { Text(stringResource(R.string.browser_clear_history_title)) },
+                    text = { Text(stringResource(R.string.browser_clear_history_message)) },
                     confirmButton = {
                         TextButton(
                             onClick = {
@@ -222,12 +227,12 @@ fun BrowserHistoryScreen(
                                 onClearAll()
                             },
                         ) {
-                            Text("Clear All", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.browser_clear_all), color = MaterialTheme.colorScheme.error)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { showClearDialog = false }) {
-                            Text("Cancel")
+                            Text(stringResource(R.string.dialog_cancel))
                         }
                     },
                 )
@@ -318,7 +323,7 @@ private fun HistoryItemRow(
         ) {
             Icon(
                 imageVector = Icons.Default.Delete,
-                contentDescription = "Delete item",
+                contentDescription = stringResource(R.string.browser_delete_item),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.size(20.dp),
             )

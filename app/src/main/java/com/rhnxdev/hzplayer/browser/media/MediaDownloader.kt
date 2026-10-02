@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.widget.Toast
+import com.rhnxdev.hzplayer.R
 import java.net.URLDecoder
 
 object MediaDownloader {
@@ -26,7 +27,7 @@ object MediaDownloader {
             }
 
             request.setTitle(fullFileName)
-            request.setDescription("Downloading via HzPlayer Media Grabber")
+            request.setDescription(context.getString(R.string.browser_download_description))
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fullFileName)
 
@@ -48,12 +49,24 @@ object MediaDownloader {
             val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
             if (manager != null) {
                 manager.enqueue(request)
-                Toast.makeText(context, "Started download: $fullFileName", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.browser_download_started, fullFileName),
+                    Toast.LENGTH_SHORT,
+                ).show()
             } else {
-                Toast.makeText(context, "Download service unavailable", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    context,
+                    R.string.browser_download_unavailable,
+                    Toast.LENGTH_LONG,
+                ).show()
             }
         } catch (e: Exception) {
-            Toast.makeText(context, "Download failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                context,
+                context.getString(R.string.browser_download_failed, e.localizedMessage ?: ""),
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 

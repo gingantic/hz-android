@@ -24,8 +24,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.withoutScheme
 import com.rhnxdev.hzplayer.domain.model.UrlSuggestion
@@ -47,7 +49,9 @@ fun UrlSuggestionsPanel(
         modifier = modifier.background(MaterialTheme.colorScheme.surface),
     ) {
         Text(
-            text = if (isFiltering) "From your history" else "Most visited",
+            text = stringResource(
+                if (isFiltering) R.string.browser_from_history else R.string.browser_most_visited
+            ),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(
@@ -126,7 +130,7 @@ private fun UrlSuggestionRow(
         IconButton(onClick = onFillUrl, modifier = Modifier.size(32.dp)) {
             Icon(
                 imageVector = Icons.Default.NorthWest,
-                contentDescription = "Insert into URL bar",
+                contentDescription = stringResource(R.string.browser_insert_into_url),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
             )

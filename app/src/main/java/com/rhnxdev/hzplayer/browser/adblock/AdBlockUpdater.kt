@@ -10,7 +10,9 @@ object AdBlockUpdater {
 
     sealed class UpdateResult {
         object Success : UpdateResult()
-        data class Error(val message: String) : UpdateResult()
+
+        /** Every enabled list failed to download — almost always no network. */
+        object Error : UpdateResult()
     }
 
     /**
@@ -36,7 +38,7 @@ object AdBlockUpdater {
         }
 
         if (errorCount == total) {
-            UpdateResult.Error("Failed to update filter lists (network unreachable)")
+            UpdateResult.Error
         } else {
             UpdateResult.Success
         }

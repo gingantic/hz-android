@@ -21,11 +21,6 @@ object AdBlockEngine {
     val isAvailable: Boolean
         get() = AdBlockNative.isLibraryLoaded
 
-    val unavailableReason: String
-        get() = if (!isAvailable) {
-            "AdBlock is not available because the native engine (libadblock_jni.so) is missing or not supported on this device architecture."
-        } else ""
-
     // Never block CAPTCHA / bot-challenge providers. The filter lists (notably
     // EasyPrivacy and hosts lists) occasionally catch their scripts or frames,
     // and uBlock's unbreak exception list isn't loaded — a blocked challenge

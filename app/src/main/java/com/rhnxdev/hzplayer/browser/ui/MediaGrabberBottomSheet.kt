@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -61,10 +62,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.browser.media.DetectedMediaItem
 import com.rhnxdev.hzplayer.browser.media.MediaDownloader
 import com.rhnxdev.hzplayer.browser.media.MediaType
@@ -77,6 +80,15 @@ import com.rhnxdev.hzplayer.core.util.withLiveCookies
 private enum class MediaFilter {
     ALL, VIDEO, AUDIO, STREAMS
 }
+
+@get:StringRes
+private val MediaFilter.labelRes: Int
+    get() = when (this) {
+        MediaFilter.ALL -> R.string.browser_filter_all
+        MediaFilter.VIDEO -> R.string.browser_filter_video
+        MediaFilter.AUDIO -> R.string.browser_filter_audio
+        MediaFilter.STREAMS -> R.string.browser_filter_streams
+    }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -93,7 +105,10 @@ fun MediaGrabberBottomSheet(
     var selectedFilter by remember { mutableStateOf(MediaFilter.ALL) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredItems = remember(mediaItems, selectedFilter, searchQuery) {
+    // Resolved up front so the search matches exactly what the badges show.
+    val qualityLabels = mediaItems.associate { it.id to displayQuality(it) }
+
+    val filteredItems = remember(mediaItems, selectedFilter, searchQuery, qualityLabels) {
         mediaItems.filter { item ->
             val matchesFilter = when (selectedFilter) {
                 MediaFilter.ALL -> true
@@ -104,7 +119,7 @@ fun MediaGrabberBottomSheet(
             val matchesSearch = searchQuery.isBlank() ||
                     item.title.contains(searchQuery, ignoreCase = true) ||
                     item.extension.contains(searchQuery, ignoreCase = true) ||
-                    item.displayQuality.contains(searchQuery, ignoreCase = true)
+                    qualityLabels[item.id]?.contains(searchQuery, ignoreCase = true) == true
 
             matchesFilter && matchesSearch
         }.sortedWith(
@@ -153,7 +168,7 @@ fun MediaGrabberBottomSheet(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "Media Grabber",
+                        text = stringResource(R.string.browser_media_grabber),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -178,7 +193,7 @@ fun MediaGrabberBottomSheet(
                             onClick = onClearAll,
                             modifier = Modifier.height(32.dp)
                         ) {
-                            Text("Clear", fontSize = 12.sp)
+                            Text(stringResource(R.string.clear), fontSize = 12.sp)
                         }
                     }
                     IconButton(
@@ -187,7 +202,7 @@ fun MediaGrabberBottomSheet(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Clear,
-                            contentDescription = "Close",
+                            contentDescription = stringResource(R.string.close),
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -211,7 +226,12 @@ fun MediaGrabberBottomSheet(
                     FilterChip(
                         selected = selectedFilter == filter,
                         onClick = { selectedFilter = filter },
-                        label = { Text("${filter.name.lowercase().capitalize()} ($count)", fontSize = 12.sp) },
+                        label = {
+                            Text(
+                                stringResource(R.string.browser_filter_count, stringResource(filter.labelRes), count),
+                                fontSize = 12.sp,
+                            )
+                        },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -228,7 +248,7 @@ fun MediaGrabberBottomSheet(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Filter media...", fontSize = 12.sp) },
+                    placeholder = { Text(stringResource(R.string.browser_filter_media_hint), fontSize = 12.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp)) },
                     trailingIcon = if (searchQuery.isNotEmpty()) {
                         { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Clear, null, modifier = Modifier.size(16.dp)) } }
@@ -255,7 +275,10 @@ fun MediaGrabberBottomSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (mediaItems.isEmpty()) "No media sniffed on this page" else "No matching media found",
+                        text = stringResource(
+                            if (mediaItems.isEmpty()) R.string.browser_no_media_sniffed
+                            else R.string.browser_no_matching_media
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -272,8 +295,8 @@ fun MediaGrabberBottomSheet(
                             item = item,
                             onPlayInHzPlayer = { launchNativePlayer(context, item) },
                             onDownload = { MediaDownloader.downloadMedia(context, item) },
-                            onCopyUrl = { copyToClipboard(context, "Direct Link", item.displayUrl) },
-                            onCopyCurl = { copyToClipboard(context, "cURL Command", buildCurlCommand(item)) },
+                            onCopyUrl = { label -> copyToClipboard(context, label, item.displayUrl) },
+                            onCopyCurl = { label -> copyToClipboard(context, label, buildCurlCommand(item)) },
                             onShare = { shareMediaUrl(context, item) },
                             onQualitySelected = { qualityUrl -> onQualitySelected(item.id, qualityUrl) }
                         )
@@ -291,14 +314,19 @@ private fun MinimalistMediaItemCard(
     item: DetectedMediaItem,
     onPlayInHzPlayer: () -> Unit,
     onDownload: () -> Unit,
-    onCopyUrl: () -> Unit,
-    onCopyCurl: () -> Unit,
+    /** @param label resolved clip label, passed back so the caller needn't resolve it. */
+    onCopyUrl: (label: String) -> Unit,
+    onCopyCurl: (label: String) -> Unit,
     onShare: () -> Unit,
     onQualitySelected: (String) -> Unit
 ) {
     var showQualityMenu by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showNetworkDetails by remember { mutableStateOf(false) }
+
+    val quality = displayQuality(item)
+    val directLinkLabel = stringResource(R.string.browser_direct_link)
+    val curlLabel = stringResource(R.string.browser_curl_command)
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -322,7 +350,7 @@ private fun MinimalistMediaItemCard(
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = item.displayQuality,
+                            text = quality,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = if (item.isMasterStream) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
@@ -347,7 +375,7 @@ private fun MinimalistMediaItemCard(
                     shape = RoundedCornerShape(6.dp)
                 ) {
                     Text(
-                        text = item.formattedSize,
+                        text = item.formattedSize.ifBlank { stringResource(R.string.browser_size_unknown) },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -383,7 +411,10 @@ private fun MinimalistMediaItemCard(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "Quality: ${item.subQualities.find { it.url == item.displayUrl }?.label ?: item.displayQuality}",
+                                text = stringResource(
+                                    R.string.browser_quality_prefix,
+                                    item.subQualities.find { it.url == item.displayUrl }?.label ?: quality,
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Medium
                             )
@@ -429,7 +460,7 @@ private fun MinimalistMediaItemCard(
                                 .clickable { showTreeBranch = !showTreeBranch }
                         ) {
                             Text(
-                                text = "Stream Tree Unity (${item.childVariants.size} Index Variants Grouped)",
+                                text = stringResource(R.string.browser_stream_tree_unity, item.childVariants.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.tertiary
@@ -474,7 +505,7 @@ private fun MinimalistMediaItemCard(
                 ) {
                     Column(modifier = Modifier.padding(8.dp)) {
                         Text(
-                            text = "Network & Package Inspector",
+                            text = stringResource(R.string.browser_network_inspector),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -483,7 +514,11 @@ private fun MinimalistMediaItemCard(
 
                         // MIME & Type
                         Text(
-                            text = "MIME: ${item.mimeType.ifBlank { "Unknown" }} (${item.mediaType.name})",
+                            text = stringResource(
+                                R.string.browser_mime_type,
+                                item.mimeType.ifBlank { stringResource(R.string.unknown) },
+                                item.mediaType.name,
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -492,7 +527,7 @@ private fun MinimalistMediaItemCard(
                         if (item.detectedTokens.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Extracted Security Tokens (${item.detectedTokens.size}):",
+                                text = stringResource(R.string.browser_extracted_tokens, item.detectedTokens.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.tertiary
@@ -510,7 +545,7 @@ private fun MinimalistMediaItemCard(
                         if (item.headers.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Request Headers (${item.headers.size}):",
+                                text = stringResource(R.string.browser_request_headers, item.headers.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.secondary
@@ -544,7 +579,11 @@ private fun MinimalistMediaItemCard(
                 ) {
                     Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Play in HzPlayer", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(R.string.browser_play_in_player),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -554,7 +593,11 @@ private fun MinimalistMediaItemCard(
                         modifier = Modifier.height(32.dp)
                     ) {
                         Text(
-                            text = if (showNetworkDetails) "Hide Info" else if (item.hasAuthInfo) "Inspect (Auth)" else "Inspect",
+                            text = when {
+                                showNetworkDetails -> stringResource(R.string.browser_hide_info)
+                                item.hasAuthInfo -> stringResource(R.string.browser_inspect_auth)
+                                else -> stringResource(R.string.browser_inspect)
+                            },
                             fontSize = 11.sp,
                             fontWeight = if (item.hasAuthInfo) FontWeight.Bold else FontWeight.Normal,
                             color = if (item.hasAuthInfo) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
@@ -566,7 +609,11 @@ private fun MinimalistMediaItemCard(
                         onClick = onDownload,
                         modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.Default.Download, contentDescription = "Download", modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Download,
+                            contentDescription = stringResource(R.string.download),
+                            modifier = Modifier.size(18.dp),
+                        )
                     }
 
                     // Copy / Share / cURL Dropdown
@@ -575,7 +622,11 @@ private fun MinimalistMediaItemCard(
                             onClick = { showMoreMenu = true },
                             modifier = Modifier.size(32.dp)
                         ) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More", modifier = Modifier.size(18.dp))
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = stringResource(R.string.browser_more),
+                                modifier = Modifier.size(18.dp),
+                            )
                         }
 
                         DropdownMenu(
@@ -583,23 +634,23 @@ private fun MinimalistMediaItemCard(
                             onDismissRequest = { showMoreMenu = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Copy Direct Link", fontSize = 12.sp) },
+                                text = { Text(stringResource(R.string.browser_copy_direct_link), fontSize = 12.sp) },
                                 leadingIcon = { Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp)) },
                                 onClick = {
-                                    onCopyUrl()
+                                    onCopyUrl(directLinkLabel)
                                     showMoreMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Copy cURL Command", fontSize = 12.sp) },
+                                text = { Text(stringResource(R.string.browser_copy_curl), fontSize = 12.sp) },
                                 leadingIcon = { Icon(Icons.Default.Terminal, null, modifier = Modifier.size(14.dp)) },
                                 onClick = {
-                                    onCopyCurl()
+                                    onCopyCurl(curlLabel)
                                     showMoreMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Share Link", fontSize = 12.sp) },
+                                text = { Text(stringResource(R.string.browser_share_link), fontSize = 12.sp) },
                                 leadingIcon = { Icon(Icons.Default.Share, null, modifier = Modifier.size(14.dp)) },
                                 onClick = {
                                     onShare()
@@ -645,7 +696,11 @@ private fun launchNativePlayer(context: Context, item: DetectedMediaItem) {
 
         context.startActivity(intent)
     } catch (e: Exception) {
-        Toast.makeText(context, "Could not launch player: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            context,
+            context.getString(R.string.browser_could_not_launch_player, e.localizedMessage ?: ""),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 }
 
@@ -658,11 +713,16 @@ private fun buildCurlCommand(item: DetectedMediaItem): String {
     return sb.toString()
 }
 
+/** @param label already-resolved text, used for both the clip label and the toast. */
 private fun copyToClipboard(context: Context, label: String, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val clip = ClipData.newPlainText(label, text)
     clipboard.setPrimaryClip(clip)
-    Toast.makeText(context, "Copied $label to clipboard", Toast.LENGTH_SHORT).show()
+    Toast.makeText(
+        context,
+        context.getString(R.string.browser_copied_to_clipboard, label),
+        Toast.LENGTH_SHORT,
+    ).show()
 }
 
 private fun shareMediaUrl(context: Context, item: DetectedMediaItem) {
@@ -671,8 +731,25 @@ private fun shareMediaUrl(context: Context, item: DetectedMediaItem) {
         putExtra(Intent.EXTRA_TEXT, item.displayUrl)
         putExtra(Intent.EXTRA_TITLE, item.title)
     }
-    context.startActivity(Intent.createChooser(intent, "Share Media Link"))
+    context.startActivity(
+        Intent.createChooser(intent, context.getString(R.string.browser_share_media_link))
+    )
 }
 
-private fun String.capitalize(): String =
-    replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+/** Quality badge text for [item] — the single source of the badge wording. */
+@Composable
+private fun displayQuality(item: DetectedMediaItem): String {
+    val label = item.qualityLabel
+    return when {
+        item.subQualities.isNotEmpty() ->
+            stringResource(R.string.browser_quality_master_variants, item.subQualities.size)
+        item.isMasterStream -> stringResource(R.string.browser_quality_master_stream)
+        !label.isNullOrBlank() -> label
+        item.mediaType == MediaType.STREAM_HLS -> stringResource(R.string.browser_quality_hls)
+        item.mediaType == MediaType.STREAM_DASH -> stringResource(R.string.browser_quality_dash)
+        else -> {
+            val ext = item.extension.uppercase()
+            if (ext.isNotBlank()) ext else stringResource(R.string.browser_quality_media)
+        }
+    }
+}

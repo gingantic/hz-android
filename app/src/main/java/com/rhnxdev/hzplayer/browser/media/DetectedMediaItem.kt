@@ -27,7 +27,8 @@ data class DetectedMediaItem(
     val mediaType: MediaType = MediaType.VIDEO,
     val extension: String = "",
     val contentLength: Long = -1L,
-    val formattedSize: String = "Unknown / Stream",
+    /** Human-readable size; blank when unknown (the UI supplies the fallback text). */
+    val formattedSize: String = "",
     val qualityLabel: String? = null,
     val headers: Map<String, String> = emptyMap(),
     val detectedTokens: Map<String, String> = emptyMap(),
@@ -48,16 +49,6 @@ data class DetectedMediaItem(
 
     val displayUrl: String
         get() = playUrl
-
-    val displayQuality: String
-        get() = when {
-            subQualities.isNotEmpty() -> "MASTER (${subQualities.size} Qualities)"
-            isMasterStream -> "MASTER STREAM"
-            !qualityLabel.isNullOrBlank() -> qualityLabel
-            mediaType == MediaType.STREAM_HLS -> "HLS Stream"
-            mediaType == MediaType.STREAM_DASH -> "DASH Stream"
-            else -> extension.uppercase().ifBlank { "MEDIA" }
-        }
 
     val hasAuthInfo: Boolean
         get() = detectedTokens.isNotEmpty() || headers.keys.any {

@@ -41,8 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.Badge
@@ -95,7 +97,7 @@ fun BrowserBottomBar(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.back_cd),
                 tint = if (canGoBack) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
             )
@@ -109,7 +111,7 @@ fun BrowserBottomBar(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "Forward",
+                contentDescription = stringResource(R.string.browser_forward),
                 tint = if (canGoForward) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
             )
@@ -122,7 +124,7 @@ fun BrowserBottomBar(
         ) {
             Icon(
                 imageVector = Icons.Default.Add,
-                contentDescription = "New Tab",
+                contentDescription = stringResource(R.string.browser_new_tab),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -171,14 +173,14 @@ fun BrowserBottomBar(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Movie,
-                        contentDescription = "Media Grabber",
+                        contentDescription = stringResource(R.string.browser_media_grabber),
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
             } else {
                 Icon(
                     imageVector = Icons.Default.Movie,
-                    contentDescription = "Media Grabber",
+                    contentDescription = stringResource(R.string.browser_media_grabber),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
             }
@@ -194,7 +196,7 @@ fun BrowserBottomBar(
         ) {
             Icon(
                 imageVector = Icons.Default.Menu,
-                contentDescription = "Menu",
+                contentDescription = stringResource(R.string.browser_menu),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -251,7 +253,7 @@ fun BrowserBottomBar(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
+                                contentDescription = stringResource(R.string.back_cd),
                                 tint = if (canGoBack) MaterialTheme.colorScheme.onSurface
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                             )
@@ -266,7 +268,7 @@ fun BrowserBottomBar(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "Forward",
+                                contentDescription = stringResource(R.string.browser_forward),
                                 tint = if (canGoForward) MaterialTheme.colorScheme.onSurface
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                             )
@@ -280,7 +282,9 @@ fun BrowserBottomBar(
                         ) {
                             Icon(
                                 imageVector = if (isLoading) Icons.Default.Close else Icons.Default.Refresh,
-                                contentDescription = if (isLoading) "Stop" else "Reload",
+                                contentDescription = stringResource(
+                                    if (isLoading) R.string.browser_stop else R.string.browser_reload
+                                ),
                                 tint = if (isLoading) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                             )
                         }
@@ -291,7 +295,7 @@ fun BrowserBottomBar(
                     // Menu items
                     BrowserMenuItemRow(
                         icon = Icons.Default.Add,
-                        title = "New tab",
+                        title = stringResource(R.string.browser_new_tab),
                         onClick = {
                             showMenu = false
                             onNewTab()
@@ -305,7 +309,7 @@ fun BrowserBottomBar(
 
                     BrowserMenuItemRow(
                         icon = Icons.Default.History,
-                        title = "History",
+                        title = stringResource(R.string.history_title),
                         onClick = {
                             showMenu = false
                             onHistoryClick()
@@ -320,7 +324,7 @@ fun BrowserBottomBar(
                     // Desktop site toggle (Chrome-style) — reloads the page in desktop mode
                     BrowserMenuItemRow(
                         icon = Icons.Default.Computer,
-                        title = "Desktop site",
+                        title = stringResource(R.string.browser_desktop_site),
                         onClick = {
                             showMenu = false
                             onToggleDesktopSite()
@@ -343,7 +347,7 @@ fun BrowserBottomBar(
 
                     BrowserMenuItemRow(
                         icon = Icons.Default.Settings,
-                        title = "Settings",
+                        title = stringResource(R.string.nav_settings),
                         onClick = {
                             showMenu = false
                             onSettingsClick()
@@ -357,7 +361,7 @@ fun BrowserBottomBar(
 
                     BrowserMenuItemRow(
                         icon = Icons.Default.PlayArrow,
-                        title = "Exit to player",
+                        title = stringResource(R.string.browser_exit_to_player),
                         onClick = {
                             showMenu = false
                             onPlayerClick()

@@ -38,10 +38,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.browser.BrowserTab
 import com.rhnxdev.hzplayer.core.util.withoutScheme
 
@@ -128,7 +130,7 @@ private fun SidebarPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Tabs",
+                text = stringResource(R.string.browser_tabs),
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 17.sp,
@@ -206,14 +208,14 @@ private fun SidebarPanel(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "New tab",
+                        contentDescription = stringResource(R.string.browser_new_tab),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp),
                     )
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    text = "New Tab",
+                    text = stringResource(R.string.browser_new_tab),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Medium,
@@ -247,12 +249,12 @@ private fun SidebarTabItem(
 
     val displayTitle = when {
         tab.title.isNotBlank() -> tab.title
-        tab.url.isBlank() || tab.url == "about:blank" -> "New Tab"
+        tab.url.isBlank() || tab.url == "about:blank" -> stringResource(R.string.browser_new_tab)
         else -> tab.url.withoutScheme().substringBefore("/")
     }
 
     val displaySubtitle = when {
-        tab.url.isBlank() || tab.url == "about:blank" -> "blank page"
+        tab.url.isBlank() || tab.url == "about:blank" -> stringResource(R.string.browser_blank_page)
         else -> tab.url.withoutScheme().take(32)
     }
 
@@ -332,7 +334,7 @@ private fun SidebarTabItem(
         ) {
             Icon(
                 imageVector = Icons.Default.Close,
-                contentDescription = "Close tab",
+                contentDescription = stringResource(R.string.browser_close_tab),
                 modifier = Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             )
