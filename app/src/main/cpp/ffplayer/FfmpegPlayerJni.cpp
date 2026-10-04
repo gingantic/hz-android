@@ -1,5 +1,6 @@
 #include "FfmpegPlayerContext.h"
 #include "JniFileIO.h"
+#include "NetworkIo.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -13,6 +14,7 @@
 
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* /*reserved*/) {
     g_jvm = vm;
+    installFfmpegLogBridge();
     return JNI_VERSION_1_6;
 }
 
@@ -21,13 +23,16 @@ JNI_FUNC(jlong, nativeCreate) {
     return reinterpret_cast<jlong>(ctx);
 }
 
-JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, jobject surfaceObj, jlong startPositionMs, jobjectArray headersArr) {
+JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, jobject surfaceObj, jlong startPositionMs, jobjectArray headersArr, jstring caFileStr) {
     auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
     if (!ctx) return JNI_FALSE;
 
     ctx->stopPlayback();
     std::unique_lock<std::recursive_mutex> mediaLock(ctx->mediaOperationMutex);
     ctx->closeMedia();
+    ctx->lastErrorClass.store(ERR_NONE);
+    ctx->isWebSource = false;
+    ctx->ioDefaults.clear();
 
     // The context is stopped while the previous session is torn down, but it
     // must be live before avformat_open_input/find_stream_info. The interrupt
@@ -81,6 +86,14 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     std::string url = urlChars ? urlChars : "";
     if (urlChars) env->ReleaseStringUTFChars(urlStr, urlChars);
 
+    ctx->isWebSource = !bridgeObj && (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0);
+    std::string caFile;
+    if (caFileStr) {
+        const char* caChars = env->GetStringUTFChars(caFileStr, nullptr);
+        if (caChars) caFile = caChars;
+        if (caChars) env->ReleaseStringUTFChars(caFileStr, caChars);
+    }
+
     std::string customHeaders;
     std::string userAgent;
     if (headersArr) {
@@ -91,7 +104,12 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
             if (kStr && vStr) {
                 const char* kChars = env->GetStringUTFChars(kStr, nullptr);
                 const char* vChars = env->GetStringUTFChars(vStr, nullptr);
-                if (kChars && vChars) {
+                // Final defence behind the Kotlin sanitizer: a CR/LF would inject headers.
+                const bool hasLineBreak = kChars && vChars &&
+                    (strpbrk(kChars, "\r\n") || strpbrk(vChars, "\r\n"));
+                if (hasLineBreak) {
+                    LOGW("Dropped HTTP header containing a line break");
+                } else if (kChars && vChars) {
                     if (strcasecmp(kChars, "User-Agent") == 0) {
                         userAgent = vChars;
                     } else {
@@ -110,6 +128,10 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     if (!ctx->fmtCtx) {
         LOGE("Failed to allocate format context");
         return JNI_FALSE;
+    }
+    if (ctx->isWebSource) {
+        ctx->fmtCtx->opaque = ctx;
+        ctx->fmtCtx->io_open = player_io_open;
     }
 
     ctx->lastIoTimeMs.store(getMonotonicTimeMs());
@@ -139,10 +161,15 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
         ctx->fmtCtx->pb = ctx->avioCtx;
     }
 
+    // Web sources get a wider probe window: HLS sub-demuxers and slow CDNs need more than
+    // the local-file values. The same numbers are re-applied to the context after open.
+    const int64_t analyzeUs = ctx->isWebSource ? 3000000 : 500000;
+    const int64_t probeSize = ctx->isWebSource ? 2097152 : 524288;
+
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "buffer_size", "2097152", 0);
-    av_dict_set(&opts, "analyzeduration", "500000", 0);
-    av_dict_set(&opts, "probesize", "524288", 0);
+    av_dict_set_int(&opts, "analyzeduration", analyzeUs, 0);
+    av_dict_set_int(&opts, "probesize", probeSize, 0);
     av_dict_set(&opts, "genpts", "1", 0);
     av_dict_set(&opts, "fflags", "+genpts+discardcorrupt+fastseek", 0);
 
@@ -155,6 +182,8 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
         av_dict_set(&opts, "reconnect_streamed", "1", 0);
         av_dict_set(&opts, "reconnect_delay_max", "5", 0);
     }
+    // Overrides the generic values above (reconnect_delay_max 5 -> 8) for http(s) sources.
+    if (ctx->isWebSource) applyWebOptions(ctx, caFile, &opts);
 
     if (!customHeaders.empty()) {
         av_dict_set(&opts, "headers", customHeaders.c_str(), 0);
@@ -172,8 +201,11 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     ctx->lastIoTimeMs.store(getMonotonicTimeMs());
 
     if (openRet < 0) {
-        LOGE("avformat_open_input failed with code %d", openRet);
+        char errText[AV_ERROR_MAX_STRING_SIZE] = {};
+        av_strerror(openRet, errText, sizeof(errText));
+        LOGE("avformat_open_input failed with code %d (%s)", openRet, errText);
         ctx->closeMedia();
+        if (ctx->isWebSource) ctx->lastErrorClass.store(classifyAvError(openRet));
         return JNI_FALSE;
     }
 
@@ -181,18 +213,41 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     if (isNetworkStream) {
         ctx->fmtCtx->flags |= AVFMT_FLAG_NOBUFFER;
     }
-    ctx->fmtCtx->max_analyze_duration = 500000;
-    ctx->fmtCtx->probesize = 524288;
+    ctx->fmtCtx->max_analyze_duration = analyzeUs;
+    ctx->fmtCtx->probesize = probeSize;
 
     ctx->lastIoTimeMs.store(getMonotonicTimeMs());
-    if (avformat_find_stream_info(ctx->fmtCtx, nullptr) < 0) {
-        LOGE("avformat_find_stream_info failed");
+    const int infoRet = avformat_find_stream_info(ctx->fmtCtx, nullptr);
+    if (infoRet < 0) {
+        char errText[AV_ERROR_MAX_STRING_SIZE] = {};
+        av_strerror(infoRet, errText, sizeof(errText));
+        LOGE("avformat_find_stream_info failed with code %d (%s)", infoRet, errText);
         ctx->closeMedia();
+        if (ctx->isWebSource) ctx->lastErrorClass.store(classifyAvError(infoRet));
         return JNI_FALSE;
     }
     ctx->lastIoTimeMs.store(getMonotonicTimeMs());
 
     ctx->durationMs = (ctx->fmtCtx->duration > 0) ? (ctx->fmtCtx->duration / 1000) : 0;
+
+    // Seekability of web sources: live HLS flags AVFMTCTX_UNSEEKABLE; plain HTTP needs
+    // range support. HLS VOD has no seekable pb but seeks by segment, so it is allowed.
+    bool seekable = true;
+    if (ctx->isWebSource) {
+        const bool isHls = ctx->fmtCtx->iformat && strstr(ctx->fmtCtx->iformat->name, "hls") != nullptr;
+        const bool pbSeekable = ctx->fmtCtx->pb && (ctx->fmtCtx->pb->seekable & AVIO_SEEKABLE_NORMAL);
+        seekable = !(ctx->fmtCtx->ctx_flags & AVFMTCTX_UNSEEKABLE) && (isHls || pbSeekable);
+    }
+    ctx->seekable.store(seekable, std::memory_order_release);
+    if (!seekable && startPositionMs > 0) {
+        // A resume position cannot be honoured; start from the live edge / beginning instead.
+        LOGI("Stream is not seekable; ignoring resume position %" PRId64 " ms", static_cast<int64_t>(startPositionMs));
+        startPositionMs = 0;
+        ctx->videoSeekTargetPtsUs.store(0);
+        ctx->audioSeekTargetPtsUs.store(0);
+        ctx->currentPositionMs.store(0);
+        ctx->setMasterClockUs(0);
+    }
 
     ctx->videoStreamIdx = -1;
     ctx->audioStreamIdx = -1;
@@ -496,7 +551,16 @@ JNI_FUNC(void, nativePlay, jlong handle) {
             // queues and the video thread's needSeekFrame fast-path renders
             // and clears isBuffering immediately, instead of waiting on the
             // pipeline to organically deliver a fresh frame.
-            ctx->publishSeekRequest(ctx->currentPositionMs.load(), SeekMode::NORMAL, /*scrub=*/false);
+            //
+            // Non-seekable streams (live HLS) cannot be re-seeked, so publishSeekRequest is a
+            // no-op for them; instead let the video thread render its next decoded frame. The
+            // frame-count guard keeps the startup play() (buffering is true until the first
+            // frame) from being treated as a stuck pipeline.
+            if (ctx->seekable.load(std::memory_order_acquire)) {
+                ctx->publishSeekRequest(ctx->currentPositionMs.load(), SeekMode::NORMAL, /*scrub=*/false);
+            } else if (ctx->totalRenderedFrames.load() > 0) {
+                ctx->forceNextFrame.store(true);
+            }
         }
         ctx->triggerAudioRampIn(50);
         ctx->resumeClock();
@@ -787,6 +851,8 @@ JNI_FUNC(void, nativeSetScrubbing, jlong handle, jboolean isScrubbing) {
     auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
     if (ctx) {
         if (isScrubbing == JNI_TRUE) {
+            // Scrubbing needs seeks; without them it would only freeze the video thread.
+            if (!ctx->seekable.load(std::memory_order_acquire)) return;
             // Route the scrub flush through publishSeekRequest so it participates
             // in seekVersion and the demux thread (single owner of the demuxer)
             // flushes BOTH queues in that one generation. The caller thread no
@@ -902,4 +968,16 @@ JNI_FUNC(void, nativeSetEqualizer, jlong handle, jboolean enabled, jintArray gai
 JNI_FUNC(jint, nativeGetAudioSessionId, jlong handle) {
     auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
     return ctx ? ctx->nativeAudioSink.getSessionId() : 0;
+}
+
+// Atomic loads only. These must never take mediaOperationMutex: nativeOpen holds it for
+// the whole open and the Kotlin callers run on the UI thread.
+JNI_FUNC(jboolean, nativeIsSeekable, jlong handle) {
+    auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
+    return (!ctx || ctx->seekable.load(std::memory_order_acquire)) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNI_FUNC(jint, nativeGetLastErrorClass, jlong handle) {
+    auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
+    return ctx ? ctx->lastErrorClass.load() : 0;
 }

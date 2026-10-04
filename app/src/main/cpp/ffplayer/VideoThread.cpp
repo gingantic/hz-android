@@ -16,6 +16,13 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
     AVFrame* vFrame = av_frame_alloc();
     PacketQueue::Item item{};
     bool needSeekFrame = false;
+    // True when the pending fast-path frame was armed by a surface change
+    // (not a seek): present it on the new surface without re-anchoring the
+    // master clock or publishing its position.
+    bool surfaceRefreshFrame = false;
+    // Set when a held frame was dropped for a recreated surface; stops the
+    // decoder drain so the main loop can re-bind the codec first.
+    bool surfaceRebindPending = false;
     int64_t flushGeneration = ctx->seekVersion.load(std::memory_order_acquire);
 
     HdrToneMapper toneMapper;
@@ -40,6 +47,14 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
 
     GlVideoRenderer glRenderer;
     bool glRendererInitialized = false;
+
+    // A recreated surface is waiting to be attached: surfaceChanged is peeked
+    // here (the main loop consumes it) and hasSurface excludes the null
+    // (backgrounded) case, which must not wake the paused thread.
+    auto surfaceRefreshPending = [&]() {
+        return ctx->surfaceChanged.load(std::memory_order_acquire) &&
+               ctx->hasSurface.load(std::memory_order_acquire);
+    };
 
     auto renderFrame = [&](AVFrame* f, bool isSeekFrame) -> bool {
         if (f->width > 0 && f->height > 0 && (f->width != ctx->videoWidth || f->height != ctx->videoHeight)) {
@@ -76,13 +91,17 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 return false;
             }
             isSeekFrame = true;
+            surfaceRefreshFrame = false; // a real seek frame supersedes a surface refresh
         } else if (ctx->isScrubbing.load() || isSeekFrame) {
             if (flushGeneration != ctx->seekVersion.load(std::memory_order_acquire)) {
                 // Pre-flush frame: do not let it anchor the clock to a pre-scrub PTS.
                 return false;
             }
             isSeekFrame = true;
-            anchorClockForSeek = true;
+            // Surface-refresh frames present on the new surface but must not
+            // move the clock to the video's decode lead (that yanks the audio
+            // clock on every background return).
+            anchorClockForSeek = ctx->isScrubbing.load() || !surfaceRefreshFrame;
         }
 
         ctx->lastVideoPtsUs.store(ptsUs);
@@ -98,12 +117,17 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                     std::unique_lock<std::mutex> lk(ctx->controlMutex);
                     ctx->controlCv.wait(lk, [&] {
                         return (!ctx->isPaused.load() && !ctx->isScrubbing.load()) || !ctx->isRunning.load() || ctx->isStopped.load() ||
-                               ctx->seekTargetMs.load() >= 0;
+                               ctx->seekTargetMs.load() >= 0 || surfaceRefreshPending();
                     });
-                    if (!ctx->isRunning.load() || ctx->isStopped.load() || ctx->seekTargetMs.load() >= 0) {
+                    if (!ctx->isRunning.load() || ctx->isStopped.load() || ctx->seekTargetMs.load() >= 0 || surfaceRefreshPending()) {
                         break;
                     }
                 }
+
+                // A frame from an older seek generation must not drive A/V
+                // correction: the seek transaction already re-anchored the
+                // clock to its target, and this frame is dropped below.
+                if (ctx->seekVersion.load(std::memory_order_acquire) != mySeekVersion) break;
 
                 int64_t clockUs = ctx->getMasterClockUs();
                 int64_t diffUs  = ptsUs - clockUs;
@@ -122,8 +146,12 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                         LOGD("Dropping late video frame (diff: %" PRId64 " us, threshold: %" PRId64 " us)", diffUs, lateDropThresholdUs);
                         return false;
                     }
-                    // Only for extreme desync (> 600ms) after seek/underrun do we re-align the master clock
-                    if (diffUs > 600000 && !isSeekFrame) {
+                    // A frame more than 600 ms ahead is a normal decode lead:
+                    // the pacing below holds it until its presentation time.
+                    // Only re-align when the audio clock is frozen (buffering)
+                    // or the gap is a stream discontinuity — waiting for the
+                    // clock is impossible in those cases.
+                    if (diffUs > 600000 && !isSeekFrame && (ctx->isBuffering.load() || diffUs > 5000000)) {
                         LOGW("Large A/V desync detected (diff: %" PRId64 " us); re-aligning master clock", diffUs);
                         ctx->setMasterClockUs(ptsUs);
                         break;
@@ -179,14 +207,16 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
         // ── Render ───────────────────────────────────────────────────
         std::lock_guard<std::mutex> lock(ctx->windowMutex);
         if (ctx->nativeWindow && f->width > 0 && f->height > 0) {
-            bool sChanged = ctx->surfaceChanged.exchange(false);
+            // Peek, do not clear: the main loop must still see the flag to
+            // re-init the hardware decoder for the new surface.
+            bool sChanged = ctx->surfaceChanged.load(std::memory_order_acquire);
             if (!glRendererInitialized || sChanged) {
                 glRendererInitialized = glRenderer.init(ctx->nativeWindow, sChanged);
             }
             if (glRendererInitialized && glRenderer.render(f, ctx->videoRotation)) {
                 ctx->totalRenderedFrames.fetch_add(1, std::memory_order_relaxed);
                 ctx->notifyFrameRendered(env, ptsUs);
-                if (ctx->isBuffering.exchange(false) || isSeekFrame) {
+                if (ctx->isBuffering.exchange(false) || (isSeekFrame && !surfaceRefreshFrame)) {
                     ctx->setMasterClockUs(ptsUs);
                     ctx->notifyPosition(env, ptsUs / 1000, ctx->durationMs);
                     ctx->notifyState(env, STATE_READY);
@@ -291,6 +321,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 return false;
             }
             isSeekFrame = true;
+            surfaceRefreshFrame = false; // a real seek frame supersedes a surface refresh
         } else if (ctx->isScrubbing.load() || isSeekFrame) {
             if (flushGeneration != ctx->seekVersion.load(std::memory_order_acquire)) {
                 // Pre-flush frame: do not let it anchor the clock to a pre-scrub PTS.
@@ -298,7 +329,10 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                 return false;
             }
             isSeekFrame = true;
-            anchorClockForSeek = true;
+            // Surface-refresh frames present on the new surface but must not
+            // move the clock to the video's decode lead (that yanks the audio
+            // clock on every background return).
+            anchorClockForSeek = ctx->isScrubbing.load() || !surfaceRefreshFrame;
         }
 
         ctx->lastVideoPtsUs.store(ptsUs);
@@ -331,12 +365,26 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                     std::unique_lock<std::mutex> lk(ctx->controlMutex);
                     ctx->controlCv.wait(lk, [&] {
                         return !ctx->isPaused.load() || !ctx->isRunning.load() || ctx->isStopped.load() ||
-                               ctx->seekTargetMs.load() >= 0;
+                               ctx->seekTargetMs.load() >= 0 || surfaceRefreshPending();
                     });
                     if (!ctx->isRunning.load() || ctx->isStopped.load() || ctx->seekTargetMs.load() >= 0) {
                         break;
                     }
+                    if (ctx->isPaused.load() && surfaceRefreshPending() && !surfaceRebindPending) {
+                        // Surface recreated while paused: drop the held buffer
+                        // (it belongs to the old window) and return to the main
+                        // loop, which re-binds the codec and pulls a fresh
+                        // output to present as a still.
+                        surfaceRebindPending = true;
+                        AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, false);
+                        return false;
+                    }
                 }
+
+                // A frame from an older seek generation must not drive A/V
+                // correction: the seek transaction already re-anchored the
+                // clock to its target, and this frame is dropped below.
+                if (ctx->seekVersion.load(std::memory_order_acquire) != mySeekVersion) break;
 
                 int64_t clockUs = ctx->getMasterClockUs();
                 int64_t diffUs  = ptsUs - clockUs;
@@ -353,7 +401,12 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                         AMediaCodec_releaseOutputBuffer(hwDecoder.codec, outIdx, false);
                         return false;
                     }
-                    if (diffUs > 600000) {
+                    // A frame more than 600 ms ahead is a normal decode lead:
+                    // the pacing below holds it until its presentation time.
+                    // Only re-align when the audio clock is frozen (buffering)
+                    // or the gap is a stream discontinuity — waiting for the
+                    // clock is impossible in those cases.
+                    if (diffUs > 600000 && (ctx->isBuffering.load() || diffUs > 5000000)) {
                         LOGW("Large A/V desync detected in HW decode (diff: %" PRId64 " us); re-aligning master clock", diffUs);
                         ctx->setMasterClockUs(ptsUs);
                         break;
@@ -415,7 +468,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
 
         ctx->totalRenderedFrames.fetch_add(1, std::memory_order_relaxed);
         ctx->notifyFrameRendered(env, ptsUs);
-        if (ctx->isBuffering.exchange(false) || isSeekFrame) {
+        if (ctx->isBuffering.exchange(false) || (isSeekFrame && !surfaceRefreshFrame)) {
             ctx->setMasterClockUs(ptsUs);
             ctx->notifyPosition(env, ptsUs / 1000, ctx->durationMs);
             ctx->notifyState(env, STATE_READY);
@@ -430,13 +483,16 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
     auto drainHwFrames = [&]() {
         if (!hwDecoder.codec || !hwDecoder.isConfigured.load()) return;
         AMediaCodecBufferInfo info;
-        while (ctx->isRunning.load() && !ctx->isStopped.load() && ctx->seekTargetMs.load() < 0) {
+        while (ctx->isRunning.load() && !ctx->isStopped.load() && ctx->seekTargetMs.load() < 0 && !surfaceRebindPending) {
             ssize_t outIdx = AMediaCodec_dequeueOutputBuffer(hwDecoder.codec, &info, 0);
             if (outIdx >= 0) {
                 hwDecodeConsecutiveFailures = 0;
                 int64_t ptsUs = info.presentationTimeUs;
                 bool rendered = renderHwFrame(ptsUs, outIdx, needSeekFrame);
-                if (rendered) needSeekFrame = false;
+                if (rendered) {
+                    needSeekFrame = false;
+                    surfaceRefreshFrame = false;
+                }
             } else if (outIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
                 AMediaFormat* fmt = AMediaCodec_getOutputFormat(hwDecoder.codec);
                 if (fmt) {
@@ -552,9 +608,15 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
     };
 
     auto queueDecodedFrame = [&](AVFrame* src, bool isSeek) {
-        if (isSeek || needSeekFrame || ctx->isScrubbing.load() || ctx->videoSeekTargetPtsUs.load() >= 0) {
+        // The seek fast-path skips the pause gate and anchors the clock, so it
+        // must never run without a surface to present to.
+        if ((isSeek || needSeekFrame || ctx->isScrubbing.load() || ctx->videoSeekTargetPtsUs.load() >= 0) &&
+            ctx->hasSurface.load()) {
             bool rendered = renderFrame(src, needSeekFrame);
-            if (rendered) needSeekFrame = false;
+            if (rendered) {
+                needSeekFrame = false;
+                surfaceRefreshFrame = false;
+            }
             return;
         }
 
@@ -570,6 +632,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
     };
 
     while (ctx->isRunning.load() && !ctx->isStopped.load()) {
+        bool pausedSurfaceRefresh = false;
         if (ctx->surfaceChanged.exchange(false)) {
             std::lock_guard<std::mutex> lock(ctx->windowMutex);
             glRenderer.release();
@@ -598,22 +661,66 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
                     LOGI("HwVideoDecoder: Re-initialized hardware decoder on recreated surface");
                 }
             }
-            needSeekFrame = true;
+            // Arm the one-frame fast path only when there is something to
+            // render into. With no window (surface destroyed on background)
+            // it would consume frames and anchor the clock without ever
+            // rendering, racing the position to EOF while paused.
+            if (ctx->nativeWindow) {
+                needSeekFrame = true;
+                surfaceRefreshFrame = true;
+                pausedSurfaceRefresh = ctx->isPaused.load() && !ctx->isScrubbing.load();
+            } else {
+                // Surface gone (backgrounded): drop the pending refresh so the
+                // paused thread parks instead of polling an empty queue.
+                needSeekFrame = false;
+                surfaceRefreshFrame = false;
+            }
+            // The codec is re-bound above with no output buffer held.
+            surfaceRebindPending = false;
+        }
+        if (pausedSurfaceRefresh) {
+            // Paused surface return: present a frame now without resuming.
+            // A software-decoded held frame was already re-presented by the
+            // render wait wake-up; otherwise pull a decoder output. The
+            // decoder decodes ahead of the queue, so its output needs no new
+            // packets.
+            if (hwDecoder.isConfigured.load()) {
+                drainHwFrames();
+            } else if (ctx->videoCodecCtx && avcodec_receive_frame(ctx->videoCodecCtx, vFrame) == 0) {
+                queueDecodedFrame(vFrame, true);
+                av_frame_unref(vFrame);
+            }
         }
 
         if (ctx->isPaused.load() && !ctx->isScrubbing.load() && !needSeekFrame && ctx->seekTargetMs.load() < 0 && ctx->videoQueue.empty() && decodedFrames.empty()) {
             std::unique_lock<std::mutex> lk(ctx->controlMutex);
             ctx->controlCv.wait(lk, [&] {
                 return !ctx->isPaused.load() || ctx->isScrubbing.load() || !ctx->isRunning.load() || ctx->isStopped.load() ||
-                       ctx->seekTargetMs.load() >= 0 || !ctx->videoQueue.empty();
+                       ctx->seekTargetMs.load() >= 0 || !ctx->videoQueue.empty() || surfaceRefreshPending();
             });
             if (!ctx->isRunning.load() || ctx->isStopped.load()) break;
+        }
+
+        // One-shot request from nativePlay() on streams that cannot be re-seeked.
+        if (ctx->forceNextFrame.exchange(false)) {
+            needSeekFrame = true;
+            surfaceRefreshFrame = false;
         }
 
         if (!ctx->videoQueue.pop(item, 5)) {
             if (!decodedFrames.empty()) {
                 resetVideoStarvation();
                 drainOneDecodedFrame(false);
+            } else if (needSeekFrame && ctx->isPaused.load() && !ctx->isScrubbing.load()) {
+                // Refresh frame pending on a recreated surface: the decoder
+                // decodes ahead of the queue, so poll it for an output to
+                // present as a still instead of waiting for a packet.
+                if (hwDecoder.isConfigured.load()) {
+                    drainHwFrames();
+                } else if (ctx->videoCodecCtx && avcodec_receive_frame(ctx->videoCodecCtx, vFrame) == 0) {
+                    queueDecodedFrame(vFrame, true);
+                    av_frame_unref(vFrame);
+                }
             } else {
                 updateVideoStarvation();
             }
@@ -658,6 +765,7 @@ void videoDecodeThreadFunc(FfmpegPlayerContext* ctx) {
             av_frame_unref(vFrame);
             ctx->videoFinished.store(false);
             needSeekFrame = true;
+            surfaceRefreshFrame = false;
             continue;
         }
 

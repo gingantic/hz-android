@@ -135,7 +135,8 @@ class FfmpegNativePlayer {
         url: String?,
         surface: Surface?,
         startPositionMs: Long,
-        headers: Map<String, String>? = null
+        headers: Map<String, String>? = null,
+        caFile: String? = null
     ): Boolean {
         callbackGeneration.incrementAndGet()
         val headersArray = if (!headers.isNullOrEmpty()) {
@@ -149,9 +150,15 @@ class FfmpegNativePlayer {
             null
         }
         return withNativeContext(false) { handle ->
-            nativeOpen(handle, bridge, url, surface, startPositionMs, headersArray)
+            nativeOpen(handle, bridge, url, surface, startPositionMs, headersArray, caFile)
         }
     }
+
+    /** False for live HLS and range-less HTTP, where seeks cannot work. Lock-free native read. */
+    fun isSeekable(): Boolean = withNativeContext(true) { handle -> nativeIsSeekable(handle) }
+
+    /** Last open/demux failure as a `NativeErrorClass` number (0 = none). Lock-free native read. */
+    fun getLastErrorClass(): Int = withNativeContext(0) { handle -> nativeGetLastErrorClass(handle) }
 
     fun setSurface(surface: Surface?) {
         withNativeContext(Unit) { handle ->
@@ -387,6 +394,7 @@ class FfmpegNativePlayer {
     }
 
     fun setScrubbing(isScrubbing: Boolean) {
+        if (isScrubbing && !isSeekable()) return
         withNativeContext(Unit) { handle ->
             nativeSetScrubbing(handle, isScrubbing)
         }
@@ -425,8 +433,11 @@ class FfmpegNativePlayer {
         url: String?,
         surface: Surface?,
         startPositionMs: Long,
-        headers: Array<String>?
+        headers: Array<String>?,
+        caFile: String?
     ): Boolean
+    private external fun nativeIsSeekable(handle: Long): Boolean
+    private external fun nativeGetLastErrorClass(handle: Long): Int
     private external fun nativeSetSurface(handle: Long, surface: Surface?)
     private external fun nativePlay(handle: Long)
     private external fun nativePause(handle: Long)

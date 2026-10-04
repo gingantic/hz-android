@@ -1,4 +1,5 @@
 #include "FfmpegPlayerContext.h"
+#include "NetworkIo.h"
 
 // ─── Demux Thread ────────────────────────────────────────────────────────────
 
@@ -40,9 +41,12 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
         } else {
             ctx->audioSeekTargetPtsUs.store(-1);
         }
-        int initialSeekRet = av_seek_frame(ctx->fmtCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
-        if (initialSeekRet < 0) {
-            LOGW("Initial seek to start failed (ret=%d); continuing from the demuxer's current position", initialSeekRet);
+        // Non-seekable streams start at their current position; seeking would only fail.
+        if (ctx->seekable.load(std::memory_order_acquire)) {
+            int initialSeekRet = av_seek_frame(ctx->fmtCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
+            if (initialSeekRet < 0) {
+                LOGW("Initial seek to start failed (ret=%d); continuing from the demuxer's current position", initialSeekRet);
+            }
         }
         if (ctx->fmtCtx->pb) {
             ctx->fmtCtx->pb->eof_reached = 0;
@@ -60,6 +64,7 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
         std::string message = std::string(prefix) + ": " +
             (errorText[0] ? errorText : "unknown FFmpeg error");
         LOGE("%s (ret=%d)", message.c_str(), ret);
+        if (ctx->isWebSource) ctx->lastErrorClass.store(classifyAvError(ret));
         ctx->failPlayback(env, message.c_str());
     };
 
@@ -127,6 +132,22 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
             }
             ctx->notifyPosition(env, target, ctx->durationMs);
             ctx->controlCv.notify_all();
+        }
+
+        // While paused both consumers are stalled; reading ahead would only
+        // grow the queues (push soft-limits let them run to EOF) and waste
+        // I/O. Stop until resume, a new seek (which must refill the queues),
+        // or teardown. !isBuffering keeps the post-seek refill alive: the
+        // wait re-engages once the seek frame renders and clears buffering.
+        if (ctx->isPaused.load() && !ctx->isScrubbing.load() && ctx->seekTargetMs.load() < 0 &&
+            (!ctx->isBuffering.load() || !ctx->hasSurface.load())) {
+            std::unique_lock<std::mutex> lk(ctx->controlMutex);
+            ctx->controlCv.wait(lk, [&] {
+                return !ctx->isPaused.load() || ctx->isScrubbing.load() || !ctx->isRunning.load() ||
+                       ctx->isStopped.load() || ctx->seekTargetMs.load() >= 0;
+            });
+            if (!ctx->isRunning.load() || ctx->isStopped.load()) break;
+            continue;
         }
 
         if (ctx->isScrubbing.load() && ctx->seekTargetMs.load() < 0 && ctx->videoQueue.size() >= 2) {

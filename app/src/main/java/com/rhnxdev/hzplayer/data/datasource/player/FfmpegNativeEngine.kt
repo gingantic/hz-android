@@ -21,6 +21,7 @@ import com.rhnxdev.hzplayer.core.io.LocalRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.SmbRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.RandomAccessMediaSource
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
+import com.rhnxdev.hzplayer.core.util.sanitizeHttpRequestHeaders
 import com.rhnxdev.hzplayer.core.util.userInfoPair
 import com.rhnxdev.hzplayer.data.datasource.player.ffmpeg.FfmpegNativePlayer
 import com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler
@@ -36,8 +37,12 @@ import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import com.rhnxdev.hzplayer.domain.model.RepeatMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
+import com.rhnxdev.hzplayer.domain.player.NativeErrorClass
+import com.rhnxdev.hzplayer.domain.player.NativeErrorMapper
+import com.rhnxdev.hzplayer.domain.player.PlaybackErrorMapper
 import com.rhnxdev.hzplayer.domain.player.RenderViewConfig
 import com.rhnxdev.hzplayer.domain.player.clampSeekPosition
+import com.rhnxdev.hzplayer.domain.player.isDashManifest
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -177,6 +182,8 @@ class FfmpegNativeEngine @Inject constructor(
     private var currentTitle: String? = null
     private var currentArtist: String? = null
     private var currentHeaders: Map<String, String> = emptyMap()
+    @Volatile
+    private var currentMimeType: String? = null
     private var currentPlaylist: List<Pair<String, String>>? = null
     private var currentPlaylistIndex: Int = 0
     private var repeatMode: RepeatMode = RepeatMode.NONE
@@ -296,11 +303,16 @@ class FfmpegNativeEngine @Inject constructor(
                 Log.e(TAG, "Native player error: $message")
                 assHandler.setIsPlaying(false)
                 assHandler.setIsBuffering(false)
+                // Web sources show the mapped, localized error (raw FFmpeg text can carry URLs);
+                // local/SMB sources keep today's raw message.
+                val webScheme = currentUri?.substringBefore(':', "")?.lowercase()
+                val mapped = if (webScheme == "http" || webScheme == "https") lastWebError() else null
                 _playbackState.update { current ->
                     current.copy(
                         state = PlayerState.ERROR,
                         isPlaying = false,
-                        errorMessage = message
+                        errorMessage = if (mapped != null) localizedPlayerError(mapped) else message,
+                        errorKind = mapped?.kind
                     )
                 }
             }
@@ -405,6 +417,7 @@ class FfmpegNativeEngine @Inject constructor(
             currentTitle = title
             currentArtist = artist
             currentHeaders = headers
+            currentMimeType = mimeType
         }
         if (!isCurrentRequest(requestId, uri)) return
         if (!preservePlaylist) {
@@ -422,13 +435,14 @@ class FfmpegNativeEngine @Inject constructor(
                 currentTitle = title,
                 currentArtist = artist,
                 currentUri = uri,
-                errorMessage = null
+                errorMessage = null,
+                errorKind = null
             )
         }
 
         playJob?.cancel()
         playJob = engineScope.launch {
-            val opened = openAndStart(uri, resumePositionMs, headers, requestId)
+            val opened = openAndStart(uri, resumePositionMs, headers, requestId, mimeType)
             if (opened && isCurrentRequest(requestId, uri)) {
                 // Native playback owns its readiness state. Subtitle discovery
                 // runs after opening and must not overwrite READY with BUFFERING.
@@ -518,17 +532,41 @@ class FfmpegNativeEngine @Inject constructor(
     private fun isCurrentRequest(requestId: Long, uri: String): Boolean =
         !released && playbackGeneration.get() == requestId && currentUri == uri
 
-    private fun reportOpenFailure(requestId: Long, uri: String) {
+    /**
+     * Publishes an open failure.
+     *
+     * @param mapped — localized error for web sources; null keeps the legacy raw message
+     */
+    private fun reportOpenFailure(
+        requestId: Long,
+        uri: String,
+        mapped: PlaybackErrorMapper.MappedError? = null,
+    ) {
         if (!isCurrentRequest(requestId, uri)) return
         assHandler.setIsPlaying(false)
         _playbackState.update {
             it.copy(
                 state = PlayerState.ERROR,
                 isPlaying = false,
-                errorMessage = "Failed to open media"
+                errorMessage = if (mapped != null) localizedPlayerError(mapped) else "Failed to open media",
+                errorKind = mapped?.kind
             )
         }
     }
+
+    /** Resolves [mapped]'s string resource; getString(0) would throw, so fall back to the generic one. */
+    private fun localizedPlayerError(mapped: PlaybackErrorMapper.MappedError): String {
+        val resources = appContext.resources
+        var resId = resources.getIdentifier(mapped.stringResName, "string", appContext.packageName)
+        if (resId == 0) {
+            resId = resources.getIdentifier("player_error_unknown", "string", appContext.packageName)
+        }
+        return if (resId != 0) appContext.getString(resId) else ""
+    }
+
+    /** Maps the native error class of the last failure for a web source. */
+    private fun lastWebError(): PlaybackErrorMapper.MappedError? =
+        NativeErrorMapper.map(player.getLastErrorClass().takeIf { it != NativeErrorClass.NONE } ?: NativeErrorClass.UNKNOWN)
 
     /** Releases [surfaceReadyLatch] exactly once per attach; safe to call repeatedly. */
     private fun markSurfaceReady() {
@@ -547,15 +585,25 @@ class FfmpegNativeEngine @Inject constructor(
         startPositionMs: Long,
         headers: Map<String, String> = currentHeaders,
         requestId: Long,
+        mimeType: String? = currentMimeType,
     ): Boolean = synchronized(lifecycleLock) {
         if (!isCurrentRequest(requestId, uriString)) return@synchronized false
         if (!stopNativeAndCloseBridge()) {
             reportOpenFailure(requestId, uriString)
             return@synchronized false
         }
+        // Runs here (IO thread, after the previous item is stopped) so lifecycleLock is
+        // never taken on the main thread. The native build has no DASH demuxer.
+        if (isDashManifest(uriString, mimeType)) {
+            reportOpenFailure(requestId, uriString, NativeErrorMapper.DASH_UNSUPPORTED)
+            return@synchronized false
+        }
 
         val uri = Uri.parse(uriString)
         val scheme = uri.scheme?.lowercase() ?: ""
+        val isWeb = scheme == "http" || scheme == "https"
+        var openHeaders = headers
+        var caFile: String? = null
 
         var bridge: RandomAccessMediaSource? = null
         var smbCheckout: SmbCheckout? = null
@@ -608,8 +656,12 @@ class FfmpegNativeEngine @Inject constructor(
                 scheme.isEmpty() || uriString.startsWith("/") -> {
                     bridge = LocalRandomAccessSource(uriString)
                 }
-                scheme == "http" || scheme == "https" -> {
-                    directUrl = uriString
+                isWeb -> {
+                    // FFmpeg protocol lookup and the native scheme check are case-sensitive.
+                    directUrl = scheme + uriString.substring(scheme.length)
+                    openHeaders = sanitizeHttpRequestHeaders(headers)
+                    // Needed for both schemes: an http URL may redirect to, or list, https hops.
+                    caFile = NativeTlsCaBundle.ensure(appContext)
                 }
                 else -> {
                     directUrl = uriString
@@ -647,8 +699,16 @@ class FfmpegNativeEngine @Inject constructor(
             }
         }
 
+        // Fail closed: without a CA bundle an https open cannot be verified, and
+        // tls_verify is never disabled.
+        if (scheme == "https" && caFile == null) {
+            stopNativeAndCloseBridge()
+            reportOpenFailure(requestId, uriString, NativeErrorMapper.map(NativeErrorClass.NETWORK))
+            return@synchronized false
+        }
+
         val success = try {
-            if (!player.open(bridge, directUrl, activeSurface, startPositionMs, headers)) {
+            if (!player.open(bridge, directUrl, activeSurface, startPositionMs, openHeaders, caFile)) {
                 false
             } else {
                 player.setSpeed(currentSpeed)
@@ -671,8 +731,10 @@ class FfmpegNativeEngine @Inject constructor(
 
         // The native open/start path may have created worker threads before an
         // exception surfaced. Stop them before closing their Kotlin source.
+        // Read the native error class before stopping; non-web sources keep the raw message.
+        val mapped = if (isWeb) lastWebError() else null
         stopNativeAndCloseBridge()
-        reportOpenFailure(requestId, uriString)
+        reportOpenFailure(requestId, uriString, mapped)
         false
     }
 
@@ -752,6 +814,8 @@ class FfmpegNativeEngine @Inject constructor(
 
     override fun seekTo(positionMs: Long) {
         val clamped = clampSeekPosition(positionMs, getDuration())
+        // Live HLS / range-less HTTP cannot seek; skip the BUFFERING flip that nothing would clear.
+        if (!player.isSeekable()) return
         val targetUs = clamped * 1000L
         val nowUs = SystemClock.elapsedRealtime() * 1000L
         val currentPosition = player.getPosition()
@@ -844,7 +908,7 @@ class FfmpegNativeEngine @Inject constructor(
             if (uri != null && title != null && _playbackState.value.state != PlayerState.IDLE) {
                 val pos = getCurrentPosition()
                 val wasPlaying = isPlaying()
-                play(uri, title, resumePositionMs = pos, headers = currentHeaders)
+                play(uri, title, mimeType = currentMimeType, resumePositionMs = pos, headers = currentHeaders)
                 if (!wasPlaying) {
                     pause()
                 }
@@ -951,13 +1015,13 @@ class FfmpegNativeEngine @Inject constructor(
     override fun setLoudnessGain(gainMb: Int) = equalizerController.setLoudnessGain(gainMb)
 
     override fun clearError() {
-        _playbackState.update { it.copy(errorMessage = null) }
+        _playbackState.update { it.copy(errorMessage = null, errorKind = null) }
     }
 
     override fun retry() {
         val uri = currentUri ?: return
         val title = currentTitle ?: ""
-        play(uri, title, resumePositionMs = getCurrentPosition(), headers = currentHeaders)
+        play(uri, title, mimeType = currentMimeType, resumePositionMs = getCurrentPosition(), headers = currentHeaders)
     }
 
     override fun release() {

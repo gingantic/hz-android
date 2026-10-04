@@ -52,6 +52,18 @@ struct FfmpegPlayerContext {
 
     AVFormatContext* fmtCtx = nullptr;
 
+    // Web (http/https) source state. Set by nativeOpen before any worker thread starts and
+    // not reset by closeMedia(): Kotlin reads lastErrorClass after a failed open.
+    std::atomic<int> lastErrorClass{0};   // NativeErrorClass (NetworkIo.h), lock-free for the UI thread
+    bool isWebSource = false;
+    // Options applied to every playlist/segment/key open (see player_io_open).
+    std::vector<std::pair<std::string, std::string>> ioDefaults;
+    // False for live HLS and non-range HTTP: a seek on them only fails in av_seek_frame.
+    std::atomic<bool> seekable{true};
+    // One-shot: makes the video thread render its next decoded frame (unsticks buffering
+    // on streams that cannot be re-seeked).
+    std::atomic<bool> forceNextFrame{false};
+
     // Serializes operations that own or traverse FFmpeg media structures. Ordinary
     // metadata queries use metadataSnapshot instead and never take this lock.
     std::recursive_mutex mediaOperationMutex;
@@ -399,6 +411,11 @@ struct FfmpegPlayerContext {
     // is held. This ordering is safe because clockMutex is never held while
     // calling publishSeekRequest (no lock nesting in the reverse direction).
     int64_t publishSeekRequest(int64_t targetMs, SeekMode mode, bool scrub) {
+        // Non-seekable streams cannot honour a seek: publishing one would flush both
+        // queues and then fail in av_seek_frame, killing playback.
+        if (!seekable.load(std::memory_order_acquire)) {
+            return seekVersion.load(std::memory_order_acquire);
+        }
         std::lock_guard<std::mutex> lock(seekRequestMutex);
         int64_t gen = seekVersion.fetch_add(1, std::memory_order_release) + 1;
         pendingSeek = SeekRequest{gen, targetMs, mode, scrub};
@@ -645,6 +662,8 @@ struct FfmpegPlayerContext {
         isRunning.store(false);
         isStopped.store(true);
         isPaused.store(true);
+        seekable.store(true);
+        forceNextFrame.store(false);
     }
 };
 

@@ -205,6 +205,10 @@ Seek path — every engine clamps through the shared guard:
 - Error: `MediaPlayerHolder.onPlayerError` → `PlaybackErrorMapper.map(error)` returns a
   redacted `(PlaybackErrorKind, message)`; `errorKind` drives the overlay icon and which
   errors get a Retry button (network/timeout/auth/file — not format).
+- Native engine, web sources: `FfmpegNativeEngine.openAndStart` sanitizes headers, resolves the
+  CA bundle, and calls `nativeOpen`; failures come back as a native error class
+  (`nativeGetLastErrorClass`) mapped by `NativeErrorMapper` to the same `errorKind` values.
+  See `PLAYER_ARCHITECTURE.md` → "Web playback on the native engine".
 
 ---
 

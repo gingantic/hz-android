@@ -116,6 +116,7 @@ add_library(ffplayer SHARED
     ffplayer/VideoThread.cpp
     ffplayer/AudioThread.cpp
     ffplayer/DemuxThread.cpp
+    ffplayer/NetworkIo.cpp
     ffplayer/FfmpegPlayerJni.cpp
 )
 target_include_directories(ffplayer PRIVATE

@@ -83,6 +83,39 @@ fun PlayerSurface(engine: IPlayerEngine, uiState: PlayerUiState, …) {
 Lifecycle (pause on `ON_STOP`, resume on `ON_RESUME`) lives in `VideoPlayerScreen`,
 calling `engine.onRenderViewPaused(view)` / `onRenderViewResumed(view)` directly.
 
+`NATIVE_FFMPEG` implements both hooks as no-ops — its pause is `viewModel.pause()`
+(`pauseClock()` + `NativeAudioSink.pause()`). While paused with no surface
+(backgrounded), three guards keep the pipeline from racing ahead of the clock:
+`VideoThread` arms the `needSeekFrame` fast path only when a window exists and only
+renders through it when `hasSurface`; `surfaceChanged` is peeked, not consumed, so
+the main loop still re-inits the hardware decoder on the recreated surface; and
+`DemuxThread` stops reading while paused (the queues' push soft-limits would
+otherwise let a stalled consumer run to EOF). Without these, frames decoded while
+backgrounded anchored the master clock per frame, racing the position to EOF while
+audio stayed put (~1–2 min ahead on resume).
+
+On the return path, a surface-refresh frame (the one-shot fast path armed by the
+recreated surface) presents on the new surface but must not re-anchor the clock —
+otherwise the video's decode lead yanks the audio clock on every return. A frame
+more than 600 ms ahead of the clock is a normal decode lead: the pacing loop holds
+it until its presentation time and only re-aligns when the clock is frozen
+(`isBuffering`) or the gap is a discontinuity (> 5 s). Frames from an older seek
+generation skip A/V correction entirely — `publishSeekRequest()` already
+re-anchored the clock to the target, so the in-flight pre-seek frame would
+otherwise log a bogus `Large A/V desync` and briefly snap the clock back.
+
+Returning while still paused does not resume playback, and the recreated surface
+starts black until something renders on it. Three wakes present a still without
+resuming: the software render wait re-renders its held frame through the GL
+renderer (no codec involvement); the hardware pacing gate drops its held codec
+buffer and returns to the main loop, which re-binds the codec with no buffer held
+(the only proven `AMediaCodec_setOutputSurface` pattern) and pulls a fresh output
+from the decoder — it decodes ahead, so no new packets are needed; and the
+main-loop paused wait wakes so the same pull happens when nothing was held. The
+still is a refresh frame: no clock or position anchor. The rebind drop is
+one-shot (`surfaceRebindPending`) — without it the drain would discard every
+output it dequeues until the main loop re-binds.
+
 ---
 
 ## MediaPlaybackService
@@ -284,6 +317,43 @@ Picked in Settings, persisted via `UserPreferencesRepository.activeEngine`:
 
 Switching stops current playback and rebuilds the render surface (`PlayerSurface`
 keys on `engineType`). The native engine opts out of the system MediaSession.
+
+Cold start: `_activeEngineType` holds the `EXO_PLAYER` default until the persisted
+preference has been read (DataStore is async). `playVideo`/`playUri`/`playAudio`/playlists
+wait for that first emission (`PlayerRepositoryImpl.engineReady`), and only the newest play
+dispatches — a newer play or `stop()` supersedes a pending one. Without this, a cold-start
+play started on the default engine while the collector later flipped the UI to an idle
+engine (black video, `0:00`). `startPlaybackService()` runs inside the same block so the
+MediaSession wraps the settled engine.
+
+`NATIVE_FFMPEG` plays web `http(s)` and HLS (VOD + live). It does **not** play DASH: a
+`.mpd` URL fails fast with `player_error_dash_native`.
+
+### Web playback on the native engine
+
+- **Headers:** `sanitizeHttpRequestHeaders` (`core/util/HttpHeaderSanitizer.kt`) applies the
+  same rules as `MediaPlayerHolder.setHttpRequestHeaders`, plus RFC 7230 token / no-CR-LF
+  checks. `nativeOpen` drops any header containing a line break again.
+- **TLS trust:** FFmpeg's mbedTLS loads no system store and has no `ca_path`.
+  `NativeTlsCaBundle` exports the `system:` roots to `cacheDir/tls/cacert.pem`, skipping
+  certificates mbedTLS cannot parse (it rejects the whole file otherwise). The file is rebuilt
+  when it is missing, older than 7 days, or its PEM markers are gone (a truncated bundle would
+  break every https open until it aged out). The path is passed
+  for every `http`/`https` URL and set as `ca_file` + `tls_verify=1` on the open dictionary
+  and, through `player_io_open` (`cpp/ffplayer/NetworkIo.cpp`), on every playlist, segment
+  and key open. So `http -> https` redirects and `http` playlists with `https` segments
+  verify. `tls_verify` is never disabled; an `https` URL with no bundle fails closed.
+- **HLS:** `extension_picky=0` (segments with any extension), `seg_max_retry=3`, probe window
+  3 s / 2 MiB for web sources, reconnect delay capped at 8 s (about 11 s of retries).
+- **Seekability:** live HLS and range-less HTTP are marked not seekable. `publishSeekRequest`
+  is the single gate (covers seek, scrub, EOF restart, resume seek); `seekTo` and
+  `setScrubbing(true)` also return early. Seeks still go through `clampSeekPosition`.
+  On such streams `nativePlay` does not re-seek; after real starvation it sets
+  `forceNextFrame` instead.
+- **Errors:** native code classifies the AVERROR (`classifyAvError`); Kotlin reads it through
+  the lock-free `nativeGetLastErrorClass` and maps it with `NativeErrorMapper`. Local and SMB
+  sources keep their raw messages.
+- **Logs:** debug builds route FFmpeg WARNING+ to logcat tag `FFmpeg`.
 
 ---
 

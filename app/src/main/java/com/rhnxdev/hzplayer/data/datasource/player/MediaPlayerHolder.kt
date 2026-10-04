@@ -597,6 +597,8 @@ class MediaPlayerHolder @Inject constructor(
      */
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     fun setHttpRequestHeaders(headers: Map<String, String>) {
+        // Rules 1-5 are mirrored by sanitizeHttpRequestHeaders (core/util/HttpHeaderSanitizer.kt)
+        // for the native FFmpeg engine — change one, change both.
         val filtered = mutableMapOf<String, String>()
         val forbidden = setOf(
             "host", "content-length", "connection", "accept-encoding",

@@ -17,6 +17,7 @@ import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.player.IPlayerEngine
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -52,6 +53,16 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private val _activeEngineType = MutableStateFlow(EngineType.EXO_PLAYER)
 
+    // On a cold start the collector below reads DataStore asynchronously, so
+    // _activeEngineType still holds the EXO_PLAYER default when the first play
+    // arrives. Play calls wait for the first emission: dispatching earlier would
+    // start the wrong engine and the UI would then rebind to an idle engine
+    // (black video, 0:00) once the collector flips.
+    private val engineReady = CompletableDeferred<Unit>()
+
+    // Newest play wins; stop() bumps it too so a play still waiting is dropped.
+    private var playGeneration = 0L
+
     companion object {
         private const val TAG = "PlayerRepository"
     }
@@ -74,6 +85,9 @@ class PlayerRepositoryImpl @Inject constructor(
                         // renderers (FFmpeg-first) on the next play.
                         engine().setFfmpegPreferred(type == EngineType.FFMPEG)
                     }
+                    // The preference is settled either way — an unmapped type keeps
+                    // the default, so pending plays must not wait forever.
+                    engineReady.complete(Unit)
                 }
         }
         scope.launch {
@@ -162,44 +176,67 @@ class PlayerRepositoryImpl @Inject constructor(
         _networkTraffic.value = NetworkTraffic.DEFAULT
     }
 
+    /**
+     * Run [block] once the engine preference has settled — see [engineReady].
+     * Only the newest play dispatches: a newer play or [stop] bumps
+     * [playGeneration] and supersedes a dispatch still waiting.
+     */
+    private fun dispatchPlay(block: () -> Unit) {
+        val generation = ++playGeneration
+        scope.launch {
+            engineReady.await()
+            if (generation == playGeneration) block()
+        }
+    }
+
     override fun playVideo(video: VideoItem, resumePositionMs: Long) {
         Log.i(TAG, "playVideo: title=${video.title} resumeMs=$resumePositionMs")
         savedPlaybackUri = video.uri
         startTrafficPolling()
-        startPlaybackService()
-        engine().play(video.uri, video.title, isVideo = true, resumePositionMs = resumePositionMs)
+        dispatchPlay {
+            startPlaybackService()
+            engine().play(video.uri, video.title, isVideo = true, resumePositionMs = resumePositionMs)
+        }
     }
 
     override fun playAudio(audio: AudioItem, resumePositionMs: Long) {
         Log.i(TAG, "playAudio: title=${audio.title} resumeMs=$resumePositionMs")
         savedPlaybackUri = audio.uri
         startTrafficPolling()
-        startPlaybackService()
-        engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false, resumePositionMs = resumePositionMs, artworkUri = audio.albumArtUri)
+        dispatchPlay {
+            startPlaybackService()
+            engine().play(audio.uri, audio.title, artist = audio.artist, isVideo = false, resumePositionMs = resumePositionMs, artworkUri = audio.albumArtUri)
+        }
     }
 
     override fun playUri(uri: String, title: String, isVideo: Boolean, mimeType: String?, resumePositionMs: Long, headers: Map<String, String>) {
         Log.i(TAG, "playUri: title=$title isVideo=$isVideo mimeType=$mimeType resumeMs=$resumePositionMs headers=${headers.size}")
         savedPlaybackUri = uri
         startTrafficPolling()
-        startPlaybackService()
-        engine().play(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = resumePositionMs, headers = headers)
+        dispatchPlay {
+            startPlaybackService()
+            engine().play(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = resumePositionMs, headers = headers)
+        }
     }
 
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
         Log.i(TAG, "playPlaylist: items=${items.size} startIndex=$startIndex startPosMs=$startPositionMs")
         savedPlaybackUri = items.getOrNull(startIndex)?.first
         startTrafficPolling()
-        startPlaybackService()
-        engine().playPlaylist(items, startIndex, startPositionMs)
+        dispatchPlay {
+            startPlaybackService()
+            engine().playPlaylist(items, startIndex, startPositionMs)
+        }
     }
 
     override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
         Log.i(TAG, "playAudioPlaylist: items=${items.size} startIndex=$startIndex")
         savedPlaybackUri = items.getOrNull(startIndex)?.uri
         startTrafficPolling()
-        startPlaybackService()
-        engine().playAudioPlaylist(items, startIndex)
+        dispatchPlay {
+            startPlaybackService()
+            engine().playAudioPlaylist(items, startIndex)
+        }
     }
 
     override fun getCurrentMediaItemIndex(): Int = engine().getCurrentMediaItemIndex()
@@ -270,6 +307,9 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override fun stop() {
         Log.i(TAG, "stop")
+        // Supersede a play still waiting on [engineReady] — nothing should start
+        // after the user has left the player.
+        playGeneration++
         savedPlaybackUri = null
         stopTrafficPolling()
         engine().stop()
