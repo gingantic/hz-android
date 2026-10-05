@@ -657,6 +657,14 @@
     <string name="browser_js_stay">Stay</string>
     <string name="browser_js_unsaved_changes">Changes you made may not be saved.</string>
     <string name="browser_ok">OK</string>
+    <!-- Element picker (block element) -->
+    <string name="browser_block_element">Block element</string>
+    <string name="browser_element_picker_hint">Tap an element on the page to block it</string>
+    <string name="browser_element_picker_wider">Wider</string>
+    <string name="browser_element_picker_apply_all">Apply to all sites</string>
+    <string name="browser_element_picker_block">Block</string>
+    <string name="browser_element_picker_cancel">Cancel</string>
+    <string name="browser_element_picker_matches">%1$d matching elements</string>
     <!-- View & Sort Bottom Sheet -->
     <string name="view_and_sort_title">View &amp; Sort</string>
     <string name="view_mode_title">View Mode</string>

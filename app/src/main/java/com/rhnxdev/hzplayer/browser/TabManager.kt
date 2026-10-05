@@ -14,6 +14,8 @@ import androidx.compose.runtime.setValue
 import java.util.UUID
 
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
+import com.rhnxdev.hzplayer.browser.adblock.ElementPickerBridge
+import com.rhnxdev.hzplayer.browser.adblock.PickedElement
 import com.rhnxdev.hzplayer.browser.media.MediaSnifferBridge
 import com.rhnxdev.hzplayer.browser.media.MediaSnifferEngine
 import kotlinx.coroutines.CoroutineScope
@@ -134,6 +136,66 @@ class TabManager(
 
     // ── Video playback / PiP state ────────────────────────────
 
+    // ── Element picker ("block element") ──────────────────────────
+
+    /** True while the user is picking a page element to block. */
+    var elementPickerActive by mutableStateOf(false)
+        private set
+
+    /** The element currently outlined, or null before the first tap. */
+    var pickedElement by mutableStateOf<PickedElement?>(null)
+        private set
+
+    /** True when the active tab can enter picker mode (JS on, real http(s) page). */
+    val canStartElementPicker: Boolean
+        get() {
+            if (!settings.javaScriptEnabled) return false
+            val id = activeTabId ?: return false
+            return isPickableUrl(_tabs.value.find { it.id == id }?.url)
+        }
+
+    /** Enter picker mode on the active tab. Returns false when it can't start. */
+    fun startElementPicker(): Boolean {
+        if (!canStartElementPicker) return false
+        val view = activeWebView() ?: return false
+        ElementPickerBridge.injectPickerJs(view)
+        ElementPickerBridge.eval(view, "start()")
+        elementPickerActive = true
+        pickedElement = null
+        return true
+    }
+
+    /** Leave picker mode without changing anything. */
+    fun cancelElementPicker() {
+        if (elementPickerActive) activeWebView()?.let { ElementPickerBridge.eval(it, "stop()") }
+        resetElementPickerState()
+    }
+
+    /** Select the parent of the current element — for when the pick is too specific. */
+    fun widenElementSelection() {
+        if (!elementPickerActive) return
+        activeWebView()?.let { ElementPickerBridge.eval(it, "widen()") }
+    }
+
+    /**
+     * Hide the picked element in the live page and leave picker mode. Hiding is
+     * immediate feedback — persisting the rule is the caller's job.
+     */
+    fun applyPickedHideAndExit(): PickedElement? {
+        val picked = pickedElement
+        val view = activeWebView()
+        if (picked != null && view != null) {
+            ElementPickerBridge.hide(view, picked.selector)   // stop()s the picker itself
+        } else {
+            // Nothing was picked — still tear the picker down so the page is usable.
+            view?.let { ElementPickerBridge.eval(it, "stop()") }
+        }
+        resetElementPickerState()
+        return picked
+    }
+
+    // ── Video playback / PiP state ──────────────────────────────
+
     /** Tab IDs with at least one actively playing HTML5 video. */
     private val playingTabs = mutableStateOf(setOf<String>())
 
@@ -184,6 +246,7 @@ class TabManager(
 
     fun closeTab(id: String) {
         setTabPlaying(id, false)
+        if (activeTabId == id) resetElementPickerState()
         if (_tabs.value.size <= 1) {
             _tabs.value = emptyList()
             activeTabId = null
@@ -216,6 +279,8 @@ class TabManager(
     }
 
     fun switchTab(id: String) {
+        // Cancel before the switch so stop() still reaches the tab that owns it.
+        cancelElementPicker()
         activeTabId = id
         val tab = _tabs.value.find { it.id == id } ?: return
         urlInput = tab.url
@@ -411,6 +476,8 @@ class TabManager(
             liveViews[tabId]?.destroy()
         }
         liveViews[tabId] = wv
+        // A replacement instance starts from a blank document — no selection.
+        if (tabId == activeTabId) resetElementPickerState()
 
         applySettingsToView(wv, settings)
 
@@ -442,6 +509,18 @@ class TabManager(
                 },
             ),
             MediaSnifferBridge.INTERFACE_NAME
+        )
+
+        wv.addJavascriptInterface(
+            ElementPickerBridge { selector, matchCount, canWiden ->
+                scope.launch(Dispatchers.Main) {
+                    // A page that navigated away mid-tap can still call back — only
+                    // the live picker on the active tab may drive the panel.
+                    if (!elementPickerActive || resolveTabId(wv) != activeTabId) return@launch
+                    pickedElement = PickedElement(selector, matchCount, canWiden)
+                }
+            },
+            ElementPickerBridge.INTERFACE_NAME
         )
 
         wv.webViewClient = object : WebViewClient() {
@@ -502,6 +581,8 @@ class TabManager(
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 val id = resolveTabId(view) ?: return
+                // The new document has no picker script and no selection left.
+                resetElementPickerState()
                 val keepTabUrl = isSyntheticPageUrl(url)
                 updateTab(id) {
                     it.copy(
@@ -884,6 +965,7 @@ class TabManager(
             (newSettings.userAgentMode == UserAgentMode.CUSTOM &&
                 settings.customUserAgent != newSettings.customUserAgent)
         settings = newSettings
+        if (!newSettings.javaScriptEnabled) cancelElementPicker()
         liveViews.values.forEach { applySettingsToView(it, newSettings) }
         if (renderModeChanged) {
             liveViews.forEach { (_, view) ->
@@ -980,6 +1062,7 @@ class TabManager(
     }
 
     private fun freezeTab(id: String) {
+        if (id == activeTabId) resetElementPickerState()
         val wv = liveViews[id] ?: return
         setTabPlaying(id, false)
         val bundle = android.os.Bundle()
@@ -1009,6 +1092,7 @@ class TabManager(
      * which reloads the tab's current URL instead of stranding it on a blank page.
      */
     private fun discardDeadWebView(dead: WebView, tabId: String) {
+        if (tabId == activeTabId) resetElementPickerState()
         liveViews.remove(tabId)
         setTabPlaying(tabId, false)
         (dead.parent as? ViewGroup)?.removeView(dead)
@@ -1051,6 +1135,7 @@ class TabManager(
         // doesn't linger, and so no ghost dialog survives into a new session.
         jsDialog?.let { resolveJsDialog(confirmed = false) }
         deliverFileChooserResult(null)
+        resetElementPickerState()
         liveViews.values.forEach { it.destroy() }
         liveViews.clear()
         webViewGenerations.value = emptyMap()
@@ -1065,6 +1150,22 @@ class TabManager(
     private fun resolveTabId(view: WebView): String? {
         return liveViews.entries.firstOrNull { it.value == view }?.key
     }
+
+    private fun activeWebView(): WebView? = activeTabId?.let { liveViews[it] }
+
+    /**
+     * Picker mode must never outlive its document: reset wherever the page or the
+     * WebView goes away, otherwise the panel would keep pointing at a dead element.
+     */
+    private fun resetElementPickerState() {
+        elementPickerActive = false
+        pickedElement = null
+    }
+
+    /** Only real http(s) documents can be inspected — file:/data: pages are pointless. */
+    private fun isPickableUrl(url: String?): Boolean =
+        !url.isNullOrBlank() &&
+            (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true))
 
     private fun updateTab(id: String, transform: (BrowserTab) -> BrowserTab) {
         val current = _tabs.value

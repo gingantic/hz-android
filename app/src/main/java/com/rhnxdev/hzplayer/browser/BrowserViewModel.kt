@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockUpdater
+import com.rhnxdev.hzplayer.browser.adblock.CosmeticRuleBuilder
+import com.rhnxdev.hzplayer.browser.adblock.PickedElement
 import com.rhnxdev.hzplayer.core.util.withoutScheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -289,6 +291,35 @@ class BrowserViewModel @Inject constructor(
         val newMode = if (isDesktopMode) UserAgentMode.MOBILE else UserAgentMode.DESKTOP
         updateSettings(settings.copy(userAgentMode = newMode))
     }
+
+    // ── Element picker ("block element") ──────────────────────────
+
+    /** True when the active tab is a real, scriptable page the picker can inspect. */
+    val canPickElements: Boolean get() = tabManager.canStartElementPicker
+    val isElementPickerActive: Boolean get() = tabManager.elementPickerActive
+    val pickedElement: PickedElement? get() = tabManager.pickedElement
+
+    fun startElementPicker() = tabManager.startElementPicker()
+
+    fun cancelElementPicker() = tabManager.cancelElementPicker()
+
+    fun widenElementSelection() = tabManager.widenElementSelection()
+
+    /**
+     * Hide the picked element and persist a cosmetic rule for it. Hiding already
+     * happened in the page; this only saves the rule and rebuilds the engine.
+     */
+    fun blockPickedElement(applyToAllSites: Boolean) {
+        val picked = tabManager.applyPickedHideAndExit() ?: return
+        val rule = CosmeticRuleBuilder.build(hostOf(activeTab?.url), picked.selector, applyToAllSites)
+            ?: return
+        val current = settings.customAdBlockRules
+        if (CosmeticRuleBuilder.contains(current, rule)) return
+        updateSettings(settings.copy(customAdBlockRules = CosmeticRuleBuilder.append(current, rule)))
+    }
+
+    private fun hostOf(url: String?): String? =
+        url?.let { runCatching { android.net.Uri.parse(it).host }.getOrNull() }
 
     fun initialize() {
         if (tabManager.tabs.isNotEmpty()) return

@@ -88,11 +88,13 @@ fun BrowserScreen(
         }
     }
 
-    // Back: close overlays first (custom video view → media grabber → history → settings → sidebar),
-    // then navigate back in the tab; popup tabs close and return to their opener tab; else exit
+    // Back: close overlays first (custom video view → element picker → media grabber →
+    // history → settings → sidebar), then navigate back in the tab; popup tabs close and
+    // return to their opener tab; else exit
     BackHandler(enabled = true) {
         when {
             customView != null -> viewModel.tabManager.hideCustomView()
+            viewModel.isElementPickerActive -> viewModel.cancelElementPicker()
             viewModel.isUrlBarFocused -> focusManager.clearFocus()
             showMediaGrabber -> showMediaGrabber = false
             showHistory    -> showHistory = false
@@ -278,8 +280,21 @@ fun BrowserScreen(
                 }
             }
 
-            // Bottom toolbar (hidden in PiP)
+            // Bottom toolbar (hidden in PiP) — swapped for the element picker panel
+            // while picking, so the page stays fully tappable
             if (!isInPip) {
+            if (viewModel.isElementPickerActive) {
+                ElementPickerPanel(
+                    picked = viewModel.pickedElement,
+                    onWider = viewModel::widenElementSelection,
+                    onBlock = viewModel::blockPickedElement,
+                    onCancel = viewModel::cancelElementPicker,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .windowInsetsPadding(WindowInsets.imeAnimationTarget),
+                )
+            } else {
             BrowserBottomBar(
                 canGoBack = viewModel.activeTab?.canGoBack == true || viewModel.canReturnToParentTab,
                 canGoForward = viewModel.activeTab?.canGoForward == true,
@@ -299,12 +314,15 @@ fun BrowserScreen(
                 onMediaGrabberClick = { clearUrlBarFocus(); showMediaGrabber = true },
                 isDesktopSite = viewModel.isDesktopMode,
                 onToggleDesktopSite = { clearUrlBarFocus(); viewModel.toggleDesktopMode() },
+                onBlockElementClick = { clearUrlBarFocus(); viewModel.startElementPicker() },
+                canBlockElement = viewModel.canPickElements,
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .windowInsetsPadding(WindowInsets.imeAnimationTarget)
                     .then(toolbarSwipeModifier),
             )
+            }
             }
         }
 

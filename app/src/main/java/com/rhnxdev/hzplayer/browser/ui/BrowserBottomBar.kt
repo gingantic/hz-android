@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.History
@@ -77,6 +78,8 @@ fun BrowserBottomBar(
     onMediaGrabberClick: () -> Unit = {},
     isDesktopSite: Boolean = false,
     onToggleDesktopSite: () -> Unit = {},
+    onBlockElementClick: () -> Unit = {},
+    canBlockElement: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
 
@@ -321,6 +324,22 @@ fun BrowserBottomBar(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
                     )
 
+                    // Element picker — needs JS and a real page to inspect
+                    BrowserMenuItemRow(
+                        icon = Icons.Default.Block,
+                        title = stringResource(R.string.browser_block_element),
+                        enabled = canBlockElement,
+                        onClick = {
+                            showMenu = false
+                            onBlockElementClick()
+                        },
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    )
+
                     // Desktop site toggle (Chrome-style) — reloads the page in desktop mode
                     BrowserMenuItemRow(
                         icon = Icons.Default.Computer,
@@ -378,27 +397,29 @@ private fun BrowserMenuItemRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = if (trailing != null) 4.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
+            tint = tint,
             modifier = Modifier.size(22.dp),
         )
         Spacer(modifier = Modifier.width(14.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = tint,
             modifier = Modifier.weight(1f),
         )
         trailing?.invoke()
