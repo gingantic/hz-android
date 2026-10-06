@@ -13,28 +13,24 @@ fun Uri.userInfoPair(): Pair<String, String> {
 }
 
 /**
- * Return a copy of this header map with the browser session's live cookies and a
- * page Referer added, so a URL handed to the player carries the CDN auth the
- * WebView already holds. A key already present — compared case-insensitively —
- * wins, because the sniffer's own header is more specific than the session jar.
- *
- * [cookieFallbackUrl] is the URL to ask the cookie jar about when [pageUrl] is
- * blank (e.g. fall back to the media URL itself).
+ * Adds the browser session's live cookies for [targetUrl] and a [refererUrl] so
+ * a URL handed to the player carries the CDN auth the WebView already holds.
+ * Cookies resolve for the target itself — never the page — so page-session
+ * cookies can't leak to a third-party media host. An existing key (any case) wins.
  */
 fun Map<String, String>.withLiveCookies(
-    pageUrl: String,
-    cookieFallbackUrl: String? = null,
+    targetUrl: String,
+    refererUrl: String = "",
 ): Map<String, String> {
     val merged = toMutableMap()
-    if (merged.keys.none { it.equals("Cookie", ignoreCase = true) }) {
-        val cookieUrl = pageUrl.ifBlank { cookieFallbackUrl.orEmpty() }
-        if (cookieUrl.isNotBlank()) {
-            val liveCookies = runCatching { CookieManager.getInstance().getCookie(cookieUrl) }.getOrNull()
-            if (!liveCookies.isNullOrBlank()) merged["Cookie"] = liveCookies
-        }
+    val isHttp = targetUrl.startsWith("http://", ignoreCase = true) ||
+        targetUrl.startsWith("https://", ignoreCase = true)
+    if (isHttp && merged.keys.none { it.equals("Cookie", ignoreCase = true) }) {
+        val liveCookies = runCatching { CookieManager.getInstance().getCookie(targetUrl) }.getOrNull()
+        if (!liveCookies.isNullOrBlank()) merged["Cookie"] = liveCookies
     }
-    if (pageUrl.isNotBlank() && merged.keys.none { it.equals("Referer", ignoreCase = true) }) {
-        merged["Referer"] = pageUrl
+    if (refererUrl.isNotBlank() && merged.keys.none { it.equals("Referer", ignoreCase = true) }) {
+        merged["Referer"] = refererUrl
     }
     return merged
 }

@@ -22,11 +22,15 @@ import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockUpdater
 import com.rhnxdev.hzplayer.browser.adblock.CosmeticRuleBuilder
 import com.rhnxdev.hzplayer.browser.adblock.PickedElement
+import com.rhnxdev.hzplayer.core.util.DebouncedAction
 import com.rhnxdev.hzplayer.core.util.withoutScheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+
+/** Quiet period after the last custom-rule keystroke before the adblock engine rebuilds. */
+private const val AD_BLOCK_RULE_DEBOUNCE_MS = 500L
 
 /**
  * Transient warning raised by a WebView callback. Carries data only — the UI
@@ -179,6 +183,9 @@ class BrowserViewModel @Inject constructor(
     var adBlockStatus by mutableStateOf<AdBlockStatus?>(null)
         private set
 
+    /** Coalesces per-keystroke custom-rule edits into one off-main engine rebuild. */
+    private val adBlockReloads = DebouncedAction(viewModelScope, AD_BLOCK_RULE_DEBOUNCE_MS)
+
     init {
         tabManager.onTabSwitched = { saveSessionIfEnabled() }
         // Apply cookie settings from persisted prefs on startup
@@ -191,12 +198,12 @@ class BrowserViewModel @Inject constructor(
         if (settings.adBlockEnabled) {
             viewModelScope.launch(Dispatchers.IO) {
                 AdBlockUpdater.updateLists(application, settings.enabledFilterLists)
-                val now = System.currentTimeMillis()
+                val updated = settings.copy(lastAdBlockUpdateTimestamp = System.currentTimeMillis())
+                // Rebuild off the main thread — it re-parses every list fetched
+                AdBlockEngine.reload(application, updated)
                 withContext(Dispatchers.Main) {
-                    val updated = settings.copy(lastAdBlockUpdateTimestamp = now)
                     settings = updated
                     settingsStore.save(updated)
-                    AdBlockEngine.reload(application, updated)
                 }
             }
         }
@@ -234,12 +241,12 @@ class BrowserViewModel @Inject constructor(
         adBlockStatus = null
         viewModelScope.launch(Dispatchers.IO) {
             val result = AdBlockUpdater.updateLists(getApplication(), settings.enabledFilterLists)
-            val now = System.currentTimeMillis()
-            val updatedSettings = settings.copy(lastAdBlockUpdateTimestamp = now)
+            val updatedSettings = settings.copy(lastAdBlockUpdateTimestamp = System.currentTimeMillis())
+            // Rebuild off the main thread — it re-parses every list fetched
+            AdBlockEngine.reload(getApplication(), updatedSettings)
             withContext(Dispatchers.Main) {
                 settings = updatedSettings
                 settingsStore.save(updatedSettings)
-                AdBlockEngine.reload(getApplication(), updatedSettings)
                 isAdBlockUpdating = false
                 adBlockStatus = when (result) {
                     is AdBlockUpdater.UpdateResult.Success -> AdBlockStatus.Updated(AdBlockEngine.totalRuleCount)
@@ -278,7 +285,16 @@ class BrowserViewModel @Inject constructor(
             oldSettings.customAdBlockRules != newSettings.customAdBlockRules ||
             oldSettings.cosmeticFilteringEnabled != newSettings.cosmeticFilteringEnabled
         ) {
-            AdBlockEngine.reload(getApplication(), newSettings)
+            // The rules field calls this per keystroke — coalesce those edits
+            // into one rebuild; a toggle applies at once. Both run off Main.
+            val reload: suspend () -> Unit = {
+                withContext(Dispatchers.IO) { AdBlockEngine.reload(getApplication(), newSettings) }
+            }
+            if (oldSettings.customAdBlockRules != newSettings.customAdBlockRules) {
+                adBlockReloads.schedule(reload)
+            } else {
+                adBlockReloads.runNow(reload)
+            }
         }
     }
 

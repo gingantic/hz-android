@@ -12,7 +12,7 @@ object AdBlockEngine {
 
     private const val TAG = "AdBlockEngine"
 
-    private val nativeEnginePtr = AtomicLong(0L)
+    private val nativeEngineHandle = AtomicLong(0L)
 
     val blockedCount = AtomicLong(0)
     @Volatile var totalRuleCount: Int = 0
@@ -55,16 +55,8 @@ object AdBlockEngine {
     }
 
     fun reload(context: Context, settings: BrowserSettings) {
-        val oldPtr = nativeEnginePtr.getAndSet(0L)
-        if (oldPtr != 0L && AdBlockNative.isLibraryLoaded) {
-            try {
-                AdBlockNative.nativeDestroyEngine(oldPtr)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Error destroying native engine: ${e.message}")
-            }
-        }
-
         if (!isAvailable || !settings.adBlockEnabled) {
+            destroyQuietly(nativeEngineHandle.getAndSet(0L))
             totalRuleCount = 0
             return
         }
@@ -75,27 +67,43 @@ object AdBlockEngine {
             customRules = settings.customAdBlockRules,
         )
 
-        if (filterContents.isNotEmpty()) {
+        val newPtr = if (filterContents.isEmpty()) {
+            0L
+        } else {
             try {
-                val ptr = AdBlockNative.nativeCreateEngine(filterContents.toTypedArray())
-                if (ptr != 0L) {
-                    nativeEnginePtr.set(ptr)
-                    totalRuleCount = filterContents.sumOf { content ->
-                        content.lineSequence().count { line ->
-                            line.isNotBlank() && !line.startsWith("!") && !line.startsWith("[")
-                        }
-                    }
-                    Log.i(TAG, "Native adblock-rust engine loaded successfully ($totalRuleCount estimated rules)")
-                } else {
-                    Log.e(TAG, "Failed to initialize native adblock engine")
-                    totalRuleCount = 0
-                }
+                AdBlockNative.nativeCreateEngine(filterContents.toTypedArray())
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to initialize native adblock engine: ${e.message}")
-                totalRuleCount = 0
+                0L
+            }
+        }
+
+        // Build-then-swap: the live engine keeps serving request checks until the
+        // replacement exists, and is released only after the handle is replaced.
+        // A failed build with rules present keeps the previous engine.
+        if (newPtr == 0L && filterContents.isNotEmpty()) return
+
+        destroyQuietly(nativeEngineHandle.getAndSet(newPtr))
+        totalRuleCount = if (newPtr != 0L) {
+            filterContents.sumOf { content ->
+                content.lineSequence().count { line ->
+                    line.isNotBlank() && !line.startsWith("!") && !line.startsWith("[")
+                }
             }
         } else {
-            totalRuleCount = 0
+            0
+        }
+        if (newPtr != 0L) {
+            Log.i(TAG, "Native adblock-rust engine loaded ($totalRuleCount estimated rules)")
+        }
+    }
+
+    private fun destroyQuietly(handle: Long) {
+        if (handle == 0L || !AdBlockNative.isLibraryLoaded) return
+        try {
+            AdBlockNative.nativeDestroyEngine(handle)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error destroying native engine: ${e.message}")
         }
     }
 
@@ -112,11 +120,11 @@ object AdBlockEngine {
         if (requestUrl.startsWith("data:") || requestUrl.startsWith("blob:") || requestUrl.startsWith("file:")) return false
         if (isCaptchaRequest(requestUrl)) return false
 
-        val ptr = nativeEnginePtr.get()
-        if (ptr != 0L) {
+        val handle = nativeEngineHandle.get()
+        if (handle != 0L) {
             try {
                 val blocked = AdBlockNative.nativeShouldBlock(
-                    enginePtr = ptr,
+                    engineHandle = handle,
                     requestUrl = requestUrl,
                     pageUrl = pageUrl,
                     resourceType = resourceType
@@ -141,10 +149,10 @@ object AdBlockEngine {
             return ""
         }
 
-        val ptr = nativeEnginePtr.get()
-        if (ptr != 0L) {
+        val handle = nativeEngineHandle.get()
+        if (handle != 0L) {
             try {
-                return AdBlockNative.nativeGetCosmeticCss(ptr, pageUrl) ?: ""
+                return AdBlockNative.nativeGetCosmeticCss(handle, pageUrl) ?: ""
             } catch (e: Throwable) {
                 Log.e(TAG, "Native getCosmeticCss error: ${e.message}")
             }

@@ -560,6 +560,8 @@
     <string name="browser_dom_storage_sub">LocalStorage &amp; SessionStorage for web apps</string>
     <string name="browser_load_images">Load Images</string>
     <string name="browser_load_images_sub">Download and display images</string>
+    <string name="browser_dark_web_content">Dark Web Content</string>
+    <string name="browser_dark_web_content_sub">Darken sites that lack a dark theme</string>
     <string name="browser_autoplay_media">Autoplay Media</string>
     <string name="browser_autoplay_media_sub">Allow video/audio to play without tapping</string>
     <string name="browser_text_zoom">Text Zoom</string>

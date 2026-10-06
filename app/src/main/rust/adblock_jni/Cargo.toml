@@ -7,5 +7,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-adblock = "0.13"
+# `single-thread` must stay OFF: it swaps the engine's internals to Rc/RefCell,
+# which is undefined behaviour once WebView worker threads share the engine.
+adblock = { version = "0.13", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 jni = { version = "0.21", default-features = false }

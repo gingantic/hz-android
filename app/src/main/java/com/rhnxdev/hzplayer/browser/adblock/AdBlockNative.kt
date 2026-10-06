@@ -2,6 +2,10 @@ package com.rhnxdev.hzplayer.browser.adblock
 
 /**
  * Low-level JNI interface to Brave's adblock-rust native engine.
+ *
+ * Values returned by [nativeCreateEngine] are opaque handles, not pointers: the
+ * native side keeps the engine registered and frees it once the last in-flight
+ * request finishes after [nativeDestroyEngine].
  */
 object AdBlockNative {
 
@@ -23,7 +27,7 @@ object AdBlockNative {
 
     @JvmStatic
     external fun nativeShouldBlock(
-        enginePtr: Long,
+        engineHandle: Long,
         requestUrl: String,
         pageUrl: String,
         resourceType: String
@@ -31,10 +35,10 @@ object AdBlockNative {
 
     @JvmStatic
     external fun nativeGetCosmeticCss(
-        enginePtr: Long,
+        engineHandle: Long,
         pageUrl: String
     ): String
 
     @JvmStatic
-    external fun nativeDestroyEngine(enginePtr: Long)
+    external fun nativeDestroyEngine(engineHandle: Long)
 }

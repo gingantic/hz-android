@@ -681,9 +681,9 @@ private fun launchNativePlayer(context: Context, item: DetectedMediaItem) {
             com.rhnxdev.hzplayer.VideoPlayerActivity::class.java
         }
 
-        // Merge live session cookies and page referer for smooth CDN auth
+        // Merge live cookies for the play URL and the page referer for smooth CDN auth
         val targetPage = item.pageUrl.ifBlank { playTargetUrl }
-        val mergedHeaders = item.headers.withLiveCookies(item.pageUrl, cookieFallbackUrl = playTargetUrl)
+        val mergedHeaders = item.headers.withLiveCookies(targetUrl = playTargetUrl, refererUrl = item.pageUrl)
 
         val intent = Intent(context, targetActivity).apply {
             action = Intent.ACTION_VIEW

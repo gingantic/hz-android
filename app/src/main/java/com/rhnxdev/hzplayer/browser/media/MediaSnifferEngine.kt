@@ -135,10 +135,10 @@ object MediaSnifferEngine {
             }
         }
 
-        // Pull active web cookies if missing from network request headers
+        // Resolve cookies for the media URL itself — never the page — so
+        // page-session cookies can't leak to a third-party media host.
         if (mergedHeaders.keys.none { it.equals("Cookie", ignoreCase = true) }) {
-            val targetUrl = pageUrl.ifBlank { rawUrl }
-            val liveCookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(targetUrl) }.getOrNull()
+            val liveCookie = runCatching { android.webkit.CookieManager.getInstance().getCookie(rawUrl) }.getOrNull()
             if (!liveCookie.isNullOrBlank()) {
                 mergedHeaders["Cookie"] = liveCookie
             }

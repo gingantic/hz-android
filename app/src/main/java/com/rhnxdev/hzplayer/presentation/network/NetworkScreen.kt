@@ -144,7 +144,7 @@ fun NetworkScreen(
                 onPlayHistoryItem = { item ->
                     val url = viewModel.onPlayHistoryItem(item)
                     val pageUrl = item.pageUrl.orEmpty()
-                    val headersMap = item.headersMap.withLiveCookies(pageUrl)
+                    val headersMap = item.headersMap.withLiveCookies(targetUrl = url, refererUrl = pageUrl)
                     val mime = item.mimeType?.ifBlank { null }
                     onPlayStream(url, item.title, isVideoOrStreamDefault(url), mime, headersMap)
                 },

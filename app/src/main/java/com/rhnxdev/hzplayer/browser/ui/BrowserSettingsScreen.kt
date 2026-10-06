@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInNew
@@ -477,6 +478,15 @@ fun BrowserSettingsScreen(
                     checked = settings.loadImagesAutomatically,
                     onCheckedChange = { onSave(settings.copy(loadImagesAutomatically = it)) },
                     icon = Icons.Default.Image,
+                )
+            }
+            item {
+                BrowserSettingsToggleCard(
+                    title = stringResource(R.string.browser_dark_web_content),
+                    subtitle = stringResource(R.string.browser_dark_web_content_sub),
+                    checked = settings.darkWebContent,
+                    onCheckedChange = { onSave(settings.copy(darkWebContent = it)) },
+                    icon = Icons.Default.DarkMode,
                 )
             }
             item {

@@ -186,6 +186,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
 
+    // WebView compat (algorithmic darkening, Safe Browsing compat, feature checks)
+    implementation(libs.androidx.webkit)
+
     // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

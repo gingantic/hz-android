@@ -11,6 +11,8 @@ import android.webkit.WebViewClient
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import java.util.UUID
 
 import com.rhnxdev.hzplayer.browser.adblock.AdBlockEngine
@@ -18,11 +20,14 @@ import com.rhnxdev.hzplayer.browser.adblock.ElementPickerBridge
 import com.rhnxdev.hzplayer.browser.adblock.PickedElement
 import com.rhnxdev.hzplayer.browser.media.MediaSnifferBridge
 import com.rhnxdev.hzplayer.browser.media.MediaSnifferEngine
+import com.rhnxdev.hzplayer.core.util.DebouncedAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
+import java.util.concurrent.ConcurrentHashMap
+import org.json.JSONObject
 
 /**
  * Manages tab metadata and WebView instance pool.
@@ -39,6 +44,20 @@ class TabManager(
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val liveViews = mutableMapOf<String, WebView>()
+
+    /** Coalesces per-keystroke custom-UA edits into one reload of the live tabs. */
+    private val renderReloads = DebouncedAction(scope, CUSTOM_UA_RELOAD_DEBOUNCE_MS)
+
+    /** A tab's sniffer secrets — see [snifferTokens]. */
+    private data class SnifferToken(val current: String, val previous: String? = null)
+
+    /**
+     * Per-tab sniffer secrets. The outgoing token stays valid until the new
+     * document commits, so a stopped or failed navigation doesn't orphan the
+     * still-visible page. ConcurrentHashMap: the bridge validator reads it on
+     * the JavaBridge thread.
+     */
+    private val snifferTokens = ConcurrentHashMap<String, SnifferToken>()
     private val _tabs = mutableStateOf(listOf<BrowserTab>())
     var tabs by _tabs
         private set
@@ -58,6 +77,9 @@ class TabManager(
         /** Layout width (CSS px) forced on pages in desktop mode — mirrors Chrome's "Desktop site". */
         private const val DESKTOP_VIEWPORT_WIDTH = 1024
 
+        /** Quiet period after the last custom-UA keystroke before live tabs are reloaded. */
+        private const val CUSTOM_UA_RELOAD_DEBOUNCE_MS = 500L
+
         private const val DESKTOP_UA =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/125.0.0.0 Safari/537.36"
@@ -65,6 +87,27 @@ class TabManager(
         private const val MOBILE_UA =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/125.0.6422.72 Mobile Safari/537.36"
+
+        /**
+         * JS that (re)installs the cosmetic-filter style element for [css].
+         * The CSS is JSON-quoted — hand-escaping broke on backslashes — and
+         * applied via textContent so it never reaches the HTML parser.
+         */
+        internal fun cosmeticCssJs(css: String): String {
+            val cssLiteral = JSONObject.quote(css)
+            return """
+                (function() {
+                    try {
+                        var old = document.getElementById('hz-adblock-css');
+                        if (old) old.remove();
+                        var style = document.createElement('style');
+                        style.id = 'hz-adblock-css';
+                        style.textContent = $cssLiteral;
+                        (document.head || document.documentElement).appendChild(style);
+                    } catch(e) {}
+                })();
+            """.trimIndent()
+        }
     }
 
     /** The URL currently shown in the URL bar. */
@@ -481,9 +524,15 @@ class TabManager(
 
         applySettingsToView(wv, settings)
 
-        // Inject Media Sniffer JS bridge interface
+        // Inject Media Sniffer JS bridge interface. The validator closes over
+        // this tab's tokens, so calls from frames that never got the injected
+        // script (cross-origin iframes) are dropped.
         wv.addJavascriptInterface(
             MediaSnifferBridge(
+                tokenValidator = { token ->
+                    val state = snifferTokens[tabId]
+                    state != null && (token == state.current || token == state.previous)
+                },
                 onMediaDetected = { mediaUrl, pageTitle, mimeType, jsHeaders ->
                     val id = resolveTabId(wv) ?: return@MediaSnifferBridge
                     val enrichedHeaders = jsHeaders.toMutableMap()
@@ -581,6 +630,10 @@ class TabManager(
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 val id = resolveTabId(view) ?: return
+                // New document — rotate the sniffer secret. The previous one stays
+                // valid until this document commits (see onPageCommitVisible), so a
+                // stopped or failed navigation doesn't orphan the visible page.
+                snifferTokens[id] = SnifferToken(UUID.randomUUID().toString(), snifferTokens[id]?.current)
                 // The new document has no picker script and no selection left.
                 resetElementPickerState()
                 val keepTabUrl = isSyntheticPageUrl(url)
@@ -597,7 +650,7 @@ class TabManager(
                 }
                 // Leave the bar alone while the user is typing in it.
                 if (!keepTabUrl && id == activeTabId && !isUrlBarFocused) urlInput = url
-                MediaSnifferBridge.injectSnifferJs(view)
+                MediaSnifferBridge.injectSnifferJs(view, snifferTokenFor(id))
                 if (isDesktopMode) injectDesktopModeJs(view)
             }
 
@@ -611,26 +664,13 @@ class TabManager(
                         canGoBack = view.canGoBack(), canGoForward = view.canGoForward(),
                     )
                 }
-                MediaSnifferBridge.injectSnifferJs(view)
+                MediaSnifferBridge.injectSnifferJs(view, snifferTokenFor(id))
                 if (isDesktopMode) injectDesktopModeJs(view)
 
                 if (settings.adBlockEnabled && settings.cosmeticFilteringEnabled && url.isNotBlank()) {
                     val cosmeticCss = AdBlockEngine.getCosmeticCss(url, settings)
                     if (cosmeticCss.isNotBlank()) {
-                        val escapedCss = cosmeticCss.replace("'", "\\'").replace("\n", " ")
-                        val js = """
-                            (function() {
-                                try {
-                                    var old = document.getElementById('hz-adblock-css');
-                                    if (old) old.remove();
-                                    var style = document.createElement('style');
-                                    style.id = 'hz-adblock-css';
-                                    style.innerHTML = '$escapedCss';
-                                    (document.head || document.documentElement).appendChild(style);
-                                } catch(e) {}
-                            })();
-                        """.trimIndent()
-                        view.evaluateJavascript(js, null)
+                        view.evaluateJavascript(cosmeticCssJs(cosmeticCss), null)
                     }
                 }
 
@@ -640,6 +680,13 @@ class TabManager(
                 }
             }
 
+
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                // The new document has committed — the previous document is gone,
+                // so retire its token.
+                val id = resolveTabId(view) ?: return
+                snifferTokens.computeIfPresent(id) { _, state -> state.copy(previous = null) }
+            }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val urlStr = request.url.toString()
@@ -768,7 +815,7 @@ class TabManager(
                 val id = resolveTabId(view) ?: return
                 updateTab(id) { it.copy(progress = newProgress) }
                 if (newProgress == 30 || newProgress == 60) {
-                    MediaSnifferBridge.injectSnifferJs(view)
+                    MediaSnifferBridge.injectSnifferJs(view, snifferTokenFor(id))
                     if (isDesktopMode) injectDesktopModeJs(view)
                 }
             }
@@ -961,15 +1008,24 @@ class TabManager(
     fun applySettings(newSettings: BrowserSettings) {
         // Like Chrome's "Desktop site" toggle, a UA/rendering mode change only
         // takes effect after the page is re-fetched — reload live views
+        val customUaEdited = newSettings.userAgentMode == UserAgentMode.CUSTOM &&
+            settings.customUserAgent != newSettings.customUserAgent
         val renderModeChanged = settings.userAgentMode != newSettings.userAgentMode ||
-            (newSettings.userAgentMode == UserAgentMode.CUSTOM &&
-                settings.customUserAgent != newSettings.customUserAgent)
+            customUaEdited ||
+            // Darkening applies at style resolution — reload so the toggle takes
+            // visible effect on the current page
+            settings.darkWebContent != newSettings.darkWebContent
         settings = newSettings
         if (!newSettings.javaScriptEnabled) cancelElementPicker()
         liveViews.values.forEach { applySettingsToView(it, newSettings) }
         if (renderModeChanged) {
-            liveViews.forEach { (_, view) ->
-                view.reload()
+            val reload: suspend () -> Unit = { liveViews.values.forEach { it.reload() } }
+            if (customUaEdited) {
+                // The custom-UA field calls this per keystroke; coalesce so a
+                // burst of edits re-fetches the live tabs once, after the pause.
+                renderReloads.schedule(reload)
+            } else {
+                renderReloads.runNow(reload)
             }
         }
     }
@@ -1002,6 +1058,12 @@ class TabManager(
             wv.setInitialScale((screenWidthPx * 100) / DESKTOP_VIEWPORT_WIDTH)
         } else {
             wv.setInitialScale(0)   // WebView default
+        }
+        // Algorithmic darkening: WebView darkens pages that don't ship their own
+        // dark styles. The app theme (Theme.HzPlayer) is dark, so this is
+        // effective whenever the toggle is on.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, s.darkWebContent)
         }
         wv.settings.builtInZoomControls                = s.builtInZoomEnabled
         wv.settings.displayZoomControls                = false
@@ -1073,6 +1135,7 @@ class TabManager(
         (wv.parent as? ViewGroup)?.removeView(wv)
         wv.destroy()
         liveViews.remove(id)
+        snifferTokens.remove(id)
     }
 
     /** Get the WebView for a specific tab (null if frozen or not yet created). */
@@ -1083,6 +1146,7 @@ class TabManager(
         liveViews.remove(id)?.destroy()
         webViewGenerations.value = webViewGenerations.value - id
         rendererFailures.remove(id)
+        snifferTokens.remove(id)
     }
 
     /**
@@ -1094,6 +1158,7 @@ class TabManager(
     private fun discardDeadWebView(dead: WebView, tabId: String) {
         if (tabId == activeTabId) resetElementPickerState()
         liveViews.remove(tabId)
+        snifferTokens.remove(tabId)
         setTabPlaying(tabId, false)
         (dead.parent as? ViewGroup)?.removeView(dead)
         try {
@@ -1136,8 +1201,10 @@ class TabManager(
         jsDialog?.let { resolveJsDialog(confirmed = false) }
         deliverFileChooserResult(null)
         resetElementPickerState()
+        renderReloads.cancel()
         liveViews.values.forEach { it.destroy() }
         liveViews.clear()
+        snifferTokens.clear()
         webViewGenerations.value = emptyMap()
         rendererFailures.clear()
         _tabs.value = emptyList()
@@ -1146,6 +1213,13 @@ class TabManager(
     }
 
     // ── Internals ────────────────────────────────────────────────
+
+    /**
+     * The tab's live sniffer secret, created on first use.
+     * ConcurrentHashMap because the bridge validator reads it on the JavaBridge thread.
+     */
+    private fun snifferTokenFor(tabId: String): String =
+        snifferTokens.computeIfAbsent(tabId) { SnifferToken(UUID.randomUUID().toString()) }.current
 
     private fun resolveTabId(view: WebView): String? {
         return liveViews.entries.firstOrNull { it.value == view }?.key

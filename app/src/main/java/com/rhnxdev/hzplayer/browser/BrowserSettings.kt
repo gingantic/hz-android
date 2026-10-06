@@ -38,6 +38,7 @@ data class BrowserSettings(
     val domStorageEnabled: Boolean = true,
     val mediaPlaybackRequiresGesture: Boolean = false,
     val loadImagesAutomatically: Boolean = true,
+    val darkWebContent: Boolean = false,          // algorithmic darkening; only effective under a dark browser theme
     val textZoom: Int = 100,                       // 50–200 %
     val useWideViewPort: Boolean = true,
     val loadWithOverviewMode: Boolean = true,

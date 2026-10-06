@@ -4,36 +4,42 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.util.Log
 
+/**
+ * JS bridge for the injected media sniffer. Every call must carry the
+ * per-document token that only the injected script knows — the interface itself
+ * is reachable from all frames, including cross-origin iframes.
+ */
 class MediaSnifferBridge(
+    private val tokenValidator: (String) -> Boolean,
     private val onMediaDetected: (url: String, title: String, mimeType: String, headers: Map<String, String>) -> Unit,
     private val onPlaybackStateChanged: (isPlaying: Boolean) -> Unit = {},
     private val onPipRequested: () -> Unit = {},
 ) {
     @JavascriptInterface
-    fun onMediaFound(url: String, title: String, mimeType: String) {
-        if (url.isNotBlank()) {
-            onMediaDetected(url, title, mimeType, emptyMap())
-        }
+    fun onMediaFound(token: String, url: String, title: String, mimeType: String) {
+        if (!tokenValidator(token) || url.isBlank()) return
+        onMediaDetected(url, title, mimeType, emptyMap())
     }
 
     /** Called from JS whenever a page <video> starts/stops playing. */
     @JavascriptInterface
-    fun onVideoPlaybackChanged(isPlaying: Boolean) {
+    fun onVideoPlaybackChanged(token: String, isPlaying: Boolean) {
+        if (!tokenValidator(token)) return
         onPlaybackStateChanged(isPlaying)
     }
 
     /** Called from JS when the page invokes the web Picture-in-Picture API. */
     @JavascriptInterface
-    fun onEnterPipRequested() {
+    fun onEnterPipRequested(token: String) {
+        if (!tokenValidator(token)) return
         onPipRequested()
     }
 
     @JavascriptInterface
-    fun onMediaFoundWithHeaders(url: String, title: String, mimeType: String, headersJson: String) {
-        if (url.isNotBlank()) {
-            val headersMap = parseHeadersJson(headersJson)
-            onMediaDetected(url, title, mimeType, headersMap)
-        }
+    fun onMediaFoundWithHeaders(token: String, url: String, title: String, mimeType: String, headersJson: String) {
+        if (!tokenValidator(token) || url.isBlank()) return
+        val headersMap = parseHeadersJson(headersJson)
+        onMediaDetected(url, title, mimeType, headersMap)
     }
 
     private fun parseHeadersJson(json: String): Map<String, String> {
@@ -58,6 +64,7 @@ class MediaSnifferBridge(
     companion object {
         private const val TAG = "MediaSnifferBridge"
         const val INTERFACE_NAME = "HzMediaSniffer"
+        private const val TOKEN_PLACEHOLDER = "__HZ_SNIFFER_TOKEN__"
 
         // Built once and reused — rebuilding the ~380-line script (interpolation +
         // trimIndent) on every page load is wasteful.
@@ -66,6 +73,11 @@ class MediaSnifferBridge(
                 (function() {
                     if (window.__hzMediaSnifferInjected) return;
                     window.__hzMediaSnifferInjected = true;
+
+                    // Closure-scoped per-document secret, substituted at injection
+                    // time. The bridge rejects calls without it, so frames that
+                    // never received this script can't drive the sniffer.
+                    var SNIFFER_TOKEN = __HZ_SNIFFER_TOKEN__;
 
                     function notifyMedia(rawUrl, mimeType, headersObj) {
                         if (!rawUrl || typeof rawUrl !== 'string') return;
@@ -80,9 +92,9 @@ class MediaSnifferBridge(
                             if (window.${INTERFACE_NAME}) {
                                 var headersJson = headersObj ? JSON.stringify(headersObj) : '';
                                 if (window.${INTERFACE_NAME}.onMediaFoundWithHeaders) {
-                                    window.${INTERFACE_NAME}.onMediaFoundWithHeaders(resolvedUrl, document.title || '', mimeType || '', headersJson);
+                                    window.${INTERFACE_NAME}.onMediaFoundWithHeaders(SNIFFER_TOKEN, resolvedUrl, document.title || '', mimeType || '', headersJson);
                                 } else {
-                                    window.${INTERFACE_NAME}.onMediaFound(resolvedUrl, document.title || '', mimeType || '');
+                                    window.${INTERFACE_NAME}.onMediaFound(SNIFFER_TOKEN, resolvedUrl, document.title || '', mimeType || '');
                                 }
                             }
                         } catch(e) {}
@@ -368,7 +380,7 @@ class MediaSnifferBridge(
                     function notifyPlayback() {
                         try {
                             if (window.${INTERFACE_NAME} && window.${INTERFACE_NAME}.onVideoPlaybackChanged) {
-                                window.${INTERFACE_NAME}.onVideoPlaybackChanged(hzPlayingVideos > 0);
+                                window.${INTERFACE_NAME}.onVideoPlaybackChanged(SNIFFER_TOKEN, hzPlayingVideos > 0);
                             }
                         } catch(e) {}
                     }
@@ -407,7 +419,7 @@ class MediaSnifferBridge(
                             } catch(e) {}
                             try {
                                 if (window.${INTERFACE_NAME} && window.${INTERFACE_NAME}.onEnterPipRequested) {
-                                    window.${INTERFACE_NAME}.onEnterPipRequested();
+                                    window.${INTERFACE_NAME}.onEnterPipRequested(SNIFFER_TOKEN);
                                 }
                             } catch(e) {}
                             return Promise.resolve({});
@@ -443,10 +455,13 @@ class MediaSnifferBridge(
 
         /**
          * Injects DOM media listeners for HTML5 video/audio elements, fetch, and XMLHttpRequest.
+         * The script is self-guarded, so repeat calls within one document are no-ops.
          */
-        fun injectSnifferJs(webView: WebView) {
+        fun injectSnifferJs(webView: WebView, token: String) {
+            if (token.isBlank()) return
+            val script = SNIFFER_JS.replace(TOKEN_PLACEHOLDER, org.json.JSONObject.quote(token))
             webView.post {
-                webView.evaluateJavascript(SNIFFER_JS, null)
+                webView.evaluateJavascript(script, null)
             }
         }
     }

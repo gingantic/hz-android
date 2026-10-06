@@ -33,6 +33,7 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         domStorageEnabled          = p.getBoolean(KEY_DOM_STORAGE, true),
         mediaPlaybackRequiresGesture = p.getBoolean(KEY_MEDIA_GESTURE, false),
         loadImagesAutomatically    = p.getBoolean(KEY_IMAGES, true),
+        darkWebContent             = p.getBoolean(KEY_DARK_WEB_CONTENT, false),
         textZoom                   = p.getInt(KEY_TEXT_ZOOM, 100),
         useWideViewPort            = p.getBoolean(KEY_WIDE_VIEWPORT, true),
         loadWithOverviewMode       = p.getBoolean(KEY_OVERVIEW, true),
@@ -64,6 +65,7 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
             .putBoolean(KEY_DOM_STORAGE,     s.domStorageEnabled)
             .putBoolean(KEY_MEDIA_GESTURE,   s.mediaPlaybackRequiresGesture)
             .putBoolean(KEY_IMAGES,          s.loadImagesAutomatically)
+            .putBoolean(KEY_DARK_WEB_CONTENT, s.darkWebContent)
             .putInt(    KEY_TEXT_ZOOM,       s.textZoom)
             .putBoolean(KEY_WIDE_VIEWPORT,   s.useWideViewPort)
             .putBoolean(KEY_OVERVIEW,        s.loadWithOverviewMode)
@@ -94,6 +96,7 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         private const val KEY_DOM_STORAGE    = "dom_storage"
         private const val KEY_MEDIA_GESTURE  = "media_gesture"
         private const val KEY_IMAGES         = "images"
+        private const val KEY_DARK_WEB_CONTENT = "dark_web_content"
         private const val KEY_TEXT_ZOOM      = "text_zoom"
         private const val KEY_WIDE_VIEWPORT  = "wide_viewport"
         private const val KEY_OVERVIEW       = "overview"
