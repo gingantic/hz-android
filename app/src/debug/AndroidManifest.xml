@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Debug-only host for instrumented WebView tests (see WebViewHostActivity). -->
+    <application>
+        <activity
+            android:name="com.rhnxdev.hzplayer.WebViewHostActivity"
+            android:exported="false" />
+    </application>
+</manifest>

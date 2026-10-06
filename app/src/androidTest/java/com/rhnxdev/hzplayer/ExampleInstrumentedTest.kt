@@ -19,6 +19,8 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.rhnxdev.hzplayer", appContext.packageName)
+        // Debug builds carry an .debug applicationIdSuffix — assert against the
+        // variant's own id, not the hardcoded release package.
+        assertEquals(BuildConfig.APPLICATION_ID, appContext.packageName)
     }
 }
