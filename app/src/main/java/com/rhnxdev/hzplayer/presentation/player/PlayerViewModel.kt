@@ -243,7 +243,21 @@ class PlayerViewModel @Inject constructor(
                     }
                     // Track whether the video surface is actively presenting frames.
                     // Used by VideoPlayerScreen to manage the window HDR color mode.
-                    val videoActive = state.isVideo &&
+                    // isVideo now lives in the shared engine state (PlayerStateInfo),
+                    // so a session started by *another* activity (e.g. a browser/URL
+                    // video in VideoPlayerActivity) is correctly recognized as video
+                    // by this ViewModel too — this is what lets the mini player offer
+                    // "reopen as video" for browser streams. Falls back to the local
+                    // flag while IDLE (engine state carries no media). A local
+                    // "play as audio" choice wins: the engine still reports the media
+                    // as video, but the user deliberately demoted it to background
+                    // audio, so keep isVideo=false until onResumeAsVideo() flips back.
+                    val syncedIsVideo = when {
+                        isIdle -> state.isVideo
+                        state.playingVideoAsAudio -> false
+                        else -> info.isVideo
+                    }
+                    val videoActive = syncedIsVideo &&
                         (info.state == PlayerState.READY || info.state == PlayerState.BUFFERING)
                     // Drop stale chapters as soon as the engine moves to new media;
                     // loadChaptersIfNeeded() re-probes once the new item is READY.
@@ -293,6 +307,7 @@ class PlayerViewModel @Inject constructor(
                         // surface selection while HDR/SDR colour-correction is in
                         // progress.
                         drmSessionActive = info.drmSessionActive,
+                        isVideo = syncedIsVideo,
                         isVideoSurfaceActive = videoActive,
                         chapters = chapters,
                         // A new media item ends any A-B loop from the previous one.

@@ -364,6 +364,16 @@ class MediaPlayerHolder @Inject constructor(
         _audioSessionId.value = id
     }
 
+    /**
+     * Record whether the current session is video, as declared by the engine's
+     * `play()` call. Surfaced in [PlayerStateInfo.isVideo] so any activity that
+     * did not start playback (e.g. the main app's mini player) can still tell a
+     * browser/URL video session apart from an audio one. Set before prepare().
+     */
+    fun setIsVideo(isVideo: Boolean) {
+        _playbackStateInfo.value = _playbackStateInfo.value.copy(isVideo = isVideo)
+    }
+
     /** Video decoder counters — set by AnalyticsListener.onVideoEnabled.
      *  @Volatile: written on the player/analytics thread, read on the FPS poll thread. */
     @Volatile private var videoDecoderCounters: DecoderCounters? = null

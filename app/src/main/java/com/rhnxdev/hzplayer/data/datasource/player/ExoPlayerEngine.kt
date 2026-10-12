@@ -123,6 +123,7 @@ class ExoPlayerEngine @Inject constructor(
                 subtitleConfigs.clear()
                 subtitleConfigs.addAll(subs)
                 playerHolder.clearError()
+                playerHolder.setIsVideo(isVideo)
                 playerHolder.flushPendingDecoderRebuild()
                 player.setMediaItem(ExoMediaItemHelper.buildMediaItemWithSubtitles(uri, title, artist, mimeType, subs = subs, artworkUri = artworkUri))
                 player.prepare()
@@ -152,6 +153,7 @@ class ExoPlayerEngine @Inject constructor(
                 }
                 currentPlaylist = mediaItems
                 playerHolder.clearError()
+                playerHolder.setIsVideo(true)
                 playerHolder.flushPendingDecoderRebuild()
                 player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), startPositionMs)
                 player.prepare()
@@ -179,6 +181,7 @@ class ExoPlayerEngine @Inject constructor(
                 }
                 currentPlaylist = mediaItems
                 playerHolder.clearError()
+                playerHolder.setIsVideo(false)
                 playerHolder.flushPendingDecoderRebuild()
                 player.setMediaItems(mediaItems, startIndex.coerceIn(0, mediaItems.lastIndex), 0L)
                 player.prepare()

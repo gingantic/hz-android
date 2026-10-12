@@ -435,6 +435,7 @@ class FfmpegNativeEngine @Inject constructor(
                 currentTitle = title,
                 currentArtist = artist,
                 currentUri = uri,
+                isVideo = isVideo,
                 errorMessage = null,
                 errorKind = null
             )
@@ -468,8 +469,10 @@ class FfmpegNativeEngine @Inject constructor(
 
     override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
         if (items.isEmpty()) return
-        val list = items.map { it.uri to it.title }
-        playPlaylist(list, startIndex, 0L)
+        currentPlaylist = items.map { it.uri to it.title }
+        currentPlaylistIndex = startIndex.coerceIn(0, items.lastIndex)
+        val startItem = items[currentPlaylistIndex]
+        playInternal(startItem.uri, startItem.title, artist = startItem.artist, isVideo = false, preservePlaylist = true)
     }
 
     /**

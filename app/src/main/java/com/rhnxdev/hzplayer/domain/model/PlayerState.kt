@@ -41,4 +41,12 @@ data class PlayerStateInfo(
     val currentUri: String? = null,
     /** True iff current [MediaItem] declares a `drmConfiguration` (Widevine L1 path, etc.). */
     val drmSessionActive: Boolean = false,
+    /**
+     * True when the current session is video (as declared at [IPlayerEngine.play]).
+     * Lives here — not just in a per-activity ViewModel — so any activity that did
+     * not start playback (e.g. the main app's mini player when a browser/URL video
+     * is playing in [VideoPlayerActivity]) can still recognize the session as video
+     * and offer "reopen as video". See the engine singleton note in PlayerRepositoryImpl.
+     */
+    val isVideo: Boolean = false,
 )

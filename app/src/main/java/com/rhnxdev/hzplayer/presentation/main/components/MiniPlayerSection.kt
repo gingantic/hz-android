@@ -22,6 +22,11 @@ fun MiniPlayerSection(
 ) {
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val currentPosition by playerViewModel.position.collectAsStateWithLifecycle()
+    // When the floating window is enabled it owns video playback, so the mini bar
+    // only handles audio then. When it is OFF, a backgrounded video session (e.g.
+    // one started from the browser/URL and minimized) has no other surface, so the
+    // mini bar must show it too — with a button back to the full-screen video.
+    val floatingEnabled by playerViewModel.backgroundPlay.collectAsStateWithLifecycle()
     val progress: State<Float> = remember {
         derivedStateOf {
             if (playerState.duration > 0) {
@@ -29,6 +34,10 @@ fun MiniPlayerSection(
             } else 0f
         }
     }
+    // A video session is "backgrounded as audio" either explicitly ("Play as audio")
+    // or implicitly (a video playing while no video surface is up and floating is off).
+    val isBackgroundedVideo = playerState.playingVideoAsAudio ||
+        (playerState.isVideo && !floatingEnabled)
     MiniPlayerBar(
         title = playerState.currentTitle ?: "",
         subtitle = playerState.currentArtist ?: "",
@@ -36,16 +45,31 @@ fun MiniPlayerSection(
         progress = progress,
         onPlayPause = { playerViewModel.onPlayPause() },
         onNext = { playerViewModel.onSkipNext() },
-        onClick = onNavigateToPlayer,
+        onClick = if (isBackgroundedVideo) onNavigateToVideoPlayerBound(playerViewModel, onNavigateToVideoPlayer) else onNavigateToPlayer,
         onDismiss = { playerViewModel.stop() },
-        visible = playerState.currentTitle != null && !playerState.isVideo && !isFullScreen,
+        // Audio-only sessions, plus backgrounded video when the floating window is off.
+        visible = playerState.currentTitle != null && !isFullScreen &&
+            (!playerState.isVideo || isBackgroundedVideo),
         artworkUri = playerState.currentArtworkUri,
-        // Video playing audio-only ("Play as audio") — offer reopening it as video.
-        onOpenAsVideo = if (playerState.playingVideoAsAudio) {
+        // Any video session (explicit "Play as audio" or a backgrounded browser/URL
+        // video) can be reopened full-screen — the engine keeps playing uninterrupted.
+        onOpenAsVideo = if (isBackgroundedVideo) {
             {
                 playerViewModel.onResumeAsVideo()
                 onNavigateToVideoPlayer()
             }
         } else null,
     )
+}
+
+/**
+ * Tapping the metadata of a backgrounded video also reopens it full-screen (same
+ * as the dedicated button), binding the surface to the already-running engine.
+ */
+private fun onNavigateToVideoPlayerBound(
+    playerViewModel: PlayerViewModel,
+    onNavigateToVideoPlayer: () -> Unit,
+): () -> Unit = {
+    playerViewModel.onResumeAsVideo()
+    onNavigateToVideoPlayer()
 }
