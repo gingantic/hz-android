@@ -46,11 +46,13 @@ void applyWebOptions(FfmpegPlayerContext* ctx, const std::string& caFile, AVDict
     add("rw_timeout", "15000000");
     add("timeout", "15000000");
     add("reconnect", "1");
-    add("reconnect_streamed", "1");
     add("reconnect_on_network_error", "1");
     add("reconnect_on_http_error", "408,429,5xx");
     // http.c backs off 0/1/3/7 s and gives up once the next delay exceeds this (~11 s total).
     add("reconnect_delay_max", "8");
+    // reconnect_streamed is intentionally off (FFmpeg default): without a Content-Length,
+    // http.c cannot tell a finished chunked body from a dropped connection, so it reconnects
+    // on every clean EOF and, against a Range-ignoring server (Cloudflare), loops until EIO.
 
     for (const auto& kv : ctx->ioDefaults) {
         av_dict_set(opts, kv.first.c_str(), kv.second.c_str(), 0);

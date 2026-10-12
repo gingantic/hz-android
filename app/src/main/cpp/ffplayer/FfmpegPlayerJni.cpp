@@ -179,7 +179,7 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
         av_dict_set(&opts, "rw_timeout", "15000000", 0); // 15 seconds in microseconds
         av_dict_set(&opts, "timeout", "15000000", 0);    // 15 seconds in microseconds
         av_dict_set(&opts, "reconnect", "1", 0);
-        av_dict_set(&opts, "reconnect_streamed", "1", 0);
+        // No reconnect_streamed — http.c loops on chunked EOF (see applyWebOptions).
         av_dict_set(&opts, "reconnect_delay_max", "5", 0);
     }
     // Overrides the generic values above (reconnect_delay_max 5 -> 8) for http(s) sources.
