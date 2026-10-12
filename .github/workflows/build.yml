@@ -367,6 +367,42 @@ jobs:
           echo "APK: HzPlayer-v${VNAME}.apk"
           echo "Manifest: latest.json"
 
+      # Keep the bucket tidy: retain the APK just uploaded plus the 3 previous
+      # builds, delete anything older. The HzPlayer-v prefix only matches release
+      # APKs, so latest.json and cache/ are never considered.
+      - name: Clean up old releases on R2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          KEEP_PREVIOUS: "3"
+        run: |
+          aws s3api list-objects-v2 --bucket "$R2_BUCKET" --prefix "HzPlayer-v" \
+            --output json --endpoint-url "$R2_ENDPOINT" > /tmp/r2_releases.json
+          python3 - <<'PY'
+          import json, os, subprocess
+
+          keep_total = int(os.environ["KEEP_PREVIOUS"]) + 1
+          bucket = os.environ["R2_BUCKET"]
+          endpoint = os.environ["R2_ENDPOINT"]
+
+          listing = json.load(open("/tmp/r2_releases.json")) or {}
+          apks = [o for o in listing.get("Contents") or [] if o["Key"].endswith(".apk")]
+          # Newest first: the APK uploaded above is the newest, so this keeps it
+          # plus the KEEP_PREVIOUS builds before it.
+          apks.sort(key=lambda o: o["LastModified"], reverse=True)
+
+          obsolete = apks[keep_total:]
+          for obj in obsolete:
+              key = obj["Key"]
+              print(f"Deleting s3://{bucket}/{key}")
+              subprocess.run(
+                  ["aws", "s3", "rm", f"s3://{bucket}/{key}",
+                   "--endpoint-url", endpoint],
+                  check=True)
+          print(f"Kept {len(apks) - len(obsolete)} APK(s), removed {len(obsolete)}.")
+          PY
+
       - name: ccache stats
         run: |
           echo "Native prebuilt cache hit: ${{ steps.native-cache.outputs.cache-hit }}"
