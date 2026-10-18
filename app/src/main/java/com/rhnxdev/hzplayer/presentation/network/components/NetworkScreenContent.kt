@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -245,21 +244,27 @@ internal fun NetworkHomeContent(
                         }
                     }
                 } else {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = Spacing.lg),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                    // Two-column grid: rows of two so the section grows downward instead
+                    // of sideways. A lone card keeps half width via the trailing spacer.
+                    Column(
+                        modifier = Modifier.padding(horizontal = Spacing.lg),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md),
                     ) {
-                        items(
-                            items = uiState.savedServers,
-                            key = { it.id },
-                        ) { server ->
-                            ServerCard(
-                                server = server,
-                                onClick = { onBrowseServer(server) },
-                                onEdit = { onEditServer(server) },
-                                onDelete = { onDeleteServer(server.id) },
-                                modifier = Modifier.width(180.dp),
-                            )
+                        uiState.savedServers.chunked(2).forEach { rowServers ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                                rowServers.forEach { server ->
+                                    key(server.id) {
+                                        ServerCard(
+                                            server = server,
+                                            onClick = { onBrowseServer(server) },
+                                            onEdit = { onEditServer(server) },
+                                            onDelete = { onDeleteServer(server.id) },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                }
+                                if (rowServers.size == 1) Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -334,20 +339,24 @@ internal fun NetworkHomeContent(
                         }
                     }
                     } else {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = Spacing.lg),
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        Column(
+                            modifier = Modifier.padding(horizontal = Spacing.lg),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.md),
                         ) {
-                            items(
-                                items = uiState.discoveredServers,
-                                key = { it.host },
-                            ) { server ->
-                                ServerCard(
-                                    server = server,
-                                    onClick = { onDiscoveredServerTapped(server) },
-                                    showMenu = false,
-                                    modifier = Modifier.width(180.dp),
-                                )
+                            uiState.discoveredServers.chunked(2).forEach { rowServers ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                                    rowServers.forEach { server ->
+                                        key(server.host) {
+                                            ServerCard(
+                                                server = server,
+                                                onClick = { onDiscoveredServerTapped(server) },
+                                                showMenu = false,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                        }
+                                    }
+                                    if (rowServers.size == 1) Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                         }
                     }
