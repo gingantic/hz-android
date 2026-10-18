@@ -466,7 +466,14 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
                 }
                 ctx->nativeEqualizer.init(ctx->outSampleRate, ctx->outChannels);
                 LOGI("Audio decoder initialized: %s (sampleRate=%d, ch=%d, sessionId=%d)", aCodec->name, ctx->outSampleRate, ctx->outChannels, sid);
+            } else {
+                LOGE("avcodec_open2 failed for audio decoder %s", aCodec->name);
+                pendingErrors.emplace_back("Failed to initialize audio decoder");
             }
+        } else {
+            // Without this the file plays video-only with no sound and no error.
+            LOGE("No audio decoder found for codec ID %d", ast->codecpar->codec_id);
+            pendingErrors.emplace_back("Unsupported audio codec");
         }
     }
 
