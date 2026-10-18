@@ -349,6 +349,13 @@ MediaSession wraps the settled engine.
   verify. `tls_verify` is never disabled; an `https` URL with no bundle fails closed.
 - **HLS:** `extension_picky=0` (segments with any extension), `seg_max_retry=3`, probe window
   3 s / 2 MiB for web sources, reconnect delay capped at 8 s (about 11 s of retries).
+- **PNG-prefixed TS segments:** some CDNs glue a real 1x1 PNG in front of each TS segment to
+  dodge hotlink filters. `stripLeadingPng` (`NetworkIo.cpp`) detects the signature, walks the
+  chunks to `IEND`, and consumes the prefix before the demuxer reads. Without it `mpegts`
+  re-syncs on the prefix but latches onto stray `0x47` bytes, misses the PMT until after
+  `find_stream_info`, and the player ends up audio-only. `png_pipe` is deliberately not built
+  (see `--disable-demuxers` in `ffmpeg_build_android.sh`), otherwise it wins the probe (99 vs
+  ~50) and every segment fails with EINVAL.
 - **Seekability:** live HLS and range-less HTTP are marked not seekable. `publishSeekRequest`
   is the single gate (covers seek, scrub, EOF restart, resume seek); `seekTo` and
   `setScrubbing(true)` also return early. Seeks still go through `clampSeekPosition`.

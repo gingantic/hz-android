@@ -1,8 +1,12 @@
 #include "NetworkIo.h"
 
 #include <cerrno>
+#include <cinttypes>
 #include <cstdarg>
+#include <cstring>
 #include <strings.h>
+
+#include <libavutil/intreadwrite.h>
 
 int classifyAvError(int e) {
     switch (e) {
@@ -109,6 +113,53 @@ void applyWebOptions(FfmpegPlayerContext* ctx, const std::string& caFile, AVDict
     av_dict_set(opts, "seg_max_retry", "3", 0);
 }
 
+namespace {
+
+/**
+ * Skips a PNG header glued in front of a TS segment (hotlink-filter workaround on
+ * some CDNs). mpegts re-syncs on the prefix but latches onto stray 0x47 bytes, so
+ * the PMT can be missed until after find_stream_info and the video stream is lost.
+ * Returns the number of bytes skipped, or 0 when the stream is left untouched.
+ */
+int stripLeadingPng(AVIOContext* pb) {
+    static const uint8_t kPngSignature[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    uint8_t head[8];
+    if (avio_read(pb, head, sizeof(head)) != static_cast<int>(sizeof(head)) ||
+        memcmp(head, kPngSignature, sizeof(head)) != 0) {
+        avio_seek(pb, 0, SEEK_SET);
+        return 0;
+    }
+
+    int64_t skipped = sizeof(head);
+    for (int chunk = 0; chunk < 64; ++chunk) {
+        uint8_t hdr[8];
+        if (avio_read(pb, hdr, sizeof(hdr)) != static_cast<int>(sizeof(hdr))) break;
+        skipped += sizeof(hdr);
+        const uint32_t len = AV_RB32(hdr);
+        if (len > (1u << 20)) break;
+        if (memcmp(hdr + 4, "IEND", 4) == 0) {
+            if (avio_skip(pb, 4) < 0) break;  // IEND CRC
+            skipped += 4;
+            uint8_t sync = 0;
+            if (avio_read(pb, &sync, 1) == 1 && sync == 0x47) {
+                avio_seek(pb, -1, SEEK_CUR);   // leave the first TS packet unread
+#ifndef NDEBUG
+                LOGD("Skipped %" PRId64 "-byte PNG prefix before TS", skipped);
+#endif
+                return static_cast<int>(skipped);
+            }
+            break;
+        }
+        if (avio_skip(pb, static_cast<int64_t>(len) + 4) < 0) break;
+        skipped += static_cast<int64_t>(len) + 4;
+    }
+
+    avio_seek(pb, 0, SEEK_SET);
+    return 0;
+}
+
+} // namespace
+
 int player_io_open(AVFormatContext* s, AVIOContext** pb, const char* url, int flags,
                    AVDictionary** options) {
     auto* ctx = static_cast<FfmpegPlayerContext*>(s->opaque);
@@ -145,6 +196,9 @@ int player_io_open(AVFormatContext* s, AVIOContext** pb, const char* url, int fl
 
     int ret = avio_open2(pb, requestUrl, flags, &s->interrupt_callback, opts);
     av_dict_free(&local);
+    if (ret >= 0 && ctx && ctx->isWebSource) {
+        stripLeadingPng(*pb);
+    }
     if (ctx) ctx->lastIoTimeMs.store(getMonotonicTimeMs());
     return ret;
 }
