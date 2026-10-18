@@ -267,6 +267,8 @@ export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 
 echo "=== Configuring FFmpeg for $ABI ==="
+# Image demuxers stay out: some CDNs prefix TS segments with a PNG header, and
+# png_pipe wins the probe (99) over mpegts, so HLS playback dies with EINVAL.
 ./configure \
   --target-os=android --arch=$TARGET_ARCH \
   --enable-shared --disable-static \
@@ -279,7 +281,8 @@ echo "=== Configuring FFmpeg for $ABI ==="
   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,av1_frame_merge,av1_metadata \
   --enable-libdav1d \
   --enable-decoder=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1,libdav1d,aac,ac3,eac3,dca,flac,mp3,opus,vorbis,alac,truehd,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,ass,ssa,subrip,mov_text,pgssub,dvdsub \
-  --enable-demuxer=matroska,mov,avi,mp4,mpegts,flv,hls,dash,wav,aac,flac,ogg,mp3,m4v,webvtt,srt,ass,rtsp,sdp \
+  --disable-demuxers \
+  --enable-demuxer=matroska,mov,avi,mp4,mpegts,flv,hls,dash,wav,aac,flac,ogg,mp3,m4v,webvtt,srt,ass,rtsp,sdp,ac3,eac3,dts,truehd,mlp,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le \
   --enable-protocol=file,http,https,tcp,udp,crypto,tls,hls,pipe,data,concat --enable-swscale --enable-swresample \
   --enable-mbedtls --enable-version3 \
   --cross-prefix=$CROSS \
