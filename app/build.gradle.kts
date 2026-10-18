@@ -243,9 +243,6 @@ dependencies {
     // WebDAV (uses OkHttp)
     implementation(libs.okhttp)
 
-    // Security
-    implementation(libs.security.crypto)
-
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

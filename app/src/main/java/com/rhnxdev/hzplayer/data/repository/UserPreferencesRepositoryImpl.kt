@@ -40,8 +40,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     // ponytail: SubDL API key is stored in PLAINTEXT in this DataStore.
     // The store is app-private (mode 0600, same-UID only), so risk is limited to
-    // a rooted device. Upgrade path if this becomes sensitive: migrate to
-    // androidx.security EncryptedSharedPreferences (AES via AndroidKeyStore).
+    // a rooted device. Upgrade path if this becomes sensitive: encrypt the value
+    // with an Android Keystore key before writing it.
     override val subdlApiKey: Flow<String> = dataStore.data.map { prefs ->
         prefs[PrefKey.SubdlApiKey.key].takeIf { !it.isNullOrBlank() }
             ?: DEFAULT_SUBDL_API_KEY
