@@ -56,6 +56,12 @@ struct FfmpegPlayerContext {
     // not reset by closeMedia(): Kotlin reads lastErrorClass after a failed open.
     std::atomic<int> lastErrorClass{0};   // NativeErrorClass (NetworkIo.h), lock-free for the UI thread
     bool isWebSource = false;
+    // Initial web URL parts, set once by setPrimaryUrl() before any child open.
+    // HLS relative children lose the playlist query (ff_make_absolute_url is RFC 3986);
+    // player_io_open re-attaches it for same-host requests, mirroring ExoPlayer's
+    // ProtocolRoutingDataSource.
+    std::string primaryHost;   // host only, no port or IPv6 brackets
+    std::string primaryQuery;  // includes the leading '?', empty when absent
     // Options applied to every playlist/segment/key open (see player_io_open).
     std::vector<std::pair<std::string, std::string>> ioDefaults;
     // False for live HLS and non-range HTTP: a seek on them only fails in av_seek_frame.

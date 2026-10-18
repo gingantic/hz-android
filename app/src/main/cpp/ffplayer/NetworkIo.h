@@ -24,6 +24,12 @@ int classifyAvError(int e);
 void applyWebOptions(FfmpegPlayerContext* ctx, const std::string& caFile, AVDictionary** opts);
 
 /**
+ * Records the initial web URL's host and query for player_io_open, which re-attaches
+ * the query to same-host children (HLS drops it per RFC 3986). Call before open.
+ */
+void setPrimaryUrl(FfmpegPlayerContext* ctx, const std::string& url);
+
+/**
  * AVFormatContext.io_open replacement: applies ctx->ioDefaults to every playlist, segment,
  * key and dref open so TLS trust survives http->https hops. Tolerates NULL options/opaque.
  */

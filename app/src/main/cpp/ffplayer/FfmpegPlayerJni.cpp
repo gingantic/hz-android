@@ -32,6 +32,8 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     ctx->closeMedia();
     ctx->lastErrorClass.store(ERR_NONE);
     ctx->isWebSource = false;
+    ctx->primaryHost.clear();
+    ctx->primaryQuery.clear();
     ctx->ioDefaults.clear();
 
     // The context is stopped while the previous session is torn down, but it
@@ -87,6 +89,7 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     if (urlChars) env->ReleaseStringUTFChars(urlStr, urlChars);
 
     ctx->isWebSource = !bridgeObj && (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0);
+    if (ctx->isWebSource) setPrimaryUrl(ctx, url);
     std::string caFile;
     if (caFileStr) {
         const char* caChars = env->GetStringUTFChars(caFileStr, nullptr);

@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <cstdarg>
+#include <strings.h>
 
 int classifyAvError(int e) {
     switch (e) {
@@ -32,6 +33,52 @@ int classifyAvError(int e) {
     // Remaining errno values (incl. TLS/cert failures that surface as EIO) are network errors.
     if (e < 0 && e > -1000) return ERR_NETWORK;
     return ERR_UNKNOWN;
+}
+
+namespace {
+
+bool isHttpUrl(const char* url) {
+    return url && (strncasecmp(url, "http://", 7) == 0 ||
+                   strncasecmp(url, "https://", 8) == 0);
+}
+
+/** Host component only, no userinfo/port/brackets. Empty when the URL has none. */
+std::string hostOf(const char* url) {
+    char proto[16] = {};
+    char auth[8] = {};
+    char host[256] = {};
+    char path[8] = {};
+    int port = -1;
+    av_url_split(proto, sizeof(proto), auth, sizeof(auth), host, sizeof(host),
+                 &port, path, sizeof(path), url);
+    return host;
+}
+
+bool hasQuery(const char* url) {
+    const char* query = strchr(url, '?');
+    if (!query) return false;
+    const char* fragment = strchr(url, '#');
+    return !fragment || query < fragment;
+}
+
+/** Query including the leading '?', excluding any fragment. Empty for a bare '?'. */
+std::string queryOf(const std::string& url) {
+    const size_t query = url.find('?');
+    if (query == std::string::npos) return {};
+    const size_t fragment = url.find('#', query);
+    const size_t end = fragment == std::string::npos ? url.size() : fragment;
+    return end > query + 1 ? url.substr(query, end - query) : std::string();
+}
+
+} // namespace
+
+void setPrimaryUrl(FfmpegPlayerContext* ctx, const std::string& url) {
+    if (!ctx) return;
+    ctx->primaryHost = hostOf(url.c_str());
+    ctx->primaryQuery = queryOf(url);
+    // Never log primaryQuery: it is the stream's signed token.
+    LOGI("Web source host=%s signed_query=%s", ctx->primaryHost.c_str(),
+         ctx->primaryQuery.empty() ? "no" : "yes");
 }
 
 void applyWebOptions(FfmpegPlayerContext* ctx, const std::string& caFile, AVDictionary** opts) {
@@ -78,7 +125,25 @@ int player_io_open(AVFormatContext* s, AVIOContext** pb, const char* url, int fl
         }
     }
 
-    int ret = avio_open2(pb, url, flags, &s->interrupt_callback, opts);
+    // HLS resolves relative children against the playlist URL; RFC 3986 drops the
+    // playlist's query, so signed variants/segments/keys would 403. Re-attach it for
+    // same-host http(s) children, mirroring ExoPlayer's ProtocolRoutingDataSource.
+    const char* requestUrl = url;
+    std::string enriched;
+    if (ctx && isHttpUrl(url) && !ctx->primaryQuery.empty() && !ctx->primaryHost.empty() &&
+        !hasQuery(url) &&
+        strcasecmp(hostOf(url).c_str(), ctx->primaryHost.c_str()) == 0) {
+        enriched = url;
+        const size_t fragment = enriched.find('#');
+        if (fragment == std::string::npos) {
+            enriched += ctx->primaryQuery;
+        } else {
+            enriched.insert(fragment, ctx->primaryQuery);
+        }
+        requestUrl = enriched.c_str();
+    }
+
+    int ret = avio_open2(pb, requestUrl, flags, &s->interrupt_callback, opts);
     av_dict_free(&local);
     if (ctx) ctx->lastIoTimeMs.store(getMonotonicTimeMs());
     return ret;

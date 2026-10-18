@@ -334,6 +334,10 @@ MediaSession wraps the settled engine.
 - **Headers:** `sanitizeHttpRequestHeaders` (`core/util/HttpHeaderSanitizer.kt`) applies the
   same rules as `MediaPlayerHolder.setHttpRequestHeaders`, plus RFC 7230 token / no-CR-LF
   checks. `nativeOpen` drops any header containing a line break again.
+- **Signed playlists:** `setPrimaryUrl` records the initial host + query; `player_io_open`
+  re-attaches the query to relative same-host `http(s)` children (variants, segments, AES
+  keys, `EXT-X-MAP`). FFmpeg's `ff_make_absolute_url` is RFC 3986 and drops the playlist query.
+  ExoPlayer does the same in `ProtocolRoutingDataSource`.
 - **TLS trust:** FFmpeg's mbedTLS loads no system store and has no `ca_path`.
   `NativeTlsCaBundle` exports the `system:` roots to `cacheDir/tls/cacert.pem`, skipping
   certificates mbedTLS cannot parse (it rejects the whole file otherwise). The file is rebuilt
