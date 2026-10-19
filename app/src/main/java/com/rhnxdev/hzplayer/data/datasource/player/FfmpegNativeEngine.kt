@@ -186,6 +186,13 @@ class FfmpegNativeEngine @Inject constructor(
     private var currentMimeType: String? = null
     private var currentPlaylist: List<Pair<String, String>>? = null
     private var currentPlaylistIndex: Int = 0
+
+    /**
+     * Kind of the active playlist. Auto-advance calls [playInternal] with its
+     * default `isVideo = true`, so an audio queue must carry this flag or the
+     * next song is reclassified as video (which surfaces the mini player/PiP).
+     */
+    private var currentPlaylistIsVideo: Boolean = true
     private var repeatMode: RepeatMode = RepeatMode.NONE
     private var isShuffle: Boolean = false
     private var currentSpeed: Float = 1.0f
@@ -422,6 +429,7 @@ class FfmpegNativeEngine @Inject constructor(
         if (!isCurrentRequest(requestId, uri)) return
         if (!preservePlaylist) {
             currentPlaylist = null
+            currentPlaylistIsVideo = isVideo
         }
         pendingSeekTargetMs.set(-1L)
         pendingSeekBackward = false
@@ -462,6 +470,7 @@ class FfmpegNativeEngine @Inject constructor(
     override fun playPlaylist(items: List<Pair<String, String>>, startIndex: Int, startPositionMs: Long) {
         if (items.isEmpty()) return
         currentPlaylist = items
+        currentPlaylistIsVideo = true
         currentPlaylistIndex = startIndex.coerceIn(0, items.lastIndex)
         val (uri, title) = items[currentPlaylistIndex]
         playInternal(uri, title, resumePositionMs = startPositionMs, preservePlaylist = true)
@@ -470,6 +479,7 @@ class FfmpegNativeEngine @Inject constructor(
     override fun playAudioPlaylist(items: List<AudioItem>, startIndex: Int) {
         if (items.isEmpty()) return
         currentPlaylist = items.map { it.uri to it.title }
+        currentPlaylistIsVideo = false
         currentPlaylistIndex = startIndex.coerceIn(0, items.lastIndex)
         val startItem = items[currentPlaylistIndex]
         playInternal(startItem.uri, startItem.title, artist = startItem.artist, isVideo = false, preservePlaylist = true)
@@ -845,7 +855,7 @@ class FfmpegNativeEngine @Inject constructor(
         if (currentPlaylistIndex + 1 < playlist.size) {
             currentPlaylistIndex++
             val (uri, title) = playlist[currentPlaylistIndex]
-            playInternal(uri, title, preservePlaylist = true)
+            playInternal(uri, title, isVideo = currentPlaylistIsVideo, preservePlaylist = true)
         }
     }
 
@@ -854,7 +864,7 @@ class FfmpegNativeEngine @Inject constructor(
         if (currentPlaylistIndex > 0) {
             currentPlaylistIndex--
             val (uri, title) = playlist[currentPlaylistIndex]
-            playInternal(uri, title, preservePlaylist = true)
+            playInternal(uri, title, isVideo = currentPlaylistIsVideo, preservePlaylist = true)
         }
     }
 
@@ -866,7 +876,7 @@ class FfmpegNativeEngine @Inject constructor(
         if (index in playlist.indices) {
             currentPlaylistIndex = index
             val (uri, title) = playlist[index]
-            playInternal(uri, title, preservePlaylist = true)
+            playInternal(uri, title, isVideo = currentPlaylistIsVideo, preservePlaylist = true)
         }
     }
 
