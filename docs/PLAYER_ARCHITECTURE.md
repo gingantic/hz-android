@@ -244,6 +244,11 @@ the new target.
   `flushGeneration != seekVersion`, i.e. while the frame in hand predates the flush. The
   gate covers accurate seeks and scrubs on both the software and the AMediaCodec video
   path; the audio thread applies it in `processAudioFrame` (a scrub queues no audio).
+- The video pre-roll target (`videoSeekTargetPtsUs`) is reported as the position only
+  while a video stream has an attached surface and no frame has rendered yet. For an
+  audio-only file, or a video played as audio (no surface), no video frame can ever land
+  to clear it — the readers therefore fall through to the audio target / master clock so
+  the seek bar advances instead of staying at the seek target.
 
 Kotlin mirrors the same rule (`FfmpegNativeEngine`, `PlayerPositionController`):
 `pendingSeekTargetMs` is an `AtomicLong` cleared only by a `compareAndSet` that still

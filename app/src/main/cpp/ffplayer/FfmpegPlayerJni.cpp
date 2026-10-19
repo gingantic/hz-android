@@ -634,7 +634,12 @@ JNI_FUNC(jlong, nativeGetPosition, jlong handle) {
     if (pending >= 0) {
         return pending;
     }
-    if (ctx->videoSeekTargetPtsUs.load() >= 0 && ctx->totalRenderedFrames.load() == 0) {
+    // The video target is only a pre-first-frame placeholder. It must not apply
+    // without a video stream (audio-only files) or without a surface (a video
+    // played as audio): no frame can ever land, so the target would be reported
+    // forever and pin the seek bar at the seek target / 0.
+    if (ctx->videoStreamIdx >= 0 && ctx->hasSurface.load() &&
+        ctx->videoSeekTargetPtsUs.load() >= 0 && ctx->totalRenderedFrames.load() == 0) {
         return ctx->videoSeekTargetPtsUs.load() / 1000;
     }
     if (ctx->audioSeekTargetPtsUs.load() >= 0 && ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx != nullptr) {

@@ -35,6 +35,10 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
         ctx->currentPositionMs.store(0);
         if (ctx->videoStreamIdx >= 0) {
             ctx->videoSeekTargetPtsUs.store(0);
+        } else {
+            // No video stream: -1 keeps the video pre-roll target out of the
+            // position readers so the audio clock drives the seek bar.
+            ctx->videoSeekTargetPtsUs.store(-1);
         }
         if (ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx) {
             ctx->audioSeekTargetPtsUs.store(0);
@@ -87,7 +91,7 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
                 ctx->isBuffering.store(true);
                 ctx->notifyState(env, STATE_BUFFERING);
             } else {
-                ctx->videoSeekTargetPtsUs.store(target * 1000);
+                ctx->videoSeekTargetPtsUs.store(ctx->videoStreamIdx >= 0 ? target * 1000 : -1);
                 if (ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx) {
                     ctx->audioSeekTargetPtsUs.store(target * 1000);
                 } else {
@@ -321,7 +325,8 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
             int64_t curMs;
             if (ctx->seekTargetMs.load() >= 0) {
                 curMs = ctx->seekTargetMs.load();
-            } else if (ctx->videoSeekTargetPtsUs.load() >= 0 && ctx->totalRenderedFrames.load() == 0) {
+            } else if (ctx->videoStreamIdx >= 0 && ctx->hasSurface.load() &&
+                       ctx->videoSeekTargetPtsUs.load() >= 0 && ctx->totalRenderedFrames.load() == 0) {
                 curMs = ctx->videoSeekTargetPtsUs.load() / 1000;
             } else if (ctx->audioSeekTargetPtsUs.load() >= 0 && ctx->audioStreamIdx >= 0 && ctx->audioCodecCtx) {
                 curMs = ctx->audioSeekTargetPtsUs.load() / 1000;
