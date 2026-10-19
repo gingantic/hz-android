@@ -1,7 +1,7 @@
 # Hz Player — UI Component Catalog
 
 > Every reusable composable in the design system, with spec and states.
-> Verified against code at `8ffb763` — drift check: `git diff 8ffb763..HEAD -- app/src`.
+> Verified against code at `efeba7b` — drift check: `git diff efeba7b..HEAD -- app/src`.
 > Layouts are representative, not pixel-exact.
 
 **House rules.** New sliders use `HzPlayerSlider` (never a raw `Slider`) so track
@@ -18,7 +18,9 @@ darkens the accent until the glyph keeps contrast. Every reusable component take
 |---|---|---|
 | `MediaCard` | `MediaCard.kt` | Grid card: thumbnail, gradient overlay, duration badge, progress, title/subtitle, 3-dot menu |
 | `MediaListItem` | `MediaListItem.kt` | Horizontal list row for video/audio/file |
+| `AlbumArtImage` | `AlbumArtImage.kt` | Album art with a graceful fallback — renders the URI cropped to fill, and the audio `ThumbnailPlaceholder` both when the URI is absent and when the load fails. Takes the `modifier` so the placeholder occupies the same box |
 | `HzPlayerSlider` | `HzPlayerSlider.kt` | House-style slider: chunky gapless track, solid round knob ringed in the colour behind it; ticks + stop indicator suppressed. Accent/size are parameters, so it scales from a settings row to the equalizer's vertical faders |
+| `HzPlayerProgressBar` | `HzPlayerProgressBar.kt` | Determinate/indeterminate progress bar. `progress = null` → sweeping `IndeterminateBar`; otherwise an animated rounded fill coerced to at least the track height (so 0 % is still a visible dot) |
 | `MediaIconBadge` | `MediaIconBadge.kt` | Rounded gradient badge identifying media by type; accent darkened until a white glyph keeps contrast (holds up in light/dark/dynamic colour) |
 | `ViewToggleFab` | `ViewToggleFab.kt` | FAB toggling grid/list, animated crossfade |
 | `MediaEmptyState` | `MediaEmptyState.kt` | Illustrated empty state + optional action |
@@ -33,6 +35,7 @@ darkens the accent until the glyph keeps contrast. Every reusable component take
 | `ViewSortBottomSheet` | `ViewSortBottomSheet.kt` | Sort / view-mode / media-type-filter picker |
 | `BreadcrumbBar` | `BreadcrumbBar.kt` | Directory breadcrumb navigation |
 | `DirectoryBrowsePane` | `DirectoryBrowsePane.kt` | Shared browse listing (grid/list) |
+| `DirectoryHeader` | `DirectoryHeader.kt` | Breadcrumb trail plus the "N folders, M files" summary above a directory listing (shared by the local and remote browsers). The summary hides itself when the visible list is empty |
 | `HzPlayerTopBar` | `HzPlayerTopBar.kt` | App top bar; inline search mode takes precedence over the back arrow (the leading arrow exits search first) |
 | `HzPlayerSearchableScaffold` | `HzPlayerSearchableScaffold.kt` | Scaffold + search integration |
 | `SearchDelegate` | `SearchDelegate.kt` | Debounced search helper |
@@ -48,8 +51,8 @@ darkens the accent until the glyph keeps contrast. Every reusable component take
 | `pauseRenderView` / `resumeRenderView` | `PlayerRenderView.kt` — engine render-view helpers used by `PlayerSurface` |
 | `Modifier.playerGestures` | `PlayerGestures.kt` — gesture modifier (tap/double-tap/swipe/pinch/hold-to-speed) with `PlayerGestureState` / `PlayerGestureCallbacks` |
 | `GestureCueIndicators` | Visual feedback for gesture actions |
-| `MiniPlayerBar` | Persistent bottom bar while media plays; tap → player |
-| `FloatingVideoPlayer` | Draggable PiP-style floating video overlay |
+| `MiniPlayerBar` | Persistent bottom bar while media plays; tap → player. Shows an **"open as video"** button when the session is a video playing in the background |
+| `FloatingVideoPlayer` | Draggable PiP-style floating video overlay; doubles as the system-PiP surface (full-bleed black, no HUD) |
 | `AudioPlayerSheet` | Full-height audio bottom sheet (cover, controls, seek) |
 | `AudioQueueSheet` | Audio now-playing queue list |
 | `AudioSelectionDialog` | Audio-track picker |
@@ -86,18 +89,31 @@ darkens the accent until the glyph keeps contrast. Every reusable component take
 | `ArchivePasswordDialog` | `presentation/browse/components/ArchivePasswordDialog.kt` |
 | `SolidArchiveWarningDialog` | `presentation/browse/components/SolidArchiveWarningDialog.kt` |
 | `DirectoryStackContent` | `presentation/browse/components/DirectoryStackContent.kt` |
-| `StorageRootsContent` | `presentation/browse/components/StorageRootsContent.kt` |
+| `StorageRootsContent` | `presentation/browse/components/StorageRootsContent.kt` — storage roots with a per-root icon derived from `StorageKind` (USB / SD card / generic storage) |
 | `FileBrowserTopBarActions` | `presentation/browse/components/FileBrowserTopBarActions.kt` |
 | `NewFolderDialog` | `presentation/browse/components/NewFolderDialog.kt` |
-| `PasteActionBar` | `presentation/browse/components/PasteActionBar.kt` (cut/copy/move/delete) |
-| `NetworkHomeContent` / `ServerBrowseStackContent` / `CredentialDialog` | `presentation/network/components/NetworkScreenContent.kt` |
+| `PasteActionBar` | `presentation/browse/components/PasteActionBar.kt` (cut/copy/move/delete). While a paste is running it swaps the buttons for a percentage label + `HzPlayerProgressBar` (indeterminate when the fraction is null, e.g. an atomic move) |
+| `NetworkHomeContent` / `ServerBrowseStackContent` / `CredentialDialog` | `presentation/network/components/NetworkScreenContent.kt` — saved and discovered servers are laid out as **two columns** (`chunked(2)` of `ServerCard`s) inside the scrolling `LazyColumn`; the list-view variant renders them full width instead |
 | `ServerCard` | `presentation/network/components/ServerCard.kt` |
 | `ServerConfigDialog` | `presentation/network/components/ServerConfigDialog.kt` |
 | `StreamHistoryListItem` | `presentation/network/components/StreamHistoryListItem.kt` |
 | `SettingsSection` / `SettingsItem` / `SettingsSliderItem` | `presentation/settings/components/` |
 | `AboutDialog` / `UpdateDialog` / `ColorPickerDialog` / `SubdlApiKeyDialog` | `presentation/settings/components/` |
 | `EnumSelectionDialog` | `presentation/settings/components/EnumSelectionDialog.kt` (generic enum picker) |
+| `EnumLabels` | `presentation/settings/components/EnumLabels.kt` — display labels for the shared enums |
 | `ThemeSelectionDialog` / `OrientationDialog` / `DecoderModeDialog` / `ResumeModeDialog` | `presentation/settings/components/SettingsDialogs.kt` — thin `EnumSelectionDialog` wrappers |
+
+---
+
+## History screen
+
+`presentation/history/` — the recently-played list.
+
+| Component | Purpose |
+|---|---|
+| `HistoryScreen` | Full-screen overlay route (`NavRoutes.HISTORY`); top bar with a back arrow and a "clear all" action, a `MediaEmptyState` when the list is empty, and a borderless `LazyColumn` of rows |
+| `HistoryRow` | A row: a video frame (`VideoFrame`) or album art, the title, and the artist — or "Video"/"Audio" when there is no artist. No per-item delete; only clear-all |
+| `HistoryViewModel` / `HistoryUiState` | Collects `PlayHistoryRepository.observeHistory()` into `StateFlow<HistoryUiState>` |
 
 ---
 
@@ -107,13 +123,15 @@ The in-app browser owns its UI package (hosted by `BrowserActivity`, not the mai
 
 | Component | Purpose |
 |---|---|
-| `BrowserScreen` | Full browser scaffold; hides chrome during system PiP |
-| `BrowserTopBar` / `BrowserBottomBar` | Omnibox top bar (with `UrlSuggestionsPanel`) + navigation toolbar |
-| `TabStrip` / `TabSidebar` | Tab switcher strip + sidebar (swipe-to-switch gesture) |
+| `BrowserScreen` | Full browser scaffold; hides chrome during system PiP; hosts the JS dialog and the popup-permission sheet |
+| `BrowserTopBar` / `BrowserBottomBar` | Omnibox top bar (with `UrlSuggestionsPanel`) + navigation toolbar. The bottom bar carries a media-count badge and the "Block element" overflow action |
+| `TabSidebar` | Tab switcher — a left-side vertical panel that snaps in over the content |
 | `NewTabPage` | Start page |
-| `MediaGrabberBottomSheet` | Detected media list + download/stream actions |
-| `PopupPermissionBottomSheet` | Cross-domain popup approval |
-| `BrowserHistoryScreen` / `BrowserSettingsScreen` | History and browser settings |
+| `MediaGrabberBottomSheet` | Detected media list (ALL / VIDEO / AUDIO / STREAMS filter chips) + quality picker, variant tree, token inspector, download/stream/share/cURL actions |
+| `PopupPermissionBottomSheet` | Cross-domain popup approval (source page + target domain, Allow / Deny) |
+| `ElementPickerPanel` | Ad-block cosmetic-rule authoring — shows the generated selector, the match count, a "Wider" action and an "Apply to all sites" toggle. Non-modal so the page stays tappable |
+| `JsDialog` | WebView `alert` / `confirm` / `prompt` / `beforeunload` dialog. Dismissing counts as cancel so the page's JS thread is never left blocked |
+| `BrowserHistoryScreen` / `BrowserSettingsScreen` | History and browser settings (JavaScript, ad blocker, privacy, user agent, content, cache, session) |
 
 ---
 
@@ -135,7 +153,7 @@ Theme (M3 dynamic, dark/light) lives in `presentation/theme/` (`Color.kt`, `Type
 ```
 ┌──────────────────────┐
 │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │  ← thumbnail (16:9 video / 1:1 album)
-│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 2:15 │  ← gradient overlay + duration badge
+│ ▓▓▓▓▓▓▓▓▓▓▓ 2:15 │  ← gradient overlay + duration badge
 ├──────────────────────┤
 │ Title                │
 │ Subtitle             │
@@ -168,5 +186,17 @@ Theme (M3 dynamic, dark/light) lives in `presentation/theme/` (`Color.kt`, `Type
 │                                    │
 │   1:23 ─────●──────────── 4:56     │
 │   🔀  ⏪  ▶║  ⏩  🔁     1.0x  ⋮   │
+└──────────────────────────────────┘
+```
+
+### ElementPickerPanel
+```
+┌──────────────────────────────────┐
+│  Tap the element you want to hide │
+│                                  │
+│  div#ad-slot            [ Wider ]│  ← selector (monospace) + widen action
+│  3 matches on this page          │
+│  [x] Apply to all sites          │
+│                [ Cancel ] [Block]│  ← Block is error-coloured
 └──────────────────────────────────┘
 ```

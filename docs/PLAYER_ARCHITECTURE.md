@@ -2,7 +2,7 @@
 
 > Media3 ExoPlayer and a standalone native FFmpeg player behind the `IPlayerEngine`
 > contract, rendered through `PlayerSurface`.
-> Verified against code at `8ffb763` — drift check: `git diff 8ffb763..HEAD -- app/src`.
+> Verified against code at `efeba7b` — drift check: `git diff efeba7b..HEAD -- app/src`.
 
 ---
 
@@ -49,6 +49,9 @@
 
 ## MediaPlayerHolder (Singleton)
 
+`@Singleton class MediaPlayerHolder @Inject constructor(...)` — Hilt constructs it
+directly (there is no provider method for it in `AppModule`).
+
 Owns the single `ExoPlayer` (backs both `EXO_PLAYER` and `FFMPEG`):
 
 - `DefaultTrackSelector` with **tunneling disabled** (4K HDR HEVC tunneled seek stall).
@@ -58,8 +61,17 @@ Owns the single `ExoPlayer` (backs both `EXO_PLAYER` and `FFMPEG`):
   decoders before MediaCodec (`FFMPEG`) or keeps platform-first order (`EXO_PLAYER`).
 - `AudioDelaySink` wrapping the default audio sink for A/V sync offset.
 - `playbackState: StateFlow<PlayerStateInfo>`.
+- `setIsVideo(isVideo)` — set before `prepare()`; mirrors the session kind into
+  `PlayerStateInfo.isVideo` so an activity that did not start playback (the main
+  app's mini player) can still recognise a video session.
+- `setAudioSessionId(id)` — the native engine pushes its JNI-reported AudioTrack
+  session id here so the platform equalizer attaches to whichever engine plays.
 - `onPlayerError` routes through `PlaybackErrorMapper` → redacted `(kind, message)`.
 - Debug stats via `ExoDebugStatsHelper` (FPS, decoder labels, HDR, SoC).
+
+`MediaPlayerHolder` no longer owns a `disableHdr` flag — HDR→SDR tone mapping is
+native-engine-only (Media3 has no playback tone-mapping API), so the Exo engines
+cannot honour it.
 
 ---
 
@@ -81,7 +93,7 @@ fun PlayerSurface(engine: IPlayerEngine, uiState: PlayerUiState, …) {
 ```
 
 Lifecycle (pause on `ON_STOP`, resume on `ON_RESUME`) lives in `VideoPlayerScreen`,
-calling `engine.onRenderViewPaused(view)` / `onRenderViewResumed(view)` directly.
+calling `engine.onRenderViewPaused(view)` / `engine.onRenderViewResumed(view)` directly.
 
 `NATIVE_FFMPEG` implements both hooks as no-ops — its pause is `viewModel.pause()`
 (`pauseClock()` + `NativeAudioSink.pause()`). While paused with no surface
@@ -115,6 +127,15 @@ main-loop paused wait wakes so the same pull happens when nothing was held. The
 still is a refresh frame: no clock or position anchor. The rebind drop is
 one-shot (`surfaceRebindPending`) — without it the drain would discard every
 output it dequeues until the main loop re-binds.
+
+### The surface gate (native engine)
+
+`FfmpegNativeEngine` waits for the native window before opening a source:
+`surfaceReadyLatch` (a `CountDownLatch`) is armed by the render-view creation, and
+`openAndStart` blocks on it for at most `SURFACE_READY_TIMEOUT_MS` (1.5 s) — but
+only when a render view exists and the surface is still null. Without the gate the
+native `open() + play()` can run before `nativeWindow` exists and every decoded
+frame is silently dropped.
 
 ---
 
@@ -155,12 +176,48 @@ data class PlayerStateInfo(
     val currentUri: String? = null,
     /** True iff the current MediaItem declares a `drmConfiguration` (Widevine L1 path, etc.). */
     val drmSessionActive: Boolean = false,
+    /**
+     * True when the current session is video (as declared at `IPlayerEngine.play`).
+     * Lives here — not just in a per-activity ViewModel — so any activity that did
+     * not start playback can still recognise the session as video and offer
+     * "reopen as video".
+     */
+    val isVideo: Boolean = false,
 )
 ```
 
-Two things are deliberately **not** here: track lists (subtitle/audio) — cached by
-`PlayerTrackCache` and refreshed on READY to avoid per-tick re-queries — and chapters,
-which `PlayerViewModel` probes separately into `PlayerUiState.chapters`.
+Three things are deliberately **not** here: track lists (subtitle/audio) — cached by
+`PlayerTrackCache` and refreshed on READY to avoid per-tick re-queries; chapters,
+which `PlayerViewModel` probes separately into `PlayerUiState.chapters`; and the
+playback position, which has its own `StateFlow` (see below).
+
+---
+
+## IPlayerEngine — the contract
+
+`domain/player/IPlayerEngine.kt` is the only playback boundary; no Media3 type
+crosses it. Shape of the API:
+
+| Group | Members |
+|---|---|
+| Identity / state | `engineType`, `playbackState: StateFlow<PlayerStateInfo>` |
+| Playback | `play(uri, title, artist, isVideo, mimeType, resumePositionMs, headers, artworkUri)`, `playPlaylist(items, startIndex, startPositionMs)`, `playAudioPlaylist(items, startIndex)`, `pause()`, `resume()`, `stop()` |
+| Seek | `seekTo(positionMs)`, `skipForward(ms = 10_000)`, `skipBackward(ms = 10_000)`, `setScrubbing(isScrubbing)`, `skipToNext()`, `skipToPrevious()`, `getCurrentMediaItemIndex()`, `getMediaItemCount()`, `seekToMediaItem(index)` |
+| Queries | `isPlaying()`, `getDuration()`, `getCurrentPosition()`, `getBufferedPosition()` |
+| Configuration | `setPlaybackSpeed`, `setShuffleEnabled`, `setRepeatMode`, `isShuffleEnabled`, `getRepeatMode`, `setDecoderMode`, `setDisableHdr`, `setFfmpegPreferred` |
+| Subtitles | `getSubtitleTracks`, `getSelectedSubtitleTrack`, `selectSubtitleTrack`, `loadExternalAss(uri)`, `getSubtitleTrackMimeTypes`, `addExternalSubtitle(uri)`, `subtitleTrackChangeListener`, `setSubtitleDelay`, `getSubtitleDelay` |
+| Audio track | `getAudioTracks`, `getSelectedAudioTrack`, `selectAudioTrack`, `setAudioDelay`, `getAudioDelay` |
+| Equalizer | `getEqualizerState(): StateFlow<EqualizerInfo>?`, `setEqualizerEnabled`, `setEqualizerBandLevel`, `applyEqualizerPreset`, `resetEqualizerBands`, `setBassBoostStrength`, `setLoudnessGain` |
+| Render seam / lifecycle | `createRenderView(context, useSurfaceView)`, `updateRenderView(view, config)`, `onRenderViewPaused(view)`, `onRenderViewResumed(view)`, `getMedia3Player(): Player?`, `setOnPlayerReplacedListener`, `clearError()`, `retry()`, `release()` |
+
+Most members have a default body, so an engine only overrides what it supports.
+Two defaults carry real behaviour:
+
+- `skipForward` / `skipBackward` are **interface default methods**
+  (`seekTo(position ± ms)`), so both engines inherit the offset and the clamping
+  performed by `seekTo`. Neither engine overrides them.
+- `setDisableHdr` is a **no-op on the Exo engines** — only `NATIVE_FFMPEG` implements
+  it, because Media3 has no playback tone-mapping API.
 
 ---
 
@@ -170,7 +227,7 @@ Split into focused controllers so each class stays small:
 
 | Controller | Responsibility |
 |---|---|
-| `PlayerViewModel` | Orchestrates controllers, maps `PlayerStateInfo` → `PlayerUiState`, sleep timer, A-B repeat loop, chapter probing |
+| `PlayerViewModel` | Orchestrates controllers, maps `PlayerStateInfo` → `PlayerUiState`, sleep timer, A-B repeat loop, chapter probing, history recording |
 | `PlayerPositionController` | 250 ms position tick (`StateFlow<Long>`), seek bookkeeping + clamping, periodic resume-save |
 | `PlayerTrackCache` | Caches subtitle/audio track lists; refreshes on READY |
 | `PlayerPlaylistController` | Video playlist + audio queue management |
@@ -185,6 +242,7 @@ class PlayerViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val resumeRepository: ResumeRepository,
+    private val playHistory: PlayHistoryRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     // init: collect playerRepository.playbackStateInfo → _uiState.update { copy(...) }
@@ -193,6 +251,21 @@ class PlayerViewModel @Inject constructor(
     // — all delegate to playerRepository → active engine.
 }
 ```
+
+### Video-session classification
+
+`isVideo` is resolved once, in `observePlaybackState()`:
+
+```kotlin
+val syncedIsVideo = when {
+    isIdle -> state.isVideo          // keep the last known kind while idle
+    state.playingVideoAsAudio -> false  // a local "play as audio" demotion wins
+    else -> info.isVideo              // the engine's own declaration
+}
+```
+
+The local demotion wins until `onResumeAsVideo()` flips it back, so a video played
+audio-only does not re-offer the video surface.
 
 ---
 
@@ -248,7 +321,11 @@ the new target.
   while a video stream has an attached surface and no frame has rendered yet. For an
   audio-only file, or a video played as audio (no surface), no video frame can ever land
   to clear it — the readers therefore fall through to the audio target / master clock so
-  the seek bar advances instead of staying at the seek target.
+  the seek bar advances instead of staying at the seek target. Concretely, the demux
+  thread stores `-1` when the file has no video stream, and both position readers
+  (`DemuxThread.cpp`, `nativeGetPosition`) require
+  `videoStreamIdx >= 0 && hasSurface && videoSeekTargetPtsUs >= 0 && totalRenderedFrames == 0`
+  before reporting the pre-roll target.
 
 Kotlin mirrors the same rule (`FfmpegNativeEngine`, `PlayerPositionController`):
 `pendingSeekTargetMs` is an `AtomicLong` cleared only by a `compareAndSet` that still
@@ -273,6 +350,29 @@ Gestures are applied with the `Modifier.playerGestures(...)` modifier
   or fill (`AspectRatioMode`).
 - **Hold**: temporary speed-up (ramps 2x→4x).
 - Lock pill (`UnlockPill`) disables gestures; `GestureCueIndicators` gives visual feedback.
+
+---
+
+## Picture-in-Picture and the floating player
+
+`core/util/PipUtils.kt` is the single source of PiP behaviour (it replaced the
+duplicated per-activity code):
+
+| Helper | Purpose |
+|---|---|
+| `buildPipParams(context, isPlaying)` | 16:9 `PictureInPictureParams` with one `RemoteAction` (play/pause) targeting `ACTION_PIP_PLAY_PAUSE`; `null` below API 26 |
+| `pipPlayPauseReceiver(isInPip, onToggle)` | Fires the toggle only when the intent action matches **and** the activity is in PiP — the player is a singleton, so an unguarded receiver would toggle twice |
+| `Context.registerPipReceiver(receiver)` | API 33+ uses `RECEIVER_NOT_EXPORTED` |
+| `Activity.enterPipIfEligible(pipEligible, isPlaying)` | Guarded entry; falls back to a bare 16:9 params |
+
+`MainActivity` and `VideoPlayerActivity` both use it; `AudioPlayerActivity` has no PiP.
+`onUserLeaveHint()` is the entry point (backgrounding the app — **not** Back).
+
+The in-app **floating video player** (`FloatingVideoPlayer`) is a different thing: a
+draggable 280×158 dp overlay mounted in `HzPlayerApp` that renders a **second**
+`PlayerSurface` bound to the same singleton engine. It also listens for PiP mode
+changes and switches to a full-bleed black layout (no drag handle, no HUD) when the
+activity enters system PiP, so the same composable doubles as the PiP surface content.
 
 ---
 
@@ -305,8 +405,20 @@ Track names resolve to languages + country flags via `SubtitleLanguageResolver`
 | **Chapters** | `PlayerViewModel.loadChaptersIfNeeded()` probes once per URI on IO via `MediaInfoProbe.probeChapters` (native FFmpeg demuxer: MKV chapters, MP4 chpl, OGG chapters) → `PlayerUiState.chapters`; `ChapterSelectionDialog` highlights the current chapter and seeks to `startMs` |
 | **Audio delay** | `AudioDelaySink` (`ForwardingAudioSink`) shifts the audio clock; since ExoPlayer syncs video to it, A/V sync moves without touching the audio pipeline. Positive = audio heard later. Set via `IPlayerEngine.setAudioDelay`; persisted in `PlayerUiState.audioDelayMs` |
 | **Play-as-audio** | From the video player, "Play as audio" hides the video surface and keeps playing; ViewModel sets `isVideo=false` + `playingVideoAsAudio=true`, `MiniPlayerBar` takes over, and the floating player or back-navigation restores video |
+| **Recently played** | Every play start records a `PlayHistoryItem` through `PlayHistoryRepository` (deduped by URI). The `HistoryScreen` lists them and replays via `playUri(...)` |
 
-Subtitle timing offset is exposed via `IPlayerEngine.setSubtitleDelay/getSubtitleDelay`.
+### Mini player and backgrounded video sessions
+
+The mini player (`MiniPlayerSection` → `MiniPlayerBar`) is visible when a session is
+playing **and** either it is audio-only, or it is video whose floating window is off
+(`floatingEnabled == false`). In the latter case the bar shows an **"open as video"**
+button: it calls `onResumeAsVideo()` (clearing the local `playingVideoAsAudio`
+demotion) and navigates to the video player.
+
+The `isVideo` flag lives in `PlayerStateInfo` rather than in a per-activity ViewModel
+precisely so that this works: the main app's mini player did not start the playback
+(it may have been started by the browser or a URL handler), so it can only recognise
+the session as video from the shared engine state.
 
 ---
 
@@ -320,25 +432,52 @@ Picked in Settings, persisted via `UserPreferencesRepository.activeEngine`:
 | `FFMPEG` | Same ExoPlayer pipeline, FFmpeg software renderers preferred (`HzRenderersFactory.preferFfmpeg`) | Formats the platform decoder mishandles |
 | `NATIVE_FFMPEG` | Standalone native player (`FfmpegNativeEngine` + `cpp/ffplayer/`, `libffplayer.so`) | Instant seeking on local/networked media; AMediaCodec HW decode with libdav1d fallback |
 
+`EXO_PLAYER` and `FFMPEG` are the **same** `ExoPlayerEngine` singleton; the only
+difference is the `preferFfmpeg` renderer ordering, which `PlayerRepositoryImpl`
+flips when the active engine type changes.
+
 Switching stops current playback and rebuilds the render surface (`PlayerSurface`
 keys on `engineType`). The native engine opts out of the system MediaSession.
 
 Cold start: `_activeEngineType` holds the `EXO_PLAYER` default until the persisted
 preference has been read (DataStore is async). `playVideo`/`playUri`/`playAudio`/playlists
-wait for that first emission (`PlayerRepositoryImpl.engineReady`), and only the newest play
-dispatches — a newer play or `stop()` supersedes a pending one. Without this, a cold-start
-play started on the default engine while the collector later flipped the UI to an idle
-engine (black video, `0:00`). `startPlaybackService()` runs inside the same block so the
-MediaSession wraps the settled engine.
+wait for that first emission (`PlayerRepositoryImpl.engineReady`, a `CompletableDeferred`),
+and only the newest play dispatches — a `playGeneration` counter makes a newer play or
+`stop()` supersede a pending one. Without this, a cold-start play started on the default
+engine while the collector later flipped the UI to an idle engine (black video, `0:00`).
+`startPlaybackService()` runs inside the same block so the MediaSession wraps the
+settled engine.
 
 `NATIVE_FFMPEG` plays web `http(s)` and HLS (VOD + live). It does **not** play DASH: a
 `.mpd` URL fails fast with `player_error_dash_native`.
+
+### Audio playlist classification (native engine)
+
+Auto-advance calls `playInternal` with its default `isVideo = true`, so an audio
+queue would reclassify the next track as video — surfacing the mini player / PiP for
+music. `FfmpegNativeEngine` therefore keeps a `currentPlaylistIsVideo` flag, set by
+`playPlaylist` (`true`), `playAudioPlaylist` (`false`) and `playInternal` (the declared
+kind), and every advance (`skipToNext`, `skipToPrevious`, `seekToMediaItem`) passes it
+through instead of the default.
+
+### Missing audio decoder (native engine)
+
+A file whose audio codec has no decoder used to play video-only with no sound and no
+error. `nativeOpen` now pushes `"No audio decoder found for codec ID …"` (or
+`"Failed to initialize audio decoder"`) into `pendingErrors` — the same mechanism the
+video path uses — so the UI shows a playback error instead of playing silently.
 
 ### Web playback on the native engine
 
 - **Headers:** `sanitizeHttpRequestHeaders` (`core/util/HttpHeaderSanitizer.kt`) applies the
   same rules as `MediaPlayerHolder.setHttpRequestHeaders`, plus RFC 7230 token / no-CR-LF
   checks. `nativeOpen` drops any header containing a line break again.
+  The seven rules: (1) drop forbidden headers (`host`, `content-length`, `connection`,
+  `accept-encoding`, `content-type`, `transfer-encoding`, `if-modified-since`,
+  `if-none-match`, `range`, `sec-fetch-*`); (2) drop blank keys/values; (3) canonicalise
+  known names (`referer`→`Referer`, `user-agent`→`User-Agent`, …); (4) derive `Origin`
+  from `Referer` when absent; (5) default a desktop-Chrome `User-Agent`; (6) require an
+  RFC 7230 token key; (7) reject control characters in values.
 - **Signed playlists:** `setPrimaryUrl` records the initial host + query; `player_io_open`
   re-attaches the query to relative same-host `http(s)` children (variants, segments, AES
   keys, `EXT-X-MAP`). FFmpeg's `ff_make_absolute_url` is RFC 3986 and drops the playlist query.
@@ -366,9 +505,9 @@ MediaSession wraps the settled engine.
   `setScrubbing(true)` also return early. Seeks still go through `clampSeekPosition`.
   On such streams `nativePlay` does not re-seek; after real starvation it sets
   `forceNextFrame` instead.
-- **Errors:** native code classifies the AVERROR (`classifyAvError`); Kotlin reads it through
-  the lock-free `nativeGetLastErrorClass` and maps it with `NativeErrorMapper`. Local and SMB
-  sources keep their raw messages.
+- **Errors:** native code classifies the AVERROR (`classifyAvError` in `NetworkIo.cpp`);
+  Kotlin reads it through the lock-free `nativeGetLastErrorClass` and maps it with
+  `NativeErrorMapper`. Local and SMB sources keep their raw messages.
 - **Logs:** debug builds route FFmpeg WARNING+ to logcat tag `FFmpeg`.
 
 ---
@@ -404,7 +543,23 @@ Implemented once, exposed through the engine contract:
 | Equalizer | `TenBandEqualizerProcessor` + `EqualizerController` in the processor chain |
 | DRM | `drmSessionActive` flag → TextureView for secure decode |
 | Seek clamping | `clampSeekPosition()` + `SEEK_END_MARGIN_MS` (shared, engine-agnostic) |
+| HDR→SDR tone map | **not supported** — native engine only (`setDisableHdr`) |
 | A-B repeat | manual — `PlayerViewModel.startAbRepeatLoop()` loops A→B off the position flow |
 | Sleep timer | manual — `PlayerViewModel` countdown + auto-pause |
 | Chapters | `MediaInfoProbe.probeChapters()` (native FFmpeg demuxer) → `PlayerUiState.chapters` |
 | Audio delay | `AudioDelaySink` (ForwardingAudioSink clock shift) |
+
+---
+
+## Error mapping
+
+Two mappers, one per engine family, both producing the same
+`(PlaybackErrorKind, message)` pair so the UI overlay is engine-agnostic:
+
+| Mapper | Input | Notes |
+|---|---|---|
+| `PlaybackErrorMapper` | a Media3 `PlaybackException` | Classifies the cause chain first (auth / not-found / server / format hints), then the error code. `sanitizeDetail` strips user-info from remote URLs, masks FQDNs and IPv4 addresses, and caps the detail at 160 chars. |
+| `NativeErrorMapper` | a native error class (`0`–`8`) | `NETWORK`→network, `TIMEOUT`→timeout, `AUTH`→auth, `NOT_FOUND`→file-not-found, `SERVER`→network, `FORMAT`→format-unsupported, else unknown. `NONE` returns `null`. `DASH_UNSUPPORTED` is a pre-built "native engine cannot play DASH" error. |
+
+`PlaybackErrorKind` drives the overlay icon and whether the Retry button appears
+(network / timeout / auth / file — not format).

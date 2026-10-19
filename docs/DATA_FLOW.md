@@ -1,7 +1,7 @@
 # Hz Player — Data Flow Architecture
 
 > How data moves from persistence to pixels.
-> Verified against code at `8ffb763` — drift check: `git diff 8ffb763..HEAD -- app/src`.
+> Verified against code at `efeba7b` — drift check: `git diff efeba7b..HEAD -- app/src`.
 
 ---
 
@@ -35,7 +35,11 @@ AudioBrowserScreen  ← AudioRepository.getAlbums() / getArtists() / getTracks()
 AlbumDetailScreen   ← AudioRepository.getTracksForAlbum(title)
 ArtistDetailScreen  ← AudioRepository.getAlbumsForArtist(name)
 
-FileBrowserScreen   ← FileRepository.listDirectory(path)      // SAF / MediaStore
+HistoryScreen        ← HistoryViewModel.uiState
+  ← PlayHistoryRepository.observeHistory()   // Room play_history, ORDER BY playedAt DESC
+
+FileBrowserScreen   ← FileRepository.listDirectory(path)      // java.io.File + StorageManager
+  ← FileRepository.getStorageRoots()                          // StorageManager volumes + /storage fallback
 
 NetworkScreen → ServerCard tap → file-browser-style listing
   ← RemoteBrowseRepositoryImpl.listDirectory(serverConfig, path)
@@ -49,7 +53,7 @@ FileBrowserScreen → tap archive → FileBrowserViewModel.onOpenArchive(path)
   → tap media entry → play via archive:// URI
 
 BrowserActivity (separate activity) → BrowserViewModel
-  → TabManager (BrowserTab stack; swipe-to-switch with slide animation)
+  → TabManager (BrowserTab stack; TabSidebar switcher)
   → AdBlockEngine (Rust ad filtering via JNI + filter-list updates)
   → MediaSnifferEngine (detects video/audio on pages)
   → BrowserScreen: WebView per tab (pooled via BrowserSessionStore)
@@ -57,11 +61,28 @@ BrowserActivity (separate activity) → BrowserViewModel
     · UrlSuggestionsPanel (Chrome-like omnibox suggestions)
     · MediaGrabberBottomSheet (stream detected media to the player)
     · PopupPermissionBottomSheet (cross-domain popup approval)
+    · JsDialog (alert / confirm / prompt / beforeunload)
+    · ElementPickerPanel (ad-block cosmetic rule authoring)
     · Real desktop mode (desktop UA + wide viewport)
     · Web PiP bridge: site PiP button → native Picture-in-Picture window
     · WebView-native certificate handling (invalid certs cancelled; renderer
       crashes reload a fresh blank renderer)
 ```
+
+### The cache-first listing flow
+
+`MediaRepositoryImpl.getAllVideos` and `AudioRepositoryImpl.getAllSongs` both run
+through `cachedScanFlow` (`data/repository/CachedScanFlow.kt`):
+
+```
+in-memory cache → Room → debug preview → MediaStore scan
+```
+
+Each stage emits as soon as it has data, so the list never blanks between the cache
+hit and the fresh scan. A scan failure is swallowed only if something was already
+emitted — otherwise it is rethrown, so an empty list is never mistaken for "no
+media". The memory cache is read lazily because the flow is cold and is
+re-collected on every tab re-entry.
 
 ---
 
@@ -72,12 +93,32 @@ BrowserActivity (separate activity) → BrowserViewModel
 Screen → ViewModel.onPlay(item)
   → PlayerRepository.playVideo / playAudio / playUri(uri, title, isVideo, mimeType,
                                                     resumePositionMs, headers)
-    → activeEngine.play(uri, …, headers)      // IPlayerEngine — no Media3 in the caller
-      → ExoPlayerEngine → MediaPlayerHolder.player.setMediaItem + prepare + play
+    → dispatchPlay { … }                   // waits for the persisted engine preference
+      → activeEngine.play(uri, …, headers) // IPlayerEngine — no Media3 in the caller
+        → ExoPlayerEngine → MediaPlayerHolder.player.setMediaItem + prepare + play
     → NeighborSubtitleDiscoverer auto-loads sibling .srt/.ass files
     → startTrafficPolling() when the URI is remote
   → playbackStateInfo Flow updates PlayerUiState
+  → PlayHistoryRepository.recordPlay(uri, title, isVideo, artist, mimeType, thumbnail)
 ```
+
+### Record recently-played history
+```
+PlayerViewModel.recordHistory(uri, title, isVideo, artist, mimeType)
+  → PlayHistoryRepository.recordPlay(…)
+    → PlayHistoryDao.upsert(PlayHistoryEntity(uri, title, isVideo, playedAt, …))
+      // @Insert(REPLACE) on the uri primary key — replaying updates the row
+      // and bumps playedAt instead of adding a duplicate
+  ← PlayHistoryRepository.observeHistory()
+    → PlayHistoryDao.getAll()  // SELECT * FROM play_history ORDER BY playedAt DESC
+      → HistoryViewModel → HistoryUiState.items → HistoryScreen
+```
+
+The write happens in the common play funnel (`startWithResumeDecision`), so
+`playVideo`, `playUri` and `playAudio` all record; the audio and video playlist
+entry points record their selected item directly, and `playNetworkUri` routes
+through `playUri`, so network streams are covered too. There is **no size cap** on
+the table — the only bound is the dedup by URI.
 
 ### Play-as-audio (video played audio-only)
 ```
@@ -147,9 +188,11 @@ EqualizerSheet → band slider / preset / bass / loudness
 ### Persist playback position (resume)
 ```
 PlayerPositionController (250 ms tick)
-  → periodic save: ResumeRepository.savePosition(mediaId, positionMs, durationMs)
+  → periodic save (every ~5 s, only while playing and not seeking):
+    ResumeRepository.savePosition(mediaId, positionMs, durationMs)
     → PlaybackPositionDao upsert
   → final save on pause / stop / onCleared
+  → the tick is skipped entirely while the app is backgrounded
 ```
 
 ### Change sort
@@ -157,6 +200,50 @@ PlayerPositionController (250 ms tick)
 Screen → ViewModel.onSortChanged(SortType) → UserPreferencesRepository.setSortOrder(...)
   → DataStore.edit { prefs[sortKey] = sortType.name }
 ```
+
+### Copy / move a file
+```
+FileBrowserScreen → PasteActionBar (paste) → FileBrowserViewModel.onPasteClipboard()
+  → FileRepository.copyEntry / moveEntry(source, destDir, onProgress)
+    → CopyProgress tracks bytes against a known total and reports a 0f..1f fraction,
+      throttled to whole-percent steps; finish() guarantees a final 1f
+    → moveEntry fast path: same-volume renameTo → a single onProgress(1f)
+    → cross-volume: copy-then-delete with incremental progress
+  → FileBrowserUiState.pasteProgress → HzPlayerProgressBar in PasteActionBar
+  → MediaScannerConnection.scanFile(...) keeps MediaStore in sync
+```
+
+### Delete a file (deferred, with undo)
+```
+FileBrowserScreen → delete → FileBrowserViewModel.onConfirmDelete(path)
+  → the item is hidden optimistically and the disk delete is deferred by DELETE_GRACE_MS (4 s)
+  → onUndoDelete() cancels the pending delete
+  → otherwise commitPendingDeleteNow() → FileRepository.deleteEntry(path)
+```
+
+### Discover network servers
+```
+NetworkScreen → scan → ServerDiscoverer.startScan()
+  → NsdManager.discoverServices("_smb._tcp" / "_ftp._tcp" / "_webdav._tcp")
+      // needs NEARBY_WIFI_DEVICES on API 33+; without it the scan is skipped
+  → fallback: /24 subnet sweep probing port 445 (SMB) and 21 (FTP)
+  → per host: reverse DNS / NetBIOS name → NetworkDomainUtils.verifiedHostName(name, ip)
+      // the name must resolve back to the same IP
+    → else NetworkDomainUtils.resolveDomain(...) → else the numeric IP
+  → discoveredServers: StateFlow<List<ServerConfig>>
+  → NetworkViewModel.onSaveDiscoveredServer(server)
+    → resolveServerHostDomain(server)   // prefer a domain over the IP
+      → NetworkRepository.saveServer(…)  // credentials encrypted via PasswordCrypto
+```
+
+### Thumbnail cache pruning (on app start)
+```
+HzPlayerApplication.onCreate → appScope (IO)
+  → pruneOldThumbnails(cacheDir/video_thumbs, THUMB_MAX_AGE_MS = 180 days)
+    → deletes files older than the max age; per-file IO errors are swallowed
+    → a missing directory is a no-op; Coil's own image_cache is NOT touched
+```
+
 ---
 
 ## Player Data Flow (through the engine seam)
@@ -197,6 +284,8 @@ Seek path — every engine clamps through the shared guard:
       → clampSeekPosition(ms, duration)            // ≥ 0, and 1 s short of the end
         → PlayerRepository.seekTo → activeEngine.seekTo → ExoPlayerEngine / FfmpegNativeEngine
   JumpToTimeDialog clamps the typed HH:MM:SS to the duration before calling onJump.
+  skipForward/skipBackward are interface defaults on IPlayerEngine — they offset the
+  current position and let seekTo clamp.
   Native seek landing is generation-gated — `docs/PLAYER_ARCHITECTURE.md` → "Seek transactions".
 ```
 
@@ -212,21 +301,110 @@ Seek path — every engine clamps through the shared guard:
 
 ---
 
+## Browser Data Flow
+
+### Detecting media on a page
+```
+Page load → TabManager.onPageStarted / onPageFinished / onProgressChanged(30 %, 60 %)
+  → MediaSnifferBridge.injectSnifferJs(webView)      // JS injected into the document
+    → the script scans performance resources, media elements, hooked fetch / XHR
+    → every call carries a per-document token; the bridge drops calls without it
+  → shouldInterceptRequest → MediaSnifferEngine.isMediaUrl(url, headers)
+    → processCapturedMedia(tabId, url, …)
+      → MediaSnifferEngine.createMediaItem(…)     // type, mime, title, headers, tokens
+      → MediaSnifferEngine.parseHlsQualities(item)  // for .m3u8 — variant ladder
+      → MediaSnifferEngine.consolidateMediaTree(items)  // master + child variants
+  → BrowserViewModel.activeTabMediaItems → MediaGrabberBottomSheet
+```
+
+### Handing a detected stream to the player
+```
+MediaGrabberBottomSheet → "Play in Hz Player"
+  → item.headers.withLiveCookies(targetUrl, refererUrl)   // cookies for the TARGET url
+  → Intent(ACTION_VIEW + setDataAndType) → VideoPlayerActivity / AudioPlayerActivity
+    → extras: EXTRA_MEDIA_TITLE, EXTRA_PAGE_URL, EXTRA_FROM_BROWSER, EXTRA_HEADERS_JSON
+    → putHttpHeaders(merged) writes the headers in three shapes:
+      an alternating key/value String[] extra, the
+      "android.media.intent.extra.HTTP_HEADERS" Bundle, and a JSON copy
+  → the player activity calls networkRepository.addStreamToHistory(…)
+```
+
+### Ad-block engine rebuild
+```
+BrowserViewModel.updateSettings(…)
+  → if adBlockEnabled / enabledFilterLists / customAdBlockRules / cosmeticFilteringEnabled changed
+    → AdBlockEngine.reload()      // build-then-swap — a failed build keeps the old engine
+      → AdBlockNative.nativeCreateEngine(rules) → nativeShouldBlock / nativeGetCosmeticCss
+  → custom-rule keystrokes are debounced 500 ms (DebouncedAction)
+```
+
+### Authoring a cosmetic rule (element picker)
+```
+BrowserBottomBar → "Block element" → TabManager.startElementPicker()
+  → ElementPickerBridge.injectPickerJs(webView)   // ~380 lines of injected JS
+    → the user taps an element → the JS generates a tag-first selector
+      (stable id → stable attribute → stable classes → :nth-of-type fallback)
+    → ElementPickerBridge.onElementPicked(selector, matchCount, canWiden)
+  → ElementPickerPanel shows the selector + "Wider" + "Apply to all sites"
+  → BrowserViewModel.blockPickedElement()
+    → TabManager.applyPickedHideAndExit()      // hides the element immediately
+    → CosmeticRuleBuilder.build(host, selector, applyToAllSites)  // "host##selector"
+    → BrowserViewModel.updateSettings(customAdBlockRules = appended)
+      → the engine rebuilds and the cosmetic CSS now hides the element
+```
+
+### Browser dialogs, popups and file uploads
+```
+WebChromeClient.onJsAlert / onJsConfirm / onJsPrompt / onJsBeforeUnload
+  → TabManager.showJsDialog(request)   // single slot — WebView blocks the page's JS
+                                        // thread until the result is delivered
+  → JsDialog composable → resolveJsDialog(confirmed, input)
+
+WebChromeClient.onShowFileChooser
+  → TabManager stores a FileChooserRequest
+  → BrowserActivity's StartActivityForResult launcher
+    → deliverFileChooserResult(uris) → the page's file input is filled
+
+WebChromeClient.onCreateWindow (target=_blank)
+  → a temporary WebView is created and handed to the transport
+  → same-domain → a new tab is opened directly
+  → cross-domain → promptCrossDomainPopup() → PopupPermissionBottomSheet
+    → allowPendingPopup() reuses the temp WebView in a new tab
+    → denyPendingPopup() destroys it
+```
+
+---
+
 ## Data Source Strategy
 
 | Source | Use | Notes |
 |---|---|---|
-| Room | Persistent cache: media index, server configs, resume positions, stream history, browser history | 5 DAOs; KSP-generated; v6 (`headersJson`, `pageUrl`, `mimeType` on stream_history) |
-| MediaStore | System media index | `MediaScanner` syncs into Room |
-| DataStore | User preferences (sort, theme, active engine, archive passwords) | Type-safe `Preferences` |
+| Room | Persistent cache: media index, server configs, resume positions, stream history, browser history, recently played | 6 DAOs; KSP-generated; v7 (`play_history` added in `MIGRATION_6_7`) |
+| MediaStore | System media index | `MediaScanner` syncs into Room; also the search backend for `FileRepository.searchFiles` |
+| DataStore | User preferences (sort, theme, active engine, archive passwords) | Type-safe `Preferences`; name `user_preferences` |
+| `java.io.File` | Local directory listing and file operations | `FileRepositoryImpl` walks the filesystem directly; SAF is not used |
+| `StorageManager` | Storage-root enumeration | `StorageManager.getStorageVolumes()` + a `/storage` sibling fallback for OEM mounts |
 | Media3 ExoPlayer | Playback state | singleton in `MediaPlayerHolder` (backs `EXO_PLAYER` + `FFMPEG`) |
 | Native FFmpeg player | Standalone engine (`NATIVE_FFMPEG`) | `FfmpegNativeEngine` + `ffmpeg/FfmpegNativePlayer.kt` → `cpp/ffplayer/` (`libffplayer.so`) |
-| Remote clients | SMB/FTP/SFTP/WebDAV browse + streaming | pooled in `ConnectionPool` |
+| Remote clients | SMB/FTP/SFTP/WebDAV browse + streaming | pooled in `ConnectionPool` (4 DataSource pools + 4 browser pools) |
 | Native FFmpeg | Video thumbnails + codec metadata probe | `core/io/` sources + `core/thumbnail/` JNI + `cpp/` |
 | Native libass | ASS/SSA/SRT/VTT subtitle rendering | JNI in `data/datasource/subtitle/assrender` + `cpp/` |
 | Native libarchive | Archive listing + streaming playback | JNI in `data/datasource/archive` + `cpp/` |
 | Native ad blocker | WebView ad filtering | Rust engine in `browser/adblock/` (JNI) |
 | Cloudflare R2 | OTA update checks + APK download | `UpdateChecker` reads `BuildConfig.R2_UPDATE_BASE_URL` |
+
+### Per-protocol seek strategy
+
+| Protocol | Seek mechanism |
+|---|---|
+| SMB | Resolve the target once per URI into a cached `SmbFile`, then `skipFully(stream, position)`; a `SmbException` retires the pooled `CIFSContext` and re-borrows a fresh one |
+| FTP | Server-side restart offset — `ftp.setRestartOffset(position)` before `retrieveFileStream`; the pooled control connection is reused so a seek does not re-login |
+| SFTP | Positional reads through the SSHJ `RemoteFile` API; the SSH session is pooled so a seek does not re-run the key exchange |
+| WebDAV | HTTP byte range (`Range: bytes=<pos>-`); if the server ignores Range and answers 200, the stream is skipped forward instead |
+
+All four extend `RemoteDataSourceBase`, which owns the shared `read()`/`skipFully()`
+helpers, the `safeUri()` credential stripping, and the connection-stage retry
+backoff (`REMOTE_OPEN_BACKOFF_MS` = 250 / 750 / 2000 ms).
 
 ---
 
@@ -246,4 +424,6 @@ Seek path — every engine clamps through the shared guard:
 | Native thumbnail | JNI off the main thread (Coil fetcher scope) |
 | Native libass | `AssHandler` renders on a background thread; bitmap posted to Main |
 | Native libarchive | ExoPlayer playback thread (DataSource callbacks) |
+| Native FFmpeg player | Own demux / video / audio threads; JNI callbacks marshalled onto a single-thread daemon executor |
 | DataStore | Auto-dispatched (IO) |
+| App startup | `HzPlayerApplication.appScope` (`Dispatchers.IO`) — thumbnail prune |

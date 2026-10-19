@@ -41,13 +41,13 @@ Gradle wrapper **8.13** (`gradle/wrapper/gradle-wrapper.properties`) · NDK **27
 Native libs (`libarchive.so`, FFmpeg, libass) are built **outside Gradle** by standalone scripts (`build_libarchive.sh`, `ffmpeg_build_android.sh`, `libass_build_android.sh`). Hard-won rules for this Windows host:
 
 - **Toolchain:** NDK r27 ships only the `windows-x86_64` prebuilt. Drive the Windows clang wrappers (`aarch64-linux-android<N>-clang` etc.) **from WSL** (`wsl bash -c '...'`). Wrappers set `--target` but NOT `--sysroot` — do NOT pass an explicit `--sysroot` (breaks header resolution; the baked-in default works).
-- **`/mnt/c` is NOT readable by Windows NDK tools** (`clang.exe`, `llvm-nm.exe`, `llvm-strings.exe`, `llvm-objdump.exe`). Pass the *argument* as a native `C:/...` path (forward slashes OK); the tool's own *location* can stay `/mnt/c/...`. Any `nm`/`strings` result of "0 symbols / no such file" is this artifact, **not** a real empty lib — re-run with a `C:/` argument.
+- **`/mnt/c` is NOT readable by Windows NDK tools** (`clang.exe`, `llvm-nm.exe`, `llvm-strings.exe`, `llvm-objdump.exe`). Pass the _argument_ as a native `C:/...` path (forward slashes OK); the tool's own _location_ can stay `/mnt/c/...`. Any `nm`/`strings` result of "0 symbols / no such file" is this artifact, **not** a real empty lib — re-run with a `C:/` argument.
 - **`ar`/`ranlib`** = `llvm-ar.exe` / `llvm-ranlib.exe` (no extensionless wrapper exists).
 - **Static → shared:** use a `Generic` CMake system (never `Linux`, which leaks host `/usr/include` → `bits/wordsize.h` not found). Build static `.a`, then fuse into a `.so` with the clang wrapper: `-shared -Wl,--whole-archive … -Wl,--no-whole-archive`. **Every static dep that supplies symbols must sit INSIDE the `--whole-archive` group** (e.g. mbedTLS) or the linker silently drops it.
 - **Output path:** link to a temp file first, then `cp -f` into `app/src/main/jniLibs/<abi>/` — writing directly fails `Permission denied` on the locked file.
-- **`android_lf.h`:** libarchive's copy is a *static* header at `contrib/android/include` (not installed) — add `-I<src>/contrib/android/include` via `CMAKE_C_FLAGS` in the toolchain file (FORCE-set), not the per-project cmake call.
+- **`android_lf.h`:** libarchive's copy is a _static_ header at `contrib/android/include` (not installed) — add `-I<src>/contrib/android/include` via `CMAKE_C_FLAGS` in the toolchain file (FORCE-set), not the per-project cmake call.
 - **mbedTLS:** pin **`mbedtls-3.6.7`** (LTS) — libarchive master uses the legacy `mbedtls_md_hmac_*` API removed in the mbedTLS dev branch. Build all three (`libmbedtls.a`, `libmbedx509.a`, `libmbedcrypto.a`).
-- **Verify a built `.so`:** `nm` on a *stripped* APK-packed `.so` is empty by design — confirm with `llvm-strings.exe` on the `C:/...` path, grep for distinctive strings (e.g. `Mbed TLS 3.6.7`, `mbedtls_aes_crypt_ecb`).
+- **Verify a built `.so`:** `nm` on a _stripped_ APK-packed `.so` is empty by design — confirm with `llvm-strings.exe` on the `C:/...` path, grep for distinctive strings (e.g. `Mbed TLS 3.6.7`, `mbedtls_aes_crypt_ecb`).
 - **What Gradle builds vs. what it doesn't:** Gradle compiles `app/src/main/cpp/*.c|cpp` itself (CMake → `libthumbnail-extractor.so`, `libassrender.so`, `libarchive-extractor.so`, `libffcodec.so`, `libffplayer.so`). The third-party libs in `jniLibs/<abi>/` — `libav*`, `libass` + its chain (`freetype`, `harfbuzz`, `fontconfig`, `fribidi`, `expat`), `libarchive`, `libdav1d`, `libadblock_jni`, `libc++_shared` — are only **imported** by CMake. Changing one means re-running its script; editing `cpp/` alone will not rebuild them.
 
 ---
@@ -56,13 +56,13 @@ Native libs (`libarchive.so`, FFmpeg, libass) are built **outside Gradle** by st
 
 **Hz Player** — VLC-inspired Android video/audio player. Local storage, SMB, FTP, SFTP, WebDAV sources (custom DataSources per protocol) + full in-app browser with ad blocking and media sniffing.
 
-| Layer | Technology |
-|---|---|
-| Language | Kotlin 2.0.21 |
-| UI | Jetpack Compose + Material 3 |
-| Architecture | MVVM + Repository + StateFlow |
-| Media | Media3 ExoPlayer + standalone native FFmpeg player (`IPlayerEngine` abstraction, 3 engines) |
-| Min / Target / Compile SDK | 28 / 36 / 36 |
+| Layer                      | Technology                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| Language                   | Kotlin 2.0.21                                                                               |
+| UI                         | Jetpack Compose + Material 3                                                                |
+| Architecture               | MVVM + Repository + StateFlow                                                               |
+| Media                      | Media3 ExoPlayer + standalone native FFmpeg player (`IPlayerEngine` abstraction, 3 engines) |
+| Min / Target / Compile SDK | 28 / 36 / 36                                                                                |
 
 Full detail lives in `docs/ARCHITECTURE.md` — do not duplicate it here.
 
@@ -74,7 +74,7 @@ Full detail lives in `docs/ARCHITECTURE.md` — do not duplicate it here.
 - **ViewModel = `@HiltViewModel`** — exposes `StateFlow<XxxUiState>`, calls repositories, owns side effects.
 - **Repository = interface in `domain/`, impl in `data/`** — always inject the interface.
 - **UiState = `@Immutable data class`** — updated only via `copy()`.
-- **Sample data** for debug builds lives in `presentation/preview/PreviewMedia.kt`. It is a fake media *library* injected at the repository/ViewModel layer (repositories, `VideoLibraryViewModel`, `AudioBrowserViewModel`) — **not** a `@Preview` fixture.
+- **Sample data** for debug builds lives in `presentation/preview/PreviewMedia.kt`. It is a fake media _library_ injected at the repository/ViewModel layer (repositories, `VideoLibraryViewModel`, `AudioBrowserViewModel`) — **not** a `@Preview` fixture.
 - `collectAsStateWithLifecycle()` everywhere; `remember` for local UI state only (animation, menus, scroll position).
 
 ```kotlin
@@ -117,15 +117,11 @@ VideoPlayerScreen → PlayerViewModel → PlayerRepository(Impl)
 
 5 tabs — `video_library`, `audio_browser`, `file_browser`, `network`, `settings` (`AppDestinations.kt`). Player launches as a full-screen destination on top of the nav graph.
 
-### VLC reference
-
-`vlc-android-master/` tree was **removed** — VLC concepts are already adapted into the Compose + Media3 + MVVM codebase. Do not re-add.
-
 ---
 
 ## Code Conventions
 
-- Files: `XxxScreen.kt` / `XxxViewModel.kt` / `XxxUiState.kt` / `XxxRepository.kt` / `XxxRepositoryImpl.kt`. Keep **new** files under ~300 lines and extract reusable Composables to a `components/` sub-package — but do not split the existing large files (`FfmpegNativeEngine.kt` 1220 lines, `AssHandler.kt`, `PlayerViewModel.kt`, `TabManager.kt`, …) as drive-by cleanup; that is a separate, deliberate change.
+- Files: `XxxScreen.kt` / `XxxViewModel.kt` / `XxxUiState.kt` / `XxxRepository.kt` / `XxxRepositoryImpl.kt`. Keep **new** files under ~300 lines and extract reusable Composables to a `components/` sub-package — but do not split the existing large files (`FfmpegNativeEngine.kt` 1238 lines, `AssHandler.kt`, `PlayerViewModel.kt`, `TabManager.kt`, …) as drive-by cleanup; that is a separate, deliberate change.
 - Every public Composable: `modifier: Modifier = Modifier` parameter.
 - Every reusable component: a private `@PreviewLightDark` + `@Preview` function that wraps the component in `HzPlayerTheme { }` and passes literal values directly (see `MediaCard.kt`, `FileItemCard.kt`). Never a ViewModel or repository in a preview.
 - `data class` + `copy()` for models; `sealed interface` for UI events/actions; extension functions → `core/util/`; no `lateinit` in ViewModels — constructor injection only.
@@ -134,10 +130,11 @@ VideoPlayerScreen → PlayerViewModel → PlayerRepository(Impl)
 - **Shared components:** new sliders use `HzPlayerSlider`, not a raw `Slider`; media-kind colour comes from `mediaAccentColor`, with `MediaIconBadge` when a white glyph sits on top.
 
 Hard rules:
+
 - ❌ No `LiveData` · no `SharedPreferences` (use `DataStore`)
-- ❌ No `runBlocking` in production — the single deliberate exception is `MediaPlayerHolder.kt:103`, which seeds `ffmpegPreferred` synchronously because the async collector loses a cold-start race against the eager player build. Leave it; "fixing" it reintroduces the race.
+- ❌ No `runBlocking` in production — the single deliberate exception is `MediaPlayerHolder.kt:93`, which seeds `ffmpegPreferred` synchronously because the async collector loses a cold-start race against the eager player build. Leave it; "fixing" it reintroduces the race.
 - ❌ No hardcoded fake data in a Composable body — sample data belongs in the `@Preview`, or in `PreviewMedia` when it has to reach a repository/ViewModel
-- ❌ No user-facing strings in code — every label, title, and message goes in `res/values/strings.xml` (443 entries) and is read with `stringResource(R.string.…)`
+- ❌ No user-facing strings in code — every label, title, and message goes in `res/values/strings.xml` (633 entries) and is read with `stringResource(R.string.…)`
 - ❌ No direct `Context` in ViewModels — `@ApplicationContext` only when unavoidable
 - ❌ No Media3 types crossing `IPlayerEngine`
 - ❌ No new dependencies (add, remove, or upgrade) without asking first
@@ -149,35 +146,26 @@ Hard rules:
 1. **Read existing code** — find what already exists and reuse it.
 2. **Check `docs/`** — architecture decisions are documented there; pick the right file from the Docs Index below.
 3. **Do not guess** — if an API or behaviour is unclear, check official docs before writing a single line. A wrong API call is worse than slow delivery.
-4. **Complex change** (multi-step, architectural, 3+ files)? Run **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) *before* editing — comprehension first, then the smallest diff. Apply the Ponytail ladder after understanding the full flow: reuse existing code → stdlib → platform feature → installed dep → one line → minimum code.
+4. **Complex change** (multi-step, architectural, 3+ files)? Run **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) _before_ editing — comprehension first, then the smallest diff. Apply the Ponytail ladder after understanding the full flow: reuse existing code → stdlib → platform feature → installed dep → one line → minimum code.
 
-Before modifying existing code: read the **entire file**, understand *why* it's written that way (`docs/` or git history), check callers (blast radius), trace the data flow (event → ViewModel → state → UI). When in doubt, **ask** — a wrong fix is worse than no fix.
-
----
-
-## Known In-Progress Work
-
-| Feature | Status |
-|---|---|
-| HDR→SDR colour correction | ✅ Done for `NATIVE_FFMPEG` — HW via MediaCodec tone-map keys, SW via the GL/CPU tone mapper. Force SDR routes playback to that engine; the Exo engines have no tone mapping (Media3 has no playback API for it) |
-| Custom `SubtitleOverlay` (replace built-in PlayerView subtitles) | ⏸ Parked — built-in active for reliability; native engine uses libass overlay |
+Before modifying existing code: read the **entire file**, understand _why_ it's written that way (`docs/` or git history), check callers (blast radius), trace the data flow (event → ViewModel → state → UI). When in doubt, **ask** — a wrong fix is worse than no fix.
 
 ---
 
 ## Docs Index
 
-| File | Contents | Read it when |
-|---|---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layers, package map, repository/Room tables, DI, navigation | You need to know where code lives or how a layer is wired |
-| [`docs/PLAYER_ARCHITECTURE.md`](docs/PLAYER_ARCHITECTURE.md) | Engines, `PlayerSurface`, seek clamping + transactions, subtitles, equalizer, gestures | Touching playback, seeking, tracks, or the player UI |
-| [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md) | Read/write call chains, data-source strategy, threading model | Tracing how a value gets from storage to a screen, or back |
-| [`docs/UI_COMPONENTS.md`](docs/UI_COMPONENTS.md) | Component catalogue, house rules, sample layouts | Building or restyling UI |
+| File                                                         | Contents                                                                               | Read it when                                               |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)               | Layers, package map, repository/Room tables, DI, navigation                            | You need to know where code lives or how a layer is wired  |
+| [`docs/PLAYER_ARCHITECTURE.md`](docs/PLAYER_ARCHITECTURE.md) | Engines, `PlayerSurface`, seek clamping + transactions, subtitles, equalizer, gestures | Touching playback, seeking, tracks, or the player UI       |
+| [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md)                     | Read/write call chains, data-source strategy, threading model                          | Tracing how a value gets from storage to a screen, or back |
+| [`docs/UI_COMPONENTS.md`](docs/UI_COMPONENTS.md)             | Component catalogue, house rules, sample layouts                                       | Building or restyling UI                                   |
 
 ---
 
 ## 🚦 Guidelines for AI Development
 
-* **Minor Features & Bug Fixes:** the AI may implement and verify minor features, bug fixes, refactoring, pipeline adjustments, and styling alignments.
-  * **Versioning Increment:** the AI must always ask for the developer's confirmation before changing version numbers (e.g. `X.Y.Z` → `X.Y.Z+1` for patches, `X.Y.0` → `X.Y+1.0` for minor features) — proposed as examples for approval. Note the base version is hardcoded in `app/build.gradle.kts`; the rest of `versionName` and the whole `versionCode` derive from git.
-* **Major Features & Core Architecture:** only the human developer makes major architecture modifications, structural design changes, or major features.
-* **Boundaries:** do not `git commit`, `git push`, or open PRs unless explicitly asked. Do not run destructive git commands (`reset --hard`, `checkout --`, force-push) at all. Never edit `app/src/main/jniLibs/` or `app/src/main/cpp/include/` by hand — those are generated artifacts.
+- **Minor Features & Bug Fixes:** the AI may implement and verify minor features, bug fixes, refactoring, pipeline adjustments, and styling alignments.
+  - **Versioning Increment:** the AI must always ask for the developer's confirmation before changing version numbers (e.g. `X.Y.Z` → `X.Y.Z+1` for patches, `X.Y.0` → `X.Y+1.0` for minor features) — proposed as examples for approval. Note the base version is hardcoded in `app/build.gradle.kts`; the rest of `versionName` and the whole `versionCode` derive from git.
+- **Major Features & Core Architecture:** only the human developer makes major architecture modifications, structural design changes, or major features.
+- **Boundaries:** do not `git commit`, `git push`, or open PRs unless explicitly asked. Do not run destructive git commands (`reset --hard`, `checkout --`, force-push) at all. Never edit `app/src/main/jniLibs/` or `app/src/main/cpp/include/` by hand — those are generated artifacts.
