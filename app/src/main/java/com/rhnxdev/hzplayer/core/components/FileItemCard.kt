@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.core.components
 
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,10 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Audiotrack
@@ -43,12 +43,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.designsystem.mediaAccentColor
+import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
@@ -305,45 +309,27 @@ private fun FileItemIcon(
     modifier: Modifier = Modifier,
     size: Dp = 40.dp,
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
     if (isDirectory) {
         val lowerName = name.lowercase()
-        val badgeIcon = when {
-            lowerName == "download" || lowerName == "downloads" -> Icons.Filled.Download
-            lowerName == "music" || lowerName == "audio" -> Icons.Filled.MusicNote
-            lowerName == "movie" || lowerName == "movies" || lowerName == "video" || lowerName == "videos" -> Icons.Filled.PlayArrow
-            lowerName == "android" -> Icons.Filled.Android
+        val special = when {
+            lowerName == "download" || lowerName == "downloads" ->
+                Icons.Filled.Download to MediaType.FOLDER
+            lowerName == "music" || lowerName == "audio" ->
+                Icons.Filled.MusicNote to MediaType.AUDIO
+            lowerName == "movie" || lowerName == "movies" ||
+                lowerName == "video" || lowerName == "videos" ->
+                Icons.Filled.PlayArrow to MediaType.VIDEO
+            lowerName == "android" -> Icons.Filled.Android to MediaType.VIDEO
             else -> null
         }
 
-        if (badgeIcon != null) {
-            // FolderSpecial-style icon: the symbol is punched out of the
-            // folder as transparent negative space (like Icons.Filled.FolderSpecial).
-            // Offscreen compositing confines the DstOut erase to this Box so the
-            // cutout reveals the list background instead of erasing the window.
-            Box(
-                modifier = modifier
-                    .size(size)
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Folder,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    tint = primaryColor,
-                )
-                Icon(
-                    imageVector = badgeIcon,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize(0.52f)
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 2.5.dp, bottom = 4.5.dp)
-                        .graphicsLayer { blendMode = BlendMode.DstOut },
-                    tint = primaryColor,
-                )
-            }
+        if (special != null) {
+            SpecialFolderIcon(
+                icon = special.first,
+                accent = mediaAccentColor(special.second),
+                modifier = modifier,
+                size = size,
+            )
         } else {
             Icon(
                 imageVector = Icons.Filled.Folder,
@@ -364,5 +350,55 @@ private fun FileItemIcon(
             modifier = modifier.size(size),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * Flat accent folder for well-known directories, with a white glyph on the
+ * body — the same accent-fill plus white-glyph language as [MediaIconBadge].
+ *
+ * @param icon — glyph identifying the folder's contents
+ * @param accent — theme accent for the folder's media kind
+ */
+@Composable
+private fun SpecialFolderIcon(
+    icon: ImageVector,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+) {
+    // Darken pale accents only; a shaded panel reads as a drop shadow.
+    val fill = remember(accent) {
+        if (accent.luminance() > 0.5f) lerp(accent, Color.Black, 0.35f) else accent
+    }
+    Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
+        Icon(
+            imageVector = Icons.Filled.Folder,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            tint = fill,
+        )
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier
+                .size(size * 0.4f)
+                .offset(y = size * 0.09f),
+            tint = Color.White,
+        )
+    }
+}
+
+@PreviewLightDark
+@Preview
+@Composable
+private fun SpecialFolderIconPreview() {
+    HzPlayerTheme {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            SpecialFolderIcon(Icons.Filled.Download, MaterialTheme.colorScheme.secondary)
+            SpecialFolderIcon(Icons.Filled.MusicNote, MaterialTheme.colorScheme.tertiary)
+            SpecialFolderIcon(Icons.Filled.PlayArrow, MaterialTheme.colorScheme.primary)
+            SpecialFolderIcon(Icons.Filled.Android, MaterialTheme.colorScheme.primary)
+        }
     }
 }
