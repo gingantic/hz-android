@@ -22,6 +22,7 @@ import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.FolderItem
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.presentation.browse.DirectoryLayer
 import com.rhnxdev.hzplayer.presentation.browse.SavedScrollPosition
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -47,6 +48,7 @@ fun DirectoryStackContent(
     saveScrollState: (String, Int, Int, Int, Boolean) -> Unit,
     fullScreenOverlay: Boolean = false,
     mediaTypeFilter: FileMediaTypeFilter = FileMediaTypeFilter.ALL,
+    thumbnailSize: ThumbnailSize = ThumbnailSize.MEDIUM,
     onFileClicked: (FolderItem) -> Unit = {},
     onPlayAsAudio: (FolderItem) -> Unit = {},
     onPlayAllFolder: ((FolderItem) -> Unit)? = null,
@@ -66,6 +68,7 @@ fun DirectoryStackContent(
                 isSearchActive = isSearchActive,
                 mediaMode = mediaMode,
                 mediaTypeFilter = mediaTypeFilter,
+                thumbnailSize = thumbnailSize,
                 quickAccessPaths = quickAccessPaths,
                 onFolderClicked = onFolderClicked,
                 onBreadcrumbClicked = onBreadcrumbClicked,
@@ -96,6 +99,7 @@ private fun DirectoryLayerView(
     isSearchActive: Boolean,
     mediaMode: Boolean,
     mediaTypeFilter: FileMediaTypeFilter,
+    thumbnailSize: ThumbnailSize,
     quickAccessPaths: Set<String>,
     onFolderClicked: (FolderItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
@@ -207,6 +211,7 @@ private fun DirectoryLayerView(
             searchQuery = searchQuery,
             isSearchActive = isSearchActive,
             mediaMode = mediaMode,
+            thumbnailSize = thumbnailSize,
             onItemClick = { data ->
                 val info = listState.layoutInfo
                 val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0

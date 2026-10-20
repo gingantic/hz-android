@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.core.components
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -29,10 +30,13 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Square
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +63,7 @@ import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 
 /**
  * Minimalist, modern Modal Bottom Sheet for adjusting View Layout, Sorting, and Media Filtering.
@@ -76,6 +81,9 @@ fun ViewSortBottomSheet(
     onToggleMediaMode: (() -> Unit)? = null,
     mediaTypeFilter: FileMediaTypeFilter? = null,
     onMediaTypeFilterChanged: ((FileMediaTypeFilter) -> Unit)? = null,
+    /** Grid density control — shown only when both size and callback are supplied. */
+    thumbnailSize: ThumbnailSize? = null,
+    onThumbnailSizeChanged: ((ThumbnailSize) -> Unit)? = null,
     availableSortTypes: List<SortType> = listOf(
         SortType.TITLE,
         SortType.DATE_MODIFIED,
@@ -240,10 +248,94 @@ fun ViewSortBottomSheet(
                 }
             }
 
+            // 4. THUMBNAIL SIZE SECTION (if supported) — last so it never
+            // pushes the primary sort/filter controls below the fold.
+            if (thumbnailSize != null && onThumbnailSizeChanged != null) {
+                Spacer(modifier = Modifier.height(18.dp))
+                SectionLabel(text = stringResource(R.string.thumbnail_size_title).uppercase())
+                Spacer(modifier = Modifier.height(6.dp))
+
+                ThumbnailSizeSelector(
+                    current = thumbnailSize,
+                    onSelect = onThumbnailSizeChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }
+
+@StringRes
+private fun ThumbnailSize.labelRes(): Int = when (this) {
+    ThumbnailSize.SMALL -> R.string.thumbnail_size_small
+    ThumbnailSize.MEDIUM -> R.string.thumbnail_size_medium
+    ThumbnailSize.LARGE -> R.string.thumbnail_size_large
+}
+
+/** Grid-density picker: the glyphs show 9 → 4 → 1 cells, so bigger thumbnails read as fewer cells. */
+@Composable
+private fun ThumbnailSizeSelector(
+    current: ThumbnailSize,
+    onSelect: (ThumbnailSize) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f))
+            .padding(3.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            ThumbnailSize.entries.forEach { size ->
+                val isSelected = current == size
+                val bgColor by animateColorAsState(
+                    targetValue = if (isSelected) MaterialTheme.colorScheme.surface
+                    else Color.Transparent,
+                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    label = "thumbnailSizeBg",
+                )
+                val iconColor by animateColorAsState(
+                    targetValue = if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    label = "thumbnailSizeIcon",
+                )
+
+                Surface(
+                    selected = isSelected,
+                    onClick = { onSelect(size) },
+                    shape = RoundedCornerShape(11.dp),
+                    color = bgColor,
+                    shadowElevation = if (isSelected) 1.dp else 0.dp,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = size.icon,
+                            contentDescription = stringResource(size.labelRes()),
+                            tint = iconColor,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Solid-square glyphs only — consistent weight across the three steps. */
+private val ThumbnailSize.icon: ImageVector
+    get() = when (this) {
+        ThumbnailSize.SMALL -> Icons.Filled.Apps
+        ThumbnailSize.MEDIUM -> Icons.Filled.GridView
+        ThumbnailSize.LARGE -> Icons.Filled.Square
+    }
 
 @Composable
 private fun SectionLabel(

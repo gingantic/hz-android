@@ -2,7 +2,9 @@ package com.rhnxdev.hzplayer.core.components
 
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -58,6 +62,8 @@ fun MediaCard(
     val cardShape = remember { RoundedCornerShape(CornerRadii.md) }
     val clipShape = remember { RoundedCornerShape(topStart = CornerRadii.md, topEnd = CornerRadii.md) }
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    val hasMenu = onPropertiesClick != null || onPlayAsAudioClick != null
+    var showMenu by remember { mutableStateOf(false) }
 
     Card(
         onClick = onClick,
@@ -74,105 +80,132 @@ fun MediaCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column {
-            // Thumbnail area
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(clipShape),
-            ) {
-                thumbnailContent()
+        BoxWithConstraints {
+            // Dense grids shrink a cell below what the standard text row needs, so the
+            // overflow trigger moves onto the thumbnail and the subtitle line drops.
+            val compact = maxWidth < 130.dp
 
-                // Duration badge (bottom-right, YouTube style)
-                if (durationMs > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(Spacing.xs),
-                    ) {
-                        DurationBadge(durationMs = durationMs)
-                    }
-                }
-
-                // YouTube-style red watch-progress line flush at the thumbnail bottom
-                if (progress != null && progress in 0f..1f) {
-                    // Track
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .fillMaxWidth()
-                            .height(2.dp)
-                            .background(Color.White.copy(alpha = 0.35f))
-                    )
-                    // Watched portion
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .fillMaxWidth(fraction = progress)
-                            .height(2.dp)
-                            .background(Color(0xFFE53935))
-                    )
-                }
-            }
-
-            // Text area
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = Spacing.md, end = Spacing.xs, top = Spacing.md, bottom = Spacing.md),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.Top,
+            Column {
+                // Thumbnail area
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .clip(clipShape),
                 ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        minLines = 2,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (onPropertiesClick != null || onPlayAsAudioClick != null) {
-                        var showMenu by remember { mutableStateOf(false) }
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.size(32.dp),
+                    thumbnailContent()
+
+                    // Duration badge (bottom-right, YouTube style)
+                    if (durationMs > 0) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(Spacing.xs),
+                        ) {
+                            DurationBadge(durationMs = durationMs)
+                        }
+                    }
+
+                    // YouTube-style red watch-progress line flush at the thumbnail bottom
+                    if (progress != null && progress in 0f..1f) {
+                        // Track
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .background(Color.White.copy(alpha = 0.35f))
+                        )
+                        // Watched portion
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth(fraction = progress)
+                                .height(2.dp)
+                                .background(Color(0xFFE53935))
+                        )
+                    }
+
+                    if (compact && hasMenu) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(Spacing.xs)
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .clickable { showMenu = true },
+                            contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = stringResource(R.string.media_overflow_cd),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        if (showMenu) {
-                            FileOptionsBottomSheet(
-                                name = title,
-                                isDirectory = false,
-                                subtitle = subtitle,
-                                leadingThumbnail = thumbnailContent,
-                                onPlayAsAudioClick = onPlayAsAudioClick,
-                                onPropertiesClick = onPropertiesClick,
-                                onDismissRequest = { showMenu = false },
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
 
+                // Text area
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = Spacing.md, end = Spacing.xs, top = Spacing.md, bottom = Spacing.md),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            minLines = 2,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (!compact && hasMenu) {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = stringResource(R.string.media_overflow_cd),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                    if (!compact) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
+    }
+
+    if (showMenu) {
+        FileOptionsBottomSheet(
+            name = title,
+            isDirectory = false,
+            subtitle = subtitle,
+            leadingThumbnail = thumbnailContent,
+            onPlayAsAudioClick = onPlayAsAudioClick,
+            onPropertiesClick = onPropertiesClick,
+            onDismissRequest = { showMenu = false },
+        )
     }
 }
 
@@ -191,6 +224,29 @@ private fun MediaCardPreview() {
             },
             onClick = {},
             modifier = Modifier.padding(Spacing.lg),
+        )
+    }
+}
+
+/** Dense-grid variant: subtitle dropped, overflow trigger moved onto the thumbnail. */
+@PreviewLightDark
+@Preview
+@Composable
+private fun MediaCardCompactPreview() {
+    HzPlayerTheme {
+        MediaCard(
+            title = "Blade Runner 2049",
+            subtitle = "2017 • Sci-Fi",
+            durationMs = 9_123_000,
+            progress = 0.35f,
+            thumbnailContent = {
+                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+            },
+            onClick = {},
+            onPropertiesClick = {},
+            modifier = Modifier
+                .width(84.dp)
+                .padding(Spacing.sm),
         )
     }
 }

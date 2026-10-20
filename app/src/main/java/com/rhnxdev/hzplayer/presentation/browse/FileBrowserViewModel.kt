@@ -31,6 +31,7 @@ import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.repository.ArchiveEntry
 import com.rhnxdev.hzplayer.domain.repository.ArchiveRepository
@@ -148,8 +149,21 @@ class FileBrowserViewModel @Inject constructor(
             val savedSort = userPrefs.getSortType(sortKey).first()
             val savedDir = userPrefs.getSortDirection(sortKey).first()
             val savedMediaMode = userPrefs.fileBrowserMediaMode.first()
-            _uiState.update { it.copy(sortType = savedSort, sortDirection = savedDir, isMediaMode = savedMediaMode) }
+            val savedThumbSize = userPrefs.getThumbnailSize(sortKey).first()
+            _uiState.update {
+                it.copy(
+                    sortType = savedSort,
+                    sortDirection = savedDir,
+                    isMediaMode = savedMediaMode,
+                    thumbnailSize = savedThumbSize,
+                )
+            }
             reapplySort()
+        }
+        viewModelScope.launch {
+            userPrefs.getThumbnailSize(sortKey).collect { size ->
+                _uiState.update { it.copy(thumbnailSize = size) }
+            }
         }
         viewModelScope.launch {
             userPrefs.archivePasswords.collect { persisted ->
@@ -614,6 +628,11 @@ class FileBrowserViewModel @Inject constructor(
 
     fun onMediaTypeFilterChanged(filter: FileMediaTypeFilter) {
         _uiState.update { it.copy(mediaTypeFilter = filter) }
+    }
+
+    fun onThumbnailSizeChanged(size: ThumbnailSize) {
+        _uiState.update { it.copy(thumbnailSize = size) }
+        viewModelScope.launch { userPrefs.setThumbnailSize(sortKey, size) }
     }
 
     fun onSearchToggle() = search.toggle()

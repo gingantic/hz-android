@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
@@ -240,11 +241,23 @@ class VideoLibraryViewModel @Inject constructor(
                 applySort(_uiState.value.sortType)
             }
         }
+        viewModelScope.launch {
+            userPreferencesRepository.getThumbnailSize("video_library").collect { size ->
+                _uiState.update { it.copy(thumbnailSize = size) }
+            }
+        }
     }
 
     fun onViewModeChanged(mode: ViewMode) {
         viewModelScope.launch {
             userPreferencesRepository.setViewMode("video_library", mode)
+        }
+    }
+
+    fun onThumbnailSizeChanged(size: ThumbnailSize) {
+        _uiState.update { it.copy(thumbnailSize = size) }
+        viewModelScope.launch {
+            userPreferencesRepository.setThumbnailSize("video_library", size)
         }
     }
 

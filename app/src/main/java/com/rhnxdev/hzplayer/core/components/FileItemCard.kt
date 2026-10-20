@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.designsystem.mediaAccentColor
 import com.rhnxdev.hzplayer.domain.model.MediaType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
@@ -87,6 +88,8 @@ fun FileItemCard(
     fileCount: Int = -1,
     mediaCount: Int = -1,
     mediaMode: Boolean = false,
+    /** Width share (0f..1f) of the leading thumbnail; the text column takes the rest. */
+    thumbnailFraction: Float = 0.4f,
     onPropertiesClick: (() -> Unit)? = null,
     onPlayAllClick: (() -> Unit)? = null,
     onPlayAsAudioClick: (() -> Unit)? = null,
@@ -137,10 +140,10 @@ fun FileItemCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (leadingThumbnail != null) {
-                // Thumbnail occupies ~40% of the row width on the left.
+                // Thumbnail takes the leading share of the row; the rest goes to the text.
                 Box(
                     modifier = Modifier
-                        .weight(0.4f)
+                        .weight(thumbnailFraction)
                         .aspectRatio(16f / 9f)
                         .clip(RoundedCornerShape(Spacing.xs)),
                     contentAlignment = Alignment.Center,
@@ -198,7 +201,11 @@ fun FileItemCard(
 
             Spacer(modifier = Modifier.width(Spacing.md))
 
-            Column(modifier = Modifier.weight(if (leadingThumbnail != null) 0.58f else 1f)) {
+            Column(
+                modifier = Modifier.weight(
+                    if (leadingThumbnail != null) (1f - thumbnailFraction).coerceAtLeast(0.1f) else 1f
+                )
+            ) {
                 Text(
                     text = name,
                     style = MaterialTheme.typography.bodyLarge,
@@ -388,6 +395,19 @@ private fun SpecialFolderIcon(
         )
     }
 }
+
+/**
+ * Leading share of a list row taken by the preview thumbnail.
+ *
+ * `LARGE` is the long-standing 40% row, so the default size changes nothing; the
+ * smaller steps only make room for denser lists.
+ */
+internal val ThumbnailSize.rowThumbnailFraction: Float
+    get() = when (this) {
+        ThumbnailSize.SMALL -> 0.24f
+        ThumbnailSize.MEDIUM -> 0.32f
+        ThumbnailSize.LARGE -> 0.40f
+    }
 
 @PreviewLightDark
 @Preview

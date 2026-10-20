@@ -7,6 +7,7 @@ import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +30,8 @@ interface UserPreferencesRepository {
     fun getViewMode(key: String): Flow<ViewMode>
     fun getSortType(key: String): Flow<SortType>
     fun getSortDirection(key: String): Flow<SortDirection>
+    /** Thumbnail grid density for the screen identified by [key]. */
+    fun getThumbnailSize(key: String): Flow<ThumbnailSize>
     val minSongDurationSecs: Flow<Int>
     val debugMode: Flow<Boolean>
     val backgroundPlay: Flow<Boolean>
@@ -58,6 +61,7 @@ interface UserPreferencesRepository {
     suspend fun setViewMode(key: String, mode: ViewMode)
     suspend fun setSortType(key: String, sort: SortType)
     suspend fun setSortDirection(key: String, direction: SortDirection)
+    suspend fun setThumbnailSize(key: String, size: ThumbnailSize)
     suspend fun setMinSongDurationSecs(seconds: Int)
     suspend fun setDebugMode(enabled: Boolean)
     suspend fun setBackgroundPlay(enabled: Boolean)

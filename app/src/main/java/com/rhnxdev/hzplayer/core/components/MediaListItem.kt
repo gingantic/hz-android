@@ -25,9 +25,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.core.designsystem.CornerRadii
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
 
 @Composable
@@ -40,6 +42,7 @@ fun MediaListItem(
     onClick: () -> Unit,
     trailingContent: @Composable (() -> Unit)? = null,
     isSquareThumbnail: Boolean = false,
+    thumbnailSize: ThumbnailSize = ThumbnailSize.LARGE,
     modifier: Modifier = Modifier,
 ) {
     val cardShape = remember { RoundedCornerShape(CornerRadii.sm) }
@@ -67,7 +70,7 @@ fun MediaListItem(
                         if (isSquareThumbnail) {
                             size(56.dp)
                         } else {
-                            size(width = 78.dp, height = 56.dp)
+                            size(thumbnailSize.listThumbnail)
                         }
                     }
                     .clip(clipShape),
@@ -131,6 +134,19 @@ fun MediaListItem(
     }
 }
 
+/**
+ * Row preview size.
+ *
+ * `LARGE` is the long-standing 78×56 dp, so the default changes nothing; the smaller
+ * steps buy back text width and row height.
+ */
+private val ThumbnailSize.listThumbnail: DpSize
+    get() = when (this) {
+        ThumbnailSize.SMALL -> DpSize(54.dp, 38.dp)
+        ThumbnailSize.MEDIUM -> DpSize(66.dp, 46.dp)
+        ThumbnailSize.LARGE -> DpSize(78.dp, 56.dp)
+    }
+
 @PreviewLightDark
 @Preview
 @Composable
@@ -145,6 +161,26 @@ private fun MediaListItemPreview() {
                 ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
             },
             onClick = {},
+            modifier = Modifier.padding(horizontal = Spacing.lg),
+        )
+    }
+}
+
+@PreviewLightDark
+@Preview
+@Composable
+private fun MediaListItemSmallPreview() {
+    HzPlayerTheme {
+        MediaListItem(
+            title = "Blade Runner 2049",
+            subtitle = "2017 • 2h32m",
+            durationMs = 9_123_000,
+            progress = 0.6f,
+            thumbnailContent = {
+                ThumbnailPlaceholder(mediaType = MediaType.VIDEO)
+            },
+            onClick = {},
+            thumbnailSize = ThumbnailSize.SMALL,
             modifier = Modifier.padding(horizontal = Spacing.lg),
         )
     }

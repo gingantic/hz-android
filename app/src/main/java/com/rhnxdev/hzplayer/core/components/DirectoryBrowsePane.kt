@@ -33,6 +33,7 @@ import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isVideoMedia
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 
 import androidx.compose.runtime.Immutable
 
@@ -91,6 +92,8 @@ fun DirectoryBrowsePane(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
     mediaMode: Boolean = false,
+    /** Leading width share of a row's preview thumbnail. */
+    thumbnailSize: ThumbnailSize = ThumbnailSize.LARGE,
     onPlayAsAudio: ((FileItemData) -> Unit)? = null,
     onPlayAllFolder: ((FileItemData) -> Unit)? = null,
     onCutItem: ((FileItemData) -> Unit)? = null,
@@ -229,6 +232,7 @@ fun DirectoryBrowsePane(
                             fileCount = item.fileCount,
                             mediaCount = item.mediaCount,
                             mediaMode = mediaMode,
+                            thumbnailFraction = thumbnailSize.rowThumbnailFraction,
                             mimeType = item.mimeType,
                             onClick = onItemClicked,
                             marqueeTitle = true,

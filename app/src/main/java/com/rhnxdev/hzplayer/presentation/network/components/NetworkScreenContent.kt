@@ -77,6 +77,7 @@ import androidx.compose.material3.FloatingActionButtonDefaults
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.presentation.network.NetworkUiState
 import com.rhnxdev.hzplayer.presentation.network.RemoteDirectoryLayer
 import com.rhnxdev.hzplayer.presentation.network.components.ServerCard
@@ -459,6 +460,7 @@ internal fun ServerBrowseStackContent(
                     searchQuery = if (isTop) searchQuery else "",
                     isSearchActive = if (isTop) isSearchActive else false,
                     mediaMode = uiState.isMediaMode,
+                    thumbnailSize = uiState.thumbnailSize,
                     onFolderClicked = if (isTop) onFolderClicked else noopFolder,
                     onFileClicked = if (isTop) onFileClicked else noopFolder,
                     onBreadcrumbClicked = if (isTop) onBreadcrumbClicked else noopBreadcrumb,
@@ -516,6 +518,7 @@ private fun RemoteDirectoryLayerView(
     searchQuery: String,
     isSearchActive: Boolean,
     mediaMode: Boolean,
+    thumbnailSize: ThumbnailSize,
     onFolderClicked: (RemoteFileItem) -> Unit,
     onFileClicked: (RemoteFileItem) -> Unit,
     onBreadcrumbClicked: (String) -> Unit,
@@ -624,6 +627,7 @@ private fun RemoteDirectoryLayerView(
             searchQuery = searchQuery,
             isSearchActive = isSearchActive,
             mediaMode = mediaMode,
+            thumbnailSize = thumbnailSize,
             onItemClick = { data ->
                 // Snapshot scroll position NOW — before navigation fires isFullScreen=true,
                 // which hides the nav bar/rail, resizes the viewport, and causes the

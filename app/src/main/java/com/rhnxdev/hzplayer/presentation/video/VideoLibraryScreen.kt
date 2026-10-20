@@ -48,6 +48,7 @@ import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.MediaPropertiesDialog
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
+import com.rhnxdev.hzplayer.core.components.rowThumbnailFraction
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
@@ -57,6 +58,7 @@ import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
@@ -153,6 +155,8 @@ fun VideoLibraryScreen(
                             SortType.DATE_ADDED,
                             SortType.DURATION,
                         ),
+                        thumbnailSize = uiState.thumbnailSize,
+                        onThumbnailSizeChanged = viewModel::onThumbnailSizeChanged,
                         onDismissRequest = { showViewSortSheet = false },
                     )
                 }
@@ -205,6 +209,7 @@ fun VideoLibraryScreen(
                                 SearchResultsContent(
                                     videos = uiState.filteredVideos,
                                     viewMode = uiState.viewMode,
+                                    thumbnailSize = uiState.thumbnailSize,
                                     onVideoClicked = onVideoClicked,
                                     onPlayAsAudio = onPlayAsAudio,
                                     searchQuery = searchQuery,
@@ -220,6 +225,7 @@ fun VideoLibraryScreen(
                                 SearchResultsContent(
                                     videos = drillVideos,
                                     viewMode = uiState.viewMode,
+                                    thumbnailSize = uiState.thumbnailSize,
                                     onVideoClicked = onVideoClicked,
                                     onPlayAsAudio = onPlayAsAudio,
                                     searchQuery = "",
@@ -229,11 +235,13 @@ fun VideoLibraryScreen(
                                 if (uiState.viewMode == ViewMode.GRID) {
                                     FolderGridContent(
                                         categories = uiState.categories,
+                                        thumbnailSize = uiState.thumbnailSize,
                                         onFolderClicked = viewModel::onFolderClicked,
                                     )
                                 } else {
                                     FolderListContent(
                                         categories = uiState.categories,
+                                        thumbnailSize = uiState.thumbnailSize,
                                         onFolderClicked = viewModel::onFolderClicked,
                                     )
                                 }
@@ -260,6 +268,7 @@ fun VideoLibraryScreen(
 @Composable
 private fun FolderListContent(
     categories: List<VideoCategory>,
+    thumbnailSize: ThumbnailSize,
     onFolderClicked: (String) -> Unit,
 ) {
     LazyColumn(
@@ -277,6 +286,7 @@ private fun FolderListContent(
                 fileCount = category.videos.size,
                 mediaCount = category.videos.size,
                 mediaMode = true,
+                thumbnailFraction = thumbnailSize.rowThumbnailFraction,
                 leadingThumbnail = firstVideo?.let { v ->
                     {
                         SubcomposeAsyncImage(
@@ -302,10 +312,11 @@ private fun FolderListContent(
 @Composable
 private fun FolderGridContent(
     categories: List<VideoCategory>,
+    thumbnailSize: ThumbnailSize,
     onFolderClicked: (String) -> Unit,
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(thumbnailSize.columns),
         contentPadding = PaddingValues(Spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -345,6 +356,7 @@ private fun FolderGridContent(
 private fun SearchResultsContent(
     videos: List<VideoItem>,
     viewMode: ViewMode,
+    thumbnailSize: ThumbnailSize,
     onVideoClicked: (VideoItem) -> Unit,
     onPlayAsAudio: (VideoItem) -> Unit,
     searchQuery: String,
@@ -376,7 +388,7 @@ private fun SearchResultsContent(
         )
     } else if (viewMode == ViewMode.GRID) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(thumbnailSize.columns),
             contentPadding = PaddingValues(Spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -416,6 +428,9 @@ private fun SearchResultsContent(
                 MediaListItem(
                     title = video.title,
                     subtitle = remember(video) { buildSubtitle(video) },
+                    durationMs = video.durationMs,
+                    progress = if (video.watchedProgress > 0f) video.watchedProgress else null,
+                    thumbnailSize = thumbnailSize,
                     thumbnailContent = {
                         SubcomposeAsyncImage(
                             model = VideoFrame(video.uri, video.dateModified),

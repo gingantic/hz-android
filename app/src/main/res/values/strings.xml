@@ -680,6 +680,10 @@
     <string name="filter_videos">Videos</string>
     <string name="filter_audio">Audio</string>
     <string name="filter_archives">Archives</string>
+    <string name="thumbnail_size_title">Thumbnail size</string>
+    <string name="thumbnail_size_small">Small</string>
+    <string name="thumbnail_size_medium">Medium</string>
+    <string name="thumbnail_size_large">Large</string>
     <string name="view_sort_cd">View and sort options</string>
     <!-- Directory 3-dot menu -->
     <string name="new_folder">New Folder</string>

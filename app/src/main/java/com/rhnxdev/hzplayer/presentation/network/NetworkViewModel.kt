@@ -22,6 +22,7 @@ import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.repository.NetworkRepository
@@ -71,6 +72,11 @@ class NetworkViewModel @Inject constructor(
         viewModelScope.launch {
             userPreferencesRepository.getViewMode("network_home").collect { mode ->
                 _uiState.update { it.copy(isHomeListView = mode == ViewMode.LIST) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.getThumbnailSize(sortKey).collect { size ->
+                _uiState.update { it.copy(thumbnailSize = size) }
             }
         }
     }
@@ -440,6 +446,11 @@ class NetworkViewModel @Inject constructor(
 
     fun onToggleMediaMode() {
         _uiState.update { it.copy(isMediaMode = !it.isMediaMode) }
+    }
+
+    fun onThumbnailSizeChanged(size: ThumbnailSize) {
+        _uiState.update { it.copy(thumbnailSize = size) }
+        viewModelScope.launch { userPreferencesRepository.setThumbnailSize(sortKey, size) }
     }
 
     fun onToggleHomeView() {

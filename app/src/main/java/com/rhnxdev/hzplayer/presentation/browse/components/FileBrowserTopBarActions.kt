@@ -33,6 +33,7 @@ import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
 import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.presentation.browse.FileBrowserUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,6 +44,7 @@ fun FileBrowserTopBarActions(
     onToggleMediaMode: () -> Unit,
     onSortChanged: (SortType, SortDirection) -> Unit,
     onMediaTypeFilterChanged: (FileMediaTypeFilter) -> Unit,
+    onThumbnailSizeChanged: (ThumbnailSize) -> Unit,
     onRefresh: () -> Unit,
     onCreateFolder: (String) -> Unit,
 ) {
@@ -150,6 +152,8 @@ fun FileBrowserTopBarActions(
             onToggleMediaMode = onToggleMediaMode,
             mediaTypeFilter = uiState.mediaTypeFilter,
             onMediaTypeFilterChanged = onMediaTypeFilterChanged,
+            thumbnailSize = uiState.thumbnailSize,
+            onThumbnailSizeChanged = onThumbnailSizeChanged,
             onDismissRequest = { showViewSortSheet = false },
         )
     }

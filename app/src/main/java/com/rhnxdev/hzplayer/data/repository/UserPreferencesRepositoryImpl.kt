@@ -14,6 +14,7 @@ import com.rhnxdev.hzplayer.domain.model.ResumeMode
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ThemeMode
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.player.EngineType
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
@@ -128,6 +129,15 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override fun getSortDirection(key: String): Flow<SortDirection> =
         enumPreference(stringPreferencesKey("sort_dir_$key"), SortDirection.ASCENDING)
+
+    override fun getThumbnailSize(key: String): Flow<ThumbnailSize> =
+        enumPreference(stringPreferencesKey("thumbnail_size_$key"), ThumbnailSize.LARGE)
+
+    override suspend fun setThumbnailSize(key: String, size: ThumbnailSize) {
+        dataStore.edit { prefs ->
+            prefs[stringPreferencesKey("thumbnail_size_$key")] = size.name
+        }
+    }
 
     override suspend fun setSortDirection(key: String, direction: SortDirection) {
         dataStore.edit { prefs ->

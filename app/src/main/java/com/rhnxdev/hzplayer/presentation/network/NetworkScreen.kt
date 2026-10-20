@@ -109,6 +109,8 @@ fun NetworkScreen(
                         onSortChanged = viewModel::onSortChanged,
                         isMediaMode = uiState.isMediaMode,
                         onToggleMediaMode = viewModel::onToggleMediaMode,
+                        thumbnailSize = uiState.thumbnailSize,
+                        onThumbnailSizeChanged = viewModel::onThumbnailSizeChanged,
                         availableSortTypes = listOf(
                             SortType.TITLE,
                             SortType.DATE_MODIFIED,

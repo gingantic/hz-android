@@ -6,6 +6,7 @@ import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.FolderItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 
 import androidx.compose.runtime.Immutable
 
@@ -56,6 +57,8 @@ data class FileBrowserUiState(
     val sortDirection: SortDirection = SortDirection.ASCENDING,
     /** When true, browsing shows only video files (+ folders) as large thumbnails. */
     val isMediaMode: Boolean = false,
+    /** Leading width share of a row's preview thumbnail. */
+    val thumbnailSize: ThumbnailSize = ThumbnailSize.LARGE,
     val mediaTypeFilter: FileMediaTypeFilter = FileMediaTypeFilter.ALL,
     val passwordPromptContainer: String? = null,
     val passwordError: String? = null,

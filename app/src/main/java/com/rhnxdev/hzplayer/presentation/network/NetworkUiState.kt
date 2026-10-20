@@ -6,6 +6,7 @@ import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
+import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import androidx.compose.runtime.Immutable
 
 @Immutable
@@ -43,6 +44,8 @@ data class NetworkUiState(
     val sortType: SortType = SortType.TITLE,
     val sortDirection: SortDirection = SortDirection.ASCENDING,
     val isMediaMode: Boolean = false,
+    /** Leading width share of a row's preview thumbnail. */
+    val thumbnailSize: ThumbnailSize = ThumbnailSize.LARGE,
     val isHomeListView: Boolean = false,
 )
 

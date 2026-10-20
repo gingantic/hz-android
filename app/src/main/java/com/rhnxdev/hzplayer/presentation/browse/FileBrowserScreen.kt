@@ -123,6 +123,7 @@ fun FileBrowserScreen(
                     onToggleMediaMode = viewModel::onToggleMediaMode,
                     onSortChanged = viewModel::onSortChanged,
                     onMediaTypeFilterChanged = viewModel::onMediaTypeFilterChanged,
+                    onThumbnailSizeChanged = viewModel::onThumbnailSizeChanged,
                     onRefresh = viewModel::onRefresh,
                     onCreateFolder = viewModel::onCreateFolder,
                 )
@@ -149,6 +150,7 @@ fun FileBrowserScreen(
                         isSearchActive = isSearchActive,
                         mediaMode = uiState.isMediaMode,
                         mediaTypeFilter = uiState.mediaTypeFilter,
+                        thumbnailSize = uiState.thumbnailSize,
                         quickAccessPaths = uiState.quickAccessPaths,
                         onFolderClicked = viewModel::onFolderClicked,
                         onBreadcrumbClicked = viewModel::onBreadcrumbClicked,
