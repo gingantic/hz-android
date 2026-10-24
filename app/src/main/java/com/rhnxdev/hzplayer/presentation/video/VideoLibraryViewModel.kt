@@ -3,12 +3,14 @@ package com.rhnxdev.hzplayer.presentation.video
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
+import com.rhnxdev.hzplayer.core.util.isFullStorageGranted
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.repository.MediaRepository
+import com.rhnxdev.hzplayer.domain.repository.FileRepository
 import com.rhnxdev.hzplayer.domain.repository.ResumeRepository
 import com.rhnxdev.hzplayer.domain.repository.PlayerRepository
 import com.rhnxdev.hzplayer.domain.repository.UserPreferencesRepository
@@ -16,6 +18,8 @@ import com.rhnxdev.hzplayer.presentation.preview.PreviewMedia
 import com.rhnxdev.hzplayer.BuildConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +37,7 @@ class VideoLibraryViewModel @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
     private val playerRepository: PlayerRepository,
     private val resumeRepository: ResumeRepository,
+    private val fileRepository: FileRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(VideoLibraryUiState())
@@ -45,6 +50,9 @@ class VideoLibraryViewModel @Inject constructor(
     companion object {
         /** Pseudo-folder key for the Recent category, used in selectedFolder. */
         const val RECENT_KEY = "__recent__"
+
+        /** Undo window before a confirmed delete is committed to disk. */
+        const val DELETE_GRACE_MS = 4_000L
 
         /** Cached preview lists — avoid re-allocation per VM init. */
         private val PREVIEW_VIDEOS: List<VideoItem> = PreviewMedia.videoMovies.mapIndexed { index, item ->
@@ -127,7 +135,10 @@ class VideoLibraryViewModel @Inject constructor(
     /** Real data arrived (or an explicitly empty result). */
     private fun emitLoaded(videos: List<VideoItem>) {
         val state = _uiState.value
-        val sortedVideos = sortVideos(videos, state.sortType, state.sortDirection)
+        // MediaStore still lists a video during its undo window; keep it hidden until the delete is decided.
+        val graceUri = state.deleteGraceVideo?.uri
+        val shown = if (graceUri == null) videos else videos.filterNot { it.uri == graceUri }
+        val sortedVideos = sortVideos(shown, state.sortType, state.sortDirection)
         if (sortedVideos.isNotEmpty()) {
             val recent = recentVideos(sortedVideos)
             val categories = groupVideosIntoCategories(sortedVideos, recent)
@@ -325,6 +336,102 @@ class VideoLibraryViewModel @Inject constructor(
         } else {
             false
         }
+    }
+
+    // ---- Delete ----
+
+    /** Ask for confirmation before deleting a video from disk. */
+    fun onDeleteVideo(video: VideoItem) {
+        _uiState.update { it.copy(deleteConfirmVideo = video) }
+    }
+
+    fun onDismissDeleteConfirm() {
+        _uiState.update { it.copy(deleteConfirmVideo = null) }
+    }
+
+    fun onDismissAllFilesAccessPrompt() {
+        _uiState.update { it.copy(showAllFilesAccessPrompt = false) }
+    }
+
+    fun onDeleteOutcomeShown() {
+        _uiState.update { it.copy(deleteOutcome = null) }
+    }
+
+    private var pendingDeleteJob: Job? = null
+
+    /** Hides the confirmed video now; its disk delete runs after [DELETE_GRACE_MS] unless undone. */
+    fun onConfirmDelete() {
+        val video = _uiState.value.deleteConfirmVideo ?: return
+
+        // Deleting outside app-specific storage on Android 11+ needs "All files access".
+        if (!isFullStorageGranted()) {
+            _uiState.update { it.copy(deleteConfirmVideo = null, showAllFilesAccessPrompt = true) }
+            return
+        }
+
+        // A new delete supersedes a pending one — commit the older delete now.
+        commitPendingDelete()
+
+        _uiState.update { it.copy(deleteConfirmVideo = null, deleteGraceVideo = video) }
+        removeFromLibrary(video)
+        pendingDeleteJob = viewModelScope.launch {
+            delay(DELETE_GRACE_MS)
+            pendingDeleteJob = null
+            commitPendingDelete()
+        }
+    }
+
+    /** Cancel a delete during its grace period and put the video back in the library. */
+    fun onUndoDelete() {
+        val video = _uiState.value.deleteGraceVideo ?: return
+        pendingDeleteJob?.cancel()
+        pendingDeleteJob = null
+        _uiState.update { it.copy(deleteGraceVideo = null) }
+        restoreToLibrary(video)
+    }
+
+    /** Ends the undo window of the pending delete and runs its disk delete. */
+    private fun commitPendingDelete() {
+        val video = _uiState.value.deleteGraceVideo ?: return
+        pendingDeleteJob?.cancel()
+        pendingDeleteJob = null
+        // Cleared before the disk delete starts, so Undo can no longer restore this video.
+        _uiState.update { it.copy(deleteGraceVideo = null) }
+        viewModelScope.launch { performDelete(video) }
+    }
+
+    private suspend fun performDelete(video: VideoItem) {
+        fileRepository.deleteEntry(video.uri).fold(
+            onSuccess = {
+                removeFromLibrary(video)
+                _uiState.update { it.copy(deleteOutcome = DeleteOutcome.Deleted(video.title)) }
+            },
+            onFailure = {
+                // Disk delete failed — bring the hidden video back.
+                restoreToLibrary(video)
+                _uiState.update { it.copy(deleteOutcome = DeleteOutcome.Failed) }
+            },
+        )
+    }
+
+    /** Drop [video] from the loaded library without touching the disk. */
+    private fun removeFromLibrary(video: VideoItem) {
+        _uiState.update { it.copy(allVideos = it.allVideos.filterNot { v -> v.uri == video.uri }) }
+        applySort(_uiState.value.sortType)
+        // A folder emptied by this delete no longer exists; return to the folder list.
+        _uiState.update { state ->
+            val folder = state.selectedFolder
+            if (folder != null && folder != RECENT_KEY && state.categories.none { it.title == folder }) {
+                state.copy(selectedFolder = null)
+            } else state
+        }
+    }
+
+    /** Put a hidden [video] back into the loaded library, keeping the current sort. */
+    private fun restoreToLibrary(video: VideoItem) {
+        if (_uiState.value.allVideos.any { it.uri == video.uri }) return
+        _uiState.update { it.copy(allVideos = it.allVideos + video) }
+        applySort(_uiState.value.sortType)
     }
 
     private fun applySort(sort: SortType) {

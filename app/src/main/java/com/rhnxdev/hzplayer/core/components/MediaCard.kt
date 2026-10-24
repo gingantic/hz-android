@@ -57,12 +57,13 @@ fun MediaCard(
     onLongClick: (() -> Unit)? = null,
     onPropertiesClick: (() -> Unit)? = null,
     onPlayAsAudioClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val cardShape = remember { RoundedCornerShape(CornerRadii.md) }
     val clipShape = remember { RoundedCornerShape(topStart = CornerRadii.md, topEnd = CornerRadii.md) }
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val hasMenu = onPropertiesClick != null || onPlayAsAudioClick != null
+    val hasMenu = onPropertiesClick != null || onPlayAsAudioClick != null || onDeleteClick != null
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
@@ -203,6 +204,7 @@ fun MediaCard(
             subtitle = subtitle,
             leadingThumbnail = thumbnailContent,
             onPlayAsAudioClick = onPlayAsAudioClick,
+            onDeleteClick = onDeleteClick,
             onPropertiesClick = onPropertiesClick,
             onDismissRequest = { showMenu = false },
         )

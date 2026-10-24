@@ -221,6 +221,16 @@ FileBrowserScreen → delete → FileBrowserViewModel.onConfirmDelete(path)
   → otherwise commitPendingDeleteNow() → FileRepository.deleteEntry(path)
 ```
 
+### Delete a video (video library, deferred, with undo)
+```
+VideoLibraryScreen → delete → VideoLibraryViewModel.onConfirmDelete()
+  → the video is removed from allVideos optimistically (removeFromLibrary); the disk delete is deferred by DELETE_GRACE_MS (4 s)
+  → a MediaStore reload during the grace window keeps the video hidden (emitLoaded)
+  → onUndoDelete() cancels the timer and puts the video back (restoreToLibrary)
+  → otherwise commitPendingDelete() → FileRepository.deleteEntry(uri)
+  → ViewToggleFab is hidden while any snackbar (undo or result) is showing
+```
+
 ### Discover network servers
 ```
 NetworkScreen → scan → ServerDiscoverer.startScan()

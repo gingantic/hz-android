@@ -22,7 +22,21 @@ data class VideoLibraryUiState(
     val sortDirection: SortDirection = SortDirection.ASCENDING,
     val isEmpty: Boolean = false,
     val selectedFolder: String? = null, // null = folder list root; RECENT_KEY = Recent pseudo-folder
+    val deleteConfirmVideo: VideoItem? = null,
+    /**
+     * Video inside its undo grace period: hidden from the library, not yet removed
+     * from disk. An undo snackbar is shown while non-null.
+     */
+    val deleteGraceVideo: VideoItem? = null,
+    val showAllFilesAccessPrompt: Boolean = false,
+    val deleteOutcome: DeleteOutcome? = null,
 )
+
+/** One-shot result of a delete, shown once as a snackbar and then cleared. */
+sealed interface DeleteOutcome {
+    data class Deleted(val title: String) : DeleteOutcome
+    data object Failed : DeleteOutcome
+}
 
 @Immutable
 data class VideoCategory(

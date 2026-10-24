@@ -65,6 +65,9 @@
     <string name="all_files_access_title">Allow file management</string>
     <string name="all_files_access_message">Moving and copying files requires “All files access”. Grant it in system settings, then paste again.</string>
     <string name="all_files_access_grant">Open settings</string>
+    <string name="all_files_access_delete_message">Deleting videos requires “All files access”. Grant it in system settings, then delete again.</string>
+    <string name="video_deleted_message">Deleted \"%1$s\"</string>
+    <string name="video_delete_failed">Could not delete the video.</string>
     <string name="item_count">%1$d items</string>
     <string name="solid_archive_warning_title">Solid Archive Notice</string>
     <string name="solid_archive_warning_message">\"%1$s\" uses solid compression. Playing media or seeking/scrubbing inside this archive may be slower and use higher CPU because prior data must be decompressed.</string>

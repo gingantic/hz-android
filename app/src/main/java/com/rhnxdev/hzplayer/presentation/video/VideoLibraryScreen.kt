@@ -1,5 +1,10 @@
 package com.rhnxdev.hzplayer.presentation.video
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +23,10 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -56,6 +65,8 @@ import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
 import com.rhnxdev.hzplayer.domain.model.ViewMode
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
+import com.rhnxdev.hzplayer.presentation.browse.components.AllFilesAccessDialog
+import com.rhnxdev.hzplayer.presentation.browse.components.DeleteConfirmDialog
 import coil3.compose.SubcomposeAsyncImage
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.core.util.formatFileSize
@@ -206,6 +217,7 @@ fun VideoLibraryScreen(
                                     thumbnailSize = uiState.thumbnailSize,
                                     onVideoClicked = onVideoClicked,
                                     onPlayAsAudio = onPlayAsAudio,
+                                    onDeleteVideo = viewModel::onDeleteVideo,
                                     searchQuery = searchQuery,
                                 )
                             }
@@ -222,6 +234,7 @@ fun VideoLibraryScreen(
                                     thumbnailSize = uiState.thumbnailSize,
                                     onVideoClicked = onVideoClicked,
                                     onPlayAsAudio = onPlayAsAudio,
+                                    onDeleteVideo = viewModel::onDeleteVideo,
                                     searchQuery = "",
                                 )
                             }
@@ -246,15 +259,72 @@ fun VideoLibraryScreen(
             }
         }
 
-        // FAB
+        uiState.deleteConfirmVideo?.let { video ->
+            DeleteConfirmDialog(
+                itemName = video.title,
+                isDirectory = false,
+                onConfirm = viewModel::onConfirmDelete,
+                onDismiss = viewModel::onDismissDeleteConfirm,
+            )
+        }
+        if (uiState.showAllFilesAccessPrompt) {
+            AllFilesAccessDialog(
+                onDismiss = viewModel::onDismissAllFilesAccessPrompt,
+                messageRes = R.string.all_files_access_delete_message,
+            )
+        }
+
+        // One-shot feedback for delete results.
+        val snackbarHostState = remember { SnackbarHostState() }
+        LaunchedEffect(uiState.deleteOutcome) {
+            val message = when (val outcome = uiState.deleteOutcome ?: return@LaunchedEffect) {
+                is DeleteOutcome.Deleted -> context.getString(R.string.video_deleted_message, outcome.title)
+                DeleteOutcome.Failed -> context.getString(R.string.video_delete_failed)
+            }
+            snackbarHostState.showSnackbar(message)
+            viewModel.onDeleteOutcomeShown()
+        }
+
+        // Undo grace period: the video is already hidden; the disk delete runs only after
+        // the ViewModel's grace timer. This snackbar (Short = 4s) offers the undo.
+        uiState.deleteGraceVideo?.let { graceVideo ->
+            val message = stringResource(R.string.delete_grace_message, graceVideo.title)
+            val undoLabel = stringResource(R.string.undo)
+            LaunchedEffect(graceVideo.uri) {
+                val result = snackbarHostState.showSnackbar(
+                    message = message,
+                    actionLabel = undoLabel,
+                    duration = SnackbarDuration.Short,
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.onUndoDelete()
+                }
+            }
+        }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(Spacing.lg),
+        )
+
+        // FAB — hidden while a snackbar is up so it never covers the message or its Undo action.
+        val isSnackbarShowing = snackbarHostState.currentSnackbarData != null
         if (hasPermission) {
-            ViewToggleFab(
-                currentView = uiState.viewMode,
-                onToggle = viewModel::onViewModeChanged,
+            AnimatedVisibility(
+                visible = !isSnackbarShowing,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(Spacing.lg),
-            )
+            ) {
+                ViewToggleFab(
+                    currentView = uiState.viewMode,
+                    onToggle = viewModel::onViewModeChanged,
+                )
+            }
         }
     }
 }
@@ -353,6 +423,7 @@ private fun SearchResultsContent(
     thumbnailSize: ThumbnailSize,
     onVideoClicked: (VideoItem) -> Unit,
     onPlayAsAudio: (VideoItem) -> Unit,
+    onDeleteVideo: (VideoItem) -> Unit,
     searchQuery: String,
 ) {
     var propertiesVideo by remember { mutableStateOf<VideoItem?>(null) }
@@ -410,6 +481,7 @@ private fun SearchResultsContent(
                     onClick = { onVideoClicked(video) },
                     onPropertiesClick = { propertiesVideo = video },
                     onPlayAsAudioClick = { onPlayAsAudio(video) },
+                    onDeleteClick = { onDeleteVideo(video) },
                 )
             }
         }
@@ -449,6 +521,7 @@ private fun SearchResultsContent(
                     onClick = { onVideoClicked(video) },
                     onPropertiesClick = { propertiesVideo = video },
                     onPlayAsAudioClick = { onPlayAsAudio(video) },
+                    onDeleteClick = { onDeleteVideo(video) },
                 )
             }
         }

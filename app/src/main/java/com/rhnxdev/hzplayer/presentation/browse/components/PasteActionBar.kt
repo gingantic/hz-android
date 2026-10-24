@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -173,14 +174,17 @@ fun DeleteConfirmDialog(
  * to the system settings page where the user can grant it.
  */
 @Composable
-fun AllFilesAccessDialog(onDismiss: () -> Unit) {
+fun AllFilesAccessDialog(
+    onDismiss: () -> Unit,
+    @StringRes messageRes: Int = R.string.all_files_access_message,
+) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
         title = { Text(stringResource(R.string.all_files_access_title)) },
-        text = { Text(stringResource(R.string.all_files_access_message)) },
+        text = { Text(stringResource(messageRes)) },
         confirmButton = {
             TextButton(
                 onClick = {
