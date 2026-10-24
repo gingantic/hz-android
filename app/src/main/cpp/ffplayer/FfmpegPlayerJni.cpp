@@ -34,6 +34,8 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     ctx->isWebSource = false;
     ctx->primaryHost.clear();
     ctx->primaryQuery.clear();
+    ctx->primaryUrl.clear();
+    ctx->trimMasterPending.store(false);
     ctx->ioDefaults.clear();
 
     // The context is stopped while the previous session is torn down, but it
@@ -195,6 +197,13 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     if (!userAgent.empty()) {
         av_dict_set(&opts, "user_agent", userAgent.c_str(), 0);
         LOGI("Configured custom User-Agent: %s", userAgent.c_str());
+    }
+    if (ctx->isWebSource) {
+        // hls.c copies these to its children from the master's HTTP context. A trimmed master
+        // is served from memory, so there is no HTTP context to copy from: carry them in
+        // ioDefaults instead (DONT_OVERWRITE keeps any copied value).
+        if (!customHeaders.empty()) ctx->ioDefaults.emplace_back("headers", customHeaders);
+        if (!userAgent.empty()) ctx->ioDefaults.emplace_back("user_agent", userAgent);
     }
 
     const char* openPath = bridgeObj ? "" : url.c_str();

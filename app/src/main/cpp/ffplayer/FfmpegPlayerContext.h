@@ -62,6 +62,11 @@ struct FfmpegPlayerContext {
     // ProtocolRoutingDataSource.
     std::string primaryHost;   // host only, no port or IPv6 brackets
     std::string primaryQuery;  // includes the leading '?', empty when absent
+    std::string primaryUrl;    // exact initial URL, matched once by player_io_open
+    // Armed by setPrimaryUrl(); the first open of primaryUrl may swap an HLS master playlist
+    // for a one-variant copy (see HlsMasterTrim.h). Atomic: playlist reloads reach
+    // player_io_open from the demux thread while this is being cleared.
+    std::atomic<bool> trimMasterPending{false};
     // Options applied to every playlist/segment/key open (see player_io_open).
     std::vector<std::pair<std::string, std::string>> ioDefaults;
     // False for live HLS and non-range HTTP: a seek on them only fails in av_seek_frame.

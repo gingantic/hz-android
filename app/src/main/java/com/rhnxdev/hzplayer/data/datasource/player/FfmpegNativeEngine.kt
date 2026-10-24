@@ -17,9 +17,11 @@ import android.widget.FrameLayout
 import androidx.media3.common.Player
 import com.rhnxdev.hzplayer.core.io.ArchiveRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.ChannelRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.HttpRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.LocalRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.SmbRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.RandomAccessMediaSource
+import com.rhnxdev.hzplayer.core.io.isProgressiveHttp
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
 import com.rhnxdev.hzplayer.core.util.sanitizeHttpRequestHeaders
 import com.rhnxdev.hzplayer.core.util.userInfoPair
@@ -577,9 +579,29 @@ class FfmpegNativeEngine @Inject constructor(
         return if (resId != 0) appContext.getString(resId) else ""
     }
 
-    /** Maps the native error class of the last failure for a web source. */
-    private fun lastWebError(): PlaybackErrorMapper.MappedError? =
-        NativeErrorMapper.map(player.getLastErrorClass().takeIf { it != NativeErrorClass.NONE } ?: NativeErrorClass.UNKNOWN)
+    /**
+     * Maps the last failure of a web source to a user-facing error.
+     *
+     * The HTTP bridge, when active, knows its own failure; FFmpeg only sees an aborted read.
+     *
+     * @param source — bridge to ask; defaults to the currently published one
+     * @param formatIfClean — an open that failed although the bridge served bytes without
+     *   error means FFmpeg could not parse them
+     */
+    private fun lastWebError(
+        source: HttpRandomAccessSource? = null,
+        formatIfClean: Boolean = false,
+    ): PlaybackErrorMapper.MappedError? {
+        val http = source ?: synchronized(bridgeLock) { activeBridge as? HttpRandomAccessSource }
+        val native = player.getLastErrorClass()
+        val errorClass = when {
+            http != null && http.lastErrorClass != NativeErrorClass.NONE -> http.lastErrorClass
+            native != NativeErrorClass.NONE -> native
+            http != null && formatIfClean -> NativeErrorClass.FORMAT
+            else -> NativeErrorClass.UNKNOWN
+        }
+        return NativeErrorMapper.map(errorClass)
+    }
 
     /** Releases [surfaceReadyLatch] exactly once per attach; safe to call repeatedly. */
     private fun markSurfaceReady() {
@@ -621,6 +643,8 @@ class FfmpegNativeEngine @Inject constructor(
         var bridge: RandomAccessMediaSource? = null
         var smbCheckout: SmbCheckout? = null
         var directUrl: String? = null
+        var webUrl: String? = null
+        var httpSource: HttpRandomAccessSource? = null
 
         try {
             when {
@@ -671,10 +695,18 @@ class FfmpegNativeEngine @Inject constructor(
                 }
                 isWeb -> {
                     // FFmpeg protocol lookup and the native scheme check are case-sensitive.
-                    directUrl = scheme + uriString.substring(scheme.length)
+                    webUrl = scheme + uriString.substring(scheme.length)
                     openHeaders = sanitizeHttpRequestHeaders(headers)
-                    // Needed for both schemes: an http URL may redirect to, or list, https hops.
-                    caFile = NativeTlsCaBundle.ensure(appContext)
+                    if (isProgressiveHttp(uriString, mimeType)) {
+                        // Probed after publishing (below) so stop() can cancel it. Declines
+                        // chunked streams and playlists; those keep FFmpeg's own HTTP.
+                        httpSource = HttpRandomAccessSource(webUrl, openHeaders)
+                        bridge = httpSource
+                    } else {
+                        directUrl = webUrl
+                        // Needed for both schemes: an http URL may redirect to, or list, https hops.
+                        caFile = NativeTlsCaBundle.ensure(appContext)
+                    }
                 }
                 else -> {
                     directUrl = uriString
@@ -697,6 +729,18 @@ class FfmpegNativeEngine @Inject constructor(
         }
         selectedAudioTrackIndex = 0
 
+        // Probe the progressive source now that stop()/release() can reach it through
+        // abortActiveBridge(). A declined probe is not an error: fall back to FFmpeg's HTTP.
+        if (httpSource != null && !httpSource.prepare()) {
+            closeActiveBridge()
+            if (!isCurrentRequest(requestId, uriString)) return@synchronized false
+            httpSource = null
+            bridge = null
+            directUrl = webUrl
+            caFile = NativeTlsCaBundle.ensure(appContext)
+            if (!publishActiveBridge(null, null, requestId, uriString)) return@synchronized false
+        }
+
         // A render view (SurfaceView/TextureView) was attached via createRenderView(),
         // meaning video output is expected, but its underlying Surface is created
         // asynchronously by the platform and may not exist yet. Opening native
@@ -712,16 +756,18 @@ class FfmpegNativeEngine @Inject constructor(
             }
         }
 
-        // Fail closed: without a CA bundle an https open cannot be verified, and
-        // tls_verify is never disabled.
-        if (scheme == "https" && caFile == null) {
+        // Fail closed: without a CA bundle an FFmpeg-owned https open cannot be verified, and
+        // tls_verify is never disabled. The OkHttp bridge uses the system trust store instead.
+        if (bridge == null && scheme == "https" && caFile == null) {
             stopNativeAndCloseBridge()
             reportOpenFailure(requestId, uriString, NativeErrorMapper.map(NativeErrorClass.NETWORK))
             return@synchronized false
         }
 
         val success = try {
-            if (!player.open(bridge, directUrl, activeSurface, startPositionMs, openHeaders, caFile)) {
+            // The bridge carries its own headers and TLS; FFmpeg's HTTP options do not apply.
+            val nativeHeaders = if (httpSource != null) emptyMap() else openHeaders
+            if (!player.open(bridge, directUrl, activeSurface, startPositionMs, nativeHeaders, caFile)) {
                 false
             } else {
                 player.setSpeed(currentSpeed)
@@ -745,7 +791,7 @@ class FfmpegNativeEngine @Inject constructor(
         // The native open/start path may have created worker threads before an
         // exception surfaced. Stop them before closing their Kotlin source.
         // Read the native error class before stopping; non-web sources keep the raw message.
-        val mapped = if (isWeb) lastWebError() else null
+        val mapped = if (isWeb) lastWebError(httpSource, formatIfClean = true) else null
         stopNativeAndCloseBridge()
         reportOpenFailure(requestId, uriString, mapped)
         false

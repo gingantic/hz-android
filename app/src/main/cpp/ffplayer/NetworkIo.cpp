@@ -6,7 +6,12 @@
 #include <cstring>
 #include <strings.h>
 
+extern "C" {
+#include <libavutil/base64.h>
+}
 #include <libavutil/intreadwrite.h>
+
+#include "HlsMasterTrim.h"
 
 int classifyAvError(int e) {
     switch (e) {
@@ -80,6 +85,8 @@ void setPrimaryUrl(FfmpegPlayerContext* ctx, const std::string& url) {
     if (!ctx) return;
     ctx->primaryHost = hostOf(url.c_str());
     ctx->primaryQuery = queryOf(url);
+    ctx->primaryUrl = url;
+    ctx->trimMasterPending.store(true);
     // Never log primaryQuery: it is the stream's signed token.
     LOGI("Web source host=%s signed_query=%s", ctx->primaryHost.c_str(),
          ctx->primaryQuery.empty() ? "no" : "yes");
@@ -160,6 +167,83 @@ int stripLeadingPng(AVIOContext* pb) {
 
 } // namespace
 
+namespace {
+
+/**
+ * Replaces the just-opened primary playlist with a one-variant copy when it is an HLS master.
+ *
+ * hls.c probes every variant during avformat_open_input; see HlsMasterTrim.h. The trimmed text
+ * is served through a `data:` URL, which keeps the AVIOContext backed by a URLContext so hls.c
+ * does not disable its persistent-connection handling ("custom io_open" gate). Relative URIs
+ * still resolve against the original URL because avformat keeps it as the context URL.
+ *
+ * Anything that is not a clearly-detected master is handed back untouched, byte for byte.
+ *
+ * @param s — format context owning the open
+ * @param ctx — player context (ioDefaults carries whitelist, headers and timeouts)
+ * @param pb — in: the opened playlist; out: the playlist to use
+ * @param url — URL that was opened
+ * @return 0, or the AVERROR of a failed re-open of [url] (then *pb is null)
+ */
+int trimPrimaryMaster(AVFormatContext* s, FfmpegPlayerContext* ctx, AVIOContext** pb,
+                      const char* url) {
+    constexpr int kPeekBytes = 8192;                 // fits the 32 KiB avio buffer: seek-back is free
+    constexpr size_t kMaxMasterBytes = 1u << 20;
+
+    auto reopen = [&]() -> int {
+        avio_closep(pb);
+        AVDictionary* o = nullptr;
+        for (const auto& kv : ctx->ioDefaults) av_dict_set(&o, kv.first.c_str(), kv.second.c_str(), 0);
+        const int r = avio_open2(pb, url, AVIO_FLAG_READ, &s->interrupt_callback, &o);
+        av_dict_free(&o);
+        return r;
+    };
+
+    uint8_t head[kPeekBytes];
+    const int got = avio_read(*pb, head, sizeof(head));
+    if (got <= 0) return reopen();  // let the normal open path surface the real error
+    if (!hls_trim::looksLikeMaster(reinterpret_cast<const char*>(head), static_cast<size_t>(got))) {
+        return avio_seek(*pb, 0, SEEK_SET) < 0 ? reopen() : 0;
+    }
+
+    std::string text(reinterpret_cast<const char*>(head), static_cast<size_t>(got));
+    uint8_t chunk[16384];
+    bool complete = false;
+    while (text.size() <= kMaxMasterBytes) {
+        const int n = avio_read(*pb, chunk, sizeof(chunk));
+        if (n == AVERROR_EOF) { complete = true; break; }
+        if (n < 0) break;
+        text.append(reinterpret_cast<const char*>(chunk), static_cast<size_t>(n));
+    }
+    if (!complete || text.size() > kMaxMasterBytes) return reopen();
+
+    int variants = 0;
+    const std::string trimmed = hls_trim::trimMasterToOneVariant(text, &variants);
+    const std::string& body = trimmed.empty() ? text : trimmed;
+
+    std::string b64(AV_BASE64_SIZE(body.size()), '\0');
+    if (!av_base64_encode(&b64[0], static_cast<int>(b64.size()),
+                          reinterpret_cast<const uint8_t*>(body.data()), static_cast<int>(body.size()))) {
+        return reopen();
+    }
+    b64.resize(strlen(b64.c_str()));
+    const std::string dataUrl = "data:application/vnd.apple.mpegurl;base64," + b64;
+
+    AVDictionary* o = nullptr;
+    for (const auto& kv : ctx->ioDefaults) av_dict_set(&o, kv.first.c_str(), kv.second.c_str(), 0);
+    AVIOContext* mem = nullptr;
+    const int r = avio_open2(&mem, dataUrl.c_str(), AVIO_FLAG_READ, &s->interrupt_callback, &o);
+    av_dict_free(&o);
+    if (r < 0) return reopen();
+
+    avio_closep(pb);
+    *pb = mem;
+    if (!trimmed.empty()) LOGI("HLS master: probing 1 of %d variants", variants);
+    return 0;
+}
+
+} // namespace
+
 int player_io_open(AVFormatContext* s, AVIOContext** pb, const char* url, int flags,
                    AVDictionary** options) {
     auto* ctx = static_cast<FfmpegPlayerContext*>(s->opaque);
@@ -198,6 +282,12 @@ int player_io_open(AVFormatContext* s, AVIOContext** pb, const char* url, int fl
     av_dict_free(&local);
     if (ret >= 0 && ctx && ctx->isWebSource) {
         stripLeadingPng(*pb);
+        // One-shot: only the first open of the user's URL can be a master; later opens of the
+        // same URL are playlist reloads and must go straight through.
+        if (ctx->trimMasterPending.load() && ctx->primaryUrl == url &&
+            ctx->trimMasterPending.exchange(false)) {
+            ret = trimPrimaryMaster(s, ctx, pb, url);
+        }
     }
     if (ctx) ctx->lastIoTimeMs.store(getMonotonicTimeMs());
     return ret;
