@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -14,13 +13,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -40,11 +37,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.components.FileItemCard
-import com.rhnxdev.hzplayer.core.components.FileOptionsBottomSheet
 import com.rhnxdev.hzplayer.core.components.MediaCard
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaErrorState
-import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.MediaPropertiesDialog
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
@@ -54,7 +49,6 @@ import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
 import com.rhnxdev.hzplayer.core.components.ViewToggleFab
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
-import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
 import com.rhnxdev.hzplayer.domain.model.SortType
@@ -272,7 +266,7 @@ private fun FolderListContent(
     onFolderClicked: (String) -> Unit,
 ) {
     LazyColumn(
-        contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
+        contentPadding = PaddingValues(Spacing.sm),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         items(categories, key = { it.title }) { category ->
@@ -420,18 +414,25 @@ private fun SearchResultsContent(
             }
         }
     } else {
+        // Same row as the file browser, so list mode reads the same across tabs.
         LazyColumn(
-            contentPadding = PaddingValues(Spacing.lg),
+            contentPadding = PaddingValues(Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             items(videos, key = { it.id }) { video ->
-                MediaListItem(
-                    title = video.title,
-                    subtitle = remember(video) { buildSubtitle(video) },
+                FileItemCard(
+                    name = video.title,
+                    isDirectory = false,
+                    fileSize = video.fileSize,
+                    childCount = 0,
+                    mimeType = video.mimeType,
                     durationMs = video.durationMs,
-                    progress = if (video.watchedProgress > 0f) video.watchedProgress else null,
-                    thumbnailSize = thumbnailSize,
-                    thumbnailContent = {
+                    playbackPositionMs = watchedPositionMs(video),
+                    resolution = video.resolution,
+                    mediaMode = true,
+                    marqueeTitle = true,
+                    thumbnailFraction = thumbnailSize.rowThumbnailFraction,
+                    leadingThumbnail = {
                         SubcomposeAsyncImage(
                             model = VideoFrame(video.uri, video.dateModified),
                             contentDescription = video.title,
@@ -446,43 +447,19 @@ private fun SearchResultsContent(
                         )
                     },
                     onClick = { onVideoClicked(video) },
-                    trailingContent = {
-                        var showMenu by remember { mutableStateOf(false) }
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = stringResource(R.string.media_overflow_cd),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        if (showMenu) {
-                            FileOptionsBottomSheet(
-                                name = video.title,
-                                isDirectory = false,
-                                subtitle = buildSubtitle(video),
-                                leadingThumbnail = {
-                                    AsyncImage(
-                                        model = VideoFrame(video.uri, video.dateModified),
-                                        contentDescription = video.title,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                },
-                                onPlayAsAudioClick = { onPlayAsAudio(video) },
-                                onPropertiesClick = { propertiesVideo = video },
-                                onDismissRequest = { showMenu = false },
-                            )
-                        }
-                    },
+                    onPropertiesClick = { propertiesVideo = video },
+                    onPlayAsAudioClick = { onPlayAsAudio(video) },
                 )
             }
         }
     }
 }
+
+/** [FileItemCard] draws watch progress from a position; the library only stores the fraction. */
+private fun watchedPositionMs(video: VideoItem): Long =
+    if (video.watchedProgress > 0f && video.durationMs > 0) {
+        (video.watchedProgress * video.durationMs).toLong()
+    } else 0L
 
 private fun buildSubtitle(video: VideoItem): String {
     val parts = mutableListOf<String>()

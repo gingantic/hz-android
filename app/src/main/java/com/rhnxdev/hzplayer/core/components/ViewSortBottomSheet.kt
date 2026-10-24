@@ -30,13 +30,10 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Square
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +50,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -329,13 +328,59 @@ private fun ThumbnailSizeSelector(
     }
 }
 
-/** Solid-square glyphs only — consistent weight across the three steps. */
+// Built once — the selector reads these on every recomposition.
+private val ThumbnailGridSmall = thumbnailGridIcon(columns = 3)
+private val ThumbnailGridMedium = thumbnailGridIcon(columns = 2)
+private val ThumbnailGridLarge = thumbnailGridIcon(columns = 1)
+
+/** Grid density for the picker: 3×3 → 2×2 → 1×1 cells, same gap and corner radius. */
 private val ThumbnailSize.icon: ImageVector
     get() = when (this) {
-        ThumbnailSize.SMALL -> Icons.Filled.Apps
-        ThumbnailSize.MEDIUM -> Icons.Filled.GridView
-        ThumbnailSize.LARGE -> Icons.Filled.Square
+        ThumbnailSize.SMALL -> ThumbnailGridSmall
+        ThumbnailSize.MEDIUM -> ThumbnailGridMedium
+        ThumbnailSize.LARGE -> ThumbnailGridLarge
     }
+
+/**
+ * Draws [columns]² rounded cells in a 24 dp viewport.
+ *
+ * One family beats three stock glyphs: Material's Apps / GridView / Square mix
+ * 9 pin-dots, 4 outlines and 1 hard square, so the steps never read as a scale.
+ *
+ * @param columns — cells per side; fewer cells means a bigger thumbnail
+ */
+private fun thumbnailGridIcon(columns: Int): ImageVector {
+    val gap = 3f
+    val cell = (24f - gap * (columns - 1)) / columns
+    val radius = (cell * 0.22f).coerceAtMost(4f)
+
+    return ImageVector.Builder(
+        name = "ThumbnailGrid$columns",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            repeat(columns) { row ->
+                repeat(columns) { col ->
+                    val x = col * (cell + gap)
+                    val y = row * (cell + gap)
+                    moveTo(x + radius, y)
+                    lineTo(x + cell - radius, y)
+                    quadTo(x + cell, y, x + cell, y + radius)
+                    lineTo(x + cell, y + cell - radius)
+                    quadTo(x + cell, y + cell, x + cell - radius, y + cell)
+                    lineTo(x + radius, y + cell)
+                    quadTo(x, y + cell, x, y + cell - radius)
+                    lineTo(x, y + radius)
+                    quadTo(x, y, x + radius, y)
+                    close()
+                }
+            }
+        }
+    }.build()
+}
 
 @Composable
 private fun SectionLabel(
