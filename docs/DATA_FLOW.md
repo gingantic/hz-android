@@ -228,7 +228,7 @@ VideoLibraryScreen → delete → VideoLibraryViewModel.onConfirmDelete()
   → a MediaStore reload during the grace window keeps the video hidden (emitLoaded)
   → onUndoDelete() cancels the timer and puts the video back (restoreToLibrary)
   → otherwise commitPendingDelete() → FileRepository.deleteEntry(uri)
-  → ViewToggleFab is hidden while any snackbar (undo or result) is showing
+  → the video library Play All FAB is hidden while a snackbar (undo or result) is showing, while the list scrolls, or at the list's end
 ```
 
 ### Discover network servers

@@ -5,24 +5,31 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
@@ -30,6 +37,9 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,7 +66,6 @@ import com.rhnxdev.hzplayer.core.components.rowThumbnailFraction
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
-import com.rhnxdev.hzplayer.core.components.ViewToggleFab
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import androidx.compose.ui.layout.ContentScale
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
@@ -126,6 +135,27 @@ fun VideoLibraryScreen(
         if (isActive && hasPermission) viewModel.onTabFocused()
     }
 
+    // True while a video list scrolls or sits at its end; hides the Play All FAB.
+    var isListAtEndOrScrolling by remember { mutableStateOf(false) }
+
+    // Play All plays what the list shows: search results, the open folder, or the whole library.
+    val playableVideos = remember(
+        isSearchActive,
+        uiState.filteredVideos,
+        uiState.selectedFolder,
+        uiState.recentVideos,
+        uiState.categories,
+        uiState.allVideos,
+    ) {
+        when {
+            isSearchActive -> uiState.filteredVideos
+            uiState.selectedFolder == VideoLibraryViewModel.RECENT_KEY -> uiState.recentVideos
+            uiState.selectedFolder != null ->
+                uiState.categories.firstOrNull { it.title == uiState.selectedFolder }?.videos ?: emptyList()
+            else -> uiState.allVideos
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         HzPlayerSearchableScaffold(
             title = folderTitle ?: stringResource(R.string.app_name),
@@ -162,6 +192,8 @@ fun VideoLibraryScreen(
                         ),
                         thumbnailSize = uiState.thumbnailSize,
                         onThumbnailSizeChanged = viewModel::onThumbnailSizeChanged,
+                        viewMode = uiState.viewMode,
+                        onViewModeChanged = viewModel::onViewModeChanged,
                         onDismissRequest = { showViewSortSheet = false },
                     )
                 }
@@ -219,6 +251,7 @@ fun VideoLibraryScreen(
                                     onPlayAsAudio = onPlayAsAudio,
                                     onDeleteVideo = viewModel::onDeleteVideo,
                                     searchQuery = searchQuery,
+                                    onListAtEndOrScrollingChanged = { isListAtEndOrScrolling = it },
                                 )
                             }
                             uiState.selectedFolder != null -> {
@@ -236,6 +269,7 @@ fun VideoLibraryScreen(
                                     onPlayAsAudio = onPlayAsAudio,
                                     onDeleteVideo = viewModel::onDeleteVideo,
                                     searchQuery = "",
+                                    onListAtEndOrScrollingChanged = { isListAtEndOrScrolling = it },
                                 )
                             }
                             else -> {
@@ -244,12 +278,14 @@ fun VideoLibraryScreen(
                                         categories = uiState.categories,
                                         thumbnailSize = uiState.thumbnailSize,
                                         onFolderClicked = viewModel::onFolderClicked,
+                                        onListAtEndOrScrollingChanged = { isListAtEndOrScrolling = it },
                                     )
                                 } else {
                                     FolderListContent(
                                         categories = uiState.categories,
                                         thumbnailSize = uiState.thumbnailSize,
                                         onFolderClicked = viewModel::onFolderClicked,
+                                        onListAtEndOrScrollingChanged = { isListAtEndOrScrolling = it },
                                     )
                                 }
                             }
@@ -309,23 +345,80 @@ fun VideoLibraryScreen(
                 .padding(Spacing.lg),
         )
 
-        // FAB — hidden while a snackbar is up so it never covers the message or its Undo action.
+        // Play All FAB — hidden while a snackbar is up so it never covers the message or its Undo
+        // action, while a list scrolls, and at a list's end where it would cover the last item.
         val isSnackbarShowing = snackbarHostState.currentSnackbarData != null
         if (hasPermission) {
             AnimatedVisibility(
-                visible = !isSnackbarShowing,
+                visible = playableVideos.isNotEmpty() && !isSnackbarShowing && !isListAtEndOrScrolling,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut(),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(Spacing.lg),
             ) {
-                ViewToggleFab(
-                    currentView = uiState.viewMode,
-                    onToggle = viewModel::onViewModeChanged,
+                PlayAllFab(
+                    onClick = { onPlayVideoPlaylist?.invoke(playableVideos, 0) },
                 )
             }
         }
+    }
+}
+
+/**
+ * Reports when a list starts or stops scrolling, or reaches its end. The Play All FAB hides in
+ * both cases: while the list moves, and at the end where it would cover the last item.
+ * Sends false when the list leaves composition, so a list removed mid-scroll cannot leave the FAB hidden.
+ * @param scrollState the list's state, a LazyListState or LazyGridState
+ * @param onHidingChanged receives true while the list scrolls or sits at its end
+ */
+@Composable
+private fun ReportListFabHiding(
+    scrollState: ScrollableState,
+    onHidingChanged: (Boolean) -> Unit,
+) {
+    val currentState by rememberUpdatedState(scrollState)
+    val currentOnHidingChanged by rememberUpdatedState(onHidingChanged)
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            currentState.isScrollInProgress ||
+                (currentState.canScrollBackward && !currentState.canScrollForward)
+        }.collect { currentOnHidingChanged(it) }
+    }
+    DisposableEffect(Unit) {
+        onDispose { currentOnHidingChanged(false) }
+    }
+}
+
+/** Play All FAB, styled like the file browser and network screens. */
+@Composable
+private fun PlayAllFab(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FloatingActionButton(
+        onClick = onClick,
+        modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        elevation = FloatingActionButtonDefaults.elevation(
+            defaultElevation = 6.dp,
+            pressedElevation = 12.dp,
+        ),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.PlayArrow,
+            contentDescription = stringResource(R.string.play_all_cd),
+        )
+    }
+}
+
+@PreviewLightDark
+@Preview
+@Composable
+private fun PlayAllFabPreview() {
+    HzPlayerTheme {
+        PlayAllFab(onClick = {})
     }
 }
 
@@ -334,8 +427,15 @@ private fun FolderListContent(
     categories: List<VideoCategory>,
     thumbnailSize: ThumbnailSize,
     onFolderClicked: (String) -> Unit,
+    onListAtEndOrScrollingChanged: (Boolean) -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    ReportListFabHiding(
+        scrollState = listState,
+        onHidingChanged = onListAtEndOrScrollingChanged,
+    )
     LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(Spacing.sm),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -378,8 +478,15 @@ private fun FolderGridContent(
     categories: List<VideoCategory>,
     thumbnailSize: ThumbnailSize,
     onFolderClicked: (String) -> Unit,
+    onListAtEndOrScrollingChanged: (Boolean) -> Unit,
 ) {
+    val gridState = rememberLazyGridState()
+    ReportListFabHiding(
+        scrollState = gridState,
+        onHidingChanged = onListAtEndOrScrollingChanged,
+    )
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(thumbnailSize.columns),
         contentPadding = PaddingValues(Spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -425,6 +532,7 @@ private fun SearchResultsContent(
     onPlayAsAudio: (VideoItem) -> Unit,
     onDeleteVideo: (VideoItem) -> Unit,
     searchQuery: String,
+    onListAtEndOrScrollingChanged: (Boolean) -> Unit,
 ) {
     var propertiesVideo by remember { mutableStateOf<VideoItem?>(null) }
 
@@ -452,7 +560,13 @@ private fun SearchResultsContent(
             subtitle = stringResource(R.string.video_search_empty, searchQuery),
         )
     } else if (viewMode == ViewMode.GRID) {
+        val gridState = rememberLazyGridState()
+        ReportListFabHiding(
+            scrollState = gridState,
+            onHidingChanged = onListAtEndOrScrollingChanged,
+        )
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Fixed(thumbnailSize.columns),
             contentPadding = PaddingValues(Spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -487,7 +601,13 @@ private fun SearchResultsContent(
         }
     } else {
         // Same row as the file browser, so list mode reads the same across tabs.
+        val listState = rememberLazyListState()
+        ReportListFabHiding(
+            scrollState = listState,
+            onHidingChanged = onListAtEndOrScrollingChanged,
+        )
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

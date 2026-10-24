@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -63,6 +64,7 @@ import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.SortDirection
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.ThumbnailSize
+import com.rhnxdev.hzplayer.domain.model.ViewMode
 
 /**
  * Minimalist, modern Modal Bottom Sheet for adjusting View Layout, Sorting, and Media Filtering.
@@ -83,6 +85,9 @@ fun ViewSortBottomSheet(
     /** Grid density control — shown only when both size and callback are supplied. */
     thumbnailSize: ThumbnailSize? = null,
     onThumbnailSizeChanged: ((ThumbnailSize) -> Unit)? = null,
+    /** Grid / list layout toggle — shown only when both value and callback are supplied. */
+    viewMode: ViewMode? = null,
+    onViewModeChanged: ((ViewMode) -> Unit)? = null,
     availableSortTypes: List<SortType> = listOf(
         SortType.TITLE,
         SortType.DATE_MODIFIED,
@@ -165,6 +170,29 @@ fun ViewSortBottomSheet(
                         onSortChanged(sortType, next)
                     },
                 )
+            }
+
+            // 0. GRID / LIST SEGMENTED CONTROL (if supported)
+            if (viewMode != null && onViewModeChanged != null) {
+                MinimalSegmentedControl(
+                    items = listOf(
+                        SegmentItem(
+                            icon = Icons.AutoMirrored.Filled.ViewList,
+                            label = stringResource(R.string.view_mode_list),
+                            isSelected = viewMode == ViewMode.LIST,
+                            onClick = { onViewModeChanged(ViewMode.LIST) },
+                        ),
+                        SegmentItem(
+                            icon = Icons.Filled.GridView,
+                            label = stringResource(R.string.view_mode_grid),
+                            isSelected = viewMode == ViewMode.GRID,
+                            onClick = { onViewModeChanged(ViewMode.GRID) },
+                        ),
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
             }
 
             // 1. VIEW MODE SEGMENTED CONTROL (if supported)

@@ -57,6 +57,7 @@ fun DirectoryStackContent(
     onDeleteItem: ((FolderItem) -> Unit)? = null,
     onToggleFavorite: (FileItemData) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
+    onScrollingChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -86,6 +87,7 @@ fun DirectoryStackContent(
                 onDeleteItem = onDeleteItem,
                 onToggleFavorite = onToggleFavorite,
                 onListAtEndChanged = onListAtEndChanged,
+                onScrollingChanged = onScrollingChanged,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -117,6 +119,7 @@ private fun DirectoryLayerView(
     onDeleteItem: ((FolderItem) -> Unit)? = null,
     onToggleFavorite: (FileItemData) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
+    onScrollingChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val currentOrientation = LocalConfiguration.current.orientation
@@ -163,6 +166,12 @@ private fun DirectoryLayerView(
     LaunchedEffect(listState, layer.path) {
         snapshotFlow { listState.canScrollBackward && !listState.canScrollForward }
             .collect { onListAtEndChanged(it) }
+    }
+
+    // Report scroll start and stop so the Play All FAB can hide while the list moves.
+    LaunchedEffect(listState, layer.path) {
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { onScrollingChanged(it) }
     }
 
     LaunchedEffect(fullScreenOverlay) {

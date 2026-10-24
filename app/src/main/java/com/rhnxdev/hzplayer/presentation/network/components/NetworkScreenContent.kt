@@ -451,6 +451,9 @@ internal fun ServerBrowseStackContent(
         val noopAtEnd: (Boolean) -> Unit = {}
         var isListAtEnd by remember { mutableStateOf(false) }
         val topLayerAtEnd: (Boolean) -> Unit = { isListAtEnd = it }
+        val noopScrolling: (Boolean) -> Unit = {}
+        var isListScrolling by remember { mutableStateOf(false) }
+        val topLayerScrolling: (Boolean) -> Unit = { isListScrolling = it }
 
         uiState.remoteLayers.forEachIndexed { index, layer ->
             val isTop = index == topIndex
@@ -474,6 +477,7 @@ internal fun ServerBrowseStackContent(
                     isTopLayer = isTop,
                     onPlayAsAudio = if (isTop) onPlayAsAudio else noopFolder,
                     onListAtEndChanged = if (isTop) topLayerAtEnd else noopAtEnd,
+                    onScrollingChanged = if (isTop) topLayerScrolling else noopScrolling,
                     modifier = (if (isTop) Modifier else Modifier.alpha(0f)).fillMaxSize(),
                 )
             }
@@ -484,9 +488,9 @@ internal fun ServerBrowseStackContent(
             !it.isDirectory && isVideoMedia(it.name, it.mimeType)
         } == true
         if (hasVideos && !isSearchActive) {
-            // Hide the FAB at the bottom of the list so it doesn't cover the last item
+            // Hidden at the bottom of the list and while it scrolls, so it doesn't cover content
             AnimatedVisibility(
-                visible = !isListAtEnd,
+                visible = !isListAtEnd && !isListScrolling,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut(),
                 modifier = Modifier
@@ -532,6 +536,7 @@ private fun RemoteDirectoryLayerView(
     isTopLayer: Boolean = false,
     onPlayAsAudio: (RemoteFileItem) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
+    onScrollingChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Only store the item *index* — pixel offsets are orientation-dependent and cause
@@ -585,6 +590,17 @@ private fun RemoteDirectoryLayerView(
         androidx.compose.runtime.snapshotFlow {
             listState.canScrollBackward && !listState.canScrollForward
         }.collect { onListAtEndChanged(it) }
+    }
+
+    // Report scroll start and stop so the Play All FAB can hide while the list moves.
+    androidx.compose.runtime.LaunchedEffect(listState, layer.path) {
+        androidx.compose.runtime.snapshotFlow { listState.isScrollInProgress }
+            .collect { onScrollingChanged(it) }
+    }
+    // Clear the flag when this layer leaves composition mid-scroll. Back navigation keeps the
+    // layer below composed, and it never emits again, so nothing else would reset the flag.
+    androidx.compose.runtime.DisposableEffect(listState, layer.path) {
+        onDispose { onScrollingChanged(false) }
     }
 
     // When the full-screen overlay (video/audio player) closes, the underlying

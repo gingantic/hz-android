@@ -22,7 +22,6 @@ darkens the accent until the glyph keeps contrast. Every reusable component take
 | `HzPlayerSlider` | `HzPlayerSlider.kt` | House-style slider: chunky gapless track, solid round knob ringed in the colour behind it; ticks + stop indicator suppressed. Accent/size are parameters, so it scales from a settings row to the equalizer's vertical faders |
 | `HzPlayerProgressBar` | `HzPlayerProgressBar.kt` | Determinate/indeterminate progress bar. `progress = null` → sweeping `IndeterminateBar`; otherwise an animated rounded fill coerced to at least the track height (so 0 % is still a visible dot) |
 | `MediaIconBadge` | `MediaIconBadge.kt` | Rounded gradient badge identifying media by type; accent darkened until a white glyph keeps contrast (holds up in light/dark/dynamic colour) |
-| `ViewToggleFab` | `ViewToggleFab.kt` | FAB toggling grid/list, animated crossfade |
 | `MediaEmptyState` | `MediaEmptyState.kt` | Illustrated empty state + optional action |
 | `MediaLoadingState` | `MediaLoadingState.kt` | Shimmer for grid/list |
 | `MediaErrorState` | `MediaErrorState.kt` | Error state + retry |

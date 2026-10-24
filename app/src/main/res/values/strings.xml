@@ -675,6 +675,7 @@
     <string name="view_mode_title">View Mode</string>
     <string name="view_mode_list">List</string>
     <string name="view_mode_list_desc">Compact with file details</string>
+    <string name="view_mode_grid">Grid</string>
     <string name="view_mode_media">Media</string>
     <string name="view_mode_media_desc">16:9 thumbnail previews</string>
     <string name="sort_order_title">Sort Order</string>

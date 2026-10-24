@@ -143,6 +143,7 @@ fun FileBrowserScreen(
                 )
                 FileBrowserMode.BROWSING -> {
                     var isListAtEnd by remember { mutableStateOf(false) }
+                    var isListScrolling by remember { mutableStateOf(false) }
 
                     DirectoryStackContent(
                         layers = uiState.layers,
@@ -171,6 +172,7 @@ fun FileBrowserScreen(
                         onDeleteItem = viewModel::onDeleteItem,
                         onToggleFavorite = { viewModel.onToggleQuickAccess(it.path) },
                         onListAtEndChanged = { isListAtEnd = it },
+                        onScrollingChanged = { isListScrolling = it },
                     )
 
                     // Play All FAB (memoized video check)
@@ -182,9 +184,9 @@ fun FileBrowserScreen(
                     }
 
                     if (hasVideos && !isSearchActive && uiState.clipboard == null) {
-                        // Hidden at the bottom of the list so it doesn't cover the last item
+                        // Hidden at the bottom of the list and while it scrolls, so it doesn't cover content
                         PlayAllFab(
-                            visible = !isListAtEnd,
+                            visible = !isListAtEnd && !isListScrolling,
                             onClick = {
                                 val playlist = viewModel.collectVideoPlaylist()
                                 if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
