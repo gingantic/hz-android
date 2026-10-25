@@ -219,6 +219,12 @@ meson setup build \
 ninja -C build install
 
 # ----- FFmpeg source -----------------------------------------------------------
+# One pinned revision for CI and local builds. CI keys its native caches on it
+# (see .github/workflows/build.yml), so a bump rebuilds instead of restoring an
+# old tree: a stale cache once shipped FFmpeg 7.1 (Lavf61) in releases while
+# debug builds used master (Lavf63), which made native network playback differ.
+FFMPEG_REF="${FFMPEG_REF:-79adb692a2720647e9dbe57de33fd50b41db295c}"
+
 # Prefer FFMPEG_SRC_DIR or existing WSL location (/root/ffmpeg-src)
 if [[ -n "${FFMPEG_SRC_DIR:-}" && -d "$FFMPEG_SRC_DIR" ]]; then
   FFMPEG_DIR="$(cd "$FFMPEG_SRC_DIR" && pwd)"
@@ -230,17 +236,24 @@ elif [[ -d "$HOME/ffmpeg-src" ]]; then
   FFMPEG_DIR="$HOME/ffmpeg-src"
   echo "=== Using FFmpeg source from $FFMPEG_DIR ==="
 else
-  FFMPEG_VER="7.1"
-  FFMPEG_DIR="/tmp/ffmpeg-${FFMPEG_VER}"
-  FFMPEG_TAR="/tmp/ffmpeg-${FFMPEG_VER}.tar.xz"
+  FFMPEG_DIR="/tmp/ffmpeg-src-${FFMPEG_REF}"
   if [[ ! -d "$FFMPEG_DIR" ]]; then
-    if [[ ! -f "$FFMPEG_TAR" ]]; then
-      echo "=== Downloading FFmpeg $FFMPEG_VER ==="
-      curl -fLo "$FFMPEG_TAR" \
-        "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VER}.tar.xz"
-    fi
-    echo "=== Extracting FFmpeg $FFMPEG_VER to /tmp ==="
-    tar -xf "$FFMPEG_TAR" -C "/tmp"
+    echo "=== Cloning FFmpeg $FFMPEG_REF ==="
+    git init -q "$FFMPEG_DIR"
+    git -C "$FFMPEG_DIR" remote add origin https://github.com/FFmpeg/FFmpeg.git
+    git -C "$FFMPEG_DIR" fetch --depth 1 -q origin "$FFMPEG_REF"
+    git -C "$FFMPEG_DIR" checkout -q FETCH_HEAD
+  fi
+fi
+
+# Refuse a mismatched tree instead of silently building a different FFmpeg.
+if [[ -d "$FFMPEG_DIR/.git" ]]; then
+  CURRENT_REF="$(git -C "$FFMPEG_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+  if [[ "$CURRENT_REF" != "$FFMPEG_REF" ]]; then
+    echo "ERROR: FFmpeg source at $FFMPEG_DIR is $CURRENT_REF, expected $FFMPEG_REF." >&2
+    echo "       Update it with: git -C \"$FFMPEG_DIR\" fetch --depth 1 origin $FFMPEG_REF" >&2
+    echo "                       git -C \"$FFMPEG_DIR\" checkout FETCH_HEAD" >&2
+    exit 1
   fi
 fi
 

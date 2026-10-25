@@ -19,6 +19,11 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: "2G"
   NDK_VER: "27.0.12077973"   # keep in sync with ndkVersion in app/build.gradle.kts
+  # Pinned FFmpeg revision — keep in sync with FFMPEG_REF in ffmpeg_build_android.sh.
+  # It is part of both native cache keys, so a bump rebuilds FFmpeg instead of
+  # restoring an older tree: the release once shipped FFmpeg 7.1 (Lavf61) while
+  # debug builds used master (Lavf63), so native network playback differed.
+  FFMPEG_REF: "79adb692a2720647e9dbe57de33fd50b41db295c"
 
 jobs:
   build:
@@ -105,7 +110,7 @@ jobs:
             app/src/main/jniLibs/arm64-v8a/libharfbuzz.so
             app/src/main/jniLibs/arm64-v8a/libadblock_jni.so
             app/src/main/cpp/include
-          key: native-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh','build_adblock_rust.sh') }}
+          key: native-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh','build_adblock_rust.sh') }}-${{ env.FFMPEG_REF }}
 
       # --- Try restoring prebuilt native dependencies from R2/S3 storage if GitHub Actions cache misses ---
       - name: Restore native deps from R2/S3 storage (fallback)
@@ -121,7 +126,7 @@ jobs:
           ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
           
           KEY_HASH="${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh','build_adblock_rust.sh') }}"
-          ARCHIVE_NAME="native-deps-arm64-v8a-${KEY_HASH}.tar.gz"
+          ARCHIVE_NAME="native-deps-arm64-v8a-${KEY_HASH}-${{ env.FFMPEG_REF }}.tar.gz"
           
           echo "Attempting to download $ARCHIVE_NAME from R2/S3..."
           if aws s3 cp "s3://${{ secrets.R2_BUCKET }}/cache/${ARCHIVE_NAME}" /tmp/native-deps.tar.gz --endpoint-url "$ENDPOINT" 2>/dev/null; then
@@ -139,16 +144,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ffmpeg-src
-          key: ffmpeg-src-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh') }}
-          restore-keys: |
-            ffmpeg-src-${{ runner.os }}-${{ env.NDK_VER }}-
+          key: ffmpeg-src-${{ runner.os }}-${{ env.NDK_VER }}-${{ hashFiles('ffmpeg_build_android.sh') }}-${{ env.FFMPEG_REF }}
+          # No restore-keys: a prefix match would hand back a tree from another
+          # revision, and ffmpeg_build_android.sh refuses to build a mismatched tree.
 
       # Only build when both GitHub Actions cache and R2/S3 cache missed.
       - name: Clone FFmpeg source (cached)
         if: steps.native-cache.outputs.cache-hit != 'true' && steps.r2-restore.outputs.r2_hit != 'true'
         run: |
           if [ ! -d ffmpeg-src ]; then
-            git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+            git init -q ffmpeg-src
+            git -C ffmpeg-src remote add origin https://github.com/FFmpeg/FFmpeg.git
+            git -C ffmpeg-src fetch --depth 1 -q origin "${{ env.FFMPEG_REF }}"
+            git -C ffmpeg-src checkout -q FETCH_HEAD
           fi
 
       - name: Build FFmpeg
@@ -184,7 +192,7 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         run: |
           KEY_HASH="${{ hashFiles('ffmpeg_build_android.sh','libass_build_android.sh','build_libarchive.sh','build_adblock_rust.sh') }}"
-          ARCHIVE_NAME="native-deps-arm64-v8a-${KEY_HASH}.tar.gz"
+          ARCHIVE_NAME="native-deps-arm64-v8a-${KEY_HASH}-${{ env.FFMPEG_REF }}.tar.gz"
           
           tar -czf "/tmp/${ARCHIVE_NAME}" \
             app/src/main/jniLibs/arm64-v8a/ \

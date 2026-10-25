@@ -15,6 +15,9 @@
 JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* /*reserved*/) {
     g_jvm = vm;
     installFfmpegLogBridge();
+    // Identifies the FFmpeg a build actually ships: release and debug diverged
+    // once (7.1 vs master) and native network playback differed with them.
+    LOGI("libavformat %s", av_version_info());
     return JNI_VERSION_1_6;
 }
 
