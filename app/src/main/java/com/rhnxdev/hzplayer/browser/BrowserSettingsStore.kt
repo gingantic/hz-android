@@ -41,6 +41,7 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         cacheMode                  = BrowserCacheMode.entries.find {
                                         it.name == p.getString(KEY_CACHE, null)
                                      } ?: BrowserCacheMode.NORMAL,
+        adaptiveNetworkEnabled     = p.getBoolean(KEY_ADAPTIVE_NETWORK, true),
         restoreTabsOnStartup       = p.getBoolean(KEY_RESTORE_TABS, true),
     )
 
@@ -71,6 +72,7 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
             .putBoolean(KEY_OVERVIEW,        s.loadWithOverviewMode)
             .putBoolean(KEY_ZOOM,            s.builtInZoomEnabled)
             .putString( KEY_CACHE,           s.cacheMode.name)
+            .putBoolean(KEY_ADAPTIVE_NETWORK, s.adaptiveNetworkEnabled)
             .putBoolean(KEY_RESTORE_TABS,    s.restoreTabsOnStartup)
             .apply()
     }
@@ -102,6 +104,7 @@ class BrowserSettingsStore private constructor(prefs: SharedPreferences) {
         private const val KEY_OVERVIEW       = "overview"
         private const val KEY_ZOOM           = "zoom"
         private const val KEY_CACHE          = "cache_mode"
+        private const val KEY_ADAPTIVE_NETWORK = "adaptive_network"
         private const val KEY_RESTORE_TABS   = "restore_tabs"
 
         @Volatile private var instance: BrowserSettingsStore? = null

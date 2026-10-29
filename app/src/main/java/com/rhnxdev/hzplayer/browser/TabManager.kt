@@ -23,7 +23,9 @@ import com.rhnxdev.hzplayer.browser.media.MediaSnifferEngine
 import com.rhnxdev.hzplayer.core.util.DebouncedAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -36,14 +38,47 @@ import org.json.JSONObject
  */
 class TabManager(
     initialSettings: BrowserSettings = BrowserSettings(),
+    initialNetworkState: BrowserNetworkState = BrowserNetworkState(),
 ) {
 
     /** Current browser settings — update via [applySettings]. */
     var settings: BrowserSettings = initialSettings
         private set
 
+    /** Latest connection state — update via [onNetworkStateChanged]. */
+    var networkState: BrowserNetworkState = initialNetworkState
+        private set
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val liveViews = mutableMapOf<String, WebView>()
+
+    /**
+     * Main-frame HTTP errors (4xx/5xx) waiting for the page to finish. Many
+     * sites send a useful error body of their own, so the error page is only
+     * shown when the finished page turns out to be blank (see [showIfBlank]).
+     */
+    private val pendingHttpErrors = HashMap<String, BrowserError>()
+
+    /**
+     * Main-frame certificate failures whose tab view still shows the previous page
+     * (a link or redirect into the failing host). Reported by onPageFinished, which
+     * receives the failing URL, once that URL is known to be the one that failed.
+     */
+    private val pendingSslErrors = HashMap<String, BrowserError>()
+
+    /**
+     * Tabs whose error page must clear on the next commit even when the URL is
+     * unchanged (retry, or a URL typed again). A commit for a different URL
+     * clears the error anyway; a commit of the failed URL itself — an error
+     * document restored from history — keeps the error page up.
+     */
+    private val clearErrorOnCommit = HashSet<String>()
+
+    /** Per-tab safety timers that release deferred images — see [deferImages]. */
+    private val imageDeferTimeouts = HashMap<String, Job>()
+
+    /** Last progress value pushed to tab state, per tab — see [onProgressChanged]. */
+    private val lastReportedProgress = HashMap<String, Int>()
 
     /** Coalesces per-keystroke custom-UA edits into one reload of the live tabs. */
     private val renderReloads = DebouncedAction(scope, CUSTOM_UA_RELOAD_DEBOUNCE_MS)
@@ -79,6 +114,24 @@ class TabManager(
 
         /** Quiet period after the last custom-UA keystroke before live tabs are reloaded. */
         private const val CUSTOM_UA_RELOAD_DEBOUNCE_MS = 500L
+
+        /**
+         * Longest a slow-link page may hold back its images. Normally they are
+         * released when the page finishes; this bounds pages that never finish.
+         */
+        private const val IMAGE_DEFER_MAX_MS = 10_000L
+
+        /** Smallest progress step pushed to tab state; each push recomposes the browser screen. */
+        private const val PROGRESS_STEP = 5
+
+        /**
+         * Reports whether a finished page has nothing visible: no text and no
+         * media elements. Evaluates to the string "true" / "false".
+         */
+        private const val BLANK_PAGE_JS =
+            "(function(){var b=document.body;if(!b)return true;" +
+                "return b.innerText.trim().length===0&&" +
+                "b.querySelector('img,video,canvas,svg,iframe,object,embed')===null;})()"
 
         private const val DESKTOP_UA =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -327,23 +380,24 @@ class TabManager(
         activeTabId = id
         val tab = _tabs.value.find { it.id == id } ?: return
         urlInput = tab.url
+        // This tab failed on the network while it was in the background; if the
+        // network is back by the time it comes to the front, retry now.
+        if (networkState.online && autoRetryable(tab)) retryTab(id)
         onTabSwitched?.invoke(id)
     }
 
     var onTabSwitched: ((tabId: String) -> Unit)? = null
+    /** Fired when any page finishes loading (including about:blank and error pages). */
+    var onLoadFinished: (() -> Unit)? = null
     var onPageVisited: ((url: String, title: String) -> Unit)? = null
     /** Fired when a cross-domain pop-up needs user approval (raises the Allow/Deny sheet). */
     var onCrossDomainPopupRequested: ((PendingPopupRequest) -> Unit)? = null
-    /** Fired when a tel:/mailto:/market:/intent:-style link has no app to handle it. */
-    var onExternalSchemeFailed: ((url: String) -> Unit)? = null
-    /** Fired when an intent:// link is dropped because [BrowserSettings.allowIntentLinks] is off. */
-    var onIntentLinkBlocked: ((url: String) -> Unit)? = null
     /**
-     * Fired when a page load is blocked by an SSL/certificate error (always
-     * cancelled — no bypass). Carries the raw `SslError.SSL_*` code; the UI maps
-     * it to a human-readable reason. Null when WebView reported no error object.
+     * Fired for a failure that does not replace the page: a link no app can open,
+     * a blocked intent:// link, or a certificate error on a sub-resource. The UI
+     * shows it briefly; page-level failures go to [BrowserTab.error] instead.
      */
-    var onSslErrorBlocked: ((host: String, primaryError: Int?) -> Unit)? = null
+    var onNotice: ((BrowserError) -> Unit)? = null
 
     /** True when settings request full desktop rendering (viewport + JS spoofing, not just UA). */
     private val isDesktopMode: Boolean
@@ -410,6 +464,9 @@ class TabManager(
     fun navigate(tabId: String, url: String) {
         // Explicit navigation is a fresh start — clear any crash-recovery budget.
         rendererFailures.remove(tabId)
+        pendingHttpErrors.remove(tabId)
+        pendingSslErrors.remove(tabId)
+        clearErrorOnCommit.add(tabId)
         val safeUrl = sanitizeUrl(url)
         updateTab(tabId) {
             it.copy(
@@ -425,17 +482,20 @@ class TabManager(
 
     fun goBack() {
         val id = activeTabId ?: return
+        clearErrorOnCommit.remove(id)
         liveViews[id]?.goBack()
     }
 
     fun goForward() {
         val id = activeTabId ?: return
+        clearErrorOnCommit.remove(id)
         liveViews[id]?.goForward()
     }
 
     fun reload() {
         val id = activeTabId ?: return
-        liveViews[id]?.reload()
+        // On an error page the toolbar button and the page's own Retry must agree.
+        if (hasPageError(id)) retryTab(id) else liveViews[id]?.reload()
     }
 
     fun stopLoading() {
@@ -636,7 +696,14 @@ class TabManager(
                 snifferTokens[id] = SnifferToken(UUID.randomUUID().toString(), snifferTokens[id]?.current)
                 // The new document has no picker script and no selection left.
                 resetElementPickerState()
+                // A fresh navigation supersedes the previous page's failure.
+                pendingHttpErrors.remove(id)
+                lastReportedProgress[id] = 0
+                deferImages(view, id)
                 val keepTabUrl = isSyntheticPageUrl(url)
+                // The error page stays until a new document commits (see
+                // onPageCommitVisible); clearing it here flashed the WebView's
+                // own error document while the next page loaded.
                 updateTab(id) {
                     it.copy(
                         url = if (keepTabUrl) it.url else url,
@@ -658,6 +725,16 @@ class TabManager(
                 val id = resolveTabId(view) ?: return
                 // A completed load means the renderer is healthy again.
                 rendererFailures.remove(id)
+                releaseImages(view, id)
+                // The failing navigation finishes under its own URL, so this decides a
+                // deferred certificate error. A finish for another host leaves it pending.
+                pendingSslErrors[id]?.let { ssl ->
+                    if (hostOf(url) == hostOf(ssl.url)) {
+                        pendingSslErrors.remove(id)
+                        reportPageError(id, ssl)
+                    }
+                }
+                lastReportedProgress[id] = 100
                 updateTab(id) {
                     it.copy(
                         title = view.title ?: "", isLoading = false, progress = 100,
@@ -674,10 +751,14 @@ class TabManager(
                     }
                 }
 
-                if (url.isNotBlank() && url != "about:blank" && !isSyntheticPageUrl(url)) {
+                if (url.isNotBlank() && url != "about:blank" && !isSyntheticPageUrl(url) &&
+                    !hasPageError(id)
+                ) {
                     val pageTitle = view.title?.ifBlank { url } ?: url
                     onPageVisited?.invoke(url, pageTitle)
                 }
+                pendingHttpErrors.remove(id)?.let { showIfBlank(view, id, it) }
+                onLoadFinished?.invoke()
             }
 
 
@@ -686,6 +767,14 @@ class TabManager(
                 // so retire its token.
                 val id = resolveTabId(view) ?: return
                 snifferTokens.computeIfPresent(id) { _, state -> state.copy(previous = null) }
+                // The old document is no longer drawn, so the error page can go —
+                // unless the committed document is the failure itself (its error
+                // page restored from history), which must stay covered.
+                val clear = clearErrorOnCommit.remove(id)
+                val error = _tabs.value.find { it.id == id }?.error
+                if (error != null && (clear || url != error.url)) {
+                    updateTab(id) { it.copy(error = null) }
+                }
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -707,28 +796,30 @@ class TabManager(
                 return false
             }
 
+            // ── Errors ─────────────────────────────────────────────────
+            // Every failure goes through BrowserErrorMapper, then either
+            // reportPageError (the page can't be shown) or notify (it can).
+
             override fun onReceivedError(
                 view: WebView,
                 request: WebResourceRequest,
                 error: android.webkit.WebResourceError
             ) {
-                android.util.Log.w(
-                    "HzBrowser",
-                    "onReceivedError code=${error.errorCode} desc=${error.description} " +
-                        "mainFrame=${request.isForMainFrame} url=${request.url}"
-                )
-            }
-
-            @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
-            override fun onReceivedError(
-                view: WebView,
-                errorCode: Int,
-                description: String?,
-                failingUrl: String?
-            ) {
-                android.util.Log.w(
-                    "HzBrowser",
-                    "onReceivedError(legacy) code=$errorCode desc=$description url=$failingUrl"
+                // Failed sub-resources (images, scripts, trackers) are normal and
+                // not worth interrupting the page for.
+                if (!request.isForMainFrame) return
+                val description = error.description?.toString()
+                // A navigation the user (or a redirect) cancelled is not a failure.
+                if (description?.contains("ERR_ABORTED") == true) return
+                val id = resolveTabId(view) ?: return
+                reportPageError(
+                    id,
+                    BrowserErrorMapper.fromWebResource(
+                        errorCode = error.errorCode,
+                        description = description,
+                        url = request.url.toString(),
+                        online = networkState.online,
+                    ),
                 )
             }
 
@@ -737,11 +828,10 @@ class TabManager(
                 request: WebResourceRequest,
                 errorResponse: android.webkit.WebResourceResponse
             ) {
-                android.util.Log.w(
-                    "HzBrowser",
-                    "onReceivedHttpError status=${errorResponse.statusCode} " +
-                        "mainFrame=${request.isForMainFrame} url=${request.url}"
-                )
+                if (!request.isForMainFrame) return
+                val id = resolveTabId(view) ?: return
+                BrowserErrorMapper.fromHttpStatus(errorResponse.statusCode, request.url.toString())
+                    ?.let { pendingHttpErrors[id] = it }
             }
 
             // The renderer is gone: this WebView instance is unusable, so drop it
@@ -752,11 +842,11 @@ class TabManager(
                 detail: android.webkit.RenderProcessGoneDetail?
             ): Boolean {
                 val crashed = detail?.didCrash() == true
-                android.util.Log.w("HzBrowser", "onRenderProcessGone crashed=$crashed")
                 if (view == null) return true
                 val tabId = resolveTabId(view)
                 if (tabId != null) {
-                    discardDeadWebView(view, tabId)
+                    val url = _tabs.value.find { it.id == tabId }?.url.orEmpty()
+                    discardDeadWebView(view, tabId, BrowserErrorMapper.fromRenderer(crashed, url))
                 } else {
                     // Untracked WebView (e.g. a popup awaiting registration).
                     (view.parent as? ViewGroup)?.removeView(view)
@@ -773,16 +863,24 @@ class TabManager(
                 handler: android.webkit.SslErrorHandler?,
                 error: android.net.http.SslError?
             ) {
-                android.util.Log.w(
-                    "HzBrowser",
-                    "onReceivedSslError url=${error?.url} primaryError=${error?.primaryError}"
-                )
-                // Always cancel — no "proceed anyway" bypass, matching a safety-first
-                // posture. Unlike a silent cancel, tell the user why the page didn't
-                // load instead of leaving them looking at a blank/default error page.
+                // Always cancel — no "proceed anyway" bypass, matching a safety-first posture.
                 handler?.cancel()
-                val host = try { android.net.Uri.parse(error?.url).host ?: "" } catch (_: Exception) { "" }
-                onSslErrorBlocked?.invoke(host, error?.primaryError)
+                val mapped = BrowserErrorMapper.fromSsl(error?.primaryError, error?.url.orEmpty())
+                val id = view?.let { resolveTabId(it) } ?: return
+                val pageUrl = view?.url ?: _tabs.value.find { it.id == id }?.url
+                val errorHost = hostOf(mapped.url)
+                val pageHost = hostOf(pageUrl)
+                // Treat it as the page's own failure unless we can positively
+                // identify it as a *different* host (a real embedded sub-resource).
+                // SslError.getUrl() can be schemeless or blank, which previously
+                // made the host comparison fail and the error vanish silently — a
+                // genuine main-frame certificate failure must always surface.
+                val isSubResource = errorHost != null && pageHost != null && errorHost != pageHost
+                if (!isSubResource) {
+                    reportPageError(id, mapped)
+                } else {
+                    pendingSslErrors[id] = mapped
+                }
             }
         }
 
@@ -805,7 +903,7 @@ class TabManager(
                 updateTab(id) { it.copy(title = title) }
                 val currentUrl = view.url ?: ""
                 if (currentUrl.isNotBlank() && currentUrl != "about:blank" &&
-                    !isSyntheticPageUrl(currentUrl) && title.isNotBlank()
+                    !isSyntheticPageUrl(currentUrl) && title.isNotBlank() && !hasPageError(id)
                 ) {
                     onPageVisited?.invoke(currentUrl, title)
                 }
@@ -813,7 +911,8 @@ class TabManager(
 
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 val id = resolveTabId(view) ?: return
-                updateTab(id) { it.copy(progress = newProgress) }
+                reportProgress(id, newProgress)
+                if (newProgress == 100) releaseImages(view, id)
                 if (newProgress == 30 || newProgress == 60) {
                     MediaSnifferBridge.injectSnifferJs(view, snifferTokenFor(id))
                     if (isDesktopMode) injectDesktopModeJs(view)
@@ -996,11 +1095,207 @@ class TabManager(
                     // of replaying this snapshot.
                     updateTab(tabId) { it.copy(savedState = null) }
                 }
-            } else if (tab.url.isNotBlank()) {
+            } else if (tab.url.isNotBlank() && tab.error?.kind?.isRendererFailure != true) {
+                // (A tab parked on a renderer-failure page waits for the user's Retry
+                // instead of re-triggering the crash on every new WebView.)
                 updateTab(tabId) { it.copy(isLoading = true, progress = 0) }
                 wv.loadUrl(tab.url)
             }
         }
+    }
+
+    // ── Errors ───────────────────────────────────────────────────
+
+    /**
+     * The one way a page failure reaches the UI: records [error] on the tab, which
+     * makes the error page cover the WebView. Everything that can fail a page ends here.
+     */
+    private fun reportPageError(tabId: String, error: BrowserError) {
+        android.util.Log.w(
+            "HzBrowser",
+            "page error tab=$tabId kind=${error.kind} detail=${error.detail} url=${error.url}"
+        )
+        clearErrorOnCommit.remove(tabId)
+        updateTab(tabId) { it.copy(error = error, isLoading = false) }
+    }
+
+    /** A failure that leaves the current page alone: shown as a brief notice. */
+    private fun notify(error: BrowserError) {
+        android.util.Log.w("HzBrowser", "notice kind=${error.kind} url=${error.url}")
+        onNotice?.invoke(error)
+    }
+
+    /** The device has no usable WebView, so the tab can never load. */
+    fun reportWebViewUnavailable(tabId: String) {
+        val url = _tabs.value.find { it.id == tabId }?.url.orEmpty()
+        reportPageError(tabId, BrowserError(BrowserErrorKind.WEBVIEW_UNAVAILABLE, url))
+    }
+
+    private fun hasPageError(tabId: String): Boolean =
+        _tabs.value.find { it.id == tabId }?.error != null
+
+    /**
+     * Show [error] only if the finished page is visually empty. A server's own
+     * 404/500 page is more informative than ours, so it wins when it has content.
+     * A result of "null" (JavaScript off) is left alone rather than risk hiding content.
+     */
+    private fun showIfBlank(view: WebView, tabId: String, error: BrowserError) {
+        view.evaluateJavascript(BLANK_PAGE_JS) { result ->
+            if (result == "true" && liveViews[tabId] === view) reportPageError(tabId, error)
+        }
+    }
+
+    /** Retry the active tab's failed page — what the error page's button calls. */
+    fun retry() {
+        val id = activeTabId ?: return
+        retryTab(id)
+    }
+
+    /**
+     * The page a Back press reveals over [tabId]'s error page: the URL the WebView still
+     * shows, unless it is the failed URL, a data: page or blank. A cancelled navigation
+     * leaves the previous page on screen with no back entry to return to.
+     */
+    private fun pageUnderError(tabId: String): String? {
+        val error = _tabs.value.find { it.id == tabId }?.error ?: return null
+        val shown = liveViews[tabId]?.url?.takeIf {
+            it.isNotBlank() && it != "about:blank" && !isSyntheticPageUrl(it)
+        } ?: return null
+        return shown.takeIf { it != error.url }
+    }
+
+    /** True when Back should hide [tabId]'s error page and reveal the page under it. */
+    fun canDismissPageError(tabId: String): Boolean = pageUnderError(tabId) != null
+
+    /** Hides [tabId]'s error page and shows the page under it. Returns false when there is none. */
+    fun dismissPageError(tabId: String): Boolean {
+        val shown = pageUnderError(tabId) ?: return false
+        val view = liveViews[tabId] ?: return false
+        clearErrorOnCommit.remove(tabId)
+        pendingSslErrors.remove(tabId)
+        updateTab(tabId) {
+            it.copy(
+                error = null,
+                url = shown,
+                title = view.title?.takeIf { t -> t.isNotBlank() } ?: it.title,
+                isLoading = false,
+                canGoBack = view.canGoBack(),
+                canGoForward = view.canGoForward(),
+            )
+        }
+        if (tabId == activeTabId && !isUrlBarFocused) urlInput = shown
+        return true
+    }
+
+    private fun retryTab(tabId: String) {
+        val tab = _tabs.value.find { it.id == tabId } ?: return
+        val view = liveViews[tabId]
+        val url = tab.error?.url?.ifBlank { null } ?: tab.url
+        if (view == null || url.isBlank()) return
+        rendererFailures.remove(tabId)
+        pendingHttpErrors.remove(tabId)
+        // Keep the error set: the page must stay covered until the new document
+        // commits. Clearing it here is what flashed the WebView's own error page.
+        clearErrorOnCommit.add(tabId)
+        updateTab(tabId) { it.copy(isLoading = true, progress = 0) }
+        // loadUrl rather than reload(): after a failed load the WebView's history
+        // entry is its own error document, and a fresh load is the reliable retry.
+        view.loadUrl(url)
+    }
+
+    /** True when [tab] failed in a way that should reload itself once the network is back. */
+    private fun autoRetryable(tab: BrowserTab): Boolean =
+        settings.adaptiveNetworkEnabled && tab.error?.kind?.retry == RetryPolicy.ON_RECONNECT
+
+    /**
+     * Host of a URL, lowercased. Tolerates a missing scheme: `SslError.getUrl()`
+     * can return a schemeless string (e.g. `expired.badssl.com/…`), which
+     * `Uri.parse` would otherwise read as a path, yielding a null host and
+     * silently dropping the certificate failure.
+     */
+    private fun hostOf(u: String?): String? {
+        if (u.isNullOrBlank()) return null
+        val withScheme = if (u.contains("://")) u else "https://$u"
+        return runCatching { android.net.Uri.parse(withScheme).host?.lowercase() }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    // ── Network adaptation ───────────────────────────────────────
+
+    /**
+     * React to a connectivity change: switch the cache policy for live views,
+     * stop deferring images once the link is no longer constrained, and retry
+     * loads that failed while the network was down.
+     */
+    fun onNetworkStateChanged(newState: BrowserNetworkState) {
+        if (newState == networkState) return
+        val wasOnline = networkState.online
+        networkState = newState
+        liveViews.values.forEach { it.settings.cacheMode = effectiveCacheMode(settings) }
+        if (!newState.constrained) {
+            liveViews.forEach { (id, view) -> releaseImages(view, id) }
+        }
+        if (!wasOnline && newState.online && settings.adaptiveNetworkEnabled) retryFailedLoads()
+    }
+
+    /** Reload the active tab if it failed on the network; others wait until [switchTab]. */
+    private fun retryFailedLoads() {
+        val id = activeTabId ?: return
+        if (_tabs.value.find { it.id == id }?.let(::autoRetryable) == true) retryTab(id)
+    }
+
+    /**
+     * Cache policy for new loads. With the default mode, a device that is offline
+     * prefers cached copies (even expired) over an error page; explicit No cache /
+     * Cache only choices are always honoured.
+     */
+    private fun effectiveCacheMode(s: BrowserSettings): Int = when (s.cacheMode) {
+        BrowserCacheMode.NO_CACHE   -> android.webkit.WebSettings.LOAD_NO_CACHE
+        BrowserCacheMode.CACHE_ONLY -> android.webkit.WebSettings.LOAD_CACHE_ONLY
+        BrowserCacheMode.NORMAL     ->
+            if (s.adaptiveNetworkEnabled && !networkState.online) {
+                android.webkit.WebSettings.LOAD_CACHE_ELSE_NETWORK
+            } else {
+                android.webkit.WebSettings.LOAD_DEFAULT
+            }
+    }
+
+    /**
+     * On a slow or Data Saver link, hold back network images so text and layout
+     * arrive first. They are fetched when the page finishes, or after
+     * [IMAGE_DEFER_MAX_MS] at the latest, whichever comes first.
+     */
+    private fun deferImages(view: WebView, tabId: String) {
+        imageDeferTimeouts.remove(tabId)?.cancel()
+        if (!(settings.adaptiveNetworkEnabled && networkState.constrained)) {
+            view.settings.blockNetworkImage = false
+            return
+        }
+        view.settings.blockNetworkImage = true
+        imageDeferTimeouts[tabId] = scope.launch {
+            delay(IMAGE_DEFER_MAX_MS)
+            imageDeferTimeouts.remove(tabId)
+            // The view may have been replaced or destroyed while waiting.
+            if (liveViews[tabId] === view) view.settings.blockNetworkImage = false
+        }
+    }
+
+    /** Let a view fetch the images [deferImages] held back. */
+    private fun releaseImages(view: WebView, tabId: String) {
+        imageDeferTimeouts.remove(tabId)?.cancel()
+        view.settings.blockNetworkImage = false
+    }
+
+    /**
+     * Throttled progress write. Each write recomposes the whole browser screen,
+     * so only whole steps (and the final 100) are pushed, not all ~100 callbacks.
+     */
+    private fun reportProgress(tabId: String, progress: Int) {
+        val last = lastReportedProgress[tabId] ?: -1
+        if (progress < 100 && progress >= last && progress - last < PROGRESS_STEP) return
+        lastReportedProgress[tabId] = progress
+        updateTab(tabId) { it.copy(progress = progress) }
     }
 
     /** Apply new settings to every live WebView and remember for future registrations. */
@@ -1083,11 +1378,9 @@ class TabManager(
         else
             android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         wv.settings.safeBrowsingEnabled                = s.safeBrowsingEnabled
-        wv.settings.cacheMode = when (s.cacheMode) {
-            BrowserCacheMode.NO_CACHE    -> android.webkit.WebSettings.LOAD_NO_CACHE
-            BrowserCacheMode.CACHE_ONLY  -> android.webkit.WebSettings.LOAD_CACHE_ONLY
-            BrowserCacheMode.NORMAL      -> android.webkit.WebSettings.LOAD_DEFAULT
-        }
+        wv.settings.cacheMode = effectiveCacheMode(s)
+        // Adaptive loading off → never leave images held back.
+        if (!s.adaptiveNetworkEnabled) wv.settings.blockNetworkImage = false
         // User Agent
         val ua = when (s.userAgentMode) {
             UserAgentMode.MOBILE  -> MOBILE_UA
@@ -1136,6 +1429,7 @@ class TabManager(
         wv.destroy()
         liveViews.remove(id)
         snifferTokens.remove(id)
+        clearNetworkState(id)
     }
 
     /** Get the WebView for a specific tab (null if frozen or not yet created). */
@@ -1147,6 +1441,16 @@ class TabManager(
         webViewGenerations.value = webViewGenerations.value - id
         rendererFailures.remove(id)
         snifferTokens.remove(id)
+        clearNetworkState(id)
+    }
+
+    /** Forget a tab's network-adaptation bookkeeping (its view is gone or replaced). */
+    private fun clearNetworkState(id: String) {
+        imageDeferTimeouts.remove(id)?.cancel()
+        pendingHttpErrors.remove(id)
+        pendingSslErrors.remove(id)
+        lastReportedProgress.remove(id)
+        clearErrorOnCommit.remove(id)
     }
 
     /**
@@ -1154,11 +1458,17 @@ class TabManager(
      * requires it to be removed from the hierarchy with all references dropped.
      * Discard it and bump the generation so the UI builds a fresh instance,
      * which reloads the tab's current URL instead of stranding it on a blank page.
+     *
+     * After [MAX_RENDERER_RECOVERIES] consecutive failures the page is not
+     * reloaded again; [error] is shown instead, with a Retry button.
      */
-    private fun discardDeadWebView(dead: WebView, tabId: String) {
+    private fun discardDeadWebView(dead: WebView, tabId: String, error: BrowserError) {
         if (tabId == activeTabId) resetElementPickerState()
         liveViews.remove(tabId)
         snifferTokens.remove(tabId)
+        imageDeferTimeouts.remove(tabId)?.cancel()
+        lastReportedProgress.remove(tabId)
+        pendingHttpErrors.remove(tabId)
         setTabPlaying(tabId, false)
         (dead.parent as? ViewGroup)?.removeView(dead)
         try {
@@ -1171,15 +1481,8 @@ class TabManager(
         rendererFailures[tabId] = failures
         if (failures > MAX_RENDERER_RECOVERIES) {
             // This page keeps killing the renderer — stop auto-reloading it so we
-            // don't loop, and leave a blank tab the user can navigate away from.
-            android.util.Log.w(
-                "HzBrowser",
-                "renderer failed $failures times for tab $tabId — not reloading"
-            )
-            if (activeTabId == tabId) urlInput = ""
-            updateTab(tabId) {
-                it.copy(url = "", title = "", isLoading = false, progress = 0)
-            }
+            // don't loop; park the tab on the error page for the user to act on.
+            reportPageError(tabId, error)
         }
 
         webViewGenerations.value = webViewGenerations.value + (tabId to generationOf(tabId) + 1)
@@ -1202,6 +1505,12 @@ class TabManager(
         deliverFileChooserResult(null)
         resetElementPickerState()
         renderReloads.cancel()
+        imageDeferTimeouts.values.forEach { it.cancel() }
+        imageDeferTimeouts.clear()
+        pendingHttpErrors.clear()
+        pendingSslErrors.clear()
+        lastReportedProgress.clear()
+        clearErrorOnCommit.clear()
         liveViews.values.forEach { it.destroy() }
         liveViews.clear()
         snifferTokens.clear()
@@ -1276,8 +1585,7 @@ class TabManager(
         // (or the Play Store) without pop-up-blocker or same-origin checks
         // applying — let the user turn it off while keeping tel:/mailto:/etc.
         if (isIntent && !settings.allowIntentLinks) {
-            android.util.Log.w("HzBrowser", "Blocked intent:// link (disabled in settings): $url")
-            onIntentLinkBlocked?.invoke(url)
+            notify(BrowserErrorMapper.intentLinkBlocked(url))
             return true
         }
 
@@ -1289,10 +1597,9 @@ class TabManager(
             }
             intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             view.context.startActivity(intent)
-        } catch (_: android.content.ActivityNotFoundException) {
-            onExternalSchemeFailed?.invoke(url)
         } catch (_: Exception) {
-            onExternalSchemeFailed?.invoke(url)
+            // ActivityNotFoundException, or an intent:// URI that doesn't parse.
+            notify(BrowserErrorMapper.noAppForLink(url))
         }
         return true
     }

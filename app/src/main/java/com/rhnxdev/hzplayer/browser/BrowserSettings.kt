@@ -49,6 +49,10 @@ data class BrowserSettings(
     // ── Caching ──────────────────────────────────────────────────
     val cacheMode: BrowserCacheMode = BrowserCacheMode.NORMAL,
 
+    // Adapt to the connection: serve cached pages while offline, retry failed
+    // loads when the network returns, and defer images on slow/Data Saver links.
+    val adaptiveNetworkEnabled: Boolean = true,
+
     // ── Session ──────────────────────────────────────────────────
     val restoreTabsOnStartup: Boolean = true,
 )

@@ -126,6 +126,7 @@ The in-app browser owns its UI package (hosted by `BrowserActivity`, not the mai
 | `BrowserTopBar` / `BrowserBottomBar` | Omnibox top bar (with `UrlSuggestionsPanel`) + navigation toolbar. The bottom bar carries a media-count badge and the "Block element" overflow action |
 | `TabSidebar` | Tab switcher — a left-side vertical panel that snaps in over the content |
 | `NewTabPage` | Start page |
+| `BrowserErrorPage` | Full-page error shown in place of a tab's content when it can't be displayed. One layout for every `BrowserErrorKind` (icon by category, title, message, optional host and `net::` code, Retry and Go back). Retry is offered only when the kind's `RetryPolicy` allows it. Also hosts `BrowserError.noticeText()` for the brief toast used by non-page failures. Data flow: WebView callback → `BrowserErrorMapper` → `TabManager` (`reportPageError` → `BrowserTab.error`, or `notify` → `onNotice`) → `BrowserScreen`. Add a new error by adding a `BrowserErrorKind` entry and its two strings |
 | `MediaGrabberBottomSheet` | Detected media list (ALL / VIDEO / AUDIO / STREAMS filter chips) + quality picker, variant tree, token inspector, download/stream/share/cURL actions |
 | `PopupPermissionBottomSheet` | Cross-domain popup approval (source page + target domain, Allow / Deny) |
 | `ElementPickerPanel` | Ad-block cosmetic-rule authoring — shows the generated selector, the match count, a "Wider" action and an "Apply to all sites" toggle. Non-modal so the page stays tappable |

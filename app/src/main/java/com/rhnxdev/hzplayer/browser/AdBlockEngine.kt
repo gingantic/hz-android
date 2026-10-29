@@ -3,6 +3,8 @@ package com.rhnxdev.hzplayer.browser.adblock
 import android.content.Context
 import android.util.Log
 import com.rhnxdev.hzplayer.browser.BrowserSettings
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -50,10 +52,30 @@ object AdBlockEngine {
         return false
     }
 
+    /**
+     * Released once the first [initialize] finishes. [shouldBlockRequest] runs on
+     * WebView's network threads, so it can wait here while the engine builds off
+     * the main thread — the first page's requests are filtered, not let through.
+     */
+    private val initLatch = CountDownLatch(1)
+
+    /** Upper bound on that wait; past it requests go unfiltered rather than stall the page. */
+    private const val INIT_WAIT_MS = 3000L
+
+    /**
+     * Builds the engine for this process. Heavy (reads and parses every list),
+     * so call it off the main thread. A no-op when an engine already exists:
+     * later changes arrive through [reload].
+     */
     fun initialize(context: Context, settings: BrowserSettings) {
-        reload(context, settings)
+        try {
+            if (nativeEngineHandle.get() == 0L) reload(context, settings)
+        } finally {
+            initLatch.countDown()
+        }
     }
 
+    @Synchronized
     fun reload(context: Context, settings: BrowserSettings) {
         if (!isAvailable || !settings.adBlockEnabled) {
             destroyQuietly(nativeEngineHandle.getAndSet(0L))
@@ -118,7 +140,14 @@ object AdBlockEngine {
     ): Boolean {
         if (!isAvailable || !settings.adBlockEnabled || requestUrl.isBlank()) return false
         if (requestUrl.startsWith("data:") || requestUrl.startsWith("blob:") || requestUrl.startsWith("file:")) return false
-        if (isCaptchaRequest(requestUrl)) return false
+
+        if (initLatch.count > 0L) {
+            try {
+                initLatch.await(INIT_WAIT_MS, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
 
         val handle = nativeEngineHandle.get()
         if (handle != 0L) {
@@ -129,10 +158,13 @@ object AdBlockEngine {
                     pageUrl = pageUrl,
                     resourceType = resourceType
                 )
-                if (blocked) {
+                // Checked only for would-be-blocked requests: Uri parsing on every
+                // sub-resource was the dominant cost of this method.
+                if (blocked && !isCaptchaRequest(requestUrl)) {
                     blockedCount.incrementAndGet()
+                    return true
                 }
-                return blocked
+                return false
             } catch (e: Throwable) {
                 Log.e(TAG, "Native shouldBlock error: ${e.message}")
             }

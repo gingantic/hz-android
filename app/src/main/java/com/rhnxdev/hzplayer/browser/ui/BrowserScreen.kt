@@ -1,7 +1,6 @@
 package com.rhnxdev.hzplayer.browser.ui
 
 import android.app.Activity
-import android.net.http.SslError
 import android.widget.Toast
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
@@ -37,11 +36,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.annotation.StringRes
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.browser.BrowserViewModel
-import com.rhnxdev.hzplayer.browser.BrowserWarning
 
 import android.view.MotionEvent
 import androidx.compose.foundation.clickable
@@ -101,7 +98,8 @@ fun BrowserScreen(
             showSettings   -> showSettings = false
             showTabSidebar -> showTabSidebar = false
             viewModel.activeTab?.canGoBack == true ||
-                viewModel.canReturnToParentTab -> viewModel.goBackOrClosePopup()
+                viewModel.canReturnToParentTab ||
+                viewModel.canDismissPageError -> viewModel.goBackOrClosePopup()
             else -> (context as? Activity)?.finish()
         }
     }
@@ -112,26 +110,13 @@ fun BrowserScreen(
     }
 
     // Resolved to text here rather than in the ViewModel — no user-facing string
-    // lives there, so warnings travel as typed data.
-    val popupWarning = viewModel.popupWarning
-    val popupWarningText = popupWarning?.let { warning ->
-        when (warning) {
-            BrowserWarning.NoAppForLink -> stringResource(R.string.browser_no_app_for_link)
-            BrowserWarning.IntentLinkBlocked -> stringResource(R.string.browser_intent_link_blocked)
-            is BrowserWarning.SslErrorBlocked -> {
-                val reason = stringResource(sslErrorReasonRes(warning.primaryError))
-                if (warning.host.isBlank()) {
-                    stringResource(R.string.browser_ssl_blocked_this_site, reason)
-                } else {
-                    stringResource(R.string.browser_ssl_blocked, warning.host, reason)
-                }
-            }
-        }
-    }
-    LaunchedEffect(popupWarning) {
-        if (!popupWarningText.isNullOrBlank()) {
-            Toast.makeText(context, popupWarningText, Toast.LENGTH_SHORT).show()
-            viewModel.clearPopupWarning()
+    // lives there, so notices travel as typed data.
+    val notice = viewModel.notice
+    val noticeText = notice?.noticeText()
+    LaunchedEffect(notice) {
+        if (!noticeText.isNullOrBlank()) {
+            Toast.makeText(context, noticeText, Toast.LENGTH_SHORT).show()
+            viewModel.clearNotice()
         }
     }
 
@@ -261,6 +246,16 @@ fun BrowserScreen(
                                 onTapBackground = { clearUrlBarFocus() },
                             )
                         }
+
+                        // Failed page: covers the WebView with the shared error page.
+                        val targetTab = viewModel.tabs.find { it.id == targetTabId }
+                        targetTab?.error?.let { error ->
+                            BrowserErrorPage(
+                                error = error,
+                                autoRetry = viewModel.settings.adaptiveNetworkEnabled,
+                                onRetry = { clearUrlBarFocus(); viewModel.retryPage() },
+                            )
+                        }
                     }
                 }
 
@@ -296,7 +291,7 @@ fun BrowserScreen(
                 )
             } else {
             BrowserBottomBar(
-                canGoBack = viewModel.activeTab?.canGoBack == true || viewModel.canReturnToParentTab,
+                canGoBack = viewModel.activeTab?.canGoBack == true || viewModel.canReturnToParentTab || viewModel.canDismissPageError,
                 canGoForward = viewModel.activeTab?.canGoForward == true,
                 tabCount = viewModel.tabCount,
                 isLoading = viewModel.activeTab?.isLoading == true,
@@ -405,18 +400,6 @@ fun BrowserScreen(
 }
 
 
-/** Reason text for an [SslError] primary error code (null = WebView reported none). */
-@StringRes
-private fun sslErrorReasonRes(primaryError: Int?): Int = when (primaryError) {
-    SslError.SSL_EXPIRED      -> R.string.browser_ssl_reason_expired
-    SslError.SSL_IDMISMATCH   -> R.string.browser_ssl_reason_mismatch
-    SslError.SSL_NOTYETVALID  -> R.string.browser_ssl_reason_not_yet_valid
-    SslError.SSL_UNTRUSTED    -> R.string.browser_ssl_reason_untrusted
-    SslError.SSL_DATE_INVALID -> R.string.browser_ssl_reason_date_invalid
-    SslError.SSL_INVALID      -> R.string.browser_ssl_reason_invalid
-    else -> R.string.browser_ssl_reason_generic
-}
-
 @Composable
 private fun BrowserWebView(
     viewModel: BrowserViewModel,
@@ -429,7 +412,11 @@ private fun BrowserWebView(
     key(tabId, generation) {
         val context = LocalContext.current
         val webView = remember(tabId) {
-            val wv = viewModel.tabManager.getWebView(tabId) ?: WebView(context)
+            // Constructing a WebView throws when the device has no usable provider
+            // (missing, disabled or mid-update); that becomes an error page.
+            val wv = viewModel.tabManager.getWebView(tabId)
+                ?: runCatching { WebView(context) }.getOrNull()
+                ?: return@remember null
             wv.layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
@@ -440,30 +427,35 @@ private fun BrowserWebView(
             wv
         }
 
-        AndroidView(
-            factory = {
-                (webView.parent as? android.view.ViewGroup)?.removeView(webView)
-                webView.setOnTouchListener { _, event ->
-                    if (event.action == MotionEvent.ACTION_DOWN) {
-                        onTouch()
+        if (webView == null) {
+            // Reported from an effect, not the remember block: it writes tab state.
+            LaunchedEffect(tabId) { viewModel.tabManager.reportWebViewUnavailable(tabId) }
+        } else {
+            AndroidView(
+                factory = {
+                    (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+                    webView.setOnTouchListener { _, event ->
+                        if (event.action == MotionEvent.ACTION_DOWN) {
+                            onTouch()
+                        }
+                        false
                     }
-                    false
-                }
-                webView
-            },
-            update = { wv ->
-                // Only re-bind the touch listener. Loading is owned by
-                // TabManager.navigate() and registerWebView(); re-issuing
-                // loadUrl here restarted the page on every recomposition
-                // (wv.url is Chromium's canonical URL and lags tab.url).
-                wv.setOnTouchListener { _, event ->
-                    if (event.action == MotionEvent.ACTION_DOWN) {
-                        onTouch()
+                    webView
+                },
+                update = { wv ->
+                    // Only re-bind the touch listener. Loading is owned by
+                    // TabManager.navigate() and registerWebView(); re-issuing
+                    // loadUrl here restarted the page on every recomposition
+                    // (wv.url is Chromium's canonical URL and lags tab.url).
+                    wv.setOnTouchListener { _, event ->
+                        if (event.action == MotionEvent.ACTION_DOWN) {
+                            onTouch()
+                        }
+                        false
                     }
-                    false
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }

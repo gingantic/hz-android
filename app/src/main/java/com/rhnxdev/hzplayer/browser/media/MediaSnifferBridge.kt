@@ -453,13 +453,18 @@ class MediaSnifferBridge(
             """.trimIndent()
         }
 
+        /** Last token→script substitution; a navigation injects up to four times with the same token. */
+        @Volatile private var lastInjected: Pair<String, String>? = null
+
         /**
          * Injects DOM media listeners for HTML5 video/audio elements, fetch, and XMLHttpRequest.
          * The script is self-guarded, so repeat calls within one document are no-ops.
          */
         fun injectSnifferJs(webView: WebView, token: String) {
             if (token.isBlank()) return
-            val script = SNIFFER_JS.replace(TOKEN_PLACEHOLDER, org.json.JSONObject.quote(token))
+            val script = lastInjected?.takeIf { it.first == token }?.second
+                ?: SNIFFER_JS.replace(TOKEN_PLACEHOLDER, org.json.JSONObject.quote(token))
+                    .also { lastInjected = token to it }
             webView.post {
                 webView.evaluateJavascript(script, null)
             }

@@ -20,5 +20,10 @@ data class BrowserTab(
     val savedState: Bundle? = null,
     /** Sniffed media items for this tab. */
     val detectedMedia: List<DetectedMediaItem> = emptyList(),
+    /**
+     * Why the page could not be shown, or null. While set, the error page covers
+     * the WebView; it clears when a later load commits without failing.
+     */
+    val error: BrowserError? = null,
 )
 

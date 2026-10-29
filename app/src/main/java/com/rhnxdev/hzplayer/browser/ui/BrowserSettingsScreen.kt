@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayCircleOutline
@@ -528,6 +529,16 @@ fun BrowserSettingsScreen(
                     optionLabel = { stringResource(it.labelRes) },
                     onSelect = { onSave(settings.copy(cacheMode = it)) },
                     icon = Icons.Default.Storage,
+                )
+            }
+
+            item {
+                BrowserSettingsToggleCard(
+                    title = stringResource(R.string.browser_adaptive_network),
+                    subtitle = stringResource(R.string.browser_adaptive_network_sub),
+                    checked = settings.adaptiveNetworkEnabled,
+                    onCheckedChange = { onSave(settings.copy(adaptiveNetworkEnabled = it)) },
+                    icon = Icons.Default.NetworkCheck,
                 )
             }
 

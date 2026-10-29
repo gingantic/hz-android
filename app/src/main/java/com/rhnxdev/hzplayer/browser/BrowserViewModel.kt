@@ -24,28 +24,18 @@ import com.rhnxdev.hzplayer.browser.adblock.CosmeticRuleBuilder
 import com.rhnxdev.hzplayer.browser.adblock.PickedElement
 import com.rhnxdev.hzplayer.core.util.DebouncedAction
 import com.rhnxdev.hzplayer.core.util.withoutScheme
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /** Quiet period after the last custom-rule keystroke before the adblock engine rebuilds. */
 private const val AD_BLOCK_RULE_DEBOUNCE_MS = 500L
 
-/**
- * Transient warning raised by a WebView callback. Carries data only — the UI
- * resolves it to a string so no user-facing text lives in the ViewModel.
- */
-sealed interface BrowserWarning {
-    /** A tel:/mailto:/market: link had no app to handle it. */
-    data object NoAppForLink : BrowserWarning
-
-    /** An intent:// link was dropped because the user disabled app links. */
-    data object IntentLinkBlocked : BrowserWarning
-
-    /** @param primaryError one of the `SslError.SSL_*` codes (null = unreported), mapped to text by the UI. */
-    data class SslErrorBlocked(val host: String, val primaryError: Int?) : BrowserWarning
-}
+/** How long the startup list refresh waits for the first page before going ahead anyway. */
+private const val FIRST_LOAD_WAIT_MS = 10_000L
 
 /** Outcome of a manual ad-block filter-list refresh, shown in the settings screen. */
 sealed interface AdBlockStatus {
@@ -64,13 +54,20 @@ class BrowserViewModel @Inject constructor(
 
     private val settingsStore = BrowserSettingsStore.get(application)
     private val sessionStore = BrowserSessionStore.get(application)
+    private val networkMonitor = BrowserNetworkMonitor(application)
+
+    /** Completed by the first finished page load; see [refreshStaleFilterLists]. */
+    private val firstLoadFinished = CompletableDeferred<Unit>()
 
     // ── Settings state ────────────────────────────────────────────
 
     var settings by mutableStateOf(settingsStore.load())
         private set
 
-    val tabManager = TabManager(initialSettings = settings)
+    val tabManager = TabManager(
+        initialSettings = settings,
+        initialNetworkState = networkMonitor.state.value,
+    )
 
     // ── History state ────────────────────────────────────────────
 
@@ -147,14 +144,18 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
-    var popupWarning by mutableStateOf<BrowserWarning?>(null)
+    /**
+     * A brief failure notice that doesn't replace the page (see [TabManager.onNotice]).
+     * Carries data only; the UI resolves the text.
+     */
+    var notice by mutableStateOf<BrowserError?>(null)
         private set
 
     var pendingPopupRequest by mutableStateOf<PendingPopupRequest?>(null)
         private set
 
-    fun clearPopupWarning() {
-        popupWarning = null
+    fun clearNotice() {
+        notice = null
     }
 
     fun allowPendingPopup() {
@@ -191,30 +192,24 @@ class BrowserViewModel @Inject constructor(
         // Apply cookie settings from persisted prefs on startup
         tabManager.applyCookieSettings(settings)
 
-        // Initialize AdBlock Engine with stored settings
-        AdBlockEngine.initialize(application, settings)
+        // Build the engine off the main thread — it reads and parses every list.
+        // Requests wait for it in AdBlockEngine.shouldBlockRequest, so the first
+        // page is still filtered.
+        val initialSettings = settings
+        viewModelScope.launch(Dispatchers.IO) { AdBlockEngine.initialize(application, initialSettings) }
 
-        // Background async update filter lists on startup if adblock is enabled
+        // Track connectivity so tabs can serve cache offline, retry after a drop
+        // and defer images on slow links (see TabManager.onNetworkStateChanged).
+        networkMonitor.start()
+        viewModelScope.launch {
+            networkMonitor.state.collect { tabManager.onNetworkStateChanged(it) }
+        }
+
+        tabManager.onLoadFinished = { firstLoadFinished.complete(Unit) }
         if (settings.adBlockEnabled) {
-            viewModelScope.launch(Dispatchers.IO) {
-                AdBlockUpdater.updateLists(application, settings.enabledFilterLists)
-                val updated = settings.copy(lastAdBlockUpdateTimestamp = System.currentTimeMillis())
-                // Rebuild off the main thread — it re-parses every list fetched
-                AdBlockEngine.reload(application, updated)
-                withContext(Dispatchers.Main) {
-                    settings = updated
-                    settingsStore.save(updated)
-                }
-            }
+            viewModelScope.launch { refreshStaleFilterLists() }
         }
-
-        tabManager.onExternalSchemeFailed = { popupWarning = BrowserWarning.NoAppForLink }
-
-        tabManager.onIntentLinkBlocked = { popupWarning = BrowserWarning.IntentLinkBlocked }
-
-        tabManager.onSslErrorBlocked = { host, primaryError ->
-            popupWarning = BrowserWarning.SslErrorBlocked(host, primaryError)
-        }
+        tabManager.onNotice = { notice = it }
 
         tabManager.onCrossDomainPopupRequested = { request ->
             pendingPopupRequest = request
@@ -235,15 +230,58 @@ class BrowserViewModel @Inject constructor(
         // BrowserScreen initializes after BrowserActivity has assigned initialUrl.
     }
 
+    /**
+     * Startup refresh of the filter lists. Runs only when the lists are due
+     * (see [AdBlockUpdater.isRefreshDue]) and the device is online, and waits for
+     * the first page to finish (or [FIRST_LOAD_WAIT_MS]) so the multi-MB
+     * downloads and the engine rebuild never compete with that page for
+     * bandwidth and CPU. The timestamp only advances on success, so a failed
+     * attempt is retried on the next launch.
+     */
+    private suspend fun refreshStaleFilterLists() {
+        val app = getApplication<Application>()
+        val snapshot = settings
+        val due = withContext(Dispatchers.IO) {
+            AdBlockUpdater.isRefreshDue(
+                context = app,
+                enabledListIds = snapshot.enabledFilterLists,
+                lastUpdateTimestamp = snapshot.lastAdBlockUpdateTimestamp,
+                metered = networkMonitor.isMetered,
+            )
+        }
+        if (!due) return
+
+        withTimeoutOrNull(FIRST_LOAD_WAIT_MS) { firstLoadFinished.await() }
+        if (!networkMonitor.state.value.online) return
+
+        val result = AdBlockUpdater.updateLists(app, settings.enabledFilterLists)
+        if (result !is AdBlockUpdater.UpdateResult.Success) return
+
+        val updated = settings.copy(lastAdBlockUpdateTimestamp = System.currentTimeMillis())
+        // Rebuild off the main thread, and only if a list actually changed.
+        if (result.changed) {
+            withContext(Dispatchers.IO) { AdBlockEngine.reload(app, updated) }
+        }
+        settings = updated
+        settingsStore.save(updated)
+    }
+
     fun refreshAdBlockFilters() {
         if (isAdBlockUpdating) return
         isAdBlockUpdating = true
         adBlockStatus = null
         viewModelScope.launch(Dispatchers.IO) {
             val result = AdBlockUpdater.updateLists(getApplication(), settings.enabledFilterLists)
-            val updatedSettings = settings.copy(lastAdBlockUpdateTimestamp = System.currentTimeMillis())
-            // Rebuild off the main thread — it re-parses every list fetched
-            AdBlockEngine.reload(getApplication(), updatedSettings)
+            val updatedSettings = if (result is AdBlockUpdater.UpdateResult.Success) {
+                settings.copy(lastAdBlockUpdateTimestamp = System.currentTimeMillis())
+            } else {
+                settings
+            }
+            // Rebuild off the main thread — it re-parses every list fetched.
+            // Skipped when the server reported every list unchanged.
+            if (result is AdBlockUpdater.UpdateResult.Success && result.changed) {
+                AdBlockEngine.reload(getApplication(), updatedSettings)
+            }
             withContext(Dispatchers.Main) {
                 settings = updatedSettings
                 settingsStore.save(updatedSettings)
@@ -427,6 +465,7 @@ class BrowserViewModel @Inject constructor(
     fun goBack() = tabManager.goBack()
     fun goForward() = tabManager.goForward()
     fun reload() = tabManager.reload()
+    fun retryPage() = tabManager.retry()
     fun stopLoading() = tabManager.stopLoading()
 
     /** True when the active tab is a popup whose opener tab is still alive. */
@@ -436,12 +475,21 @@ class BrowserViewModel @Inject constructor(
             return tabs.any { it.id == parentId }
         }
 
+    /** True when Back hides the active tab's error page and reveals the page under it. */
+    val canDismissPageError: Boolean
+        get() = activeTabId?.let { tabManager.canDismissPageError(it) } == true
+
     /**
-     * Chrome-like back: navigate the WebView history if possible; otherwise,
+     * Chrome-like back: hide an error page over a previous page first, so the page
+     * underneath is not skipped; otherwise navigate the WebView history; otherwise,
      * if this tab was opened as a popup, close it and return to the opener tab.
      */
     fun goBackOrClosePopup() {
         val tab = activeTab ?: return
+        if (tabManager.dismissPageError(tab.id)) {
+            saveSessionIfEnabled()
+            return
+        }
         if (tab.canGoBack) {
             tabManager.goBack()
             return
@@ -476,6 +524,7 @@ class BrowserViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        networkMonitor.stop()
         tabManager.destroy()
     }
 
