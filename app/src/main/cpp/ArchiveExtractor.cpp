@@ -15,7 +15,7 @@ extern "C" {
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// ponytail: libarchive read session. No per-entry random access in libarchive;
+// libarchive read session. No per-entry random access in libarchive;
 // backward seek = close+reopen+locate+skip (see docs/ARCHIVE_SUPPORT.md §3).
 // firstBlock: libarchive's next_header + first data_block already consumes the
 // entry's first data chunk, so we stash it here and replay it on the first read.

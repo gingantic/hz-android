@@ -91,7 +91,7 @@ class SubtitleRepositoryImpl @Inject constructor(
                 else name
             }
             val outputFile = File(cacheDir, outputName)
-            // ponytail: guard against canonical-path escape; cheap and fails closed.
+            // guard against canonical-path escape; cheap and fails closed.
             require(outputFile.canonicalPath.startsWith(cacheDir.canonicalPath + File.separator)) {
                 "Refusing subtitle write outside cacheDir: ${outputFile.path}"
             }

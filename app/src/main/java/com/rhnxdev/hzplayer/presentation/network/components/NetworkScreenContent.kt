@@ -289,7 +289,7 @@ internal fun NetworkHomeContent(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { if (uiState.isDiscovering) onStopScan() else onScanClick() }) {
-                            // ponytail: only run the infinite transition while actually
+                            // only run the infinite transition while actually
                             // scanning — otherwise it recomposes this subtree every 800ms forever.
                             if (uiState.isDiscovering) {
                                 val transition = rememberInfiniteTransition(label = "scan")

@@ -54,7 +54,7 @@ class HzPlayerApplication : Application(), SingletonImageLoader.Factory {
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
-        // ponytail: decoded Bitmaps are the single biggest memory sink on low-end
+        // decoded Bitmaps are the single biggest memory sink on low-end
         // SoCs; but too-small a cache forces constant WebP re-decodes from disk
         // which makes the file-browser thumbnail grid feel sluggish on revisit.
         // 15% keeps ~80+ 720p thumbnails resident — enough for several folders.

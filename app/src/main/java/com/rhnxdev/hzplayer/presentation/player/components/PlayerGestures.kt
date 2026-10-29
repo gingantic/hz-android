@@ -34,7 +34,7 @@ private const val HOLD_SPEED_MULTIPLIER = 2f
 /** Hold-to-speed ramp: +HOLD_RAMP_STEP every HOLD_RAMP_INTERVAL_MS of holding. */
 private const val HOLD_RAMP_STEP = 0.2f
 private const val HOLD_RAMP_INTERVAL_MS = 10_000L
-// ponytail: cap keeps audio pitch sane; raise if users want faster.
+// cap keeps audio pitch sane; raise if users want faster.
 private const val HOLD_SPEED_CAP = 4f
 
 /** Hold this long in a third before 2x engages (shorter = tap/double-tap). */
@@ -98,7 +98,7 @@ class PlayerGestureCallbacks(
  * The player's single touch-gesture loop: hold-to-speed, horizontal seek scrub,
  * vertical brightness/volume, and single/double-tap.
  *
- * ponytail: extracted verbatim from VideoPlayerScreen — one gesture loop so
+ * extracted verbatim from VideoPlayerScreen — one gesture loop so
  * hold-to-speed survives finger drag (two stacked pointerInput blocks stole the
  * stream and cancelled the hold). Body preserved exactly; only references were
  * rebound to [state] / [callbacks] / [scope].
@@ -111,7 +111,7 @@ fun Modifier.playerGestures(
     view: View,
     scope: CoroutineScope,
 ): Modifier = this.pointerInput(Unit) {
-    // ponytail: single gesture loop so hold-to-speed survives finger drag
+    // single gesture loop so hold-to-speed survives finger drag
     // (two stacked pointerInput blocks stole the stream and cancelled the hold)
     var lastTapTime = 0L
     var lastTapDir = 0
@@ -154,7 +154,7 @@ fun Modifier.playerGestures(
         var seekConsumed = false
         var dragStarted = false
 
-        // ponytail: 2x arms only after 1s still-hold. Finger idle sends no
+        // 2x arms only after 1s still-hold. Finger idle sends no
         // events, so a timer (not the loop) drives the delay. Drag cancels it.
         var holdTimer: Job? = null
         var rampTimer: Job? = null
@@ -171,7 +171,7 @@ fun Modifier.playerGestures(
                     state.isHoldSpeeding = true
                     state.holdSpeed = HOLD_SPEED_MULTIPLIER
                     prevSpeed = callbacks.uiState().playbackSpeed
-                    // ponytail: hold-to-speed implies watching — resume if paused
+                    // hold-to-speed implies watching — resume if paused
                     if (!callbacks.uiState().isPlaying) callbacks.resume()
                     callbacks.onSetSpeed(HOLD_SPEED_MULTIPLIER)
                     // Ramp +0.2 every 10s until cap.
@@ -233,7 +233,7 @@ fun Modifier.playerGestures(
                 when (dominantDirection) {
                     DragDirection.ADJUST -> {
                         if (!isMiddleArea) {
-                            // ponytail: lazy-init brightness/volume values only on the first
+                            // lazy-init brightness/volume values only on the first
                             // ADJUST event, not at finger-down — a plain tap shouldn't read
                             // Settings.System or touch the audio stack at all.
                             if (!adjustInitialized) {
@@ -299,7 +299,7 @@ fun Modifier.playerGestures(
             if (seekConsumed && state.seekDelta != 0L) callbacks.onSeekBy(state.seekDelta)
             state.isDragSeeking = false
             state.seekDelta = 0L
-            // ponytail: hide the seek cue on drag release ourselves — the auto-hide
+            // hide the seek cue on drag release ourselves — the auto-hide
             // effect is keyed on seekShowTick and skips while isDragSeeking is true,
             // so after the last tick it never re-runs and the cue would stay stuck.
             if (seekConsumed) state.seekVisible = false

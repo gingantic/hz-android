@@ -43,7 +43,7 @@ class PlayerRepositoryImpl @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
 ) : PlayerRepository {
 
-    // ponytail: process-lifetime scope — PlayerRepository is @Singleton, so this
+    // process-lifetime scope — PlayerRepository is @Singleton, so this
     // never needs cancellation; the same instance lives for the app's lifetime.
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val _networkTraffic = MutableStateFlow(NetworkTraffic.DEFAULT)

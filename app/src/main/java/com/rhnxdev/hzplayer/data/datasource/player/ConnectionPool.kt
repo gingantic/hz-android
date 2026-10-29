@@ -167,7 +167,7 @@ internal object ConnectionPool {
     private val smbBrowserPool = ConcurrentHashMap<String, CIFSContext>()
     private val webdavBrowserPool = ConcurrentHashMap<String, OkHttpClient>()
 
-    // ponytail: internal so the borrow/return key contract is unit-testable
+    // internal so the borrow/return key contract is unit-testable
     // without a live SMB server (guards the sdk-brw pass-mismatch leak fix).
     internal fun key(scheme: String, host: String, port: Int, user: String, pass: String): String {
         val passHash = pass.let { p ->
@@ -410,7 +410,7 @@ internal object ConnectionPool {
         return ctx
     }
 
-    // ponytail: borrow keys with the real password (line 329), so return must match
+    // borrow keys with the real password (line 329), so return must match
     // it exactly or the CIFSContext is never closed and leaks for the process lifetime.
     fun returnSmbBrowser(host: String, port: Int, user: String, pass: String) {
         val k = key("smb-brw", host, port, user, pass)

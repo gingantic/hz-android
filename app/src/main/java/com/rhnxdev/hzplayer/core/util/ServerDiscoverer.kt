@@ -54,7 +54,7 @@ private fun serviceTypeToProtocol(type: String): NetworkProtocol = when {
     else -> NetworkProtocol.FTP
 }
 
-/** ponytail: concrete class, no interface. Add interface if test mocking needed. */
+/** concrete class, no interface. Add interface if test mocking needed. */
 @Singleton
 class ServerDiscoverer @Inject constructor(
     @ApplicationContext private val context: Context,

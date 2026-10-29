@@ -444,7 +444,7 @@ private fun SeekProgressRow(
     )
 }
 
-// ponytail: keep in sync with PlayerRepositoryImpl.startTrafficPolling
+// keep in sync with PlayerRepositoryImpl.startTrafficPolling
 private fun isRemoteUri(uri: String): Boolean =
     uri.contains("://") && !uri.startsWith("file://") && !uri.startsWith("content://")
 

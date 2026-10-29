@@ -39,7 +39,7 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override val activeEngine: Flow<EngineType> =
         enumPreference(PrefKey.Engine.key, EngineType.EXO_PLAYER)
 
-    // ponytail: SubDL API key is stored in PLAINTEXT in this DataStore.
+    // SubDL API key is stored in PLAINTEXT in this DataStore.
     // The store is app-private (mode 0600, same-UID only), so risk is limited to
     // a rooted device. Upgrade path if this becomes sensitive: encrypt the value
     // with an Android Keystore key before writing it.

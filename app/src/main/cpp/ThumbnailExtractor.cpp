@@ -25,7 +25,7 @@ extern "C" {
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// === ponytail: this exists ===
+// === this exists ===
 // RandomAccessFile interface mirrors testffmpeg/src/FileIO.h exactly.
 // JniFile replaces LocalFile by bridging via JNI into Kotlin RandomAccessBridge.
 
@@ -574,7 +574,7 @@ Java_com_rhnxdev_hzplayer_core_thumbnail_NativeThumbnailExtractor_nativeExtract(
 // the stream's extradata + all Dialogue events) so libass can render it with
 // full styling. ExoPlayer's built-in parser drops override tags, so we go to
 // ffmpeg directly.
-// ponytail: full-file demux scan — subtitle packets are interleaved throughout
+// full-file demux scan — subtitle packets are interleaved throughout
 // the container, so there's no cheaper way to collect them all. Upgrade path:
 // incremental/progressive feeding into libass if load latency matters.
 

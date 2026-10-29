@@ -36,7 +36,7 @@ class WebDavBrowserClient(
     private val authHeader: String
         get() {
             if (username.isEmpty()) return ""
-            // ponytail: never send Basic credentials over cleartext HTTP — that
+            // never send Basic credentials over cleartext HTTP — that
             // transmits user:pass in base64 (trivially reversible) on the wire.
             // Over non-TLS we omit the header and warn; the server may still work
             // anonymously, or the user should switch to WEBDAVS.
@@ -94,7 +94,7 @@ class WebDavBrowserClient(
 
     private fun normalizePath(path: String): String {
         val cleaned = if (path.startsWith("/")) path else "/$path"
-        // ponytail: reject path-traversal segments — a crafted server href or
+        // reject path-traversal segments — a crafted server href or
         // client path with ".." must not escape the share root.
         return sanitizePath(cleaned)
     }

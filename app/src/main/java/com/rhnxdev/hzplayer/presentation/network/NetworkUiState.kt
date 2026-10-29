@@ -51,7 +51,7 @@ data class NetworkUiState(
 
 /**
  * Carries the server that needs credentials and a callback to apply them.
- * ponytail: Pair-like holder rather than a sealed class — only one credential flow exists.
+ * Pair-like holder rather than a sealed class — only one credential flow exists.
  */
 data class ServerCredentialRequest(
     val server: ServerConfig,
