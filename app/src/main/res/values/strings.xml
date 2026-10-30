@@ -62,6 +62,29 @@
     <string name="undo">Undo</string>
     <string name="paste_here">Paste</string>
     <string name="paste_progress_percent">%1$d%%</string>
+    <!-- Multi-select (file browser) -->
+    <string name="selection_count">%1$d selected</string>
+    <string name="selection_exit_cd">Exit selection</string>
+    <string name="selection_select_all_cd">Select all</string>
+    <string name="selection_item_cd">Selected</string>
+    <string name="selection_action_play">Play</string>
+    <string name="selection_items_count">%1$d items</string>
+    <string name="delete_confirm_title_multi">Delete %1$d items permanently?</string>
+    <string name="delete_confirm_message_multi">The selected files and folders, and everything inside them, will be permanently deleted. This cannot be undone.</string>
+    <string name="delete_grace_message_multi">Deleting %1$d items…</string>
+    <plurals name="file_op_moved_count">
+        <item quantity="one">Moved %1$d item</item>
+        <item quantity="other">Moved %1$d items</item>
+    </plurals>
+    <plurals name="file_op_copied_count">
+        <item quantity="one">Copied %1$d item</item>
+        <item quantity="other">Copied %1$d items</item>
+    </plurals>
+    <plurals name="file_op_deleted_count">
+        <item quantity="one">Deleted %1$d item</item>
+        <item quantity="other">Deleted %1$d items</item>
+    </plurals>
+    <string name="file_op_failed_suffix">%1$s · %2$d failed</string>
     <string name="all_files_access_title">Allow file management</string>
     <string name="all_files_access_message">Moving and copying files requires “All files access”. Grant it in system settings, then paste again.</string>
     <string name="all_files_access_grant">Open settings</string>

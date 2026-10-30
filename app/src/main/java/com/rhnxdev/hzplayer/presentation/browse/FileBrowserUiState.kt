@@ -34,12 +34,13 @@ data class FavoriteShortcut(
 )
 
 /**
- * A file or folder staged for a paste operation.
+ * Files and folders staged for a paste operation.
  * [isCut] true = paste performs a move, false = paste performs a copy.
+ * Items that fail to paste stay here so the user can retry them.
  */
 @Immutable
 data class FileClipboard(
-    val item: FolderItem,
+    val items: List<FolderItem>,
     val isCut: Boolean,
 )
 
@@ -76,13 +77,13 @@ data class FileBrowserUiState(
     val fileOpMessage: String? = null,
     /** True when a paste was blocked because "All files access" is not granted. */
     val showAllFilesAccessPrompt: Boolean = false,
-    /** Item awaiting delete confirmation; a dialog is shown while non-null. */
-    val deleteConfirmItem: FolderItem? = null,
+    /** Items awaiting delete confirmation; a dialog is shown while non-empty. */
+    val deleteConfirmItems: List<FolderItem> = emptyList(),
     /**
-     * Item inside its undo grace period: hidden from the list, not yet removed
-     * from disk. An undo snackbar is shown while non-null.
+     * Items inside their undo grace period: hidden from the list, not yet removed
+     * from disk. An undo snackbar is shown while non-empty.
      */
-    val deleteGraceItem: FolderItem? = null,
+    val deleteGraceItems: List<FolderItem> = emptyList(),
     /** True while a delete is running on disk. */
     val isDeleting: Boolean = false,
 )

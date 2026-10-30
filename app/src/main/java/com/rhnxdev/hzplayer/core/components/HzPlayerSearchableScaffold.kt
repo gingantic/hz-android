@@ -24,6 +24,9 @@ import androidx.compose.ui.Modifier
  * @param searchPlaceholder — placeholder text for the search field.
  * @param fullScreenOverlay — disables back handling when an overlay (player)
  *                           is covering the screen.
+ * @param selectionCount — number of multi-selected items; above 0 the selection top bar
+ *                         replaces the normal one and back-press exits selection first.
+ * @param onExitSelection / onSelectAll — selection top bar callbacks.
  * @param content       — the screen body below the top bar.
  */
 @Composable
@@ -38,30 +41,43 @@ fun HzPlayerSearchableScaffold(
     searchPlaceholder: String = "Search...",
     fullScreenOverlay: Boolean = false,
     isActive: Boolean = true,
+    selectionCount: Int = 0,
+    onExitSelection: () -> Unit = {},
+    onSelectAll: () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // Back-press: close search first, then navigate up
+    // Back-press: exit selection first, then close search, then navigate up
     val canNavigateUp = onNavigateUp != null
+    val isSelecting = selectionCount > 0
     BackHandler(
-        enabled = isActive && (isSearchActive || canNavigateUp) && !fullScreenOverlay,
+        enabled = isActive && (isSelecting || isSearchActive || canNavigateUp) && !fullScreenOverlay,
     ) {
-        if (isSearchActive) onClearSearch()
+        if (isSelecting) onExitSelection()
+        else if (isSearchActive) onClearSearch()
         else onNavigateUp?.invoke()
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        HzPlayerTopBar(
-            title = title,
-            showBack = canNavigateUp,
-            onBack = { onNavigateUp?.invoke() },
-            searchQuery = if (isSearchActive) searchQuery else null,
-            searchPlaceholder = searchPlaceholder,
-            onSearchQueryChanged = onSearchQueryChanged,
-            onSearchToggle = onSearchToggle,
-            onSearchClose = onClearSearch,
-            actions = actions,
-        )
+        if (isSelecting) {
+            SelectionTopBar(
+                count = selectionCount,
+                onExit = onExitSelection,
+                onSelectAll = onSelectAll,
+            )
+        } else {
+            HzPlayerTopBar(
+                title = title,
+                showBack = canNavigateUp,
+                onBack = { onNavigateUp?.invoke() },
+                searchQuery = if (isSearchActive) searchQuery else null,
+                searchPlaceholder = searchPlaceholder,
+                onSearchQueryChanged = onSearchQueryChanged,
+                onSearchToggle = onSearchToggle,
+                onSearchClose = onClearSearch,
+                actions = actions,
+            )
+        }
         content()
     }
 }

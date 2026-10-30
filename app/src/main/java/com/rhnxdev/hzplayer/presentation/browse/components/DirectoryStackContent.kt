@@ -58,6 +58,10 @@ fun DirectoryStackContent(
     onToggleFavorite: (FileItemData) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
     onScrollingChanged: (Boolean) -> Unit = {},
+    selectedKeys: Set<String> = emptySet(),
+    onLongPressItem: ((String) -> Unit)? = null,
+    onToggleSelect: ((String) -> Unit)? = null,
+    onVisibleKeysChanged: ((Set<String>) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -88,6 +92,10 @@ fun DirectoryStackContent(
                 onToggleFavorite = onToggleFavorite,
                 onListAtEndChanged = onListAtEndChanged,
                 onScrollingChanged = onScrollingChanged,
+                selectedKeys = selectedKeys,
+                onLongPressItem = onLongPressItem,
+                onToggleSelect = onToggleSelect,
+                onVisibleKeysChanged = onVisibleKeysChanged,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -120,6 +128,10 @@ private fun DirectoryLayerView(
     onToggleFavorite: (FileItemData) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
     onScrollingChanged: (Boolean) -> Unit = {},
+    selectedKeys: Set<String> = emptySet(),
+    onLongPressItem: ((String) -> Unit)? = null,
+    onToggleSelect: ((String) -> Unit)? = null,
+    onVisibleKeysChanged: ((Set<String>) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val currentOrientation = LocalConfiguration.current.orientation
@@ -272,6 +284,10 @@ private fun DirectoryLayerView(
             } else null,
             quickAccessPaths = quickAccessPaths,
             onToggleFavorite = onToggleFavorite,
+            selectedKeys = selectedKeys,
+            onLongPressItem = onLongPressItem?.let { callback -> { data -> callback(data.path) } },
+            onToggleSelect = onToggleSelect?.let { callback -> { data -> callback(data.path) } },
+            onVisibleKeysChanged = onVisibleKeysChanged,
             onRefresh = onRefresh,
             onRetry = onRetry,
             listState = listState,

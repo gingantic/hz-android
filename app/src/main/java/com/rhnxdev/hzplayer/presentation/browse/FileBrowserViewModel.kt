@@ -7,11 +7,14 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Environment
+import androidx.annotation.PluralsRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
+import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
+import com.rhnxdev.hzplayer.core.components.SelectionDelegate
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.io.MediaInfoProbe
 import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
@@ -95,6 +98,11 @@ class FileBrowserViewModel @Inject constructor(
 
     val search = SearchDelegate()
 
+    /** Multi-selected item paths in the topmost directory. See [onVisibleKeysChanged]. */
+    val selection = SelectionDelegate()
+
+    /** Paths currently listed by the pane (after search filtering); backs "select all". */
+    private var visibleKeys: Set<String> = emptySet()
     private fun resolveFavorites(quickAccessPaths: Set<String>): List<FavoriteShortcut> {
         val ext = Environment.getExternalStorageDirectory()
         return quickAccessPaths.mapNotNull { path ->
@@ -246,6 +254,7 @@ class FileBrowserViewModel @Inject constructor(
 
     private fun loadRoots() {
         search.clear()
+        selection.clear()
         _uiState.update {
             it.copy(
                 mode = FileBrowserMode.ROOTS,
@@ -286,6 +295,40 @@ class FileBrowserViewModel @Inject constructor(
         val currentLayer = _uiState.value.layers.lastOrNull() ?: return emptyList()
         return currentLayer.items.toVideoPlaylist()
     }
+
+    // ---- Multi-select ----
+
+    /** Long-press starts selection. Ignored while a cut/copy is waiting to be pasted. */
+    fun onLongPressItem(path: String) {
+        if (_uiState.value.clipboard != null) return
+        selection.start(path)
+    }
+
+    fun onToggleSelect(path: String) = selection.toggle(path)
+
+    fun onSelectAll() = selection.selectAll(visibleKeys)
+
+    fun onExitSelection() = selection.clear()
+
+    /**
+     * The pane reports what it lists (after search filtering). Selection is pruned to
+     * it so the count shown always equals what a batch action will touch.
+     */
+    fun onVisibleKeysChanged(keys: Set<String>) {
+        visibleKeys = keys
+        selection.retain(keys)
+    }
+
+    /** Selected entries of the topmost directory, in list order. */
+    private fun selectedItems(): List<FolderItem> {
+        val keys = selection.selectedKeys.value
+        if (keys.isEmpty()) return emptyList()
+        val layer = _uiState.value.layers.lastOrNull() ?: return emptyList()
+        return layer.items.filter { it.path in keys }
+    }
+
+    /** Videos among the selection, in list order, ready for the player. */
+    fun collectSelectedVideoPlaylist(): List<VideoItem> = selectedItems().toVideoPlaylist()
 
     /**
      * Collect the videos directly inside [folder] (without navigating into it) and
@@ -341,14 +384,22 @@ class FileBrowserViewModel @Inject constructor(
 
     // ---- Cut / Copy / Paste ----
 
-    fun onCutItem(item: FolderItem) = stageClipboard(item, isCut = true)
+    fun onCutItem(item: FolderItem) = stageClipboard(listOf(item), isCut = true)
 
-    fun onCopyItem(item: FolderItem) = stageClipboard(item, isCut = false)
+    fun onCopyItem(item: FolderItem) = stageClipboard(listOf(item), isCut = false)
 
-    private fun stageClipboard(item: FolderItem, isCut: Boolean) {
+    /** Stage every multi-selected on-disk entry for a move. */
+    fun onCutSelected() = stageClipboard(selectedItems(), isCut = true)
+
+    /** Stage every multi-selected on-disk entry for a copy. */
+    fun onCopySelected() = stageClipboard(selectedItems(), isCut = false)
+
+    private fun stageClipboard(items: List<FolderItem>, isCut: Boolean) {
         // Only real on-disk entries can be staged (not virtual archive entries).
-        if (!ArchiveBrowsePath.isRealFilePath(item.path)) return
-        _uiState.update { it.copy(clipboard = FileClipboard(item, isCut)) }
+        val stageable = items.filter { ArchiveBrowsePath.isRealFilePath(it.path) }
+        if (stageable.isEmpty()) return
+        selection.clear()
+        _uiState.update { it.copy(clipboard = FileClipboard(stageable, isCut)) }
     }
 
     fun onCancelClipboard() {
@@ -374,46 +425,85 @@ class FileBrowserViewModel @Inject constructor(
 
         _uiState.update { it.copy(isPasting = true, pasteProgress = 0f) }
         viewModelScope.launch {
-            // The repo reports from a background thread; hop back to update state.
-            val onProgress: (Float) -> Unit = { fraction ->
-                _uiState.update { it.copy(pasteProgress = fraction.coerceIn(0f, 1f)) }
+            val items = clipboard.items
+            val pasted = mutableListOf<FolderItem>()
+            var lastNewPath: String? = null
+            var firstError: String? = null
+
+            items.forEachIndexed { index, item ->
+                // The repo reports from a background thread; hop back to update state.
+                // Overall progress counts finished items plus the running item's fraction.
+                val onProgress: (Float) -> Unit = { fraction ->
+                    val overall = (index + fraction.coerceIn(0f, 1f)) / items.size
+                    _uiState.update { it.copy(pasteProgress = overall) }
+                }
+                val result = if (clipboard.isCut) {
+                    fileRepository.moveEntry(item.path, destDir, onProgress)
+                } else {
+                    fileRepository.copyEntry(item.path, destDir, onProgress)
+                }
+                result.fold(
+                    onSuccess = { newPath ->
+                        pasted += item
+                        lastNewPath = newPath
+                    },
+                    onFailure = { e -> if (firstError == null) firstError = e.message },
+                )
             }
-            val result = if (clipboard.isCut) {
-                fileRepository.moveEntry(clipboard.item.path, destDir, onProgress)
-            } else {
-                fileRepository.copyEntry(clipboard.item.path, destDir, onProgress)
+
+            // Invalidate destination and, for moves, each source's parent listing.
+            if (pasted.isNotEmpty()) {
+                cache.remove(destDir)
+                if (clipboard.isCut) {
+                    pasted.mapNotNull { File(it.path).parent }.distinct().forEach { cache.remove(it) }
+                }
             }
-            result.fold(
-                onSuccess = { newPath ->
-                    // Invalidate destination and, for moves, the source's parent listing.
-                    cache.remove(destDir)
-                    if (clipboard.isCut) {
-                        File(clipboard.item.path).parent?.let { cache.remove(it) }
-                    }
-                    _uiState.update {
-                        it.copy(
-                            clipboard = null,
-                            isPasting = false,
-                            pasteProgress = null,
-                            fileOpMessage = if (clipboard.isCut) {
-                                "Moved \"${File(newPath).name}\""
-                            } else {
-                                "Copied \"${File(newPath).name}\""
-                            },
-                        )
-                    }
-                    reloadLayerAt(destDir)
-                },
-                onFailure = { e ->
-                    _uiState.update {
-                        it.copy(
-                            isPasting = false,
-                            pasteProgress = null,
-                            fileOpMessage = e.message ?: "Operation failed",
-                        )
-                    }
-                },
+            val singleDone = lastNewPath?.let { File(it).name }?.let { name ->
+                if (clipboard.isCut) "Moved \"$name\"" else "Copied \"$name\""
+            }
+            val message = batchResultMessage(
+                succeeded = pasted.size,
+                total = items.size,
+                singleDone = singleDone,
+                donePlural = if (clipboard.isCut) R.plurals.file_op_moved_count else R.plurals.file_op_copied_count,
+                firstError = firstError,
+                failureFallback = "Operation failed",
             )
+            // Items that did not paste stay staged so the user can retry them.
+            val remaining = items.filterNot { item -> pasted.any { it.path == item.path } }
+            _uiState.update {
+                it.copy(
+                    clipboard = remaining.takeIf { r -> r.isNotEmpty() }
+                        ?.let { r -> clipboard.copy(items = r) },
+                    isPasting = false,
+                    pasteProgress = null,
+                    fileOpMessage = message,
+                )
+            }
+            if (pasted.isNotEmpty()) reloadLayerAt(destDir)
+        }
+    }
+
+    /**
+     * One-line outcome of a batch of [total] file operations.
+     *
+     * @param singleDone — message used when exactly one item succeeded on its own
+     * @param donePlural — "Moved %d item(s)" style plural for the success count
+     */
+    private fun batchResultMessage(
+        succeeded: Int,
+        total: Int,
+        singleDone: String?,
+        @PluralsRes donePlural: Int,
+        firstError: String?,
+        failureFallback: String,
+    ): String {
+        val failed = total - succeeded
+        val doneText = applicationContext.resources.getQuantityString(donePlural, succeeded, succeeded)
+        return when {
+            failed == 0 -> if (total == 1 && singleDone != null) singleDone else doneText
+            succeeded == 0 -> firstError ?: failureFallback
+            else -> applicationContext.getString(R.string.file_op_failed_suffix, doneText, failed)
         }
     }
 
@@ -426,50 +516,56 @@ class FileBrowserViewModel @Inject constructor(
     /** Ask for confirmation before deleting; only real on-disk entries qualify. */
     fun onDeleteItem(item: FolderItem) {
         if (!ArchiveBrowsePath.isRealFilePath(item.path)) return
-        _uiState.update { it.copy(deleteConfirmItem = item) }
+        _uiState.update { it.copy(deleteConfirmItems = listOf(item)) }
+    }
+
+    /** Ask for confirmation before deleting every multi-selected on-disk entry. */
+    fun onDeleteSelected() {
+        val items = selectedItems().filter { ArchiveBrowsePath.isRealFilePath(it.path) }
+        if (items.isEmpty()) return
+        _uiState.update { it.copy(deleteConfirmItems = items) }
     }
 
     fun onDismissDeleteConfirm() {
-        _uiState.update { it.copy(deleteConfirmItem = null) }
+        _uiState.update { it.copy(deleteConfirmItems = emptyList()) }
     }
 
     private var pendingDeleteJob: Job? = null
 
     fun onConfirmDelete() {
         val state = _uiState.value
-        val item = state.deleteConfirmItem ?: return
-        if (state.isDeleting) return
+        val items = state.deleteConfirmItems
+        if (items.isEmpty() || state.isDeleting) return
 
         // Deleting outside app-specific storage on Android 11+ needs "All files access".
         if (!isFullStorageGranted()) {
-            _uiState.update { it.copy(deleteConfirmItem = null, showAllFilesAccessPrompt = true) }
+            _uiState.update { it.copy(deleteConfirmItems = emptyList(), showAllFilesAccessPrompt = true) }
             return
         }
 
         // A new delete supersedes any pending one — commit the older delete now.
         commitPendingDeleteNow()
 
-        // Hide the item optimistically and start the undo grace timer; the disk
+        // Hide the items optimistically and start the undo grace timer; the disk
         // delete only runs once the grace period elapses without an undo.
-        _uiState.update { it.copy(deleteConfirmItem = null, deleteGraceItem = item) }
-        hideItemFromLayers(item.path)
+        selection.clear()
+        _uiState.update { it.copy(deleteConfirmItems = emptyList(), deleteGraceItems = items) }
+        hideItemsFromLayers(items.mapTo(HashSet()) { it.path })
         pendingDeleteJob = viewModelScope.launch {
             delay(DELETE_GRACE_MS)
             pendingDeleteJob = null
-            performDelete(item)
+            performDelete(items)
         }
     }
 
-    /** Cancel a delete during its grace period and restore the item in the list. */
+    /** Cancel a delete during its grace period and restore the items in the list. */
     fun onUndoDelete() {
         pendingDeleteJob?.cancel()
         pendingDeleteJob = null
-        val item = _uiState.value.deleteGraceItem ?: return
-        _uiState.update { it.copy(deleteGraceItem = null) }
-        File(item.path).parent?.let { parent ->
-            cache.remove(parent)
-            reloadLayerAt(parent)
-        }
+        val items = _uiState.value.deleteGraceItems
+        if (items.isEmpty()) return
+        _uiState.update { it.copy(deleteGraceItems = emptyList()) }
+        reloadParentsOf(items)
     }
 
     /** Flush a grace-period delete immediately (before staging another delete). */
@@ -477,50 +573,71 @@ class FileBrowserViewModel @Inject constructor(
         val job = pendingDeleteJob ?: return
         job.cancel()
         pendingDeleteJob = null
-        val item = _uiState.value.deleteGraceItem ?: return
-        viewModelScope.launch { performDelete(item) }
+        val items = _uiState.value.deleteGraceItems
+        if (items.isEmpty()) return
+        viewModelScope.launch { performDelete(items) }
     }
 
-    private suspend fun performDelete(item: FolderItem) {
+    private suspend fun performDelete(items: List<FolderItem>) {
         _uiState.update { it.copy(isDeleting = true) }
-        fileRepository.deleteEntry(item.path).fold(
-            onSuccess = { name ->
-                File(item.path).parent?.let { cache.remove(it) }
-                _uiState.update {
-                    it.copy(
-                        isDeleting = false,
-                        deleteGraceItem = it.deleteGraceItem?.takeUnless { g -> g.path == item.path },
-                        fileOpMessage = "Deleted \"$name\"",
-                        // Drop a staged clipboard entry that no longer exists.
-                        clipboard = it.clipboard?.takeUnless { c -> c.item.path == item.path },
-                    )
-                }
-            },
-            onFailure = { e ->
-                _uiState.update {
-                    it.copy(
-                        isDeleting = false,
-                        deleteGraceItem = it.deleteGraceItem?.takeUnless { g -> g.path == item.path },
-                        fileOpMessage = e.message ?: "Delete failed",
-                    )
-                }
-                // Delete failed — bring the hidden item back.
-                File(item.path).parent?.let { parent ->
-                    cache.remove(parent)
-                    reloadLayerAt(parent)
-                }
-            },
+        val deleted = mutableListOf<String>()
+        var singleDone: String? = null
+        var firstError: String? = null
+        for (item in items) {
+            fileRepository.deleteEntry(item.path).fold(
+                onSuccess = { name ->
+                    deleted += item.path
+                    singleDone = "Deleted \"$name\""
+                },
+                onFailure = { e -> if (firstError == null) firstError = e.message },
+            )
+        }
+        items.mapNotNull { File(it.path).parent }.distinct().forEach { cache.remove(it) }
+
+        val handled = items.mapTo(HashSet()) { it.path }
+        val message = batchResultMessage(
+            succeeded = deleted.size,
+            total = items.size,
+            singleDone = singleDone,
+            donePlural = R.plurals.file_op_deleted_count,
+            firstError = firstError,
+            failureFallback = "Delete failed",
         )
+        _uiState.update { state ->
+            state.copy(
+                isDeleting = false,
+                deleteGraceItems = state.deleteGraceItems.filterNot { it.path in handled },
+                fileOpMessage = message,
+                // Drop staged clipboard entries that no longer exist.
+                clipboard = state.clipboard?.let { c ->
+                    c.items.filterNot { it.path in deleted }
+                        .takeIf { remaining -> remaining.isNotEmpty() }
+                        ?.let { remaining -> c.copy(items = remaining) }
+                },
+            )
+        }
+        // Items that failed to delete were hidden optimistically — bring them back.
+        if (deleted.size < items.size) {
+            reloadParentsOf(items.filterNot { it.path in deleted })
+        }
     }
 
-    /** Remove an item from every loaded layer without touching the disk. */
-    private fun hideItemFromLayers(path: String) {
+    /** Reload every directory layer that contains one of [items]. */
+    private fun reloadParentsOf(items: List<FolderItem>) {
+        items.mapNotNull { File(it.path).parent }.distinct().forEach { parent ->
+            cache.remove(parent)
+            reloadLayerAt(parent)
+        }
+    }
+
+    /** Remove items from every loaded layer without touching the disk. */
+    private fun hideItemsFromLayers(paths: Set<String>) {
         _uiState.update { state ->
             state.copy(
                 layers = state.layers.map { layer ->
-                    if (layer.items.none { it.path == path }) layer
+                    if (layer.items.none { it.path in paths }) layer
                     else {
-                        val remaining = layer.items.filter { it.path != path }
+                        val remaining = layer.items.filter { it.path !in paths }
                         layer.copy(items = remaining, isEmpty = remaining.isEmpty())
                     }
                 },
@@ -591,6 +708,7 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     fun onBreadcrumbClicked(path: String) {
+        selection.clear()
         val layers = _uiState.value.layers
         val idx = layers.indexOfFirst { it.path == path }
         if (idx >= 0) {
@@ -604,6 +722,7 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     fun onNavigateUp(): Boolean {
+        selection.clear()
         val layers = _uiState.value.layers
         return if (layers.size > 1) {
             _uiState.update { it.copy(layers = layers.dropLast(1)) }
@@ -660,6 +779,7 @@ class FileBrowserViewModel @Inject constructor(
     }
 
     private fun pushLayer(path: String) {
+        selection.clear()
         val breadcrumbs = if (ArchiveBrowsePath.isArchiveBrowsePath(path)) {
             val (container, prefix) = ArchiveBrowsePath.parse(path)
             buildArchiveBreadcrumbs(container, prefix)

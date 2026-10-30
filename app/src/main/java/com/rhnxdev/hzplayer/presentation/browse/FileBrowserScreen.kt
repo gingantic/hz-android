@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
@@ -36,6 +39,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
+import com.rhnxdev.hzplayer.core.components.SelectionAction
+import com.rhnxdev.hzplayer.core.components.SelectionActionBar
 import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isVideoMedia
@@ -64,7 +69,9 @@ fun FileBrowserScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
-
+    val selectedKeys by viewModel.selection.selectedKeys.collectAsStateWithLifecycle()
+    val selectionCount = if (uiState.mode == FileBrowserMode.BROWSING) selectedKeys.size else 0
+    val isSelecting = selectionCount > 0
     val onNavigateUp: (() -> Unit)? =
         if (uiState.mode == FileBrowserMode.BROWSING) {
             { viewModel.onNavigateUp() }
@@ -87,12 +94,16 @@ fun FileBrowserScreen(
         }
     }
 
-    // Undo grace period: the item is already hidden; the disk delete fires only
+    // Undo grace period: the items are already hidden; the disk delete fires only
     // after the ViewModel's 4s timer. This snackbar (Short = 4s) offers the undo.
-    uiState.deleteGraceItem?.let { graceItem ->
-        val message = stringResource(R.string.delete_grace_message, graceItem.name)
+    uiState.deleteGraceItems.takeIf { it.isNotEmpty() }?.let { graceItems ->
+        val message = if (graceItems.size == 1) {
+            stringResource(R.string.delete_grace_message, graceItems.first().name)
+        } else {
+            stringResource(R.string.delete_grace_message_multi, graceItems.size)
+        }
         val undoLabel = stringResource(R.string.undo)
-        LaunchedEffect(graceItem.path) {
+        LaunchedEffect(graceItems) {
             val result = snackbarHostState.showSnackbar(
                 message = message,
                 actionLabel = undoLabel,
@@ -115,6 +126,9 @@ fun FileBrowserScreen(
         searchPlaceholder = "Search files...",
         fullScreenOverlay = fullScreenOverlay,
         isActive = isActive,
+        selectionCount = selectionCount,
+        onExitSelection = viewModel::onExitSelection,
+        onSelectAll = viewModel::onSelectAll,
         actions = {
             if (uiState.mode == FileBrowserMode.BROWSING) {
                 FileBrowserTopBarActions(
@@ -173,6 +187,10 @@ fun FileBrowserScreen(
                         onToggleFavorite = { viewModel.onToggleQuickAccess(it.path) },
                         onListAtEndChanged = { isListAtEnd = it },
                         onScrollingChanged = { isListScrolling = it },
+                        selectedKeys = selectedKeys,
+                        onLongPressItem = viewModel::onLongPressItem,
+                        onToggleSelect = viewModel::onToggleSelect,
+                        onVisibleKeysChanged = viewModel::onVisibleKeysChanged,
                     )
 
                     // Play All FAB (memoized video check)
@@ -183,7 +201,7 @@ fun FileBrowserScreen(
                         } == true
                     }
 
-                    if (hasVideos && !isSearchActive && uiState.clipboard == null) {
+                    if (hasVideos && !isSearchActive && uiState.clipboard == null && !isSelecting) {
                         // Hidden at the bottom of the list and while it scrolls, so it doesn't cover content
                         PlayAllFab(
                             visible = !isListAtEnd && !isListScrolling,
@@ -199,19 +217,65 @@ fun FileBrowserScreen(
                 }
             }
 
-            // Snackbar + paste bar stacked at the bottom, above the content.
+            // Snackbar + selection/paste bar stacked at the bottom, above the content.
             Column(modifier = Modifier.align(Alignment.BottomCenter)) {
                 SnackbarHost(hostState = snackbarHostState)
-                uiState.clipboard?.let { clipboard ->
-                    PasteActionBar(
-                        clipboard = clipboard,
-                        canPaste = uiState.mode == FileBrowserMode.BROWSING &&
-                            viewModel.canPasteInto(uiState.layers.lastOrNull()?.path),
-                        isPasting = uiState.isPasting,
-                        onPaste = viewModel::onPasteClipboard,
-                        onCancel = viewModel::onCancelClipboard,
-                        pasteProgress = uiState.pasteProgress,
+                if (isSelecting) {
+                    val currentLayer = uiState.layers.lastOrNull()
+                    val canModify = currentLayer != null &&
+                        ArchiveBrowsePath.isRealFilePath(currentLayer.path)
+                    // Play needs at least one selected video; folders and other files are skipped.
+                    val hasSelectedVideo = remember(currentLayer?.items, selectedKeys) {
+                        currentLayer?.items?.any {
+                            it.path in selectedKeys && !it.isDirectory && isVideoMedia(it.name, it.mimeType)
+                        } == true
+                    }
+                    val playLabel = stringResource(R.string.selection_action_play)
+                    val cutLabel = stringResource(R.string.menu_cut)
+                    val copyLabel = stringResource(R.string.menu_copy)
+                    val deleteLabel = stringResource(R.string.menu_delete)
+                    SelectionActionBar(
+                        actions = buildList {
+                            add(
+                                SelectionAction(
+                                    icon = Icons.Default.PlayArrow,
+                                    label = playLabel,
+                                    enabled = hasSelectedVideo,
+                                    onClick = {
+                                        val playlist = viewModel.collectSelectedVideoPlaylist()
+                                        if (playlist.isNotEmpty()) {
+                                            viewModel.onExitSelection()
+                                            onPlayAllVideos(playlist)
+                                        }
+                                    },
+                                )
+                            )
+                            if (canModify) {
+                                add(SelectionAction(Icons.Default.ContentCut, cutLabel, viewModel::onCutSelected))
+                                add(SelectionAction(Icons.Default.ContentCopy, copyLabel, viewModel::onCopySelected))
+                                add(
+                                    SelectionAction(
+                                        icon = Icons.Default.Delete,
+                                        label = deleteLabel,
+                                        onClick = viewModel::onDeleteSelected,
+                                        destructive = true,
+                                    )
+                                )
+                            }
+                        },
                     )
+                } else {
+                    uiState.clipboard?.let { clipboard ->
+                        PasteActionBar(
+                            clipboard = clipboard,
+                            canPaste = uiState.mode == FileBrowserMode.BROWSING &&
+                                viewModel.canPasteInto(uiState.layers.lastOrNull()?.path),
+                            isPasting = uiState.isPasting,
+                            onPaste = viewModel::onPasteClipboard,
+                            onCancel = viewModel::onCancelClipboard,
+                            pasteProgress = uiState.pasteProgress,
+                        )
+                    }
                 }
             }
 
@@ -239,10 +303,11 @@ fun FileBrowserScreen(
     if (uiState.showAllFilesAccessPrompt) {
         AllFilesAccessDialog(onDismiss = viewModel::onDismissAllFilesAccessPrompt)
     }
-    uiState.deleteConfirmItem?.let { item ->
+    uiState.deleteConfirmItems.takeIf { it.isNotEmpty() }?.let { items ->
         DeleteConfirmDialog(
-            itemName = item.name,
-            isDirectory = item.isDirectory,
+            itemName = items.first().name,
+            isDirectory = items.first().isDirectory,
+            itemCount = items.size,
             onConfirm = viewModel::onConfirmDelete,
             onDismiss = viewModel::onDismissDeleteConfirm,
         )

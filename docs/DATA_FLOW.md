@@ -201,24 +201,58 @@ Screen → ViewModel.onSortChanged(SortType) → UserPreferencesRepository.setSo
   → DataStore.edit { prefs[sortKey] = sortType.name }
 ```
 
+### Select several files (file browser)
+```
+Long-press a row → FileBrowserViewModel.onLongPressItem(path)   // ignored while a clipboard is staged
+  → SelectionDelegate.start(path) → selectedKeys: StateFlow<Set<String>>
+  → FileBrowserScreen collects it: SelectionTopBar replaces the top bar, SelectionActionBar replaces
+    the paste bar, Play All FAB hidden, rows show SelectionIndicator and drop their 3-dot menu
+DirectoryBrowsePane reports its listed paths (after search filtering) → onVisibleKeysChanged(keys)
+  → ViewModel keeps them for "Select all" and calls SelectionDelegate.retain(keys), so the
+    count always equals what a batch action touches
+Selection is cleared on: pushLayer / navigate up / breadcrumb / roots, staging cut/copy,
+  confirming delete, and starting playback.
+Play  → collectSelectedVideoPlaylist() (selected video files only, list order) → onPlayAllVideos
+Cut / Copy → stageClipboard(selectedItems) → the paste flow below
+Delete → onDeleteSelected() → the delete flow below
+```
+
+### Select several remote files (network browser)
+```
+Long-press a row → NetworkViewModel.onLongPressItem(path) → SelectionDelegate.start(path)
+  → NetworkScreen shows SelectionTopBar + a Play-only SelectionActionBar (no cut/copy/delete)
+Only the TOP remote layer reports onVisibleKeysChanged and receives the selection callbacks;
+  lower layers stay composed (hidden) and must not prune the selection.
+Selection is cleared on: pushRemoteLayer / navigate up / breadcrumb / back to home, and on Play.
+Play → collectSelectedVideoPlaylist() (selected video files only, list order, playback URIs
+  via buildPlaybackUri) → onPlayAllVideos → PlayerViewModel.playVideoPlaylist
+```
+
 ### Copy / move a file
 ```
 FileBrowserScreen → PasteActionBar (paste) → FileBrowserViewModel.onPasteClipboard()
-  → FileRepository.copyEntry / moveEntry(source, destDir, onProgress)
+  → for each item in FileClipboard.items (sequential):
+    FileRepository.copyEntry / moveEntry(source, destDir, onProgress)
     → CopyProgress tracks bytes against a known total and reports a 0f..1f fraction,
       throttled to whole-percent steps; finish() guarantees a final 1f
     → moveEntry fast path: same-volume renameTo → a single onProgress(1f)
     → cross-volume: copy-then-delete with incremental progress
-  → FileBrowserUiState.pasteProgress → HzPlayerProgressBar in PasteActionBar
+  → FileBrowserUiState.pasteProgress = (finished items + running item's fraction) / item count
+    (count-weighted, not byte-weighted) → HzPlayerProgressBar in PasteActionBar
+  → items that failed stay in the clipboard for a retry; result via batchResultMessage()
+    ("Moved 3 items", "Moved 2 items · 1 failed", or the first error when all failed)
   → MediaScannerConnection.scanFile(...) keeps MediaStore in sync
 ```
 
-### Delete a file (deferred, with undo)
+### Delete files (deferred, with undo)
 ```
-FileBrowserScreen → delete → FileBrowserViewModel.onConfirmDelete(path)
-  → the item is hidden optimistically and the disk delete is deferred by DELETE_GRACE_MS (4 s)
-  → onUndoDelete() cancels the pending delete
-  → otherwise commitPendingDeleteNow() → FileRepository.deleteEntry(path)
+FileBrowserScreen → delete → FileBrowserViewModel.onConfirmDelete()   // deleteConfirmItems: List
+  → all items are hidden optimistically (hideItemsFromLayers) and one disk delete is deferred
+    by DELETE_GRACE_MS (4 s); one snackbar, one Undo for the whole batch
+  → onUndoDelete() cancels the pending delete and reloads each item's parent directory
+  → otherwise performDelete(items) → FileRepository.deleteEntry(path) per item;
+    items that failed are reloaded (brought back) and counted in the result message
+  → a new delete supersedes a pending one: commitPendingDeleteNow() flushes the older batch first
 ```
 
 ### Delete a video (video library, deferred, with undo)

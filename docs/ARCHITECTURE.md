@@ -73,7 +73,8 @@ com.rhnxdev.hzplayer/
 │   ├── browse/                     FileBrowser* · components/ArchivePasswordDialog ·
 │   │                               SolidArchiveWarningDialog · DirectoryStackContent ·
 │   │                               StorageRootsContent · FileBrowserTopBarActions ·
-│   │                               NewFolderDialog · PasteActionBar
+│   │                               NewFolderDialog · PasteActionBar (+ multi-select: the
+│   │                               ViewModel owns a core/components SelectionDelegate)
 │   ├── history/                    HistoryScreen · HistoryViewModel · HistoryUiState
 │   │                               (recently-played list)
 │   ├── network/                    Network* · components/NetworkScreenContent ·

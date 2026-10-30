@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.presentation.network
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.core.components.SearchDelegate
+import com.rhnxdev.hzplayer.core.components.SelectionDelegate
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
 import com.rhnxdev.hzplayer.core.util.NetworkDomainUtils
 import com.rhnxdev.hzplayer.core.util.ServerDiscoverer
@@ -70,6 +71,12 @@ class NetworkViewModel @Inject constructor(
     private val sortKey = "network_browser"
 
     val search = SearchDelegate()
+
+    /** Multi-selected item paths in the topmost remote directory. */
+    val selection = SelectionDelegate()
+
+    /** Paths currently listed by the top layer (after search filtering); backs "select all". */
+    private var visibleKeys: Set<String> = emptySet()
 
     init {        observeServers(); observeHistory(); observeDiscovery()
         viewModelScope.launch {
@@ -275,6 +282,7 @@ class NetworkViewModel @Inject constructor(
     }
 
     fun onRemoteBreadcrumbClicked(path: String) {
+        selection.clear()
         val layers = _uiState.value.remoteLayers
         val idx = layers.indexOfFirst { it.path == path }
         if (idx >= 0) {
@@ -287,6 +295,7 @@ class NetworkViewModel @Inject constructor(
     }
 
     fun onRemoteNavigateUp(): Boolean {
+        selection.clear()
         val layers = _uiState.value.remoteLayers
         return if (layers.size > 1) {
             _uiState.update { it.copy(remoteLayers = layers.dropLast(1)) }
@@ -297,6 +306,7 @@ class NetworkViewModel @Inject constructor(
     }
 
     fun onBackToHome() {
+        selection.clear()
         dirCache.clear()
         _uiState.update {
             it.copy(mode = NetworkScreenMode.HOME, browsingServer = null,
@@ -333,6 +343,7 @@ class NetworkViewModel @Inject constructor(
     }
 
     private fun pushRemoteLayer(server: ServerConfig, path: String) {
+        selection.clear()
         val layer = RemoteDirectoryLayer(
             path = path,
             breadcrumbs = buildRemoteBreadcrumbs(server.name, path),
@@ -559,8 +570,11 @@ class NetworkViewModel @Inject constructor(
 
     fun collectVideoPlaylist(): List<VideoItem> {
         val currentLayer = _uiState.value.remoteLayers.lastOrNull() ?: return emptyList()
-        return currentLayer.items
-            .filter { !it.isDirectory && isVideoMedia(it.name, it.mimeType) }
+        return currentLayer.items.toVideoPlaylist()
+    }
+
+    private fun List<RemoteFileItem>.toVideoPlaylist(): List<VideoItem> =
+        filter { !it.isDirectory && isVideoMedia(it.name, it.mimeType) }
             .map { item ->
                 val playbackUri = buildPlaybackUri(item.path) ?: item.path
                 VideoItem(
@@ -572,6 +586,33 @@ class NetworkViewModel @Inject constructor(
                     mimeType = item.mimeType,
                 )
             }
+
+    // ---- Multi-select (Play only: remote protocols are read-only here) ----
+
+    /** Long-press starts selection. */
+    fun onLongPressItem(path: String) = selection.start(path)
+
+    fun onToggleSelect(path: String) = selection.toggle(path)
+
+    fun onSelectAll() = selection.selectAll(visibleKeys)
+
+    fun onExitSelection() = selection.clear()
+
+    /**
+     * The top layer reports what it lists (after search filtering). Selection is pruned
+     * to it so the count shown always equals what Play will use.
+     */
+    fun onVisibleKeysChanged(keys: Set<String>) {
+        visibleKeys = keys
+        selection.retain(keys)
+    }
+
+    /** Videos among the selection, in list order, ready for the player. */
+    fun collectSelectedVideoPlaylist(): List<VideoItem> {
+        val keys = selection.selectedKeys.value
+        if (keys.isEmpty()) return emptyList()
+        val layer = _uiState.value.remoteLayers.lastOrNull() ?: return emptyList()
+        return layer.items.filter { it.path in keys }.toVideoPlaylist()
     }
 
     // Triple: (firstVisibleIndex, pixelOffset, isAtEnd)

@@ -8,7 +8,9 @@
 thickness, knob ring, and tick suppression stay uniform. Media-type colour comes from
 `mediaAccentColor`; a white glyph on top of it goes through `MediaIconBadge`, which
 darkens the accent until the glyph keeps contrast. Every reusable component takes
-`@Preview` using `PreviewMedia` data — never a ViewModel.
+`@Preview` using `PreviewMedia` data — never a ViewModel. Multi-select state lives in a
+ViewModel-owned `SelectionDelegate` and is keyed by a stable id (a path or URI), never by
+`FolderItem.id`, which is `File.hashCode()` and can collide.
 
 ---
 
@@ -29,15 +31,19 @@ darkens the accent until the glyph keeps contrast. Every reusable component take
 | `DurationBadge` | `DurationBadge.kt` | Pill duration badge (thumbnail corner) |
 | `ThumbnailPlaceholder` | `ThumbnailPlaceholder.kt` | Theme-aware gradient placeholder by `MediaType` |
 | `MediaPropertiesDialog` | `MediaPropertiesDialog.kt` | File/codec properties sheet (FFmpeg probe) with cover/thumbnail banner and `MediaIconBadge`-headed section cards |
-| `FileItemCard` | `FileItemCard.kt` | File/folder card for browse (3-dot menu) |
+| `FileItemCard` | `FileItemCard.kt` | File/folder card for browse (3-dot menu). Optional multi-select: `selectionMode` / `selected` / `onLongClick` show the check badge and hide the menu; long-press uses a non-clickable `Card` + `combinedClickable` because M3's `Card(onClick)` has no long-press |
 | `FileOptionsBottomSheet` | `FileOptionsBottomSheet.kt` | File/folder context actions (thumbnail, favourite, play all, play as audio, properties) |
 | `ViewSortBottomSheet` | `ViewSortBottomSheet.kt` | Sort / view-mode / media-type-filter picker |
 | `BreadcrumbBar` | `BreadcrumbBar.kt` | Directory breadcrumb navigation |
-| `DirectoryBrowsePane` | `DirectoryBrowsePane.kt` | Shared browse listing (grid/list) |
+| `DirectoryBrowsePane` | `DirectoryBrowsePane.kt` | Shared browse listing (grid/list). Multi-select is opt-in through `selectedKeys` / `onLongPressItem` / `onToggleSelect` / `onVisibleKeysChanged` (keys are `path`); used by the local browser (Play, Cut, Copy, Delete) and the remote browser (Play only, since the protocols are read-only here). The remote stack keeps lower layers composed but hidden, so only the top layer is given the selection callbacks |
 | `DirectoryHeader` | `DirectoryHeader.kt` | Breadcrumb trail plus the "N folders, M files" summary above a directory listing (shared by the local and remote browsers). The summary hides itself when the visible list is empty |
 | `HzPlayerTopBar` | `HzPlayerTopBar.kt` | App top bar; inline search mode takes precedence over the back arrow (the leading arrow exits search first) |
-| `HzPlayerSearchableScaffold` | `HzPlayerSearchableScaffold.kt` | Scaffold + search integration |
+| `HzPlayerSearchableScaffold` | `HzPlayerSearchableScaffold.kt` | Scaffold + search integration. With `selectionCount > 0` it swaps in `SelectionTopBar`, and its single back handler exits selection first, then search, then navigates up |
 | `SearchDelegate` | `SearchDelegate.kt` | Debounced search helper |
+| `SelectionDelegate` | `SelectionDelegate.kt` | Multi-select state holder owned by a ViewModel (`selectedKeys: StateFlow<Set<String>>`; `start` / `toggle` / `selectAll` / `retain` / `clear`). Selection mode = non-empty set, so deselecting the last item exits it |
+| `SelectionIndicator` | `SelectionIndicator.kt` | Round check badge; `onMedia = true` over a thumbnail (dark-backed ring), `false` over a plain row |
+| `SelectionTopBar` | `SelectionTopBar.kt` | `[X] N selected [Select all]`, same 64 dp height as `HzPlayerTopBar` |
+| `SelectionActionBar` | `SelectionActionBar.kt` | Bottom bar of batch `SelectionAction`s (icon, label, enabled, destructive), styled like `PasteActionBar` |
 
 ---
 
@@ -91,7 +97,7 @@ darkens the accent until the glyph keeps contrast. Every reusable component take
 | `StorageRootsContent` | `presentation/browse/components/StorageRootsContent.kt` — storage roots with a per-root icon derived from `StorageKind` (USB / SD card / generic storage) |
 | `FileBrowserTopBarActions` | `presentation/browse/components/FileBrowserTopBarActions.kt` |
 | `NewFolderDialog` | `presentation/browse/components/NewFolderDialog.kt` |
-| `PasteActionBar` | `presentation/browse/components/PasteActionBar.kt` (cut/copy/move/delete). While a paste is running it swaps the buttons for a percentage label + `HzPlayerProgressBar` (indeterminate when the fraction is null, e.g. an atomic move) |
+| `PasteActionBar` | `presentation/browse/components/PasteActionBar.kt` (cut/copy/move/delete). Shows the item name, or "N items" for a multi-item clipboard. While a paste is running it swaps the buttons for a percentage label + `HzPlayerProgressBar` (indeterminate when the fraction is null, e.g. an atomic move). `DeleteConfirmDialog` in the same file takes `itemCount`; above 1 it uses the batch wording |
 | `NetworkHomeContent` / `ServerBrowseStackContent` / `CredentialDialog` | `presentation/network/components/NetworkScreenContent.kt` — saved and discovered servers are laid out as **two columns** (`chunked(2)` of `ServerCard`s) inside the scrolling `LazyColumn`; the list-view variant renders them full width instead |
 | `ServerCard` | `presentation/network/components/ServerCard.kt` |
 | `ServerConfigDialog` | `presentation/network/components/ServerConfigDialog.kt` |

@@ -79,7 +79,8 @@ fun PasteActionBar(
                 )
                 Spacer(modifier = Modifier.width(Spacing.sm))
                 Text(
-                    text = clipboard.item.name,
+                    text = clipboard.items.singleOrNull()?.name
+                        ?: stringResource(R.string.selection_items_count, clipboard.items.size),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -127,7 +128,10 @@ fun PasteActionBar(
 }
 
 /**
- * Destructive-action confirmation shown before permanently deleting a file or folder.
+ * Destructive-action confirmation shown before permanently deleting files or folders.
+ *
+ * @param itemName — name of the item when [itemCount] is 1
+ * @param itemCount — how many items will be deleted; above 1 the dialog uses the batch wording
  */
 @Composable
 fun DeleteConfirmDialog(
@@ -135,6 +139,7 @@ fun DeleteConfirmDialog(
     isDirectory: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    itemCount: Int = 1,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -145,14 +150,23 @@ fun DeleteConfirmDialog(
                 tint = MaterialTheme.colorScheme.error,
             )
         },
-        title = { Text(stringResource(R.string.delete_confirm_title)) },
+        title = {
+            Text(
+                if (itemCount > 1) stringResource(R.string.delete_confirm_title_multi, itemCount)
+                else stringResource(R.string.delete_confirm_title)
+            )
+        },
         text = {
             Text(
-                stringResource(
-                    if (isDirectory) R.string.delete_confirm_message_folder
-                    else R.string.delete_confirm_message_file,
-                    itemName,
-                )
+                if (itemCount > 1) {
+                    stringResource(R.string.delete_confirm_message_multi)
+                } else {
+                    stringResource(
+                        if (isDirectory) R.string.delete_confirm_message_folder
+                        else R.string.delete_confirm_message_file,
+                        itemName,
+                    )
+                }
             )
         },
         confirmButton = {

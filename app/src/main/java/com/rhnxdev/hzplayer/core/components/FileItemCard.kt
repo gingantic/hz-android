@@ -1,6 +1,8 @@
 package com.rhnxdev.hzplayer.core.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +47,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -68,7 +74,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
  * Replace both [com.rhnxdev.hzplayer.presentation.browse.components.FileListItem]
  * and [com.rhnxdev.hzplayer.presentation.network.components.RemoteFileListItem].
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FileItemCard(
     name: String,
@@ -98,6 +104,11 @@ fun FileItemCard(
     onDeleteClick: (() -> Unit)? = null,
     isFavorite: Boolean = false,
     onFavoriteClick: (() -> Unit)? = null,
+    /** True while the list is in multi-select mode: shows the check badge, hides the 3-dot menu. */
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    /** Long-press handler; the caller uses it to start selection. Null disables long-press. */
+    onLongClick: (() -> Unit)? = null,
 ) {
 
     val subtitle = when {
@@ -124,12 +135,31 @@ fun FileItemCard(
         }
     }
 
+    // M3's Card(onClick = …) has no long-press and its own clickable swallows a second one,
+    // so the non-clickable Card is used with combinedClickable.
+    val cardShape = RoundedCornerShape(Spacing.sm)
+    val haptic = LocalHapticFeedback.current
     Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(Spacing.sm),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(cardShape)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick?.let { longClick ->
+                    {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        longClick()
+                    }
+                },
+            )
+            .semantics { if (selectionMode) this.selected = selected },
+        shape = cardShape,
         colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent,
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            } else {
+                Color.Transparent
+            },
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
@@ -156,6 +186,14 @@ fun FileItemCard(
                     )
                     leadingThumbnail()
 
+                    if (selectionMode) {
+                        SelectionIndicator(
+                            selected = selected,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(Spacing.xs),
+                        )
+                    }
                     // Duration badge (bottom-right, YouTube style)
                     if (durationMs > 0) {
                         Box(
@@ -191,12 +229,22 @@ fun FileItemCard(
                     }
                 }
             } else {
-                FileItemIcon(
-                    name = name,
-                    isDirectory = isDirectory,
-                    mimeType = mimeType,
-                    size = 40.dp
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    FileItemIcon(
+                        name = name,
+                        isDirectory = isDirectory,
+                        mimeType = mimeType,
+                        size = 40.dp
+                    )
+                    if (selectionMode) {
+                        SelectionIndicator(
+                            selected = selected,
+                            size = 18.dp,
+                            onMedia = false,
+                            modifier = Modifier.align(Alignment.BottomEnd),
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.width(Spacing.md))
@@ -241,7 +289,7 @@ fun FileItemCard(
                 }
             }
 
-            if (onPropertiesClick != null || onPlayAllClick != null || onPlayAsAudioClick != null || onFavoriteClick != null || onCutClick != null || onCopyClick != null || onDeleteClick != null) {
+            if (!selectionMode && (onPropertiesClick != null || onPlayAllClick != null || onPlayAsAudioClick != null || onFavoriteClick != null || onCutClick != null || onCopyClick != null || onDeleteClick != null)) {
                 var showMenu by remember { mutableStateOf(false) }
                 IconButton(
                     onClick = { showMenu = true },

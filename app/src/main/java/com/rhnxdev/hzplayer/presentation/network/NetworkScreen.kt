@@ -3,6 +3,7 @@ package com.rhnxdev.hzplayer.presentation.network
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -12,6 +13,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,7 +30,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
+import com.rhnxdev.hzplayer.core.components.SelectionAction
+import com.rhnxdev.hzplayer.core.components.SelectionActionBar
 import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
+import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.core.util.isVideoOrStreamDefault
 import com.rhnxdev.hzplayer.core.util.withLiveCookies
 import com.rhnxdev.hzplayer.domain.model.SortType
@@ -54,6 +59,9 @@ fun NetworkScreen(
     val scope = rememberCoroutineScope()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
+    val selectedKeys by viewModel.selection.selectedKeys.collectAsStateWithLifecycle()
+    val selectionCount = if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) selectedKeys.size else 0
+    val isSelecting = selectionCount > 0
 
     if (uiState.showServerDialog) {
         ServerConfigDialog(
@@ -113,6 +121,9 @@ fun NetworkScreen(
         searchPlaceholder = "Search remote files...",
         fullScreenOverlay = fullScreenOverlay,
         isActive = isActive,
+        selectionCount = selectionCount,
+        onExitSelection = viewModel::onExitSelection,
+        onSelectAll = viewModel::onSelectAll,
         actions = {
             if (uiState.mode == NetworkScreenMode.HOME) {
                 IconButton(onClick = viewModel::onToggleHomeView) {
@@ -214,12 +225,42 @@ fun NetworkScreen(
                         val uri = viewModel.buildPlaybackUri(item.path) ?: item.path
                         onPlayRemoteFile(uri, item.name, false, item.mimeType)
                     },
+                    selectedKeys = selectedKeys,
+                    onLongPressItem = viewModel::onLongPressItem,
+                    onToggleSelect = viewModel::onToggleSelect,
+                    onVisibleKeysChanged = viewModel::onVisibleKeysChanged,
                 )
             }
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
+            Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+                SnackbarHost(hostState = snackbarHostState)
+                if (isSelecting) {
+                    // Remote protocols are read-only here, so Play is the only batch action.
+                    // It needs at least one selected video; folders and other files are skipped.
+                    val currentLayer = uiState.remoteLayers.lastOrNull()
+                    val hasSelectedVideo = remember(currentLayer?.items, selectedKeys) {
+                        currentLayer?.items?.any {
+                            it.path in selectedKeys && !it.isDirectory && isVideoMedia(it.name, it.mimeType)
+                        } == true
+                    }
+                    val playLabel = stringResource(R.string.selection_action_play)
+                    SelectionActionBar(
+                        actions = listOf(
+                            SelectionAction(
+                                icon = Icons.Default.PlayArrow,
+                                label = playLabel,
+                                enabled = hasSelectedVideo,
+                                onClick = {
+                                    val playlist = viewModel.collectSelectedVideoPlaylist()
+                                    if (playlist.isNotEmpty()) {
+                                        viewModel.onExitSelection()
+                                        onPlayAllVideos(playlist)
+                                    }
+                                },
+                            ),
+                        ),
+                    )
+                }
+            }
         }
     }
 }

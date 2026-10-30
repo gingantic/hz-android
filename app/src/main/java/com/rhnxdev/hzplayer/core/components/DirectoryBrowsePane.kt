@@ -15,9 +15,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +79,12 @@ data class FileItemData(
  * @param onRefresh    called on pull-to-refresh gesture
  * @param onRetry      called on "Retry" button from error state
  * @param listState    external LazyListState for scroll persistence
+ * @param selectedKeys   paths of multi-selected items; non-empty means selection mode
+ * @param onLongPressItem  starts selection on long-press; null disables multi-select
+ *                         (the remote browser leaves it null)
+ * @param onToggleSelect   called instead of [onItemClick] while in selection mode
+ * @param onVisibleKeysChanged  reports the paths currently listed (after search
+ *                              filtering) so the owner can prune and "select all"
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,6 +109,10 @@ fun DirectoryBrowsePane(
     onDeleteItem: ((FileItemData) -> Unit)? = null,
     quickAccessPaths: Set<String> = emptySet(),
     onToggleFavorite: ((FileItemData) -> Unit)? = null,
+    selectedKeys: Set<String> = emptySet(),
+    onLongPressItem: ((FileItemData) -> Unit)? = null,
+    onToggleSelect: ((FileItemData) -> Unit)? = null,
+    onVisibleKeysChanged: ((Set<String>) -> Unit)? = null,
     listState: androidx.compose.foundation.lazy.LazyListState? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = Spacing.sm),
     emptyTitle: String = "This folder is empty",
@@ -111,6 +123,15 @@ fun DirectoryBrowsePane(
     val displayItems = remember(items, searchQuery, isSearchActive) {
         if (!isSearchActive || searchQuery.isBlank()) items
         else items.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+    val selectionMode = selectedKeys.isNotEmpty()
+
+    // Keyed by path: FolderItem ids are File.hashCode() and can collide.
+    if (onVisibleKeysChanged != null) {
+        val currentOnVisibleKeysChanged by rememberUpdatedState(onVisibleKeysChanged)
+        LaunchedEffect(displayItems) {
+            currentOnVisibleKeysChanged(displayItems.mapTo(HashSet()) { it.path })
+        }
     }
 
     var propertiesItem by remember { mutableStateOf<FileItemData?>(null) }
@@ -209,7 +230,13 @@ fun DirectoryBrowsePane(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     items(displayItems, key = { it.id }) { item ->
-                        val onItemClicked = remember(item, onItemClick) { { onItemClick(item) } }
+                        val onItemClicked = remember(item, onItemClick, selectionMode, onToggleSelect) {
+                            if (selectionMode && onToggleSelect != null) {
+                                { onToggleSelect(item) }
+                            } else {
+                                { onItemClick(item) }
+                            }
+                        }
                         val thumbnail: @Composable (() -> Unit)? = if (mediaMode && !item.isDirectory) {
                             remember(item.playbackUri, item.path, item.dateModified, item.name) {
                                 @Composable {
@@ -262,6 +289,11 @@ fun DirectoryBrowsePane(
                             isFavorite = quickAccessPaths.contains(item.path),
                             onFavoriteClick = if (item.isDirectory && onToggleFavorite != null) {
                                 { onToggleFavorite(item) }
+                            } else null,
+                            selectionMode = selectionMode,
+                            selected = item.path in selectedKeys,
+                            onLongClick = if (onLongPressItem != null) {
+                                { onLongPressItem(item) }
                             } else null,
                         )
                     }
