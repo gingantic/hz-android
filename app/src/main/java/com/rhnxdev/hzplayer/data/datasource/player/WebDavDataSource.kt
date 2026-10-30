@@ -65,10 +65,13 @@ class WebDavDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
 
         val requestBuilder = Request.Builder().url(httpUrl)
 
-        // Basic auth if credentials are present
-        if (user.isNotEmpty()) {
+        // Basic auth only over TLS: over cleartext HTTP it would put user:pass on the wire
+        // (base64 is reversible). WebDavBrowserClient applies the same rule when browsing.
+        if (user.isNotEmpty() && isTls) {
             val credentials = okhttp3.Credentials.basic(user, pass)
             requestBuilder.header("Authorization", credentials)
+        } else if (user.isNotEmpty()) {
+            android.util.Log.w(TAG, "Not sending WebDAV credentials over cleartext HTTP to $host:$port — use WEBDAVS/TLS")
         }
 
         // Range header for server-side seek

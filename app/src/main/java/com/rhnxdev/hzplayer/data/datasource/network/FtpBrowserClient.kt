@@ -22,7 +22,7 @@ class FtpBrowserClient(
         try {
             ConnectionPool.borrowFtpBrowser(host, port, username, password)
         } catch (e: IOException) {
-            ConnectionPool.dropFtpBrowser(host, port)
+            ConnectionPool.dropFtpBrowser(host, port, username, password)
             throw e
         }
         Unit
@@ -48,12 +48,12 @@ class FtpBrowserClient(
                     .sortedRemote()
             } catch (e: IOException) {
                 // A dead pooled client would otherwise be reused forever; see dropFtpBrowser.
-                ConnectionPool.dropFtpBrowser(host, port)
+                ConnectionPool.dropFtpBrowser(host, port, username, password)
                 throw e
             }
         }
 
     override suspend fun disconnect() = withContext(Dispatchers.IO) {
-        ConnectionPool.returnFtpBrowser(host, port)
+        ConnectionPool.returnFtpBrowser(host, port, username, password)
     }
 }

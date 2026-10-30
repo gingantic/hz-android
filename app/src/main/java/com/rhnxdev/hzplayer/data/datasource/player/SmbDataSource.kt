@@ -128,7 +128,7 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
             var openedStream: InputStream? = null
             try {
                 val file = resolvedFileCache[cacheKey] ?: run {
-                    val match = SmbPathResolver.resolve(activeContext, host, port, segments)
+                    val match = SmbPathResolver.resolveStrict(activeContext, host, port, segments)
                         ?: throw IOException("File not found: ${safeUri(dataSpec.uri)}")
                     resolvedFileCache[cacheKey] = match
                     match
@@ -141,6 +141,11 @@ class SmbDataSource : RemoteDataSourceBase(/* isNetwork = */ true) {
                 openedStream = stream
                 if (dataSpec.position > 0) skipFully(stream, dataSpec.position)
                 return Triple(file, len, stream)
+            } catch (e: jcifs.smb.SmbAuthException) {
+                // A rejected login will not succeed on retry; surface it as-is.
+                try { openedStream?.close() } catch (_: Exception) {}
+                resolvedFileCache.remove(cacheKey)
+                throw e
             } catch (e: IOException) {
                 try { openedStream?.close() } catch (_: Exception) {}
                 lastErr = e

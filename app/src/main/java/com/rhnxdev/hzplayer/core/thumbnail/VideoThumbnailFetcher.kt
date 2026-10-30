@@ -361,7 +361,8 @@ class VideoFrameFetcher(
         try {
             val request = Request.Builder().url(httpUrl)
                 .header("Range", "bytes=0-${maxBytes - 1}")
-                .apply { if (user.isNotEmpty()) header("Authorization", Credentials.basic(user, pass)) }
+                // Basic credentials are sent only over TLS, matching WebDavBrowserClient.
+                .apply { if (user.isNotEmpty() && scheme == "webdavs") header("Authorization", Credentials.basic(user, pass)) }
                 .build()
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) return

@@ -18,7 +18,9 @@ import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.io.File
+import java.security.Security
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -46,6 +48,23 @@ internal object ConnectionPool {
 
     private fun sftpHostKeyVerifier(): HostKeyVerifier =
         SftpTofuVerifier(sftpKnownHostsFile ?: File(System.getProperty("java.io.tmpdir"), "hz_sftp_known_hosts"))
+
+    /**
+     * Android ships a stripped security provider also named "BC". It lacks the digests
+     * (SHA-1/SHA-2) and key agreement (X25519, EC) that SSHJ requests from "BC" by name, so
+     * every SFTP handshake fails with "no such algorithm". This swaps in the full bcprov
+     * that SSHJ already depends on. Appended last so other JCA lookups are unaffected.
+     */
+    private val bouncyCastleInstalled: Boolean by lazy {
+        Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
+        Security.addProvider(BouncyCastleProvider()) >= 0
+    }
+
+    /** Creates an [SSHClient] after making sure the full BouncyCastle provider is installed. */
+    private fun newSshClient(): SSHClient {
+        check(bouncyCastleInstalled) { "BouncyCastle provider could not be installed" }
+        return SSHClient()
+    }
 
     /** Idle connections older than this are evicted by the sweeper. */
     private const val IDLE_TIMEOUT_MS = 5 * 60_000L
@@ -179,9 +198,6 @@ internal object ConnectionPool {
         return "$scheme://$host:$port:$user:$passHash"
     }
 
-    private fun browserKey(host: String, port: Int, scheme: String): String =
-        "$scheme://$host:$port"
-
     // ── FTP (DataSource) ───────────────────────────────────────────
 
     /** Borrow a reusable [FTPClient] for the given server. */
@@ -207,7 +223,11 @@ internal object ConnectionPool {
             connect(host, port)
             // Empty user = anonymous FTP: DataSource URIs without stored credentials
             // arrive here with user="" (see borrowFtpBrowser, which guards the same way).
-            login(user.ifEmpty { "anonymous" }, pass)
+            // login() returns false on bad credentials without throwing.
+            if (!login(user.ifEmpty { "anonymous" }, pass)) {
+                try { disconnect() } catch (_: Exception) {}
+                throw java.io.IOException("FTP authentication failed for $host:$port")
+            }
             enterLocalPassiveMode()
             setFileType(FTP.BINARY_FILE_TYPE)
         }
@@ -233,11 +253,16 @@ internal object ConnectionPool {
         existing?.let {
             try { it.value.disconnect() } catch (_: Exception) {}
         }
-        val ssh = SSHClient().apply {
+        val ssh = newSshClient().apply {
             addHostKeyVerifier(sftpHostKeyVerifier())
             connectTimeout = 15000
             connect(host, port)
-            authPassword(user, pass)
+            try {
+                authPassword(user, pass)
+            } catch (e: java.io.IOException) {
+                try { disconnect() } catch (_: Exception) {}
+                throw e
+            }
         }
         sftpPool[k] = Timed(ssh).also { it.acquire() }
         android.util.Log.d("ConnectionPool", "SFTP new connection $k")
@@ -323,7 +348,9 @@ internal object ConnectionPool {
     // ── Browser-level pooling ─────────────────────────────────────
 
     fun borrowFtpBrowser(host: String, port: Int, user: String, pass: String): FTPClient {
-        val k = browserKey(host, port, "ftp")
+        // Keyed by credentials too: a session logged in as one user must never be handed
+        // to a request carrying a different (e.g. wrong) password.
+        val k = key("ftp-brw", host, port, user, pass)
         return ftpBrowserPool.getOrPut(k) {
             FTPClient().apply {
                 autodetectUTF8 = true // negotiate UTF-8 from server FEAT — emoji/CJK filenames
@@ -342,7 +369,7 @@ internal object ConnectionPool {
         }.also { android.util.Log.d("ConnectionPool", "FTP browser reuse $k") }
     }
 
-    fun returnFtpBrowser(host: String, port: Int) {
+    fun returnFtpBrowser(host: String, port: Int, user: String, pass: String) {
         // Keep the connection alive for reuse; the sweeper evicts when idle.
         // No inUse tracking on browser pool — just leave it in the map.
     }
@@ -352,16 +379,16 @@ internal object ConnectionPool {
      * The pool has no liveness check, so without this a dead socket (server moved to a new IP,
      * Wi-Fi dropped) is handed back on every later browse until the process restarts.
      */
-    fun dropFtpBrowser(host: String, port: Int) {
-        ftpBrowserPool.remove(browserKey(host, port, "ftp"))?.let {
+    fun dropFtpBrowser(host: String, port: Int, user: String, pass: String) {
+        ftpBrowserPool.remove(key("ftp-brw", host, port, user, pass))?.let {
             try { it.disconnect() } catch (_: Exception) {}
         }
     }
 
     fun borrowSftpBrowser(host: String, port: Int, user: String, pass: String): SSHClient {
-        val k = browserKey(host, port, "sftp")
+        val k = key("sftp-brw", host, port, user, pass)
         return sftpBrowserPool.getOrPut(k) {
-            SSHClient().apply {
+            newSshClient().apply {
                 addHostKeyVerifier(sftpHostKeyVerifier())
                 connectTimeout = 10000
                 connect(host, port)
@@ -370,17 +397,18 @@ internal object ConnectionPool {
                 } catch (e: net.schmizz.sshj.userauth.UserAuthException) {
                     try { disconnect() } catch (_: Exception) {}
                     throw RemoteAuthException()
+                } catch (e: java.io.IOException) {
+                    try { disconnect() } catch (_: Exception) {}
+                    throw e
                 }
             }.also { android.util.Log.d("ConnectionPool", "SFTP browser new $k") }
         }
     }
 
-    fun returnSftpBrowser(host: String, port: Int) {
-        val k = browserKey(host, port, "sftp")
-        sftpBrowserPool[k]?.let {
+    fun returnSftpBrowser(host: String, port: Int, user: String, pass: String) {
+        sftpBrowserPool.remove(key("sftp-brw", host, port, user, pass))?.let {
             try { it.disconnect() } catch (_: Exception) {}
         }
-        sftpBrowserPool.remove(k)
     }
 
     fun borrowSmbBrowser(host: String, port: Int, user: String, pass: String): CIFSContext {

@@ -44,6 +44,6 @@ class SftpBrowserClient(
         }
 
     override suspend fun disconnect() = withContext(Dispatchers.IO) {
-        ConnectionPool.returnSftpBrowser(host, port)
+        ConnectionPool.returnSftpBrowser(host, port, username, password)
     }
 }

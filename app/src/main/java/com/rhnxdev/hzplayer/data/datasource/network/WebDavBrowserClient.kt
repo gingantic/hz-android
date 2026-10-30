@@ -1,5 +1,6 @@
 package com.rhnxdev.hzplayer.data.datasource.network
 
+import android.net.Uri
 import com.rhnxdev.hzplayer.core.util.remoteFileItem
 import com.rhnxdev.hzplayer.core.util.sortedRemote
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
@@ -7,6 +8,8 @@ import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -30,9 +33,6 @@ class WebDavBrowserClient(
     private val useTls: Boolean,
 ) : RemoteBrowserClient {
 
-    private val baseUrl: String
-        get() = "${if (useTls) "https" else "http"}://$host:$port"
-
     private val authHeader: String
         get() {
             if (username.isEmpty()) return ""
@@ -48,11 +48,33 @@ class WebDavBrowserClient(
             return Credentials.basic(username, password)
         }
 
+    /**
+     * Request URL for [path]. Segments go through [HttpUrl.Builder] so names containing
+     * `#`, `%`, `?` or spaces are percent-encoded exactly once. Always ends in `/` because
+     * this client only requests collections.
+     */
+    private fun requestUrl(path: String): HttpUrl {
+        val builder = HttpUrl.Builder()
+            .scheme(if (useTls) "https" else "http")
+            .host(host.removeSurrounding("[", "]"))
+            .port(port)
+        val segments = normalizePath(path).split('/').filter { it.isNotEmpty() }
+        segments.forEach { builder.addPathSegment(it) }
+        if (segments.isNotEmpty()) builder.addPathSegment("")
+        return builder.build()
+    }
+
+    private fun Request.Builder.withAuth(): Request.Builder = apply {
+        val header = authHeader
+        if (header.isNotEmpty()) header("Authorization", header)
+    }
+
     override suspend fun connect() = withContext(Dispatchers.IO) {
         val client = ConnectionPool.borrowWebDavBrowser(host, port, useTls)
+        val url = requestUrl("/")
         val request = Request.Builder()
-            .url("$baseUrl/")
-            .header("Authorization", authHeader)
+            .url(url)
+            .withAuth()
             .method("OPTIONS", null)
             .build()
         client.newCall(request).execute().use { response ->
@@ -61,7 +83,7 @@ class WebDavBrowserClient(
                 throw com.rhnxdev.hzplayer.domain.model.RemoteAuthException()
             }
             if (!response.isSuccessful) {
-                throw IOException("WebDAV server at $baseUrl returned ${response.code}")
+                throw IOException("WebDAV server at $url returned ${response.code}")
             }
         }
     }
@@ -71,13 +93,16 @@ class WebDavBrowserClient(
             val client = ConnectionPool.borrowWebDavBrowser(host, port, useTls)
             val body = PROPFIND_REQUEST.toRequestBody(PROPFIND_MEDIA_TYPE)
             val request = Request.Builder()
-                .url("$baseUrl${normalizePath(path)}")
-                .header("Authorization", authHeader)
+                .url(requestUrl(path))
+                .withAuth()
                 .header("Depth", "1")
                 .method("PROPFIND", body)
                 .build()
 
             client.newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) {
+                    throw com.rhnxdev.hzplayer.domain.model.RemoteAuthException()
+                }
                 if (!response.isSuccessful) {
                     throw IOException("PROPFIND ${normalizePath(path)} returned ${response.code}")
                 }
@@ -126,12 +151,11 @@ class WebDavBrowserClient(
      * Each `<response>` block yields one [RemoteFileItem]. The entry
      * matching the requested path (self-reference) is excluded.
      */
-    private fun parsePropfindMultistatus(xml: String, requestedPath: String): List<RemoteFileItem> {
+    internal fun parsePropfindMultistatus(xml: String, requestedPath: String): List<RemoteFileItem> {
         val items = mutableListOf<RemoteFileItem>()
         val parser = newParser(xml)
 
         val normRequested = requestedPath.trimEnd('/').lowercase()
-        var depth = 0
         var current: RemoteFileItemBuilder? = null
 
         try {
@@ -139,7 +163,6 @@ class WebDavBrowserClient(
             while (event != XmlPullParser.END_DOCUMENT) {
                 when (event) {
                     XmlPullParser.START_TAG -> {
-                        depth++
                         val tag = parser.name.lowercase()
                         when {
                             tag == "response" -> current = RemoteFileItemBuilder()
@@ -156,36 +179,36 @@ class WebDavBrowserClient(
                             tag == "getlastmodified" && current != null -> {
                                 current.dateModified = parseWebDavDate(parser.nextText())
                             }
-                            tag == "href" && current != null && depth == 2 -> {
+                            // First href of a response is the resource itself; nested ones are ignored.
+                            tag == "href" && current != null && current.href == null -> {
                                 current.href = parser.nextText()
                             }
                         }
                     }
                     XmlPullParser.END_TAG -> {
-                        depth--
                         if (parser.name.lowercase() == "response" && current != null) {
-                            val raw = current.href?.trimEnd('/')?.lowercase() ?: ""
-                            val decoded = java.net.URLDecoder.decode(raw, "UTF-8")
-                            val selfRef = decoded == normRequested ||
-                                decoded == "$normRequested/" ||
-                                decoded.removePrefix("/") == normRequested.removePrefix("/")
-                            if (!selfRef && current.href != null) {
-                                val hrefPath = current.href!!.substringBefore("?")
-                                val name = current.name?.ifBlank { null }
-                                    ?: hrefPath.substringAfterLast("/").trimEnd('/')
-                                val filePath = sanitizePath(
-                                    if (hrefPath.startsWith("/")) hrefPath else "/$hrefPath"
-                                )
-                                items.add(
-                                    remoteFileItem(
-                                        name = name,
-                                        path = filePath,
-                                        isDirectory = current.isCollection,
-                                        fileSize = current.fileSize,
-                                        dateModified = current.dateModified,
-                                        mimeType = current.mimeType,
+                            val href = current.href
+                            if (href != null) {
+                                // Decoded once here; the player's URI builder encodes it again.
+                                val hrefPath = hrefToPath(href)
+                                val selfRef = hrefPath.trimEnd('/').lowercase() == normRequested
+                                if (!selfRef) {
+                                    val name = current.name?.ifBlank { null }
+                                        ?: hrefPath.trimEnd('/').substringAfterLast("/")
+                                    val filePath = sanitizePath(
+                                        if (hrefPath.startsWith("/")) hrefPath else "/$hrefPath"
                                     )
-                                )
+                                    items.add(
+                                        remoteFileItem(
+                                            name = name,
+                                            path = filePath,
+                                            isDirectory = current.isCollection,
+                                            fileSize = current.fileSize,
+                                            dateModified = current.dateModified,
+                                            mimeType = current.mimeType,
+                                        )
+                                    )
+                                }
                             }
                             current = null
                         }
@@ -200,6 +223,20 @@ class WebDavBrowserClient(
         }
 
         return items.sortedRemote()
+    }
+
+    /**
+     * Percent-decoded path of a PROPFIND `href`, which servers send as either a path
+     * or an absolute URL. `+` stays a literal plus (it is not a space in a URL path).
+     */
+    private fun hrefToPath(href: String): String {
+        val raw = href.trim()
+        val encodedPath = if (raw.contains("://")) {
+            raw.toHttpUrlOrNull()?.encodedPath ?: "/" + raw.substringAfter("://").substringAfter('/', "")
+        } else {
+            raw.substringBefore('?')
+        }
+        return Uri.decode(encodedPath)
     }
 
     private class RemoteFileItemBuilder {

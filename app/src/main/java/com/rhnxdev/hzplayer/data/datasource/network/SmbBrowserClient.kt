@@ -20,15 +20,25 @@ class SmbBrowserClient(
 
     companion object {
         private const val TAG = "SmbBrowserClient"
+        private const val DEFAULT_SMB_PORT = 445
     }
+
+    private val effectivePort: Int get() = if (port > 0) port else DEFAULT_SMB_PORT
 
     override suspend fun connect() = withContext(Dispatchers.IO) {
         val ctx = ConnectionPool.borrowSmbBrowser(host, port, username, password)
-        // Pre-flight: try to list the share root. If auth fails, evict from pool so
+        // Pre-flight: authenticate against the server. If auth fails, evict from pool so
         // next attempt gets a fresh context instead of a cached bad one.
-        val url = "smb://$host:${if (port > 0) port else 445}/"
+        val url = "smb://$host:$effectivePort/"
         try {
-            val list = SmbFile(url, ctx).listFiles()
+            if (effectivePort == DEFAULT_SMB_PORT) {
+                SmbFile(url, ctx).listFiles()
+            } else {
+                // Listing the server root enumerates shares over an RPC pipe that jcifs-ng always
+                // opens on port 445 (the URL port is ignored), so on a custom port it would hit
+                // another server. A tree connect to IPC$ honours the port and still checks the login.
+                SmbFile("${url}IPC$/", ctx).connect()
+            }
         } catch (e: SmbAuthException) {
             android.util.Log.e(TAG, "connect: authentication failure to $url", e)
             ConnectionPool.returnSmbBrowser(host, port, username, password)
@@ -49,6 +59,12 @@ class SmbBrowserClient(
             }
             val ctx = ConnectionPool.borrowSmbBrowser(host, port, username, password)
             val isRoot = normalized.replace("/", "").isEmpty()
+            if (isRoot && effectivePort != DEFAULT_SMB_PORT) {
+                // See connect(): share enumeration cannot use a custom port.
+                throw java.io.IOException(
+                    "Listing shares needs SMB port $DEFAULT_SMB_PORT. On port $effectivePort, set a share name as the base path.",
+                )
+            }
             try {
                 val smbDir = resolveDir(ctx, normalized)
                 if (smbDir == null) {
@@ -119,7 +135,6 @@ class SmbBrowserClient(
      */
     private fun resolveDir(ctx: jcifs.CIFSContext, path: String): SmbFile? {
         val segments = path.removePrefix("/").split('/').filter { it.isNotEmpty() }
-        val effectivePort = if (port > 0) port else 445
-        return SmbPathResolver.resolve(ctx, host, effectivePort, segments)
+        return SmbPathResolver.resolveStrict(ctx, host, effectivePort, segments)
     }
 }

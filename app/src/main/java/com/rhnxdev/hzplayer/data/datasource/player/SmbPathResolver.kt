@@ -59,9 +59,25 @@ internal object SmbPathResolver {
 
     /**
      * Resolve [decodedSegments] to an [SmbFile], or null if any segment is not
-     * found. Empty segments resolve to the server root (share enumeration).
+     * found or access is denied. Empty segments resolve to the server root (share enumeration).
+     * Callers that must tell "denied" from "missing" use [resolveStrict].
      */
     fun resolve(
+        ctx: CIFSContext,
+        host: String,
+        port: Int,
+        decodedSegments: List<String>,
+    ): SmbFile? = try {
+        resolveStrict(ctx, host, port, decodedSegments)
+    } catch (_: SmbAuthException) {
+        null // already logged by resolveStrict
+    }
+
+    /**
+     * Same as [resolve], but rethrows [SmbAuthException] so a rejected login is not
+     * reported as a missing file.
+     */
+    fun resolveStrict(
         ctx: CIFSContext,
         host: String,
         port: Int,
@@ -84,7 +100,7 @@ internal object SmbPathResolver {
                 listChildren(current)
             } catch (e: SmbAuthException) {
                 android.util.Log.w(TAG, "resolve: Access denied listing children of ${current.url} (SmbAuthException: ${e.message})")
-                return null
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "resolve: failed to list children of ${current.url}", e)
                 return null
