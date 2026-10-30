@@ -235,7 +235,7 @@ class ServerDiscoverer @Inject constructor(
         }
     }
 
-    private fun resolveComputerName(host: String): String? {
+    internal fun resolveComputerName(host: String): String? {
         // 1. Try Reverse DNS
         try {
             val inetAddress = InetAddress.getByName(host)
@@ -324,7 +324,9 @@ class ServerDiscoverer @Inject constructor(
                 name = displayName,
                 protocol = NetworkProtocol.SMB,
                 host = storedHost,
-                port = 445
+                port = 445,
+                discoveryName = ServerIdentity.normalize(resolvedName),
+                ip = host,
             )
         }
         if (ftpOpen) {
@@ -333,12 +335,14 @@ class ServerDiscoverer @Inject constructor(
                 name = displayName,
                 protocol = NetworkProtocol.FTP,
                 host = storedHost,
-                port = 21
+                port = 21,
+                discoveryName = ServerIdentity.normalize(resolvedName),
+                ip = host,
             )
         }
     }
 
-    private fun isPortOpen(host: String, port: Int, timeoutMs: Int): Boolean {
+    internal fun isPortOpen(host: String, port: Int, timeoutMs: Int): Boolean {
         return try {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(host, port), timeoutMs)
@@ -349,7 +353,19 @@ class ServerDiscoverer @Inject constructor(
         }
     }
 
-    private fun addDiscoveredServer(name: String, protocol: NetworkProtocol, host: String, port: Int) {
+    /**
+     * @param discoveryName — normalised machine name saved with the server so it can be found
+     *   again after an IP change; null when no name could be learned.
+     * @param ip — numeric IPv4 the service was seen at; null for IPv6.
+     */
+    private fun addDiscoveredServer(
+        name: String,
+        protocol: NetworkProtocol,
+        host: String,
+        port: Int,
+        discoveryName: String?,
+        ip: String?,
+    ) {
         _discoveredServers.update { current ->
             val existing = current.any { it.host == host && it.protocol == protocol }
             if (existing) return@update current
@@ -360,13 +376,15 @@ class ServerDiscoverer @Inject constructor(
                 host = host,
                 port = port,
                 basePath = "/",
+                discoveryName = discoveryName,
+                lastKnownIp = ip,
             )
         }
     }
 
     // ── Network detection ──────────────────────────────────────────────
 
-    private fun getActiveNetworkInetAddress(): InetAddress? {
+    internal fun getActiveNetworkInetAddress(): InetAddress? {
         try {
             val activeNetwork = connectivityManager.activeNetwork
             if (activeNetwork != null) {
@@ -481,7 +499,7 @@ class ServerDiscoverer @Inject constructor(
         }
     }
 
-    private suspend fun resolveServiceDeferred(serviceInfo: NsdServiceInfo): NsdServiceInfo = resolveMutex.withLock {
+    internal suspend fun resolveServiceDeferred(serviceInfo: NsdServiceInfo): NsdServiceInfo = resolveMutex.withLock {
         suspendCancellableCoroutine { continuation ->
             val resolveListener = object : NsdManager.ResolveListener {
                 override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
@@ -532,7 +550,9 @@ class ServerDiscoverer @Inject constructor(
             name = displayName,
             protocol = serviceTypeToProtocol(type),
             host = storedHost,
-            port = port
+            port = port,
+            discoveryName = ServerIdentity.normalize(displayName),
+            ip = hostAddress.takeIf { !it.contains(":") },
         )
     }
 }

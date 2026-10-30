@@ -26,7 +26,7 @@ import com.rhnxdev.hzplayer.data.datasource.local.room.entities.StreamHistoryEnt
         BrowserHistoryEntity::class,
         PlayHistoryEntity::class,
     ],
-    version = 7,
+    version = 8,
     // Schema exported to app/schemas so versioned Migrations can be authored and
     // reviewed in source control. exportSchema=false + fallbackToDestructiveMigration()
     // silently wiped all saved servers / resume positions / history on every bump.
@@ -96,6 +96,18 @@ abstract class HzPlayerDatabase : RoomDatabase() {
                     )
                 """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_play_history_playedAt` ON `play_history` (`playedAt`)")
+            }
+        }
+
+        /**
+         * Migration 7→8: add discoveryName + lastKnownIp to server_configs.
+         * Lets a saved server be found again after its IP changes. Both stay NULL for
+         * existing rows until the app learns the name on the next successful browse.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `server_configs` ADD COLUMN `discoveryName` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `server_configs` ADD COLUMN `lastKnownIp` TEXT DEFAULT NULL")
             }
         }
     }

@@ -347,6 +347,17 @@ internal object ConnectionPool {
         // No inUse tracking on browser pool — just leave it in the map.
     }
 
+    /**
+     * Discard the pooled browser client for [host]:[port] after an I/O failure.
+     * The pool has no liveness check, so without this a dead socket (server moved to a new IP,
+     * Wi-Fi dropped) is handed back on every later browse until the process restarts.
+     */
+    fun dropFtpBrowser(host: String, port: Int) {
+        ftpBrowserPool.remove(browserKey(host, port, "ftp"))?.let {
+            try { it.disconnect() } catch (_: Exception) {}
+        }
+    }
+
     fun borrowSftpBrowser(host: String, port: Int, user: String, pass: String): SSHClient {
         val k = browserKey(host, port, "sftp")
         return sftpBrowserPool.getOrPut(k) {

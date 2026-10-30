@@ -47,7 +47,20 @@ data class NetworkUiState(
     /** Leading width share of a row's preview thumbnail. */
     val thumbnailSize: ThumbnailSize = ThumbnailSize.LARGE,
     val isHomeListView: Boolean = false,
+    /** Name of the saved server being searched for after it stopped answering; null when idle. */
+    val relocatingServerName: String? = null,
+    /** One-shot message for the screen to show, then clear via `onNoticeShown()`. */
+    val notice: NetworkNotice? = null,
 )
+
+/** One-shot outcomes of looking for a saved server whose IP changed. Screen formats the text. */
+sealed interface NetworkNotice {
+    /** The server answered at a new address and the saved entry was updated. */
+    data class ServerAddressUpdated(val serverName: String) : NetworkNotice
+
+    /** The server could not be found on this network. */
+    data class ServerNotFound(val serverName: String) : NetworkNotice
+}
 
 /**
  * Carries the server that needs credentials and a callback to apply them.

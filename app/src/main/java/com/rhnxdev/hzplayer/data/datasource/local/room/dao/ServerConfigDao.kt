@@ -25,4 +25,23 @@ interface ServerConfigDao {
 
     @Query("DELETE FROM server_configs WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /**
+     * Compare-and-set a server's address. Matches only while [expectedHost] is still stored,
+     * so a user edit made during a relocation is never overwritten.
+     *
+     * @return rows changed: 1 on success, 0 if the host was edited meanwhile.
+     */
+    @Query(
+        "UPDATE server_configs SET host = :newHost, lastKnownIp = :ip " +
+            "WHERE id = :id AND host = :expectedHost",
+    )
+    suspend fun updateAddress(id: Long, expectedHost: String, newHost: String, ip: String): Int
+
+    /** Record an identity only for rows that have none, so a learned name is never overwritten. */
+    @Query(
+        "UPDATE server_configs SET discoveryName = :name, lastKnownIp = :ip " +
+            "WHERE id = :id AND discoveryName IS NULL",
+    )
+    suspend fun setIdentityIfAbsent(id: Long, name: String, ip: String): Int
 }

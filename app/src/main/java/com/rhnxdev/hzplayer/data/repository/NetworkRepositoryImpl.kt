@@ -1,5 +1,9 @@
 package com.rhnxdev.hzplayer.data.repository
 
+import androidx.room.withTransaction
+import com.rhnxdev.hzplayer.data.datasource.local.room.HzPlayerDatabase
+import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlayHistoryDao
+import com.rhnxdev.hzplayer.data.datasource.local.room.dao.PlaybackPositionDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.ServerConfigDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.dao.StreamHistoryDao
 import com.rhnxdev.hzplayer.data.datasource.local.room.entities.StreamHistoryEntity
@@ -17,8 +21,11 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 class NetworkRepositoryImpl @Inject constructor(
+    private val database: HzPlayerDatabase,
     private val serverConfigDao: ServerConfigDao,
     private val streamHistoryDao: StreamHistoryDao,
+    private val playbackPositionDao: PlaybackPositionDao,
+    private val playHistoryDao: PlayHistoryDao,
     private val passwordCrypto: PasswordCrypto,
     private val userPreferences: UserPreferencesRepository,
 ) : NetworkRepository {
@@ -48,6 +55,27 @@ class NetworkRepositoryImpl @Inject constructor(
 
     override suspend fun deleteServer(id: Long) =
         serverConfigDao.deleteById(id)
+
+    override suspend fun relocateServer(
+        id: Long,
+        expectedHost: String,
+        newHost: String,
+        newIp: String,
+        oldUriPrefix: String,
+        newUriPrefix: String,
+    ): Boolean = database.withTransaction {
+        val changed = serverConfigDao.updateAddress(id, expectedHost, newHost, newIp) > 0
+        // Only rewrite history when the address actually moved, and only for a real change.
+        if (changed && oldUriPrefix != newUriPrefix) {
+            playbackPositionDao.rewriteUriPrefix(oldUriPrefix, newUriPrefix)
+            playHistoryDao.rewriteUriPrefix(oldUriPrefix, newUriPrefix)
+        }
+        changed
+    }
+
+    override suspend fun setServerIdentityIfAbsent(id: Long, name: String, ip: String) {
+        serverConfigDao.setIdentityIfAbsent(id, name, ip)
+    }
 
     override fun getStreamHistory(): Flow<List<StreamHistoryItem>> =
         streamHistoryDao.getAll().map { entities ->

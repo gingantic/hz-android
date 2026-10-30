@@ -6,6 +6,8 @@ import com.rhnxdev.hzplayer.core.components.SearchDelegate
 import com.rhnxdev.hzplayer.core.util.DirectoryLruCache
 import com.rhnxdev.hzplayer.core.util.NetworkDomainUtils
 import com.rhnxdev.hzplayer.core.util.ServerDiscoverer
+import com.rhnxdev.hzplayer.core.util.ServerRelocator
+import com.rhnxdev.hzplayer.core.util.isUnreachable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.rhnxdev.hzplayer.core.util.buildRemoteBreadcrumbs
@@ -48,6 +50,7 @@ class NetworkViewModel @Inject constructor(
     private val remoteBrowseRepository: RemoteBrowseRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val serverDiscoverer: ServerDiscoverer,
+    private val serverRelocator: ServerRelocator,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NetworkUiState())
@@ -57,6 +60,12 @@ class NetworkViewModel @Inject constructor(
 
     /** Serializes per-folder child-count updates so concurrent refreshes don't clobber each other. */
     private val countMutex = Mutex()
+
+    /** Saved-server ids with an address search in flight, so concurrent failures start only one. */
+    private val relocating = mutableSetOf<Long>()
+
+    /** Saved-server ids whose machine-name lookup already ran in this ViewModel. */
+    private val identityLookedUp = mutableSetOf<Long>()
 
     private val sortKey = "network_browser"
 
@@ -352,7 +361,7 @@ class NetworkViewModel @Inject constructor(
                     return@launch
                 }
 
-                val result = remoteBrowseRepository.listDirectory(server, path)
+                val (activeServer, result) = listWithRelocation(server, path)
                 result.fold(
                     onSuccess = { items ->
                         dirCache.put(path, items)
@@ -360,12 +369,13 @@ class NetworkViewModel @Inject constructor(
                         updateRemoteLayer(layerIndex) {
                             it.copy(items = sorted, isEmpty = items.isEmpty(), isLoading = false)
                         }
+                        rememberMachineIdentity(activeServer)
                         // Count children per folder on one shared connection. Each folder's
                         // badge updates as soon as its count is ready — list already shown,
                         // no waiting on siblings. Badge hidden (childCount = -1) until set.
                         if (items.any { it.isDirectory }) {
                             launch {
-                                remoteBrowseRepository.enrichDirectory(server, items) { folderPath, counts ->
+                                remoteBrowseRepository.enrichDirectory(activeServer, items) { folderPath, counts ->
                                     countMutex.withLock {
                                         dirCache.get(path)?.let { cached ->
                                             dirCache.put(path, cached.map {
@@ -393,7 +403,7 @@ class NetworkViewModel @Inject constructor(
                     onFailure = { e ->
                         if (e is RemoteAuthException) {
                             // Wrong credentials — re-prompt instead of showing a dead-end error.
-                            promptCredentials(server, "Wrong username or password. Try again.")
+                            promptCredentials(activeServer, "Wrong username or password. Try again.")
                             updateRemoteLayer(layerIndex) { it.copy(isLoading = false) }
                         } else {
                             updateRemoteLayer(layerIndex) {
@@ -408,6 +418,84 @@ class NetworkViewModel @Inject constructor(
                 updateRemoteLayer(layerIndex) { it.copy(isLoading = false) }
             }
         }
+    }
+
+    /**
+     * List [path] on [server]. If the server is saved, has a known machine name, and did not
+     * answer at all, look for it at a new address and retry exactly once.
+     *
+     * @return the server actually used (updated when it moved) and the listing result.
+     */
+    private suspend fun listWithRelocation(
+        server: ServerConfig,
+        path: String,
+    ): Pair<ServerConfig, Result<List<RemoteFileItem>>> {
+        val first = remoteBrowseRepository.listDirectory(server, path)
+        val error = first.exceptionOrNull()
+        val canRelocate = error != null && error.isUnreachable() &&
+            server.id != 0L && server.discoveryName != null
+        if (!canRelocate) return server to first
+        val moved = relocate(server) ?: return server to first
+        return moved to remoteBrowseRepository.listDirectory(moved, path)
+    }
+
+    /**
+     * Find [server] at its new address and persist it together with the history URIs that
+     * embed the old one.
+     *
+     * @return the updated server, or null if it was not found, the search is already running
+     *   for it, or the user edited its address meanwhile.
+     */
+    private suspend fun relocate(server: ServerConfig): ServerConfig? {
+        if (!relocating.add(server.id)) return null
+        _uiState.update { it.copy(relocatingServerName = server.name) }
+        try {
+            val located = serverRelocator.locate(server)
+            if (located == null) {
+                _uiState.update { it.copy(notice = NetworkNotice.ServerNotFound(server.name)) }
+                return null
+            }
+            val moved = server.copy(host = located.host, lastKnownIp = located.ip)
+            val saved = networkRepository.relocateServer(
+                id = server.id,
+                expectedHost = server.host,
+                newHost = located.host,
+                newIp = located.ip,
+                oldUriPrefix = remoteBrowseRepository.buildPlaybackUri(server, "/"),
+                newUriPrefix = remoteBrowseRepository.buildPlaybackUri(moved, "/"),
+            )
+            if (!saved) return null
+            dirCache.clear()
+            _uiState.update {
+                it.copy(
+                    browsingServer = if (it.browsingServer?.id == server.id) moved else it.browsingServer,
+                    notice = NetworkNotice.ServerAddressUpdated(server.name),
+                )
+            }
+            return moved
+        } finally {
+            relocating.remove(server.id)
+            _uiState.update { it.copy(relocatingServerName = null) }
+        }
+    }
+
+    /**
+     * After a successful browse, learn the machine name of a saved server that has none, so it
+     * can be found again if its IP changes. Runs once per server per ViewModel and never blocks
+     * or fails the browse. Only private-LAN addresses are probed.
+     */
+    private fun rememberMachineIdentity(server: ServerConfig) {
+        if (server.id == 0L || server.discoveryName != null) return
+        if (!serverDiscoverer.isOnCompatibleNetwork.value) return
+        if (!identityLookedUp.add(server.id)) return
+        viewModelScope.launch {
+            val identity = serverRelocator.identify(server.host) ?: return@launch
+            networkRepository.setServerIdentityIfAbsent(server.id, identity.name, identity.ip)
+        }
+    }
+
+    fun onNoticeShown() {
+        _uiState.update { it.copy(notice = null) }
     }
 
     /**

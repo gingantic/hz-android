@@ -14,4 +14,6 @@ data class ServerConfigEntity(
     val encryptedPassword: String,
     val basePath: String,
     val createdAt: Long,
+    val discoveryName: String? = null,
+    val lastKnownIp: String? = null,
 )

@@ -244,6 +244,36 @@ NetworkScreen → scan → ServerDiscoverer.startScan()
   → NetworkViewModel.onSaveDiscoveredServer(server)
     → resolveServerHostDomain(server)   // prefer a domain over the IP
       → NetworkRepository.saveServer(…)  // credentials encrypted via PasswordCrypto
+  // each discovered ServerConfig also carries discoveryName (normalised machine name,
+  // ServerIdentity.normalize) and lastKnownIp, saved with the server
+```
+
+### Server relocation (saved server whose IP changed)
+```
+NetworkViewModel.loadRemoteDirectory → listWithRelocation(server, path)
+  → RemoteBrowseRepository.listDirectory fails
+  → only when: error.isUnreachable() (UnreachableErrors.kt: timeout / connect / unknown host,
+      cause chain walked; a rejected login never qualifies)
+      && server is saved (id != 0) && server.discoveryName != null
+  → relocate(server): uiState.relocatingServerName set (screen shows "Looking for …")
+    → ServerRelocator.locate(server)          // null if off Wi-Fi/Ethernet or searched <60 s ago
+        // mDNS (_smb/_ftp/_webdav/_sftp-ssh) and a /24 sweep on the SAVED port run in parallel
+        // a host counts only if: IPv4, accepts a connection on the saved port,
+        //   and its name (mDNS instance / NetBIOS / reverse DNS) equals discoveryName
+        // exactly one host must match; zero or several → null (never guess)
+        // host = verified DNS name when one resolves to the IP, else the IP
+    → NetworkRepository.relocateServer(id, expectedHost, newHost, newIp, oldUriPrefix, newUriPrefix)
+        // one Room transaction: compare-and-set on host (a user edit wins),
+        // then playback_position.uri and play_history.uri are rewritten from the old
+        // `scheme://user:pass@host:port/` prefix to the new one
+    → listDirectory retried exactly once with the updated server
+  → uiState.notice (ServerAddressUpdated / ServerNotFound) → NetworkScreen snackbar
+// Identity for servers saved before discoveryName existed is learned lazily:
+// after a successful browse, rememberMachineIdentity → ServerRelocator.identify(host)
+//   (private-LAN IPv4 only) → NetworkRepository.setServerIdentityIfAbsent
+// ServerConfigDialog keeps the identity on edit and clears it if the host text changed.
+// FtpBrowserClient drops its pooled client on IOException (ConnectionPool.dropFtpBrowser),
+//   otherwise a dead socket is reused until the process restarts.
 ```
 
 ### Thumbnail cache pruning (on app start)

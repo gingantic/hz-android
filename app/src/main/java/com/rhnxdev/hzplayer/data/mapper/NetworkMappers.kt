@@ -17,6 +17,8 @@ fun ServerConfigEntity.toDomain(crypto: PasswordCrypto): ServerConfig = ServerCo
     password = crypto.decrypt(encryptedPassword),
     basePath = basePath,
     createdAt = createdAt,
+    discoveryName = discoveryName,
+    lastKnownIp = lastKnownIp,
 )
 
 fun ServerConfig.toEntity(crypto: PasswordCrypto): ServerConfigEntity = ServerConfigEntity(
@@ -29,6 +31,8 @@ fun ServerConfig.toEntity(crypto: PasswordCrypto): ServerConfigEntity = ServerCo
     encryptedPassword = crypto.encrypt(password),
     basePath = basePath,
     createdAt = createdAt,
+    discoveryName = discoveryName,
+    lastKnownIp = lastKnownIp,
 )
 
 fun StreamHistoryEntity.toDomain(): StreamHistoryItem = StreamHistoryItem(

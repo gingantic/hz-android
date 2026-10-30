@@ -175,6 +175,8 @@ com.rhnxdev.hzplayer/
 │   └── util/                       MediaTimeUtils · MediaExtensions · MimeTypeUtil ·
 │                                   BreadcrumbBuilder · DirectoryLruCache ·
 │                                   PlaybackFormatters · ServerDiscoverer ·
+│                                   ServerRelocator · ServerIdentity ·
+│                                   UnreachableErrors ·
 │                                   SubtitleLanguageResolver · UpdateChecker ·
 │                                   ArchivePaths · IntentUtils · NetworkDomainUtils ·
 │                                   HttpHeaderSanitizer · PipUtils · StorageVolumes ·
@@ -208,7 +210,7 @@ exposes the equalizer by forwarding its AudioTrack session id to `EqualizerContr
 | `MediaRepository` | `MediaRepositoryImpl` | Video library from MediaStore→Room cache |
 | `AudioRepository` | `AudioRepositoryImpl` | Albums/artists/tracks + detail queries |
 | `FileRepository` | `FileRepositoryImpl` | Local filesystem browse + copy/move/delete/mkdir |
-| `NetworkRepository` | `NetworkRepositoryImpl` | Server config CRUD, stream history |
+| `NetworkRepository` | `NetworkRepositoryImpl` | Server config CRUD, stream history, `relocateServer` (move a saved server to a new address + rewrite its history URIs) |
 | `RemoteBrowseRepository` | `RemoteBrowseRepositoryImpl` | SMB/FTP/SFTP/WebDAV directory listing |
 | `PlayerRepository` | `PlayerRepositoryImpl` | Delegates to active `IPlayerEngine` |
 | `ResumeRepository` | `ResumeRepositoryImpl` | Persisted playback position resume |
@@ -227,12 +229,12 @@ stage emits as soon as it has data.
 
 ## Room Database
 
-`HzPlayerDatabase` (version 7) — 6 entities, KSP-generated DAOs:
+`HzPlayerDatabase` (version 8) — 6 entities, KSP-generated DAOs:
 
 | Entity | DAO | Key columns |
 |---|---|---|
 | `MediaEntity` | `MediaDao` | uri, mediaType, title, album, artist + indices |
-| `ServerConfigEntity` | `ServerConfigDao` | protocol, host, port, credentials (encrypted via `PasswordCrypto`) |
+| `ServerConfigEntity` | `ServerConfigDao` | protocol, host, port, credentials (encrypted via `PasswordCrypto`), `discoveryName` + `lastKnownIp` (nullable; see "Server relocation" in `DATA_FLOW.md`) |
 | `StreamHistoryEntity` | `StreamHistoryDao` | url, headersJson, pageUrl, mimeType, isFavorite |
 | `PlaybackPositionEntity` | `PlaybackPositionDao` | mediaId, positionMs, durationMs |
 | `BrowserHistoryEntity` | `BrowserHistoryDao` | url, title, timestamp (capped at 500 rows) |
@@ -246,11 +248,12 @@ Migrations (all declared in `HzPlayerDatabase` and registered in `DatabaseModule
 | `MIGRATION_4_5` | `browser_history` table + indices |
 | `MIGRATION_5_6` | `stream_history` gains `headersJson`, `pageUrl`, `mimeType` |
 | `MIGRATION_6_7` | `play_history` table + `index_play_history_playedAt` |
+| `MIGRATION_7_8` | `server_configs` gains nullable `discoveryName`, `lastKnownIp` |
 
 The builder uses `fallbackToDestructiveMigrationOnDowngrade()` — a **downgrade**
 wipe only. `exportSchema = true`; the regenerated schemas are committed under
 `app/schemas/com.rhnxdev.hzplayer.data.datasource.local.room.HzPlayerDatabase/`
-(`3.json` … `7.json`).
+(`3.json` … `8.json`).
 
 ---
 

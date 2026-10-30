@@ -20,4 +20,17 @@ interface PlaybackPositionDao {
 
     @Query("DELETE FROM playback_position WHERE uri = :uri")
     suspend fun deleteByUri(uri: String)
+
+    /**
+     * Re-point rows whose URI starts with [oldPrefix] at [newPrefix] after a server's address
+     * changed. Uses `substr` equality rather than `LIKE` so `_` / `%` inside a stored
+     * credential can never act as wildcards. `OR REPLACE` because `uri` is the primary key
+     * and the rewritten URI may already exist.
+     */
+    @Query(
+        "UPDATE OR REPLACE playback_position " +
+            "SET uri = :newPrefix || substr(uri, length(:oldPrefix) + 1) " +
+            "WHERE substr(uri, 1, length(:oldPrefix)) = :oldPrefix",
+    )
+    suspend fun rewriteUriPrefix(oldPrefix: String, newPrefix: String): Int
 }

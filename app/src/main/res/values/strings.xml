@@ -109,6 +109,9 @@
     <string name="network_sort_cd">Sort</string>
     <string name="open_network_stream">Open Network Stream</string>
     <string name="saved_servers">Saved Servers</string>
+    <string name="server_searching">Looking for \"%1$s\" on your network…</string>
+    <string name="server_address_updated">Updated the address for \"%1$s\"</string>
+    <string name="server_not_found">Couldn\'t find \"%1$s\" on this network. Check that it is turned on and on the same Wi-Fi.</string>
     <string name="add_server_cd">Add server</string>
     <string name="no_servers_title">No servers added yet</string>
     <string name="discovery_servers">Discovery Servers</string>

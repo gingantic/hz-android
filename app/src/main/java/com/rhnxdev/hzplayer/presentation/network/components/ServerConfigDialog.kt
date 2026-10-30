@@ -303,6 +303,10 @@ fun ServerConfigDialog(
                         && !allowAnonymous && username.isBlank()
                     if (nameError || hostError || usernameError) return@TextButton
 
+                    // Keep the learned identity across edits, but drop it when the user points
+                    // the entry at a different host: the old name would describe another machine.
+                    val hostUnchanged = initialServer != null && host.trim() == initialServer.host
+
                     onSave(
                         ServerConfig(
                             id = initialServer?.id ?: 0,
@@ -315,6 +319,8 @@ fun ServerConfigDialog(
                             allowAnonymous = allowAnonymous && currentProtocol == NetworkProtocol.FTP,
                             basePath = basePath.trim().ifEmpty { "/" },
                             createdAt = initialServer?.createdAt ?: System.currentTimeMillis(),
+                            discoveryName = if (hostUnchanged) initialServer?.discoveryName else null,
+                            lastKnownIp = if (hostUnchanged) initialServer?.lastKnownIp else null,
                         ),
                     )
                 },

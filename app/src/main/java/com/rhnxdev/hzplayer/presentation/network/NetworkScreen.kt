@@ -8,13 +8,20 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -70,6 +77,28 @@ fun NetworkScreen(
             { viewModel.onRemoteNavigateUp() }
         } else null
 
+    // One-shot feedback while and after a saved server's address is re-discovered.
+    val snackbarHostState = remember { SnackbarHostState() }
+    val searchingMessage = uiState.relocatingServerName?.let { stringResource(R.string.server_searching, it) }
+    LaunchedEffect(searchingMessage) {
+        // Indefinite: ends when the search finishes, because this effect restarts and cancels it.
+        if (searchingMessage != null) {
+            snackbarHostState.showSnackbar(searchingMessage, duration = SnackbarDuration.Indefinite)
+        }
+    }
+    val notice = uiState.notice
+    val noticeMessage = when (notice) {
+        is NetworkNotice.ServerAddressUpdated -> stringResource(R.string.server_address_updated, notice.serverName)
+        is NetworkNotice.ServerNotFound -> stringResource(R.string.server_not_found, notice.serverName)
+        null -> null
+    }
+    LaunchedEffect(notice) {
+        if (noticeMessage != null) {
+            snackbarHostState.showSnackbar(noticeMessage)
+            viewModel.onNoticeShown()
+        }
+    }
+
     HzPlayerSearchableScaffold(
         title = when (uiState.mode) {
             NetworkScreenMode.HOME -> "Network"
@@ -122,68 +151,74 @@ fun NetworkScreen(
             }
         },
     ) {
-        when (uiState.mode) {
-            NetworkScreenMode.HOME -> NetworkHomeContent(
-                uiState = uiState,
-                onStreamUrlChanged = viewModel::onStreamUrlChanged,
-                onPlayStream = {
-                    val url = viewModel.onPlayStream() ?: return@NetworkHomeContent
-                    val title = url.substringAfterLast("/").ifEmpty { url }
-                    scope.launch {
-                        val res = viewModel.resolveStreamMedia(url)
-                        onPlayStream(url, title, res.isVideo, res.mimeType, emptyMap())
-                    }
-                },
-                onScanNetwork = viewModel::onScanNetwork,
-                onStopScan = viewModel::onStopScan,
-                onAddServer = viewModel::onAddServerClicked,
-                onBrowseServer = viewModel::onBrowseServer,
-                onEditServer = viewModel::onEditServer,
-                onDeleteServer = viewModel::onDeleteServer,
-                onDiscoveredServerTapped = viewModel::onDiscoveredServerTapped,
-                onSaveDiscoveredServer = viewModel::onSaveDiscoveredServer,
-                onDismissDiscoveredServer = viewModel::onDismissDiscoveredServer,
-                onPlayHistoryItem = { item ->
-                    val url = viewModel.onPlayHistoryItem(item)
-                    val pageUrl = item.pageUrl.orEmpty()
-                    val headersMap = item.headersMap.withLiveCookies(targetUrl = url, refererUrl = pageUrl)
-                    val mime = item.mimeType?.ifBlank { null }
-                    onPlayStream(url, item.title, isVideoOrStreamDefault(url), mime, headersMap)
-                },
-                onToggleFavorite = viewModel::onToggleFavorite,
-                onDeleteHistoryItem = viewModel::onDeleteHistoryItem,
-                onClearHistory = viewModel::onClearHistory,
-                onOpenBrowser = onOpenBrowser,
-            )
+        Box(modifier = Modifier.fillMaxSize()) {
+            when (uiState.mode) {
+                NetworkScreenMode.HOME -> NetworkHomeContent(
+                    uiState = uiState,
+                    onStreamUrlChanged = viewModel::onStreamUrlChanged,
+                    onPlayStream = {
+                        val url = viewModel.onPlayStream() ?: return@NetworkHomeContent
+                        val title = url.substringAfterLast("/").ifEmpty { url }
+                        scope.launch {
+                            val res = viewModel.resolveStreamMedia(url)
+                            onPlayStream(url, title, res.isVideo, res.mimeType, emptyMap())
+                        }
+                    },
+                    onScanNetwork = viewModel::onScanNetwork,
+                    onStopScan = viewModel::onStopScan,
+                    onAddServer = viewModel::onAddServerClicked,
+                    onBrowseServer = viewModel::onBrowseServer,
+                    onEditServer = viewModel::onEditServer,
+                    onDeleteServer = viewModel::onDeleteServer,
+                    onDiscoveredServerTapped = viewModel::onDiscoveredServerTapped,
+                    onSaveDiscoveredServer = viewModel::onSaveDiscoveredServer,
+                    onDismissDiscoveredServer = viewModel::onDismissDiscoveredServer,
+                    onPlayHistoryItem = { item ->
+                        val url = viewModel.onPlayHistoryItem(item)
+                        val pageUrl = item.pageUrl.orEmpty()
+                        val headersMap = item.headersMap.withLiveCookies(targetUrl = url, refererUrl = pageUrl)
+                        val mime = item.mimeType?.ifBlank { null }
+                        onPlayStream(url, item.title, isVideoOrStreamDefault(url), mime, headersMap)
+                    },
+                    onToggleFavorite = viewModel::onToggleFavorite,
+                    onDeleteHistoryItem = viewModel::onDeleteHistoryItem,
+                    onClearHistory = viewModel::onClearHistory,
+                    onOpenBrowser = onOpenBrowser,
+                )
 
-             NetworkScreenMode.SERVER_BROWSE -> ServerBrowseStackContent(
-                uiState = uiState,
-                searchQuery = searchQuery,
-                isSearchActive = isSearchActive,
-                onSearchToggle = viewModel::onSearchToggle,
-                onSearchQueryChanged = viewModel::onSearchQueryChanged,
-                onClearSearch = viewModel::onClearSearch,
-                onFolderClicked = { item -> viewModel.onRemoteFolderClicked(item) },
-                onFileClicked = { item ->
-                    val uri = viewModel.buildPlaybackUri(item.path) ?: return@ServerBrowseStackContent
-                    onPlayRemoteFile(uri, item.name, isVideoOrStreamDefault(item.name), item.mimeType)
-                },
-                onBreadcrumbClicked = viewModel::onRemoteBreadcrumbClicked,
-                onRetry = viewModel::onRetryBrowse,
-                onRefresh = viewModel::onRefreshBrowse,
-                buildPlaybackUri = { path -> viewModel.buildPlaybackUri(path) },
-                getScrollState = viewModel::getScrollState,
-                getScrollStateIsAtEnd = viewModel::getScrollStateIsAtEnd,
-                saveScrollState = viewModel::saveScrollState,
-                fullScreenOverlay = fullScreenOverlay,
-                onPlayAllVideos = {
-                    val playlist = viewModel.collectVideoPlaylist()
-                    if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
-                },
-                onPlayAsAudio = { item ->
-                    val uri = viewModel.buildPlaybackUri(item.path) ?: item.path
-                    onPlayRemoteFile(uri, item.name, false, item.mimeType)
-                },
+                 NetworkScreenMode.SERVER_BROWSE -> ServerBrowseStackContent(
+                    uiState = uiState,
+                    searchQuery = searchQuery,
+                    isSearchActive = isSearchActive,
+                    onSearchToggle = viewModel::onSearchToggle,
+                    onSearchQueryChanged = viewModel::onSearchQueryChanged,
+                    onClearSearch = viewModel::onClearSearch,
+                    onFolderClicked = { item -> viewModel.onRemoteFolderClicked(item) },
+                    onFileClicked = { item ->
+                        val uri = viewModel.buildPlaybackUri(item.path) ?: return@ServerBrowseStackContent
+                        onPlayRemoteFile(uri, item.name, isVideoOrStreamDefault(item.name), item.mimeType)
+                    },
+                    onBreadcrumbClicked = viewModel::onRemoteBreadcrumbClicked,
+                    onRetry = viewModel::onRetryBrowse,
+                    onRefresh = viewModel::onRefreshBrowse,
+                    buildPlaybackUri = { path -> viewModel.buildPlaybackUri(path) },
+                    getScrollState = viewModel::getScrollState,
+                    getScrollStateIsAtEnd = viewModel::getScrollStateIsAtEnd,
+                    saveScrollState = viewModel::saveScrollState,
+                    fullScreenOverlay = fullScreenOverlay,
+                    onPlayAllVideos = {
+                        val playlist = viewModel.collectVideoPlaylist()
+                        if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
+                    },
+                    onPlayAsAudio = { item ->
+                        val uri = viewModel.buildPlaybackUri(item.path) ?: item.path
+                        onPlayRemoteFile(uri, item.name, false, item.mimeType)
+                    },
+                )
+            }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
     }
