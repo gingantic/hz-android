@@ -94,8 +94,8 @@ fun FileItemCard(
     fileCount: Int = -1,
     mediaCount: Int = -1,
     mediaMode: Boolean = false,
-    /** Width share (0f..1f) of the leading thumbnail; the text column takes the rest. */
-    thumbnailFraction: Float = 0.4f,
+    /** Fixed width of the leading thumbnail (16:9); the text column takes the rest. */
+    thumbnailWidth: Dp = ThumbnailSize.LARGE.rowThumbnailWidth,
     onPropertiesClick: (() -> Unit)? = null,
     onPlayAllClick: (() -> Unit)? = null,
     onPlayAsAudioClick: (() -> Unit)? = null,
@@ -170,10 +170,10 @@ fun FileItemCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (leadingThumbnail != null) {
-                // Thumbnail takes the leading share of the row; the rest goes to the text.
+                // Fixed width so the preview looks the same on every screen; the text takes the rest.
                 Box(
                     modifier = Modifier
-                        .weight(thumbnailFraction)
+                        .width(thumbnailWidth)
                         .aspectRatio(16f / 9f)
                         .clip(RoundedCornerShape(Spacing.xs)),
                     contentAlignment = Alignment.Center,
@@ -249,11 +249,7 @@ fun FileItemCard(
 
             Spacer(modifier = Modifier.width(Spacing.md))
 
-            Column(
-                modifier = Modifier.weight(
-                    if (leadingThumbnail != null) (1f - thumbnailFraction).coerceAtLeast(0.1f) else 1f
-                )
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = name,
                     style = MaterialTheme.typography.bodyLarge,
@@ -445,16 +441,16 @@ private fun SpecialFolderIcon(
 }
 
 /**
- * Leading share of a list row taken by the preview thumbnail.
+ * Fixed width of the preview thumbnail in a list row.
  *
- * `LARGE` is the long-standing 40% row, so the default size changes nothing; the
- * smaller steps only make room for denser lists.
+ * Absolute dp, not a share of the row, so the thumbnail is the same size on every screen
+ * width. The values match the old 40/32/24% shares on a ~400 dp phone.
  */
-internal val ThumbnailSize.rowThumbnailFraction: Float
+internal val ThumbnailSize.rowThumbnailWidth: Dp
     get() = when (this) {
-        ThumbnailSize.SMALL -> 0.24f
-        ThumbnailSize.MEDIUM -> 0.32f
-        ThumbnailSize.LARGE -> 0.40f
+        ThumbnailSize.SMALL -> 96.dp
+        ThumbnailSize.MEDIUM -> 128.dp
+        ThumbnailSize.LARGE -> 160.dp
     }
 
 @PreviewLightDark
