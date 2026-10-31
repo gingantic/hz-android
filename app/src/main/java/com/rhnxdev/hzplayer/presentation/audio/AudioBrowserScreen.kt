@@ -17,8 +17,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
+import com.rhnxdev.hzplayer.core.components.HzPullToRefreshBox
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaListItem
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
@@ -133,16 +132,14 @@ fun AudioBrowserScreen(
             }
 
             // Tab content using AnimatedContent (bypasses horizontal pager interception)
-            val pullState = rememberPullToRefreshState()
             val isRefreshing = when (uiState.currentTab) {
                 AudioTab.SONGS -> uiState.isLoadingSongs
                 AudioTab.ALBUMS -> uiState.isLoadingAlbums
                 AudioTab.ARTISTS -> uiState.isLoadingArtists
             }
-            PullToRefreshBox(
+            HzPullToRefreshBox(
                 isRefreshing = isRefreshing,
                 onRefresh = viewModel::onRefresh,
-                state = pullState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             ) {
                 AnimatedContent(

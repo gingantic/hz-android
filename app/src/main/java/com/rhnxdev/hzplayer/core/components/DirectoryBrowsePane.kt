@@ -12,8 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,7 +65,7 @@ data class FileItemData(
  * Reusable directory browsing pane shared by local and remote file browsers.
  *
  * Handles the full state machine: loading -> empty -> error -> content,
- * wrapped in a [androidx.compose.material3.pulltorefresh.PullToRefreshBox].
+ * wrapped in a [HzPullToRefreshBox].
  *
  * @param items        file items to display
  * @param isLoading    true while fetching directory contents
@@ -169,11 +167,9 @@ fun DirectoryBrowsePane(
         return
     }
 
-    val pullState = rememberPullToRefreshState()
-    PullToRefreshBox(
+    HzPullToRefreshBox(
         isRefreshing = isLoading,
         onRefresh = onRefresh,
-        state = pullState,
         modifier = modifier.fillMaxSize(),
     ) {
         when {

@@ -27,8 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.FileOptionsBottomSheet
+import com.rhnxdev.hzplayer.core.components.HzPullToRefreshBox
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
@@ -63,11 +62,9 @@ fun StorageRootsContent(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pullState = rememberPullToRefreshState()
-    PullToRefreshBox(
+    HzPullToRefreshBox(
         isRefreshing = isLoading,
         onRefresh = onRefresh,
-        state = pullState,
         modifier = modifier.fillMaxSize(),
     ) {
         when {

@@ -44,6 +44,7 @@ ViewModel-owned `SelectionDelegate` and is keyed by a stable id (a path or URI),
 | `SelectionIndicator` | `SelectionIndicator.kt` | Round check badge; `onMedia = true` over a thumbnail (dark-backed ring), `false` over a plain row |
 | `SelectionTopBar` | `SelectionTopBar.kt` | `[X] N selected [Select all]`, same 64 dp height as `HzPlayerTopBar` |
 | `SelectionActionBar` | `SelectionActionBar.kt` | Bottom bar of batch `SelectionAction`s (icon, label, enabled, destructive), styled like `PasteActionBar` |
+| `HzPullToRefreshBox` | `PullToRefresh.kt` | Pull-to-refresh container replacing M3's `PullToRefreshBox`. The content follows the finger through a rubber band (trigger 64 dp, cap 150 dp) with the spinner centred in the gap. Past the trigger the content rests at 64 dp while the spinner turns, and the spinner stays at least 700 ms. Only a user drag from the top starts it: flings and the owner's `isRefreshing` flag are ignored, so background loads (tab focus, folder open) show no spinner. `isRefreshing` is read only to learn when a user-started refresh finished. A TalkBack custom action offers "Refresh" |
 
 ---
 

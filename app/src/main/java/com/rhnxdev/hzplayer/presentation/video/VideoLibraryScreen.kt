@@ -34,8 +34,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
@@ -55,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
+import com.rhnxdev.hzplayer.core.components.HzPullToRefreshBox
 import com.rhnxdev.hzplayer.core.components.FileItemCard
 import com.rhnxdev.hzplayer.core.components.MediaCard
 import com.rhnxdev.hzplayer.core.components.MediaEmptyState
@@ -212,11 +211,9 @@ fun VideoLibraryScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                val pullState = rememberPullToRefreshState()
-                PullToRefreshBox(
+                HzPullToRefreshBox(
                     isRefreshing = uiState.isLoading,
                     onRefresh = viewModel::onRefresh,
-                    state = pullState,
                     modifier = Modifier.weight(1f).fillMaxSize(),
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
