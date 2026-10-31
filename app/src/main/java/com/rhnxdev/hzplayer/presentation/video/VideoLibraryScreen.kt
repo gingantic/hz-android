@@ -62,7 +62,7 @@ import com.rhnxdev.hzplayer.core.components.MediaErrorState
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.MediaPropertiesDialog
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
-import com.rhnxdev.hzplayer.core.components.rowThumbnailFraction
+import com.rhnxdev.hzplayer.core.components.rowThumbnailWidth
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
@@ -450,7 +450,7 @@ private fun FolderListContent(
                 fileCount = category.videos.size,
                 mediaCount = category.videos.size,
                 mediaMode = true,
-                thumbnailFraction = thumbnailSize.rowThumbnailFraction,
+                thumbnailWidth = thumbnailSize.rowThumbnailWidth,
                 leadingThumbnail = firstVideo?.let { v ->
                     {
                         SubcomposeAsyncImage(
@@ -623,7 +623,7 @@ private fun SearchResultsContent(
                     resolution = video.resolution,
                     mediaMode = true,
                     marqueeTitle = true,
-                    thumbnailFraction = thumbnailSize.rowThumbnailFraction,
+                    thumbnailWidth = thumbnailSize.rowThumbnailWidth,
                     leadingThumbnail = {
                         SubcomposeAsyncImage(
                             model = VideoFrame(video.uri, video.dateModified),

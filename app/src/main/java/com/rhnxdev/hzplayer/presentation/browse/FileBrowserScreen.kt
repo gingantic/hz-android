@@ -145,6 +145,9 @@ fun FileBrowserScreen(
         },
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            // Reported by DirectoryStackContent. Hoisted so the selection bar below can hide at the end too.
+            var isListAtEnd by remember { mutableStateOf(false) }
+
             when (uiState.mode) {
                 FileBrowserMode.ROOTS -> StorageRootsContent(
                     roots = uiState.roots,
@@ -156,7 +159,6 @@ fun FileBrowserScreen(
                     onRefresh = viewModel::onRefresh,
                 )
                 FileBrowserMode.BROWSING -> {
-                    var isListAtEnd by remember { mutableStateOf(false) }
                     var isListScrolling by remember { mutableStateOf(false) }
 
                     DirectoryStackContent(
@@ -234,36 +236,43 @@ fun FileBrowserScreen(
                     val cutLabel = stringResource(R.string.menu_cut)
                     val copyLabel = stringResource(R.string.menu_copy)
                     val deleteLabel = stringResource(R.string.menu_delete)
-                    SelectionActionBar(
-                        actions = buildList {
-                            add(
-                                SelectionAction(
-                                    icon = Icons.Default.PlayArrow,
-                                    label = playLabel,
-                                    enabled = hasSelectedVideo,
-                                    onClick = {
-                                        val playlist = viewModel.collectSelectedVideoPlaylist()
-                                        if (playlist.isNotEmpty()) {
-                                            viewModel.onExitSelection()
-                                            onPlayAllVideos(playlist)
-                                        }
-                                    },
-                                )
-                            )
-                            if (canModify) {
-                                add(SelectionAction(Icons.Default.ContentCut, cutLabel, viewModel::onCutSelected))
-                                add(SelectionAction(Icons.Default.ContentCopy, copyLabel, viewModel::onCopySelected))
+                    // Hidden at the bottom of the list, like the Play All FAB, so it doesn't cover the last item.
+                    AnimatedVisibility(
+                        visible = !isListAtEnd,
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut(),
+                    ) {
+                        SelectionActionBar(
+                            actions = buildList {
                                 add(
                                     SelectionAction(
-                                        icon = Icons.Default.Delete,
-                                        label = deleteLabel,
-                                        onClick = viewModel::onDeleteSelected,
-                                        destructive = true,
+                                        icon = Icons.Default.PlayArrow,
+                                        label = playLabel,
+                                        enabled = hasSelectedVideo,
+                                        onClick = {
+                                            val playlist = viewModel.collectSelectedVideoPlaylist()
+                                            if (playlist.isNotEmpty()) {
+                                                viewModel.onExitSelection()
+                                                onPlayAllVideos(playlist)
+                                            }
+                                        },
                                     )
                                 )
-                            }
-                        },
-                    )
+                                if (canModify) {
+                                    add(SelectionAction(Icons.Default.ContentCut, cutLabel, viewModel::onCutSelected))
+                                    add(SelectionAction(Icons.Default.ContentCopy, copyLabel, viewModel::onCopySelected))
+                                    add(
+                                        SelectionAction(
+                                            icon = Icons.Default.Delete,
+                                            label = deleteLabel,
+                                            onClick = viewModel::onDeleteSelected,
+                                            destructive = true,
+                                        )
+                                    )
+                                }
+                            },
+                        )
+                    }
                 } else {
                     uiState.clipboard?.let { clipboard ->
                         PasteActionBar(

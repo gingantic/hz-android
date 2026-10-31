@@ -259,7 +259,7 @@ fun DirectoryBrowsePane(
                             fileCount = item.fileCount,
                             mediaCount = item.mediaCount,
                             mediaMode = mediaMode,
-                            thumbnailFraction = thumbnailSize.rowThumbnailFraction,
+                            thumbnailWidth = thumbnailSize.rowThumbnailWidth,
                             mimeType = item.mimeType,
                             onClick = onItemClicked,
                             marqueeTitle = true,

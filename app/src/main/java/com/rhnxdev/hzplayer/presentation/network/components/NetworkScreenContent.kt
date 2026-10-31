@@ -438,6 +438,8 @@ internal fun ServerBrowseStackContent(
     getScrollState: (String) -> Pair<Int, Int>,
     getScrollStateIsAtEnd: (String) -> Boolean,
     saveScrollState: (String, Int, Int, Boolean) -> Unit,
+    isListAtEnd: Boolean,
+    onListAtEndChanged: (Boolean) -> Unit,
     fullScreenOverlay: Boolean = false,
     onPlayAllVideos: () -> Unit = {},
     onPlayAsAudio: (RemoteFileItem) -> Unit = {},
@@ -453,8 +455,6 @@ internal fun ServerBrowseStackContent(
         val noopFolder: (RemoteFileItem) -> Unit = {}
         val noopBreadcrumb: (String) -> Unit = {}
         val noopAtEnd: (Boolean) -> Unit = {}
-        var isListAtEnd by remember { mutableStateOf(false) }
-        val topLayerAtEnd: (Boolean) -> Unit = { isListAtEnd = it }
         val noopScrolling: (Boolean) -> Unit = {}
         var isListScrolling by remember { mutableStateOf(false) }
         val topLayerScrolling: (Boolean) -> Unit = { isListScrolling = it }
@@ -480,7 +480,7 @@ internal fun ServerBrowseStackContent(
                     fullScreenOverlay = fullScreenOverlay,
                     isTopLayer = isTop,
                     onPlayAsAudio = if (isTop) onPlayAsAudio else noopFolder,
-                    onListAtEndChanged = if (isTop) topLayerAtEnd else noopAtEnd,
+                    onListAtEndChanged = if (isTop) onListAtEndChanged else noopAtEnd,
                     onScrollingChanged = if (isTop) topLayerScrolling else noopScrolling,
                     // Lower layers stay composed but hidden; only the top one may select or
                     // report its visible keys, or a hidden layer would prune the selection.
@@ -600,7 +600,9 @@ private fun RemoteDirectoryLayerView(
     // Report when the list is scrolled to the very end so the Play All FAB
     // can hide instead of covering the last item. Lists too short to scroll
     // never report true, keeping the FAB available.
-    androidx.compose.runtime.LaunchedEffect(listState, layer.path) {
+    // Keyed on isTopLayer: a covered layer keeps the callback captured when it was top,
+    // so it would otherwise report stale end state after back navigation.
+    androidx.compose.runtime.LaunchedEffect(listState, layer.path, isTopLayer) {
         androidx.compose.runtime.snapshotFlow {
             listState.canScrollBackward && !listState.canScrollForward
         }.collect { onListAtEndChanged(it) }

@@ -1,5 +1,10 @@
 package com.rhnxdev.hzplayer.presentation.network
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ViewModule
@@ -62,6 +67,8 @@ fun NetworkScreen(
     val selectedKeys by viewModel.selection.selectedKeys.collectAsStateWithLifecycle()
     val selectionCount = if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) selectedKeys.size else 0
     val isSelecting = selectionCount > 0
+    // Reported by ServerBrowseStackContent. Hides the selection bar at the list end, like the Play All FAB.
+    var isListAtEnd by remember { mutableStateOf(false) }
 
     if (uiState.showServerDialog) {
         ServerConfigDialog(
@@ -216,6 +223,8 @@ fun NetworkScreen(
                     getScrollState = viewModel::getScrollState,
                     getScrollStateIsAtEnd = viewModel::getScrollStateIsAtEnd,
                     saveScrollState = viewModel::saveScrollState,
+                    isListAtEnd = isListAtEnd,
+                    onListAtEndChanged = { isListAtEnd = it },
                     fullScreenOverlay = fullScreenOverlay,
                     onPlayAllVideos = {
                         val playlist = viewModel.collectVideoPlaylist()
@@ -243,22 +252,28 @@ fun NetworkScreen(
                         } == true
                     }
                     val playLabel = stringResource(R.string.selection_action_play)
-                    SelectionActionBar(
-                        actions = listOf(
-                            SelectionAction(
-                                icon = Icons.Default.PlayArrow,
-                                label = playLabel,
-                                enabled = hasSelectedVideo,
-                                onClick = {
-                                    val playlist = viewModel.collectSelectedVideoPlaylist()
-                                    if (playlist.isNotEmpty()) {
-                                        viewModel.onExitSelection()
-                                        onPlayAllVideos(playlist)
-                                    }
-                                },
+                    AnimatedVisibility(
+                        visible = !isListAtEnd,
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut(),
+                    ) {
+                        SelectionActionBar(
+                            actions = listOf(
+                                SelectionAction(
+                                    icon = Icons.Default.PlayArrow,
+                                    label = playLabel,
+                                    enabled = hasSelectedVideo,
+                                    onClick = {
+                                        val playlist = viewModel.collectSelectedVideoPlaylist()
+                                        if (playlist.isNotEmpty()) {
+                                            viewModel.onExitSelection()
+                                            onPlayAllVideos(playlist)
+                                        }
+                                    },
+                                ),
                             ),
-                        ),
-                    )
+                        )
+                    }
                 }
             }
         }
