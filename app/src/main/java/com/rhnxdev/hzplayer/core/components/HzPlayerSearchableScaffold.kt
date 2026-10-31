@@ -58,6 +58,9 @@ fun HzPlayerSearchableScaffold(
         else onNavigateUp?.invoke()
     }
 
+    // An open search field or a selection needs its bar on screen, so scrolling can't hide it.
+    HoldBarsVisible(hold = isSearchActive || isSelecting)
+
     Column(modifier = Modifier.fillMaxSize()) {
         if (isSelecting) {
             SelectionTopBar(
@@ -76,6 +79,7 @@ fun HzPlayerSearchableScaffold(
                 onSearchToggle = onSearchToggle,
                 onSearchClose = onClearSearch,
                 actions = actions,
+                modifier = Modifier.hideTopOnScroll(LocalHideOnScrollState.current),
             )
         }
         content()

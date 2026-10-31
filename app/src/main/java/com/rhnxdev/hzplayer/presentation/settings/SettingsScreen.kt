@@ -32,6 +32,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rhnxdev.hzplayer.MainActivity
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerTopBar
+import com.rhnxdev.hzplayer.core.components.LocalHideOnScrollState
+import com.rhnxdev.hzplayer.core.components.hideTopOnScroll
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.isFullStorageGranted
 import com.rhnxdev.hzplayer.domain.player.EngineType
@@ -169,7 +171,10 @@ fun SettingsScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         // Toolbar
-        HzPlayerTopBar(title = stringResource(R.string.settings_title))
+        HzPlayerTopBar(
+            title = stringResource(R.string.settings_title),
+            modifier = Modifier.hideTopOnScroll(LocalHideOnScrollState.current),
+        )
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
