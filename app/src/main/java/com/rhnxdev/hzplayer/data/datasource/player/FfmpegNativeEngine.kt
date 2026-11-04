@@ -23,6 +23,7 @@ import com.rhnxdev.hzplayer.core.io.SmbRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.RandomAccessMediaSource
 import com.rhnxdev.hzplayer.core.io.isProgressiveHttp
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
+import com.rhnxdev.hzplayer.core.util.normalizePlaybackUri
 import com.rhnxdev.hzplayer.core.util.sanitizeHttpRequestHeaders
 import com.rhnxdev.hzplayer.core.util.userInfoPair
 import com.rhnxdev.hzplayer.data.datasource.player.ffmpeg.FfmpegNativePlayer
@@ -634,7 +635,7 @@ class FfmpegNativeEngine @Inject constructor(
             return@synchronized false
         }
 
-        val uri = Uri.parse(uriString)
+        val uri = Uri.parse(normalizePlaybackUri(uriString))
         val scheme = uri.scheme?.lowercase() ?: ""
         val isWeb = scheme == "http" || scheme == "https"
         var openHeaders = headers

@@ -8,6 +8,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import com.rhnxdev.hzplayer.browser.media.MediaStreamDecoder
+import com.rhnxdev.hzplayer.core.util.normalizePlaybackUri
 import java.util.Locale
 
 /**
@@ -37,13 +38,20 @@ internal object ExoMediaItemHelper {
         subs: List<MediaItem.SubtitleConfiguration> = emptyList(),
         artworkUri: String? = null,
     ): MediaItem {
+        // A raw local path (e.g. /sdcard/a#b.mp4) must become a percent-encoded
+        // file:// URI before setUri → Uri.parse, or # is read as a fragment, ? as
+        // a query (both truncate the path), % as an escape, and a name containing
+        // "://" acquires a bogus scheme. Normalising here also keeps the MIME
+        // sniffing below (substringBefore('?'/'#')) from tripping on literal
+        // reserved characters in the filename. Real URIs pass through unchanged.
+        val normalizedUri = normalizePlaybackUri(uri)
         val builder = MediaItem.Builder()
-        builder.setUri(uri)
+        builder.setUri(normalizedUri)
 
         // Infer explicit MIME type for HLS / DASH or custom probe to avoid container sniffing failures
-        val lowerUri = uri.lowercase(Locale.ROOT)
+        val lowerUri = normalizedUri.lowercase(Locale.ROOT)
         val lowerMime = mimeType?.lowercase(Locale.ROOT) ?: ""
-        val isDisguisedHls = MediaStreamDecoder.isDisguisedHlsStream(uri, lowerMime)
+        val isDisguisedHls = MediaStreamDecoder.isDisguisedHlsStream(normalizedUri, lowerMime)
         val uriPath = lowerUri.substringBefore('?').substringBefore('#')
         val isExplicitHls = isDisguisedHls || uriPath.endsWith(".m3u8") || lowerMime.contains("mpegurl") || lowerMime.contains("m3u8")
         val isExplicitDash = uriPath.endsWith(".mpd") || lowerMime.contains("dash")
