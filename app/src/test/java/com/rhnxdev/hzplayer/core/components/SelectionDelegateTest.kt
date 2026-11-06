@@ -41,17 +41,17 @@ class SelectionDelegateTest {
     }
 
     @Test
-    fun selectAllKeepsExistingSelection() {
+    fun toggleAllKeepsExistingSelection() {
         val selection = SelectionDelegate()
         selection.start("/a")
-        selection.selectAll(setOf("/b", "/c"))
+        selection.toggleAll(setOf("/b", "/c"))
         assertEquals(setOf("/a", "/b", "/c"), selection.selectedKeys.value)
     }
 
     @Test
     fun retainDropsKeysThatAreNoLongerVisible() {
         val selection = SelectionDelegate()
-        selection.selectAll(setOf("/a", "/b", "/c"))
+        selection.toggleAll(setOf("/a", "/b", "/c"))
         selection.retain(setOf("/b", "/c", "/d"))
         // "/d" was never selected, so it must not appear.
         assertEquals(setOf("/b", "/c"), selection.selectedKeys.value)
@@ -68,7 +68,7 @@ class SelectionDelegateTest {
     @Test
     fun clearEmptiesTheSelection() {
         val selection = SelectionDelegate()
-        selection.selectAll(setOf("/a", "/b"))
+        selection.toggleAll(setOf("/a", "/b"))
         selection.clear()
         assertFalse(selection.isActive)
         assertEquals(emptySet<String>(), selection.selectedKeys.value)

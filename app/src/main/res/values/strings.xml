@@ -66,6 +66,7 @@
     <string name="selection_count">%1$d selected</string>
     <string name="selection_exit_cd">Exit selection</string>
     <string name="selection_select_all_cd">Select all</string>
+    <string name="selection_deselect_all_cd">Deselect all</string>
     <string name="selection_item_cd">Selected</string>
     <string name="selection_action_play">Play</string>
     <string name="selection_items_count">%1$d items</string>

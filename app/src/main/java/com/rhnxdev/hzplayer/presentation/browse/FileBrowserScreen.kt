@@ -70,6 +70,7 @@ fun FileBrowserScreen(
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
     val selectedKeys by viewModel.selection.selectedKeys.collectAsStateWithLifecycle()
+    val allSelected by viewModel.selection.allListedSelected.collectAsStateWithLifecycle()
     val selectionCount = if (uiState.mode == FileBrowserMode.BROWSING) selectedKeys.size else 0
     val isSelecting = selectionCount > 0
     val onNavigateUp: (() -> Unit)? =
@@ -128,7 +129,8 @@ fun FileBrowserScreen(
         isActive = isActive,
         selectionCount = selectionCount,
         onExitSelection = viewModel::onExitSelection,
-        onSelectAll = viewModel::onSelectAll,
+        onToggleSelectAll = viewModel::onToggleSelectAll,
+        allSelected = allSelected,
         actions = {
             if (uiState.mode == FileBrowserMode.BROWSING) {
                 FileBrowserTopBarActions(

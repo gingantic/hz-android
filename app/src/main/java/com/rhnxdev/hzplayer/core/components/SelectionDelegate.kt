@@ -17,34 +17,51 @@ class SelectionDelegate {
     /** Currently selected item keys; empty when not in selection mode. */
     val selectedKeys: StateFlow<Set<String>> = _selectedKeys.asStateFlow()
 
+    /** Keys the owner last reported as listed, see [retain]. */
+    private var listed: Set<String> = emptySet()
+    private val _allListedSelected = MutableStateFlow(false)
+    /** True when every listed key is selected; the select-all button shows "deselect" then. */
+    val allListedSelected: StateFlow<Boolean> = _allListedSelected.asStateFlow()
+
     /** True while at least one item is selected. */
     val isActive: Boolean get() = _selectedKeys.value.isNotEmpty()
 
     /** Enter selection mode with [key] selected (adds to an existing selection). */
     fun start(key: String) {
-        _selectedKeys.value = _selectedKeys.value + key
+        publish(_selectedKeys.value + key)
     }
 
     /** Flip [key]; removing the last key leaves selection mode. */
     fun toggle(key: String) {
         val current = _selectedKeys.value
-        _selectedKeys.value = if (key in current) current - key else current + key
+        publish(if (key in current) current - key else current + key)
     }
 
-    /** Select every key in [keys], keeping what is already selected. */
-    fun selectAll(keys: Set<String>) {
-        _selectedKeys.value = _selectedKeys.value + keys
-    }
-
-    /** Drop selected keys that are not in [keys]; keeps the count equal to what an action touches. */
-    fun retain(keys: Set<String>) {
+    /**
+     * Select every key in [keys], keeping what is already selected. When all of [keys]
+     * are already selected, deselect them instead.
+     */
+    fun toggleAll(keys: Set<String>) {
         val current = _selectedKeys.value
-        val kept = current.intersect(keys)
-        if (kept.size != current.size) _selectedKeys.value = kept
+        publish(if (keys.isNotEmpty() && current.containsAll(keys)) current - keys else current + keys)
+    }
+
+    /**
+     * Record [keys] as the listed items and drop selected keys that are not in them;
+     * keeps the count equal to what an action touches.
+     */
+    fun retain(keys: Set<String>) {
+        listed = keys
+        publish(_selectedKeys.value.intersect(keys))
     }
 
     /** Leave selection mode. */
     fun clear() {
-        if (_selectedKeys.value.isNotEmpty()) _selectedKeys.value = emptySet()
+        if (_selectedKeys.value.isNotEmpty()) publish(emptySet())
+    }
+
+    private fun publish(selected: Set<String>) {
+        _selectedKeys.value = selected
+        _allListedSelected.value = listed.isNotEmpty() && selected.containsAll(listed)
     }
 }

@@ -26,7 +26,8 @@ import androidx.compose.ui.Modifier
  *                           is covering the screen.
  * @param selectionCount — number of multi-selected items; above 0 the selection top bar
  *                         replaces the normal one and back-press exits selection first.
- * @param onExitSelection / onSelectAll — selection top bar callbacks.
+ * @param onExitSelection / onToggleSelectAll — selection top bar callbacks.
+ * @param allSelected — every listed item is selected; the select-all button then deselects.
  * @param content       — the screen body below the top bar.
  */
 @Composable
@@ -43,7 +44,8 @@ fun HzPlayerSearchableScaffold(
     isActive: Boolean = true,
     selectionCount: Int = 0,
     onExitSelection: () -> Unit = {},
-    onSelectAll: () -> Unit = {},
+    onToggleSelectAll: () -> Unit = {},
+    allSelected: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -66,7 +68,8 @@ fun HzPlayerSearchableScaffold(
             SelectionTopBar(
                 count = selectionCount,
                 onExit = onExitSelection,
-                onSelectAll = onSelectAll,
+                onToggleSelectAll = onToggleSelectAll,
+                allSelected = allSelected,
             )
         } else {
             HzPlayerTopBar(

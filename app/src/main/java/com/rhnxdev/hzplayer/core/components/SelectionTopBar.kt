@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,14 +32,16 @@ import com.rhnxdev.hzplayer.presentation.theme.HzPlayerTheme
  *
  * @param count — number of selected items
  * @param onExit — leave selection mode
- * @param onSelectAll — select every visible item
+ * @param onToggleSelectAll — select every visible item, or deselect them when all are selected
+ * @param allSelected — every visible item is selected; switches the button to "deselect all"
  */
 @Composable
 fun SelectionTopBar(
     count: Int,
     onExit: () -> Unit,
-    onSelectAll: () -> Unit,
+    onToggleSelectAll: () -> Unit,
     modifier: Modifier = Modifier,
+    allSelected: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -63,10 +66,12 @@ fun SelectionTopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onSelectAll) {
+        IconButton(onClick = onToggleSelectAll) {
             Icon(
-                imageVector = Icons.Default.SelectAll,
-                contentDescription = stringResource(R.string.selection_select_all_cd),
+                imageVector = if (allSelected) Icons.Default.Deselect else Icons.Default.SelectAll,
+                contentDescription = stringResource(
+                    if (allSelected) R.string.selection_deselect_all_cd else R.string.selection_select_all_cd,
+                ),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -79,6 +84,6 @@ fun SelectionTopBar(
 @Composable
 private fun SelectionTopBarPreview() {
     HzPlayerTheme {
-        SelectionTopBar(count = 3, onExit = {}, onSelectAll = {})
+        SelectionTopBar(count = 3, onExit = {}, onToggleSelectAll = {}, allSelected = false)
     }
 }

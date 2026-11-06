@@ -306,7 +306,7 @@ class FileBrowserViewModel @Inject constructor(
 
     fun onToggleSelect(path: String) = selection.toggle(path)
 
-    fun onSelectAll() = selection.selectAll(visibleKeys)
+    fun onToggleSelectAll() = selection.toggleAll(visibleKeys)
 
     fun onExitSelection() = selection.clear()
 

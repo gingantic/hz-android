@@ -40,9 +40,9 @@ ViewModel-owned `SelectionDelegate` and is keyed by a stable id (a path or URI),
 | `HzPlayerTopBar` | `HzPlayerTopBar.kt` | App top bar; inline search mode takes precedence over the back arrow (the leading arrow exits search first) |
 | `HzPlayerSearchableScaffold` | `HzPlayerSearchableScaffold.kt` | Scaffold + search integration. With `selectionCount > 0` it swaps in `SelectionTopBar`, and its single back handler exits selection first, then search, then navigates up |
 | `SearchDelegate` | `SearchDelegate.kt` | Debounced search helper |
-| `SelectionDelegate` | `SelectionDelegate.kt` | Multi-select state holder owned by a ViewModel (`selectedKeys: StateFlow<Set<String>>`; `start` / `toggle` / `selectAll` / `retain` / `clear`). Selection mode = non-empty set, so deselecting the last item exits it |
+| `SelectionDelegate` | `SelectionDelegate.kt` | Multi-select state holder owned by a ViewModel (`selectedKeys: StateFlow<Set<String>>`; `start` / `toggle` / `toggleAll` / `retain` / `clear`; `allListedSelected` drives the select/deselect-all button). Selection mode = non-empty set, so deselecting the last item exits it |
 | `SelectionIndicator` | `SelectionIndicator.kt` | Round check badge; `onMedia = true` over a thumbnail (dark-backed ring), `false` over a plain row |
-| `SelectionTopBar` | `SelectionTopBar.kt` | `[X] N selected [Select all]`, same 64 dp height as `HzPlayerTopBar` |
+| `SelectionTopBar` | `SelectionTopBar.kt` | `[X] N selected [Select all / Deselect all]`; the button deselects when every listed item is already selected. Same 64 dp height as `HzPlayerTopBar` |
 | `SelectionActionBar` | `SelectionActionBar.kt` | Bottom bar of batch `SelectionAction`s (icon, label, enabled, destructive), styled like `PasteActionBar` |
 | `HzPullToRefreshBox` | `PullToRefresh.kt` | Pull-to-refresh container replacing M3's `PullToRefreshBox`. The content follows the finger through a rubber band (trigger 64 dp, cap 150 dp) with the spinner centred in the gap. Past the trigger the content rests at 64 dp while the spinner turns, and the spinner stays at least 700 ms. Only a user drag from the top starts it: flings and the owner's `isRefreshing` flag are ignored, so background loads (tab focus, folder open) show no spinner. `isRefreshing` is read only to learn when a user-started refresh finished. A TalkBack custom action offers "Refresh" |
 

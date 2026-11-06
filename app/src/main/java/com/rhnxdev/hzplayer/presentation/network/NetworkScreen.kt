@@ -65,6 +65,7 @@ fun NetworkScreen(
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
     val selectedKeys by viewModel.selection.selectedKeys.collectAsStateWithLifecycle()
+    val allSelected by viewModel.selection.allListedSelected.collectAsStateWithLifecycle()
     val selectionCount = if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) selectedKeys.size else 0
     val isSelecting = selectionCount > 0
     // Reported by ServerBrowseStackContent. Hides the selection bar at the list end, like the Play All FAB.
@@ -130,7 +131,8 @@ fun NetworkScreen(
         isActive = isActive,
         selectionCount = selectionCount,
         onExitSelection = viewModel::onExitSelection,
-        onSelectAll = viewModel::onSelectAll,
+        onToggleSelectAll = viewModel::onToggleSelectAll,
+        allSelected = allSelected,
         actions = {
             if (uiState.mode == NetworkScreenMode.HOME) {
                 IconButton(onClick = viewModel::onToggleHomeView) {
