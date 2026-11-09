@@ -77,7 +77,8 @@ data class FileItemData(
  * @param onRefresh    called on pull-to-refresh gesture
  * @param onRetry      called on "Retry" button from error state
  * @param listState    external LazyListState for scroll persistence
- * @param selectedKeys   paths of multi-selected items; non-empty means selection mode
+ * @param selectionMode  true while multi-select mode is open (even when 0 items are selected)
+ * @param selectedKeys   paths of multi-selected items
  * @param onLongPressItem  starts selection on long-press; null disables multi-select
  *                         (the remote browser leaves it null)
  * @param onToggleSelect   called instead of [onItemClick] while in selection mode
@@ -107,6 +108,7 @@ fun DirectoryBrowsePane(
     onDeleteItem: ((FileItemData) -> Unit)? = null,
     quickAccessPaths: Set<String> = emptySet(),
     onToggleFavorite: ((FileItemData) -> Unit)? = null,
+    selectionMode: Boolean = false,
     selectedKeys: Set<String> = emptySet(),
     onLongPressItem: ((FileItemData) -> Unit)? = null,
     onToggleSelect: ((FileItemData) -> Unit)? = null,
@@ -122,7 +124,6 @@ fun DirectoryBrowsePane(
         if (!isSearchActive || searchQuery.isBlank()) items
         else items.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
-    val selectionMode = selectedKeys.isNotEmpty()
 
     // Keyed by path: FolderItem ids are File.hashCode() and can collide.
     if (onVisibleKeysChanged != null) {

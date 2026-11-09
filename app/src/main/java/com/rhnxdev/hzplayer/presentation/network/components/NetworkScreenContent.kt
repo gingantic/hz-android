@@ -443,6 +443,7 @@ internal fun ServerBrowseStackContent(
     fullScreenOverlay: Boolean = false,
     onPlayAllVideos: () -> Unit = {},
     onPlayAsAudio: (RemoteFileItem) -> Unit = {},
+    selectionMode: Boolean = false,
     selectedKeys: Set<String> = emptySet(),
     onLongPressItem: ((String) -> Unit)? = null,
     onToggleSelect: ((String) -> Unit)? = null,
@@ -484,6 +485,7 @@ internal fun ServerBrowseStackContent(
                     onScrollingChanged = if (isTop) topLayerScrolling else noopScrolling,
                     // Lower layers stay composed but hidden; only the top one may select or
                     // report its visible keys, or a hidden layer would prune the selection.
+                    selectionMode = if (isTop) selectionMode else false,
                     selectedKeys = if (isTop) selectedKeys else emptySet(),
                     onLongPressItem = if (isTop) onLongPressItem else null,
                     onToggleSelect = if (isTop) onToggleSelect else null,
@@ -497,7 +499,7 @@ internal fun ServerBrowseStackContent(
         val hasVideos = uiState.remoteLayers.lastOrNull()?.items?.any {
             !it.isDirectory && isVideoMedia(it.name, it.mimeType)
         } == true
-        if (hasVideos && !isSearchActive && selectedKeys.isEmpty()) {
+        if (hasVideos && !isSearchActive && !selectionMode) {
             // Hidden at the bottom of the list and while it scrolls, so it doesn't cover content
             AnimatedVisibility(
                 visible = !isListAtEnd && !isListScrolling,
@@ -547,6 +549,7 @@ private fun RemoteDirectoryLayerView(
     onPlayAsAudio: (RemoteFileItem) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
     onScrollingChanged: (Boolean) -> Unit = {},
+    selectionMode: Boolean = false,
     selectedKeys: Set<String> = emptySet(),
     onLongPressItem: ((String) -> Unit)? = null,
     onToggleSelect: ((String) -> Unit)? = null,
@@ -678,6 +681,7 @@ private fun RemoteDirectoryLayerView(
                 val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
                 onPlayAsAudio(item)
             },
+            selectionMode = selectionMode,
             selectedKeys = selectedKeys,
             onLongPressItem = onLongPressItem?.let { callback -> { data -> callback(data.path) } },
             onToggleSelect = onToggleSelect?.let { callback -> { data -> callback(data.path) } },

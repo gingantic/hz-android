@@ -69,10 +69,11 @@ fun FileBrowserScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
+    val isSelectingRaw by viewModel.selection.isSelecting.collectAsStateWithLifecycle()
     val selectedKeys by viewModel.selection.selectedKeys.collectAsStateWithLifecycle()
     val allSelected by viewModel.selection.allListedSelected.collectAsStateWithLifecycle()
-    val selectionCount = if (uiState.mode == FileBrowserMode.BROWSING) selectedKeys.size else 0
-    val isSelecting = selectionCount > 0
+    val isSelecting = uiState.mode == FileBrowserMode.BROWSING && isSelectingRaw
+    val selectionCount = if (isSelecting) selectedKeys.size else 0
     val onNavigateUp: (() -> Unit)? =
         if (uiState.mode == FileBrowserMode.BROWSING) {
             { viewModel.onNavigateUp() }
@@ -127,6 +128,7 @@ fun FileBrowserScreen(
         searchPlaceholder = "Search files...",
         fullScreenOverlay = fullScreenOverlay,
         isActive = isActive,
+        isSelecting = isSelecting,
         selectionCount = selectionCount,
         onExitSelection = viewModel::onExitSelection,
         onToggleSelectAll = viewModel::onToggleSelectAll,
@@ -191,6 +193,7 @@ fun FileBrowserScreen(
                         onToggleFavorite = { viewModel.onToggleQuickAccess(it.path) },
                         onListAtEndChanged = { isListAtEnd = it },
                         onScrollingChanged = { isListScrolling = it },
+                        selectionMode = isSelecting,
                         selectedKeys = selectedKeys,
                         onLongPressItem = viewModel::onLongPressItem,
                         onToggleSelect = viewModel::onToggleSelect,
@@ -261,13 +264,29 @@ fun FileBrowserScreen(
                                     )
                                 )
                                 if (canModify) {
-                                    add(SelectionAction(Icons.Default.ContentCut, cutLabel, viewModel::onCutSelected))
-                                    add(SelectionAction(Icons.Default.ContentCopy, copyLabel, viewModel::onCopySelected))
+                                    val hasSelectedItems = selectedKeys.isNotEmpty()
+                                    add(
+                                        SelectionAction(
+                                            icon = Icons.Default.ContentCut,
+                                            label = cutLabel,
+                                            onClick = viewModel::onCutSelected,
+                                            enabled = hasSelectedItems,
+                                        )
+                                    )
+                                    add(
+                                        SelectionAction(
+                                            icon = Icons.Default.ContentCopy,
+                                            label = copyLabel,
+                                            onClick = viewModel::onCopySelected,
+                                            enabled = hasSelectedItems,
+                                        )
+                                    )
                                     add(
                                         SelectionAction(
                                             icon = Icons.Default.Delete,
                                             label = deleteLabel,
                                             onClick = viewModel::onDeleteSelected,
+                                            enabled = hasSelectedItems,
                                             destructive = true,
                                         )
                                     )

@@ -64,10 +64,11 @@ fun NetworkScreen(
     val scope = rememberCoroutineScope()
     val searchQuery by viewModel.search.searchQuery.collectAsStateWithLifecycle()
     val isSearchActive by viewModel.search.isSearchActive.collectAsStateWithLifecycle()
+    val isSelectingRaw by viewModel.selection.isSelecting.collectAsStateWithLifecycle()
     val selectedKeys by viewModel.selection.selectedKeys.collectAsStateWithLifecycle()
     val allSelected by viewModel.selection.allListedSelected.collectAsStateWithLifecycle()
-    val selectionCount = if (uiState.mode == NetworkScreenMode.SERVER_BROWSE) selectedKeys.size else 0
-    val isSelecting = selectionCount > 0
+    val isSelecting = uiState.mode == NetworkScreenMode.SERVER_BROWSE && isSelectingRaw
+    val selectionCount = if (isSelecting) selectedKeys.size else 0
     // Reported by ServerBrowseStackContent. Hides the selection bar at the list end, like the Play All FAB.
     var isListAtEnd by remember { mutableStateOf(false) }
 
@@ -129,6 +130,7 @@ fun NetworkScreen(
         searchPlaceholder = "Search remote files...",
         fullScreenOverlay = fullScreenOverlay,
         isActive = isActive,
+        isSelecting = isSelecting,
         selectionCount = selectionCount,
         onExitSelection = viewModel::onExitSelection,
         onToggleSelectAll = viewModel::onToggleSelectAll,
@@ -236,6 +238,7 @@ fun NetworkScreen(
                         val uri = viewModel.buildPlaybackUri(item.path) ?: item.path
                         onPlayRemoteFile(uri, item.name, false, item.mimeType)
                     },
+                    selectionMode = isSelecting,
                     selectedKeys = selectedKeys,
                     onLongPressItem = viewModel::onLongPressItem,
                     onToggleSelect = viewModel::onToggleSelect,

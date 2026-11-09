@@ -33,11 +33,30 @@ class SelectionDelegateTest {
     }
 
     @Test
-    fun togglingTheLastKeyLeavesSelectionMode() {
+    fun togglingTheLastKeyStaysInSelectionMode() {
         val selection = SelectionDelegate()
         selection.start("/a")
         selection.toggle("/a")
-        assertFalse(selection.isActive)
+        assertTrue(selection.isActive)
+        assertTrue(selection.isSelecting.value)
+        assertEquals(emptySet<String>(), selection.selectedKeys.value)
+    }
+
+    @Test
+    fun toggleAllDeselectsAllAndStaysInSelectionMode() {
+        val selection = SelectionDelegate()
+        val listed = setOf("/a", "/b")
+        selection.retain(listed)
+        selection.start("/a")
+        selection.toggleAll(listed)
+        assertTrue(selection.allListedSelected.value)
+        assertEquals(listed, selection.selectedKeys.value)
+
+        selection.toggleAll(listed)
+        assertTrue(selection.isActive)
+        assertTrue(selection.isSelecting.value)
+        assertFalse(selection.allListedSelected.value)
+        assertEquals(emptySet<String>(), selection.selectedKeys.value)
     }
 
     @Test
@@ -58,11 +77,12 @@ class SelectionDelegateTest {
     }
 
     @Test
-    fun retainingNothingLeavesSelectionMode() {
+    fun retainingNothingEmptiesKeysWithoutLeavingSelectionMode() {
         val selection = SelectionDelegate()
         selection.start("/a")
         selection.retain(emptySet())
-        assertFalse(selection.isActive)
+        assertTrue(selection.isActive)
+        assertEquals(emptySet<String>(), selection.selectedKeys.value)
     }
 
     @Test
@@ -71,6 +91,7 @@ class SelectionDelegateTest {
         selection.toggleAll(setOf("/a", "/b"))
         selection.clear()
         assertFalse(selection.isActive)
+        assertFalse(selection.isSelecting.value)
         assertEquals(emptySet<String>(), selection.selectedKeys.value)
     }
 

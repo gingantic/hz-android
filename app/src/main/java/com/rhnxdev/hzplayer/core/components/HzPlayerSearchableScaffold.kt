@@ -24,8 +24,10 @@ import androidx.compose.ui.Modifier
  * @param searchPlaceholder — placeholder text for the search field.
  * @param fullScreenOverlay — disables back handling when an overlay (player)
  *                           is covering the screen.
- * @param selectionCount — number of multi-selected items; above 0 the selection top bar
- *                         replaces the normal one and back-press exits selection first.
+ * @param isSelecting    — true while multi-select mode is open (even with 0 items selected);
+ *                         replaces the normal top bar with [SelectionTopBar] and makes
+ *                         back-press exit selection first.
+ * @param selectionCount — number of multi-selected items shown in [SelectionTopBar].
  * @param onExitSelection / onToggleSelectAll — selection top bar callbacks.
  * @param allSelected — every listed item is selected; the select-all button then deselects.
  * @param content       — the screen body below the top bar.
@@ -42,6 +44,7 @@ fun HzPlayerSearchableScaffold(
     searchPlaceholder: String = "Search...",
     fullScreenOverlay: Boolean = false,
     isActive: Boolean = true,
+    isSelecting: Boolean = false,
     selectionCount: Int = 0,
     onExitSelection: () -> Unit = {},
     onToggleSelectAll: () -> Unit = {},
@@ -51,7 +54,6 @@ fun HzPlayerSearchableScaffold(
 ) {
     // Back-press: exit selection first, then close search, then navigate up
     val canNavigateUp = onNavigateUp != null
-    val isSelecting = selectionCount > 0
     BackHandler(
         enabled = isActive && (isSelecting || isSearchActive || canNavigateUp) && !fullScreenOverlay,
     ) {
