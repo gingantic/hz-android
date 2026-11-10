@@ -17,11 +17,12 @@ import androidx.media3.extractor.mkv.MatroskaExtractor
 @UnstableApi
 class AssMatroskaExtractor(
     private val handler: AssHandler,
+    flags: Int = 0,
 ) : Extractor {
 
     private val delegate = MatroskaExtractor(
         AssSubtitleParserFactory(),
-        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
+        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA or flags,
     )
 
     private var assOutput: AssExtractorOutput? = null

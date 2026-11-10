@@ -15,8 +15,10 @@ import coil3.key.Keyer
 import coil3.request.Options
 import com.rhnxdev.hzplayer.core.io.ArchiveRandomAccessSource
 import com.rhnxdev.hzplayer.core.io.LocalRandomAccessSource
+import com.rhnxdev.hzplayer.core.io.isRemoteContainerUri
 import com.rhnxdev.hzplayer.core.io.withSmbSource
 import com.rhnxdev.hzplayer.core.util.ArchiveUri
+import com.rhnxdev.hzplayer.core.util.isSolidArchiveExtension
 import com.rhnxdev.hzplayer.core.util.userInfoPair
 import com.rhnxdev.hzplayer.data.datasource.player.ConnectionPool
 import jcifs.smb.SmbFile
@@ -152,11 +154,16 @@ class VideoFrameFetcher(
     private fun extractArchiveFrame(archiveUri: String): Bitmap? {
         val parsed = ArchiveUri.parse(archiveUri) ?: return null
         val (container, entry, password) = parsed
+        // Skip thumbnail extraction for remote archives and solid archives: seeking inside
+        // compressed remote streams saturates network bandwidth and delays video playback.
+        if (isRemoteContainerUri(container) || isSolidArchiveExtension(container)) {
+            return null
+        }
         return try {
             val bridge = ArchiveRandomAccessSource(container, entry, password)
             try {
                 NativeThumbnailExtractor.extractThumbnail(
-                    bridge, 0.40f, THUMB_MAX_WIDTH_NETWORK, fastMode = true
+                    bridge, 0.05f, THUMB_MAX_WIDTH_NETWORK, fastMode = true
                 )
             } finally {
                 bridge.close()

@@ -445,8 +445,10 @@ private fun SeekProgressRow(
 }
 
 // keep in sync with PlayerRepositoryImpl.startTrafficPolling
-private fun isRemoteUri(uri: String): Boolean =
-    uri.contains("://") && !uri.startsWith("file://") && !uri.startsWith("content://")
+private fun isRemoteUri(uri: String): Boolean {
+    val effectiveUri = com.rhnxdev.hzplayer.core.util.ArchiveUri.parse(uri)?.first ?: uri
+    return effectiveUri.contains("://") && !effectiveUri.startsWith("file://") && !effectiveUri.startsWith("content://")
+}
 
 @PreviewLightDark
 @Preview(widthDp = 640, heightDp = 320)

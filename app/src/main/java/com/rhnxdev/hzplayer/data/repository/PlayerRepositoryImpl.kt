@@ -11,6 +11,7 @@ import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
+import com.rhnxdev.hzplayer.domain.model.SessionNetworkTracker
 import com.rhnxdev.hzplayer.domain.model.next
 import com.rhnxdev.hzplayer.domain.model.VideoItem
 import com.rhnxdev.hzplayer.domain.player.EngineType
@@ -102,7 +103,12 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         scope.launch {
             playbackStateInfo.collect { info ->
-                info.currentUri?.let { uri -> savedPlaybackUri = uri }
+                info.currentUri?.let { uri ->
+                    if (uri != savedPlaybackUri) {
+                        savedPlaybackUri = uri
+                        startTrafficPolling()
+                    }
+                }
             }
         }
     }
@@ -138,33 +144,40 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private fun startTrafficPolling() {
         trafficPollJob?.cancel()
+        SessionNetworkTracker.reset()
         val uri = savedPlaybackUri ?: return
+        val effectiveUri = com.rhnxdev.hzplayer.core.util.ArchiveUri.parse(uri)?.first ?: uri
         // Only poll network traffic for remote URIs — local file playback doesn't consume network
-        if (!uri.contains("://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+        if (!effectiveUri.contains("://") || effectiveUri.startsWith("file://") || effectiveUri.startsWith("content://")) {
             _networkTraffic.value = NetworkTraffic.DEFAULT
             return
         }
-        // Some devices don't report per-UID traffic (returns -1). Surface that once
-        // instead of silently showing 0 and confusing the user.
         val initialRx = TrafficStats.getUidRxBytes(appUid)
-        if (initialRx == -1L) {
-            _networkTraffic.value = NetworkTraffic(unsupported = true)
-            return
-        }
+        _networkTraffic.value = NetworkTraffic.DEFAULT
         trafficPollJob = scope.launch(Dispatchers.Default) {
-            var lastRx = initialRx
+            var lastSessionBytes = 0L
             var smoothedSpeed = 0f
             while (isActive) {
                 delay(750)
-                val currentRx = TrafficStats.getUidRxBytes(appUid).coerceAtLeast(0)
-                val delta = (currentRx - lastRx).coerceAtLeast(0)
+                val uidBytes = if (initialRx >= 0L) {
+                    (TrafficStats.getUidRxBytes(appUid).coerceAtLeast(0L) - initialRx).coerceAtLeast(0L)
+                } else {
+                    0L
+                }
+                val appBytes = SessionNetworkTracker.getBytesRead()
+                val sessionBytes = maxOf(uidBytes, appBytes)
+                val delta = (sessionBytes - lastSessionBytes).coerceAtLeast(0L)
                 val instantSpeed = delta / 0.75f
-                smoothedSpeed = if (smoothedSpeed == 0f) instantSpeed
-                    else smoothedSpeed * 0.3f + instantSpeed * 0.7f
-                lastRx = currentRx
+                smoothedSpeed = when {
+                    delta == 0L && smoothedSpeed < 1f -> 0f
+                    smoothedSpeed == 0f -> instantSpeed
+                    else -> smoothedSpeed * 0.3f + instantSpeed * 0.7f
+                }
+                lastSessionBytes = sessionBytes
                 _networkTraffic.value = NetworkTraffic(
-                    bytesDown = currentRx,
+                    bytesDown = sessionBytes,
                     speedDown = smoothedSpeed.toLong(),
+                    unsupported = initialRx == -1L && appBytes == 0L,
                 )
             }
         }
@@ -173,6 +186,7 @@ class PlayerRepositoryImpl @Inject constructor(
     private fun stopTrafficPolling() {
         trafficPollJob?.cancel()
         trafficPollJob = null
+        SessionNetworkTracker.reset()
         _networkTraffic.value = NetworkTraffic.DEFAULT
     }
 
@@ -320,6 +334,7 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override fun retry() {
+        startTrafficPolling()
         engine().retry()
     }
 

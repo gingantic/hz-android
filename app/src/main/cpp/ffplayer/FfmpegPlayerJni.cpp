@@ -166,6 +166,8 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
             ctx->closeMedia();
             return JNI_FALSE;
         }
+        // Clear seekable during open/probe so demuxers (Matroska/etc) do NOT seek to EOF for Cues/Tags
+        ctx->avioCtx->seekable = 0;
         ctx->fmtCtx->pb = ctx->avioCtx;
     }
 
@@ -179,7 +181,11 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     av_dict_set_int(&opts, "analyzeduration", analyzeUs, 0);
     av_dict_set_int(&opts, "probesize", probeSize, 0);
     av_dict_set(&opts, "genpts", "1", 0);
-    av_dict_set(&opts, "fflags", "+genpts+discardcorrupt+fastseek", 0);
+    if (bridgeObj) {
+        av_dict_set(&opts, "fflags", "+genpts+discardcorrupt+fastseek+ignidx", 0);
+    } else {
+        av_dict_set(&opts, "fflags", "+genpts+discardcorrupt+fastseek", 0);
+    }
 
     bool isNetworkStream = (!url.empty() && (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0 || url.rfind("rtsp://", 0) == 0));
     if (isNetworkStream) {
@@ -244,6 +250,11 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     ctx->lastIoTimeMs.store(getMonotonicTimeMs());
 
     ctx->durationMs = (ctx->fmtCtx->duration > 0) ? (ctx->fmtCtx->duration / 1000) : 0;
+
+    // Restore seekable for bridge sources so seeking/scrubbing works during playback
+    if (bridgeObj && ctx->avioCtx) {
+        ctx->avioCtx->seekable = AVIO_SEEKABLE_NORMAL;
+    }
 
     // Seekability of web sources: live HLS flags AVFMTCTX_UNSEEKABLE; plain HTTP needs
     // range support. HLS VOD has no seekable pb but seeks by segment, so it is allowed.

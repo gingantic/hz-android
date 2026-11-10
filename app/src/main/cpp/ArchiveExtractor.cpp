@@ -6,6 +6,9 @@ extern "C" {
 #include <archive_entry.h>
 }
 
+#include <algorithm>
+#include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -15,18 +18,159 @@ extern "C" {
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+// Bridges a Kotlin RandomAccessMediaSource into libarchive read/seek/skip callbacks
+// so remote archives (SMB, SFTP, FTP, WebDAV) can be listed and streamed in-place.
+struct BridgeReader {
+    JavaVM* jvm = nullptr;
+    jobject sourceGlobal = nullptr;
+    jmethodID midReadAt = nullptr;
+    jmethodID midGetSize = nullptr;
+    jbyteArray jbufGlobal = nullptr;
+    jsize bufCap = 131072;
+    std::vector<uint8_t> scratch;
+    la_int64_t pos = 0;
+    la_int64_t totalSize = -1;
+
+    JNIEnv* getEnv() const {
+        if (!jvm) return nullptr;
+        JNIEnv* env = nullptr;
+        if (jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+            if (jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) return nullptr;
+        }
+        return env;
+    }
+
+    bool init(JNIEnv* env, jobject jSource) {
+        if (!env || !jSource) return false;
+        env->GetJavaVM(&jvm);
+        jclass cls = env->GetObjectClass(jSource);
+        if (!cls) return false;
+        midReadAt = env->GetMethodID(cls, "readAt", "(J[BI)I");
+        midGetSize = env->GetMethodID(cls, "getSize", "()J");
+        env->DeleteLocalRef(cls);
+        if (!midReadAt || !midGetSize) return false;
+
+        sourceGlobal = env->NewGlobalRef(jSource);
+        jbyteArray localBuf = env->NewByteArray(bufCap);
+        if (!localBuf) return false;
+        jbufGlobal = reinterpret_cast<jbyteArray>(env->NewGlobalRef(localBuf));
+        env->DeleteLocalRef(localBuf);
+        if (!sourceGlobal || !jbufGlobal) return false;
+
+        scratch.resize(static_cast<size_t>(bufCap));
+        totalSize = env->CallLongMethod(sourceGlobal, midGetSize);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            return false;
+        }
+        pos = 0;
+        return true;
+    }
+
+    ~BridgeReader() {
+        JNIEnv* env = getEnv();
+        if (env) {
+            if (sourceGlobal) env->DeleteGlobalRef(sourceGlobal);
+            if (jbufGlobal) env->DeleteGlobalRef(jbufGlobal);
+        }
+    }
+};
+
+static la_ssize_t bridgeReadCb(struct archive* a, void* clientData, const void** buffer) {
+    BridgeReader* br = static_cast<BridgeReader*>(clientData);
+    if (!br) {
+        *buffer = nullptr;
+        return ARCHIVE_FATAL;
+    }
+    if (br->totalSize >= 0 && br->pos >= br->totalSize) {
+        *buffer = nullptr;
+        return 0;
+    }
+    JNIEnv* env = br->getEnv();
+    if (!env) {
+        archive_set_error(a, EIO, "JNI env unavailable in bridgeReadCb");
+        return ARCHIVE_FATAL;
+    }
+    jint want = br->bufCap;
+    if (br->totalSize >= 0 && br->pos + want > br->totalSize) {
+        want = static_cast<jint>(br->totalSize - br->pos);
+    }
+    if (want <= 0) {
+        *buffer = nullptr;
+        return 0;
+    }
+    jint n = env->CallIntMethod(br->sourceGlobal, br->midReadAt,
+                                static_cast<jlong>(br->pos), br->jbufGlobal, want);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        archive_set_error(a, EIO, "I/O error reading remote archive");
+        return ARCHIVE_FATAL;
+    }
+    if (n <= 0) {
+        *buffer = nullptr;
+        return 0;
+    }
+    env->GetByteArrayRegion(br->jbufGlobal, 0, n,
+                            reinterpret_cast<jbyte*>(br->scratch.data()));
+    br->pos += n;
+    *buffer = br->scratch.data();
+    return static_cast<la_ssize_t>(n);
+}
+
+static la_int64_t bridgeSeekCb(struct archive* a, void* clientData, la_int64_t offset, int whence) {
+    BridgeReader* br = static_cast<BridgeReader*>(clientData);
+    if (!br || br->totalSize < 0) return ARCHIVE_FATAL;
+    la_int64_t target = 0;
+    switch (whence) {
+        case SEEK_SET: target = offset; break;
+        case SEEK_CUR: target = br->pos + offset; break;
+        case SEEK_END: target = br->totalSize + offset; break;
+        default: return ARCHIVE_FATAL;
+    }
+    if (target < 0 || target > br->totalSize) {
+        archive_set_error(a, EINVAL, "Bridge seek out of bounds");
+        return ARCHIVE_FATAL;
+    }
+    br->pos = target;
+    return br->pos;
+}
+
+static la_int64_t bridgeSkipCb(struct archive*, void* clientData, la_int64_t request) {
+    BridgeReader* br = static_cast<BridgeReader*>(clientData);
+    if (!br || request <= 0 || br->totalSize < 0) return 0;
+    la_int64_t avail = br->totalSize - br->pos;
+    if (avail <= 0) return 0;
+    la_int64_t skipped = std::min(request, avail);
+    br->pos += skipped;
+    return skipped;
+}
+
+static int openArchiveContainer(struct archive* a, const std::string& path, BridgeReader* br) {
+    if (br != nullptr) {
+        br->pos = 0;
+        archive_read_set_read_callback(a, bridgeReadCb);
+        archive_read_set_seek_callback(a, bridgeSeekCb);
+        archive_read_set_skip_callback(a, bridgeSkipCb);
+        archive_read_set_callback_data(a, br);
+        return archive_read_open1(a);
+    }
+    return archive_read_open_filename(a, path.c_str(), 65536);
+}
+
 // libarchive read session. No per-entry random access in libarchive;
 // backward seek = close+reopen+locate+skip (see docs/ARCHIVE_SUPPORT.md §3).
 // firstBlock: libarchive's next_header + first data_block already consumes the
 // entry's first data chunk, so we stash it here and replay it on the first read.
 struct Session {
     struct archive* a = nullptr;
+    BridgeReader* reader = nullptr;
     std::string path;
     std::string entry;
     std::string password;
     la_int64_t totalSize = 0;
     la_int64_t pos = 0;
     bool ok = false;
+    std::vector<uint8_t> readBuf;
     std::mutex mtx;
 };
 
@@ -43,7 +187,8 @@ static std::string jstr(JNIEnv* env, jstring s) {
 static Session* openPositioned(const std::string& path,
                                 const std::string& entry,
                                 const std::string& password,
-                                la_int64_t* outSize) {
+                                la_int64_t* outSize,
+                                BridgeReader* br = nullptr) {
     struct archive* a = archive_read_new();
     if (!a) { LOGE("openPositioned: archive_read_new() returned NULL"); return nullptr; }
     archive_read_support_filter_all(a);
@@ -51,7 +196,7 @@ static Session* openPositioned(const std::string& path,
     if (!password.empty()) {
         archive_read_add_passphrase(a, password.c_str());
     }
-    if (archive_read_open_filename(a, path.c_str(), 65536) != ARCHIVE_OK) {
+    if (openArchiveContainer(a, path, br) != ARCHIVE_OK) {
         LOGE("openPositioned: open failed: %s", archive_error_string(a));
         archive_read_free(a);
         return nullptr;
@@ -88,6 +233,7 @@ static Session* openPositioned(const std::string& path,
     LOGD("openPositioned: building Session for %s", entry.c_str());
     Session* s = new Session();
     s->a = a;
+    s->reader = br;
     s->path = path;
     s->entry = entry;
     s->password = password;
@@ -124,13 +270,10 @@ static bool isPassphraseError(struct archive* a, int hr, const std::string& path
             s.find("crypt") != std::string::npos);
 }
 
-extern "C" JNIEXPORT jobjectArray JNICALL
-Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeList(
-    JNIEnv* env, jclass, jstring jPath, jstring jPassword) {
-
-    std::string path = jstr(env, jPath);
-    std::string password = jstr(env, jPassword);
-
+static jobjectArray listArchiveImpl(JNIEnv* env,
+                                    const std::string& path,
+                                    const std::string& password,
+                                    BridgeReader* br) {
     struct archive* a = archive_read_new();
     if (!a) { LOGE("nativeList: archive_read_new() returned NULL"); throwException(env, "java/io/IOException", "archive_read_new failed"); return nullptr; }
     archive_read_support_filter_all(a);
@@ -138,7 +281,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeList(
     if (!password.empty()) {
         archive_read_add_passphrase(a, password.c_str());
     }
-    int open_hr = archive_read_open_filename(a, path.c_str(), 65536);
+    int open_hr = openArchiveContainer(a, path, br);
     if (open_hr < ARCHIVE_OK) {
         LOGE("nativeList: open warning/error %d: %s", open_hr, archive_error_string(a));
         if (open_hr < ARCHIVE_WARN || isPassphraseError(a, open_hr, path, password)) {
@@ -203,6 +346,29 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeList(
     return arr;
 }
 
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeList(
+    JNIEnv* env, jclass, jstring jPath, jstring jPassword) {
+
+    std::string path = jstr(env, jPath);
+    std::string password = jstr(env, jPassword);
+    return listArchiveImpl(env, path, password, nullptr);
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeListBridge(
+    JNIEnv* env, jclass, jobject jSource, jstring jPathHint, jstring jPassword) {
+
+    std::string path = jstr(env, jPathHint);
+    std::string password = jstr(env, jPassword);
+    BridgeReader br;
+    if (!br.init(env, jSource)) {
+        throwException(env, "java/io/IOException", "Failed to initialize remote archive reader");
+        return nullptr;
+    }
+    return listArchiveImpl(env, path, password, &br);
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeOpen(
     JNIEnv* env, jclass, jstring jPath, jstring jEntry, jstring jPassword) {
@@ -212,12 +378,37 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeOpen(
     std::string password = jstr(env, jPassword);
 
     Session* s = reinterpret_cast<Session*>(
-        openPositioned(path, entry, password, nullptr));
+        openPositioned(path, entry, password, nullptr, nullptr));
     if (s) {
         LOGD("nativeOpen: entry=%s total=%lld", entry.c_str(),
              static_cast<long long>(s->totalSize));
     }
     return s ? reinterpret_cast<jlong>(s) : 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeOpenBridge(
+    JNIEnv* env, jclass, jobject jSource, jstring jPathHint, jstring jEntry, jstring jPassword) {
+
+    std::string path = jstr(env, jPathHint);
+    std::string entry = jstr(env, jEntry);
+    std::string password = jstr(env, jPassword);
+
+    BridgeReader* br = new BridgeReader();
+    if (!br->init(env, jSource)) {
+        delete br;
+        return 0;
+    }
+
+    Session* s = reinterpret_cast<Session*>(
+        openPositioned(path, entry, password, nullptr, br));
+    if (!s) {
+        delete br;
+        return 0;
+    }
+    LOGD("nativeOpenBridge: entry=%s total=%lld", entry.c_str(),
+         static_cast<long long>(s->totalSize));
+    return reinterpret_cast<jlong>(s);
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -240,9 +431,10 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeRead(
     std::lock_guard<std::mutex> lk(s->mtx);
     if (!s->a) return -1;
 
-    jbyte* arr = env->GetByteArrayElements(jbuf, nullptr);
-    if (!arr) return -1;
-    uint8_t* out = reinterpret_cast<uint8_t*>(arr) + off;
+    if (static_cast<size_t>(len) > s->readBuf.size()) {
+        s->readBuf.resize(static_cast<size_t>(len));
+    }
+    uint8_t* out = s->readBuf.data();
 
     int got = 0;
     while (got < len) {
@@ -251,13 +443,14 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeRead(
         if (rr == 0) break;                 // EOF
         if (rr < 0) {
             LOGE("nativeRead: %s", archive_error_string(s->a));
-            env->ReleaseByteArrayElements(jbuf, arr, JNI_ABORT);
             return -1;
         }
         got += static_cast<int>(rr);
         s->pos += rr;
     }
-    env->ReleaseByteArrayElements(jbuf, arr, 0);
+    if (got > 0) {
+        env->SetByteArrayRegion(jbuf, off, got, reinterpret_cast<const jbyte*>(out));
+    }
     return got;
 }
 
@@ -271,7 +464,17 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeSeek(
     if (target == s->pos) return JNI_TRUE;
     if (target < 0) return JNI_FALSE;
 
-    // Fast path: forward seek when archive session is still valid.
+    // 1. O(1) native entry seek when supported by the format/compression
+    // (e.g. stored/uncompressed entries in ZIP/RAR/7z, TAR, ISO9660).
+    if (s->a != nullptr) {
+        la_int64_t sought = archive_seek_data(s->a, target, SEEK_SET);
+        if (sought >= 0) {
+            s->pos = sought;
+            return (sought == target) ? JNI_TRUE : JNI_FALSE;
+        }
+    }
+
+    // 2. Fast path: forward seek when archive session is still valid.
     // Discard the delta in-between without closing and re-opening from byte 0.
     if (target > s->pos && s->a != nullptr) {
         la_int64_t remaining = target - s->pos;
@@ -309,7 +512,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeSeek(
     la_int64_t size = 0;
     std::string path = s->path, entry = s->entry, password = s->password;
     Session* ns = reinterpret_cast<Session*>(
-        openPositioned(path, entry, password, &size));
+        openPositioned(path, entry, password, &size, s->reader));
     if (!ns) {
         s->ok = false;
         s->totalSize = -1;
@@ -320,6 +523,7 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeSeek(
     s->totalSize = size;
     s->pos = ns->pos;
     ns->a = nullptr;        // ownership moved; don't double-free
+    ns->reader = nullptr;   // s keeps ownership of s->reader
     delete ns;
     s->pos = 0;
 
@@ -359,6 +563,8 @@ Java_com_rhnxdev_hzplayer_data_datasource_archive_ArchiveNative_nativeClose(
         std::lock_guard<std::mutex> lk(s->mtx);
         if (s->a) archive_read_free(s->a);
         s->a = nullptr;
+        delete s->reader;
+        s->reader = nullptr;
         s->ok = false;
     }
     delete s;

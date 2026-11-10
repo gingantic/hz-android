@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.data.datasource.archive
 
 import androidx.annotation.Keep
+import com.rhnxdev.hzplayer.core.io.RandomAccessMediaSource
 
 @Keep
 object ArchiveNative {
@@ -12,7 +13,22 @@ object ArchiveNative {
     external fun nativeList(archivePath: String, password: String?): Array<String>
 
     @JvmStatic
+    external fun nativeListBridge(
+        source: RandomAccessMediaSource,
+        archivePathHint: String,
+        password: String?,
+    ): Array<String>
+
+    @JvmStatic
     external fun nativeOpen(archivePath: String, entryName: String, password: String?): Long
+
+    @JvmStatic
+    external fun nativeOpenBridge(
+        source: RandomAccessMediaSource,
+        archivePathHint: String,
+        entryName: String,
+        password: String?,
+    ): Long
 
     @JvmStatic
     external fun nativeLength(handle: Long): Long

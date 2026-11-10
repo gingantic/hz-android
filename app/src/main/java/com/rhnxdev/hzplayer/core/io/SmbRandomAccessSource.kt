@@ -276,6 +276,7 @@ class SmbRandomAccessSource(
                     }
                     zeroReadCount = 0
                     total += n
+                    com.rhnxdev.hzplayer.domain.model.SessionNetworkTracker.onBytesRead(n.toLong())
                 }
             } finally {
                 if (handleIdx >= 0) handleLocks[handleIdx].unlock()

@@ -38,10 +38,12 @@ class AssExtractorsFactory(
     ): Array<Extractor> {
         val defaults = defaultFactory.createExtractors(uri, responseHeaders)
 
+        val mkvFlags = MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES
+
         return defaults.map { extractor ->
             when {
                 extractor is MatroskaExtractor ->
-                    AssMatroskaExtractor(handler)
+                    AssMatroskaExtractor(handler, mkvFlags)
                 extractor is Mp4Extractor ->
                     HzMp4Extractor(AssSubtitleParserFactory())
                 else -> extractor

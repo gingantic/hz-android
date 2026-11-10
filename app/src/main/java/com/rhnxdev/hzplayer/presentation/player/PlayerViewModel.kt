@@ -68,7 +68,7 @@ class PlayerViewModel @Inject constructor(
      * the whole player screen.
      */
     val networkTraffic: StateFlow<NetworkTraffic> =
-        playerRepository.networkTraffic.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NetworkTraffic.DEFAULT)
+        playerRepository.networkTraffic.stateIn(viewModelScope, SharingStarted.Eagerly, NetworkTraffic.DEFAULT)
 
     private val debugController = PlayerDebugController(
         scope = viewModelScope,

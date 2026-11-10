@@ -75,8 +75,8 @@ internal class PlayerDebugController(
                         videoBitrateEstimated = videoBitrate,
                         audioBitrateEstimated = audioBitrate,
                         bufferedPct = uiState.value.bufferedPercentage,
-                        networkSpeed = if (speedDown > 0) formatDebugSpeed(speedDown) else "",
-                        bytesDownloaded = if (totalBytes > 0) formatDebugBytes(totalBytes) else "",
+                        networkSpeed = formatDebugSpeed(speedDown),
+                        bytesDownloaded = formatDebugBytes(totalBytes),
                         isVisible = true,
                     )
                 } catch (_: Exception) { }

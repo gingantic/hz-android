@@ -69,6 +69,17 @@ object MediaInfoProbe {
             val cached = synchronized(chapterCache) { chapterCache.get(uriOrPath) }
             if (cached != null) return@withContext cached
 
+            // Never run background chapter probes on remote archives or solid archives:
+            // avformat_open_input seeks to the end of the entry to read chapter metadata,
+            // which would force full-entry decompression or compete with active playback.
+            val archiveParsed = ArchiveUri.parse(uriOrPath)
+            if (archiveParsed != null) {
+                val container = archiveParsed.first
+                if (isRemoteContainerUri(container) || com.rhnxdev.hzplayer.core.util.isSolidArchiveExtension(container)) {
+                    return@withContext emptyList()
+                }
+            }
+
             val result = try {
                 withSource(context, uriOrPath) { bridge ->
                     NativeThumbnailExtractor.probeChapters(bridge)
@@ -108,8 +119,12 @@ object MediaInfoProbe {
     private fun <T> withArchiveSource(archiveUriString: String, block: (RandomAccessMediaSource) -> T?): T? {
         val parsed = ArchiveUri.parse(archiveUriString) ?: return null
         val (container, entry, password) = parsed
+        if (isRemoteContainerUri(container)) {
+            // Skip heavy probe over remote network to prevent multi-second cue scans
+            return null
+        }
         return try {
-            val bridge = ArchiveRandomAccessSource(container, entry, password)
+            val bridge = ArchiveRandomAccessSource.acquireShared(container, entry, password)
             try {
                 block(bridge)
             } finally {

@@ -11,7 +11,7 @@ import java.io.RandomAccessFile
  *
  * No prefetch/caching — local disk seeks are cheap, unlike the SMB bridge.
  */
-class LocalRandomAccessSource(path: String) : RandomAccessMediaSource, Closeable {
+class LocalRandomAccessSource(path: String) : CloseableRandomAccessSource {
     private val raf = RandomAccessFile(path, "r")
     private val size = raf.length()
 

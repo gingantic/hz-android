@@ -463,7 +463,7 @@ WebChromeClient.onCreateWindow (target=_blank)
 | Remote clients | SMB/FTP/SFTP/WebDAV browse + streaming | pooled in `ConnectionPool` (4 DataSource pools + 4 browser pools) |
 | Native FFmpeg | Video thumbnails + codec metadata probe | `core/io/` sources + `core/thumbnail/` JNI + `cpp/` |
 | Native libass | ASS/SSA/SRT/VTT subtitle rendering | JNI in `data/datasource/subtitle/assrender` + `cpp/` |
-| Native libarchive | Archive listing + streaming playback | JNI in `data/datasource/archive` + `cpp/` |
+| Native libarchive | Archive listing + streaming playback | JNI in `data/datasource/archive` + `cpp/`; 100% in-RAM sliding-window LRU (zero disk writes) |
 | Native ad blocker | WebView ad filtering | Rust engine in `browser/adblock/` (JNI) |
 | Cloudflare R2 | OTA update checks + APK download | `UpdateChecker` reads `BuildConfig.R2_UPDATE_BASE_URL` |
 
@@ -475,6 +475,7 @@ WebChromeClient.onCreateWindow (target=_blank)
 | FTP | Server-side restart offset — `ftp.setRestartOffset(position)` before `retrieveFileStream`; the pooled control connection is reused so a seek does not re-login |
 | SFTP | Positional reads through the SSHJ `RemoteFile` API; the SSH session is pooled so a seek does not re-run the key exchange |
 | WebDAV | HTTP byte range (`Range: bytes=<pos>-`); if the server ignores Range and answers 200, the stream is skipped forward instead |
+| `archive://` | Dynamic in-RAM LRU cache (up to 256 MB) + pinned headers; backward seeks served instantly (<0.1 ms) from RAM; forward seeks skip with a reusable buffer; startup tail-probing suppressed |
 
 All four extend `RemoteDataSourceBase`, which owns the shared `read()`/`skipFully()`
 helpers, the `safeUri()` credential stripping, and the connection-stage retry

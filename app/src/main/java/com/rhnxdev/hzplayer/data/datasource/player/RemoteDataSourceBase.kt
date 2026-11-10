@@ -32,6 +32,7 @@ abstract class RemoteDataSourceBase(isNetwork: Boolean) : BaseDataSource(isNetwo
         val bytesRead = readFromStream(stream, buffer, offset, toRead)
         if (bytesRead == -1) return C.RESULT_END_OF_INPUT
         if (bytesRemaining != C.LENGTH_UNSET.toLong()) bytesRemaining -= bytesRead
+        com.rhnxdev.hzplayer.domain.model.SessionNetworkTracker.onBytesRead(bytesRead.toLong())
         bytesTransferred(bytesRead)
         return bytesRead
     }

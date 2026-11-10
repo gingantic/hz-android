@@ -148,6 +148,7 @@ class HttpRandomAccessSource(
                 val n = stream!!.read(buffer, 0, want)
                 if (n > 0) {
                     streamPos += n
+                    com.rhnxdev.hzplayer.domain.model.SessionNetworkTracker.onBytesRead(n.toLong())
                     return n
                 }
                 // The length is known, so an early end of body is a dropped connection.

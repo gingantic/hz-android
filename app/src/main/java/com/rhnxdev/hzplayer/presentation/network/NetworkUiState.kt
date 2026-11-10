@@ -1,6 +1,7 @@
 package com.rhnxdev.hzplayer.presentation.network
 
 import com.rhnxdev.hzplayer.core.components.BreadcrumbItem
+import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
@@ -44,6 +45,7 @@ data class NetworkUiState(
     val sortType: SortType = SortType.TITLE,
     val sortDirection: SortDirection = SortDirection.ASCENDING,
     val isMediaMode: Boolean = false,
+    val mediaTypeFilter: FileMediaTypeFilter = FileMediaTypeFilter.ALL,
     /** Leading width share of a row's preview thumbnail. */
     val thumbnailSize: ThumbnailSize = ThumbnailSize.LARGE,
     val isHomeListView: Boolean = false,
@@ -51,6 +53,9 @@ data class NetworkUiState(
     val relocatingServerName: String? = null,
     /** One-shot message for the screen to show, then clear via `onNoticeShown()`. */
     val notice: NetworkNotice? = null,
+    val passwordPromptContainer: String? = null,
+    val passwordError: String? = null,
+    val solidArchiveWarningContainer: RemoteFileItem? = null,
 )
 
 /** One-shot outcomes of looking for a saved server whose IP changed. Screen formats the text. */

@@ -38,11 +38,15 @@ import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.components.SelectionAction
 import com.rhnxdev.hzplayer.core.components.SelectionActionBar
 import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
+import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
+import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.core.util.isVideoOrStreamDefault
 import com.rhnxdev.hzplayer.core.util.withLiveCookies
 import com.rhnxdev.hzplayer.domain.model.SortType
 import com.rhnxdev.hzplayer.domain.model.VideoItem
+import com.rhnxdev.hzplayer.presentation.browse.components.ArchivePasswordDialog
+import com.rhnxdev.hzplayer.presentation.browse.components.SolidArchiveWarningDialog
 import com.rhnxdev.hzplayer.presentation.network.components.CredentialDialog
 import com.rhnxdev.hzplayer.presentation.network.components.NetworkHomeContent
 import com.rhnxdev.hzplayer.presentation.network.components.ServerBrowseStackContent
@@ -86,6 +90,23 @@ fun NetworkScreen(
             error = request.error,
             onProvided = request.onProvided,
             onDismiss = viewModel::onDismissCredentialDialog,
+        )
+    }
+
+    if (uiState.passwordPromptContainer != null) {
+        ArchivePasswordDialog(
+            archiveName = uiState.passwordPromptContainer!!.substringAfterLast('/'),
+            error = uiState.passwordError,
+            onProvided = viewModel::onProvidePassword,
+            onDismiss = viewModel::onCancelPasswordPrompt,
+        )
+    }
+
+    if (uiState.solidArchiveWarningContainer != null) {
+        SolidArchiveWarningDialog(
+            archiveName = uiState.solidArchiveWarningContainer!!.name,
+            onConfirm = viewModel::onConfirmSolidArchiveWarning,
+            onDismiss = viewModel::onDismissSolidArchiveWarning,
         )
     }
 
@@ -160,6 +181,8 @@ fun NetworkScreen(
                         onSortChanged = viewModel::onSortChanged,
                         isMediaMode = uiState.isMediaMode,
                         onToggleMediaMode = viewModel::onToggleMediaMode,
+                        mediaTypeFilter = uiState.mediaTypeFilter,
+                        onMediaTypeFilterChanged = viewModel::onMediaTypeFilterChanged,
                         thumbnailSize = uiState.thumbnailSize,
                         onThumbnailSizeChanged = viewModel::onThumbnailSizeChanged,
                         availableSortTypes = listOf(
@@ -217,8 +240,12 @@ fun NetworkScreen(
                     onClearSearch = viewModel::onClearSearch,
                     onFolderClicked = { item -> viewModel.onRemoteFolderClicked(item) },
                     onFileClicked = { item ->
-                        val uri = viewModel.buildPlaybackUri(item.path) ?: return@ServerBrowseStackContent
-                        onPlayRemoteFile(uri, item.name, isVideoOrStreamDefault(item.name), item.mimeType)
+                        if (isArchiveExtension(item.name) && ArchiveBrowsePath.isRealFilePath(item.path)) {
+                            viewModel.onOpenArchive(item)
+                        } else {
+                            val uri = viewModel.buildPlaybackUri(item.path) ?: return@ServerBrowseStackContent
+                            onPlayRemoteFile(uri, item.name, isVideoOrStreamDefault(item.name), item.mimeType)
+                        }
                     },
                     onBreadcrumbClicked = viewModel::onRemoteBreadcrumbClicked,
                     onRetry = viewModel::onRetryBrowse,
@@ -233,6 +260,11 @@ fun NetworkScreen(
                     onPlayAllVideos = {
                         val playlist = viewModel.collectVideoPlaylist()
                         if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
+                    },
+                    onPlayAllFolder = { item ->
+                        viewModel.collectFolderVideoPlaylist(item) { playlist ->
+                            if (playlist.isNotEmpty()) onPlayAllVideos(playlist)
+                        }
                     },
                     onPlayAsAudio = { item ->
                         val uri = viewModel.buildPlaybackUri(item.path) ?: item.path

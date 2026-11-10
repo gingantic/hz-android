@@ -551,6 +551,55 @@ Implemented once, exposed through the engine contract:
 
 ---
 
+## Archive Playback & Streaming Optimizations
+
+Media inside compressed archives (`.rar`, `.7z`, `.zip`, `.tar`) on local storage or remote
+sources (HTTP, WebDAV, SMB, SFTP) streams directly via `archive://` URIs through
+`ArchiveRandomAccessSource` (`core/io/`) and native `libarchive`.
+
+Streaming compressed archive entries over constrained networks (e.g. 4 MB/s) required solving
+sequential decompression constraints, demuxer tail-probing, and flash NAND storage wear:
+
+### 1. Tail-Probe Suppression (Cues, Tags, Chapters EOF Seek Fix)
+- **The Problem:** In Matroska (`.mkv`) containers, tools like `mkvmerge` write `Cues` (seek
+  index), `Tags`, `Chapters`, and `Attachments` at the end of the file. Demuxers (FFmpeg and
+  ExoPlayer) default to seeking to EOF during container initialization. Because compressed streams
+  decompress sequentially, seeking to EOF forced decompressing the entire payload (300+ MB),
+  causing 75–106 s stalls on 4 MB/s links before the first frame could render.
+- **Native Engine:** In `FfmpegPlayerJni.cpp`, `ctx->avioCtx->seekable = 0` is set temporarily
+  during `avformat_open_input` and `avformat_find_stream_info`. FFmpeg treats header parsing as
+  a linear sequential stream, reading headers from the front (~1.4 MB) and ignoring EOF trailers.
+  Immediately after `avformat_find_stream_info`, `seekable = AVIO_SEEKABLE_NORMAL` is restored
+  so user seekbar scrubbing works during playback.
+- **ExoPlayer:** `MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES` is configured in
+  `AssExtractorsFactory`. Together with EBML cluster resynchronization (`0x1F43B675`) in
+  `AssMatroskaExtractor`, playback starts without seeking to the Cues index.
+- **I/O Guard:** `ArchiveRandomAccessSource` defensively drops optional trailer read probes near
+  EOF during container startup (`position > size - 2MB && currentPos < 5MB`).
+
+### 2. Pure In-RAM Dynamic Sliding-Window LRU Cache (Zero Disk Writes)
+- Persistent disk caching (`ArchiveDiskCache`) was completely decommissioned and removed to
+  eliminate flash NAND wear on mobile storage.
+- An in-RAM LRU cache dynamically scales up to 30% of runtime JVM heap (clamped between 64 MB
+  and 256 MB) in `ArchiveRandomAccessSource`.
+- `android:largeHeap="true"` in `AndroidManifest.xml` provides 512 MB+ heap headroom.
+- At 2 Mbps bitrate, a 256 MB in-RAM window holds ~17 to 20 minutes of video. Backward seeks
+  (10s, 30s, 1m, 2m) are served instantly (<0.1 ms) from memory with zero network traffic and
+  zero disk writes.
+- The first 16 blocks (2 MB) are pinned in RAM so container headers and codec initialization
+  data are never evicted.
+- Forward seeking inside the active stream uses a reusable `skipBuffer = ByteArray(BLOCK_SIZE)`
+  to avoid GC allocation churn.
+
+### 3. Background Prefetch Elimination & Lock Contention
+- A background prefetcher loop previously competed for the native `ioLock`, causing Android OS
+  monitor contention blocks of up to 2.2 s and consuming bandwidth downloading 40–50 MB ahead
+  before playback even started.
+- The prefetch loop was removed. Both ExoPlayer (`DefaultLoadControl`) and native FFmpeg
+  (`PacketQueue`) manage their own buffering and packet scheduling directly on-demand.
+
+---
+
 ## Error mapping
 
 Two mappers, one per engine family, both producing the same

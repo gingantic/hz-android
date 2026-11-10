@@ -684,7 +684,7 @@ class FfmpegNativeEngine @Inject constructor(
                     val parsed = ArchiveUri.parse(uriString)
                     if (parsed != null) {
                         val (container, entry, password) = parsed
-                        bridge = ArchiveRandomAccessSource(container, entry, password)
+                        bridge = ArchiveRandomAccessSource.acquireShared(container, entry, password)
                     }
                 }
                 scheme == "file" -> {

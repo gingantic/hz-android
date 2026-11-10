@@ -69,11 +69,14 @@ import com.rhnxdev.hzplayer.core.components.DirectoryHeader
 import com.rhnxdev.hzplayer.core.components.FileItemData
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
+import com.rhnxdev.hzplayer.core.util.isArchiveExtension
+import com.rhnxdev.hzplayer.core.util.isAudioMedia
 import com.rhnxdev.hzplayer.core.util.isVideoMedia
 import com.rhnxdev.hzplayer.core.util.isDocumentExtension
 import com.rhnxdev.hzplayer.core.util.isBinaryExtension
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
+import com.rhnxdev.hzplayer.domain.model.FileMediaTypeFilter
 import com.rhnxdev.hzplayer.domain.model.RemoteFileItem
 import com.rhnxdev.hzplayer.domain.model.ServerConfig
 import com.rhnxdev.hzplayer.domain.model.StreamHistoryItem
@@ -442,6 +445,7 @@ internal fun ServerBrowseStackContent(
     onListAtEndChanged: (Boolean) -> Unit,
     fullScreenOverlay: Boolean = false,
     onPlayAllVideos: () -> Unit = {},
+    onPlayAllFolder: (RemoteFileItem) -> Unit = {},
     onPlayAsAudio: (RemoteFileItem) -> Unit = {},
     selectionMode: Boolean = false,
     selectedKeys: Set<String> = emptySet(),
@@ -468,6 +472,7 @@ internal fun ServerBrowseStackContent(
                     searchQuery = if (isTop) searchQuery else "",
                     isSearchActive = if (isTop) isSearchActive else false,
                     mediaMode = uiState.isMediaMode,
+                    mediaTypeFilter = uiState.mediaTypeFilter,
                     thumbnailSize = uiState.thumbnailSize,
                     onFolderClicked = if (isTop) onFolderClicked else noopFolder,
                     onFileClicked = if (isTop) onFileClicked else noopFolder,
@@ -480,6 +485,7 @@ internal fun ServerBrowseStackContent(
                     saveScrollState = saveScrollState,
                     fullScreenOverlay = fullScreenOverlay,
                     isTopLayer = isTop,
+                    onPlayAllFolder = if (isTop) onPlayAllFolder else noopFolder,
                     onPlayAsAudio = if (isTop) onPlayAsAudio else noopFolder,
                     onListAtEndChanged = if (isTop) onListAtEndChanged else noopAtEnd,
                     onScrollingChanged = if (isTop) topLayerScrolling else noopScrolling,
@@ -534,6 +540,7 @@ private fun RemoteDirectoryLayerView(
     searchQuery: String,
     isSearchActive: Boolean,
     mediaMode: Boolean,
+    mediaTypeFilter: FileMediaTypeFilter,
     thumbnailSize: ThumbnailSize,
     onFolderClicked: (RemoteFileItem) -> Unit,
     onFileClicked: (RemoteFileItem) -> Unit,
@@ -546,6 +553,7 @@ private fun RemoteDirectoryLayerView(
     saveScrollState: (String, Int, Int, Boolean) -> Unit,
     fullScreenOverlay: Boolean = false,
     isTopLayer: Boolean = false,
+    onPlayAllFolder: (RemoteFileItem) -> Unit = {},
     onPlayAsAudio: (RemoteFileItem) -> Unit = {},
     onListAtEndChanged: (Boolean) -> Unit = {},
     onScrollingChanged: (Boolean) -> Unit = {},
@@ -637,10 +645,18 @@ private fun RemoteDirectoryLayerView(
         }
     }
 
-    val visibleItems = remember(layer.items, mediaMode) {
-        when {
+    val visibleItems = remember(layer.items, mediaMode, mediaTypeFilter) {
+        val base = when {
             mediaMode -> layer.items.filter { it.isDirectory || isVideoMedia(it.name, it.mimeType) }
             else -> layer.items.filter { it.isDirectory || (!isDocumentExtension(it.name) && !isBinaryExtension(it.name)) }
+        }
+        when {
+            mediaMode -> base
+            mediaTypeFilter == FileMediaTypeFilter.ALL -> base
+            mediaTypeFilter == FileMediaTypeFilter.VIDEOS -> base.filter { it.isDirectory || isVideoMedia(it.name, it.mimeType) }
+            mediaTypeFilter == FileMediaTypeFilter.AUDIO -> base.filter { it.isDirectory || isAudioMedia(it.name, it.mimeType) }
+            mediaTypeFilter == FileMediaTypeFilter.ARCHIVES -> base.filter { it.isDirectory || isArchiveExtension(it.name) }
+            else -> base
         }
     }
 
@@ -657,7 +673,7 @@ private fun RemoteDirectoryLayerView(
         DirectoryBrowsePane(
             items = visibleItems.map { it.toFileItemData(buildPlaybackUri(it.path)) },
             isLoading = layer.isLoading,
-            isEmpty = if (mediaMode) visibleItems.isEmpty() else layer.isEmpty,
+            isEmpty = if (mediaMode || mediaTypeFilter != FileMediaTypeFilter.ALL) visibleItems.isEmpty() else layer.isEmpty,
             error = layer.error,
             searchQuery = searchQuery,
             isSearchActive = isSearchActive,
@@ -677,6 +693,10 @@ private fun RemoteDirectoryLayerView(
             },
             onRefresh = onRefresh,
             onRetry = onRetry,
+            onPlayAllFolder = { data ->
+                val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
+                onPlayAllFolder(item)
+            },
             onPlayAsAudio = { data ->
                 val item = layer.items.find { it.path == data.path } ?: return@DirectoryBrowsePane
                 onPlayAsAudio(item)
