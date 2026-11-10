@@ -208,7 +208,7 @@ class VideoPlayerActivity : ComponentActivity() {
         try {
             unregisterReceiver(pipReceiver)
         } catch (_: Exception) {}
-        if (!pipEligible && !playerViewModel.isMinimizing) {
+        if (isFinishing && !pipEligible && !playerViewModel.isMinimizing) {
             playerViewModel.isShuttingDown = true
         }
         super.onDestroy()

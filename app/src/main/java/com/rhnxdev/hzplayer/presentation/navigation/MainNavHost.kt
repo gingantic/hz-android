@@ -112,7 +112,12 @@ fun MainNavHost(
                     if (incomingFromBrowser) {
                         activity?.finish()
                     } else {
-                        navController.popBackStack("__main_tabs", inclusive = false)
+                        val popped = navController.popBackStack()
+                        if (!popped) {
+                            if (!navController.popBackStack("__main_tabs", inclusive = false)) {
+                                activity?.finish()
+                            }
+                        }
                     }
                 },
                 onMinimize = {
@@ -123,7 +128,10 @@ fun MainNavHost(
                     if (incomingFromBrowser) {
                         activity?.finish()
                     } else {
-                        navController.popBackStack("__main_tabs", inclusive = false)
+                        val popped = navController.popBackStack()
+                        if (!popped) {
+                            navController.popBackStack("__main_tabs", inclusive = false)
+                        }
                     }
                 },
                 onPlayAsAudio = {
@@ -134,7 +142,10 @@ fun MainNavHost(
                     if (incomingFromBrowser) {
                         activity?.finish()
                     } else {
-                        navController.popBackStack("__main_tabs", inclusive = false)
+                        val popped = navController.popBackStack()
+                        if (!popped) {
+                            navController.popBackStack("__main_tabs", inclusive = false)
+                        }
                     }
                 },
             )

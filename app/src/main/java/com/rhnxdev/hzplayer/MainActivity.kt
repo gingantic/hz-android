@@ -146,7 +146,9 @@ class MainActivity : ComponentActivity() {
         try {
             unregisterReceiver(pipReceiver)
         } catch (_: Exception) {}
-        playerViewModel.isShuttingDown = true
+        if (isFinishing) {
+            playerViewModel.isShuttingDown = true
+        }
         super.onDestroy()
     }
 

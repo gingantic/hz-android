@@ -118,7 +118,15 @@ fun VideoPlayerScreen(
     }
 
     var isExiting by remember { mutableStateOf(false) }
-    val handleBack = remember { { isExiting = true } }
+    val handleBack = remember {
+        {
+            if (!isExiting) {
+                isExiting = true
+            } else {
+                onBack()
+            }
+        }
+    }
 
     BackHandler {
         handleBack()
@@ -129,6 +137,19 @@ fun VideoPlayerScreen(
         if (isExiting) {
             // yield to let the black overlay paint over the video frame
             kotlinx.coroutines.yield()
+            onBack()
+            // Reset isExiting after 500ms in case onBack did not immediately unmount the screen,
+            // preventing the player from staying permanently frozen under a black overlay.
+            delay(500)
+            isExiting = false
+        }
+    }
+
+    // If the player screen is active without any media (e.g. PiP closed in background,
+    // or activity restored after playback was stopped), navigate back instead of staying
+    // on a blank black player screen.
+    LaunchedEffect(uiState.currentPlaybackUri, uiState.isLoading) {
+        if (uiState.currentPlaybackUri == null && !uiState.isLoading) {
             onBack()
         }
     }
@@ -278,6 +299,7 @@ fun VideoPlayerScreen(
                     // the position / save tick so we don't write to DB in background.
                     pauseRenderView(viewModel.getActiveEngine(), renderViewRef.value)
                     viewModel.pause()
+                    viewModel.saveProgressNow()
                     viewModel.onAppBackground()
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_START -> {
@@ -289,6 +311,9 @@ fun VideoPlayerScreen(
                     viewModel.isMinimizing = false
                     resumeRenderView(viewModel.getActiveEngine(), renderViewRef.value)
                     viewModel.onAppForeground()
+                    if (!viewModel.uiState.value.isPlaying) {
+                        viewModel.onShowControls()
+                    }
                 }
                 else -> {}
             }
@@ -396,9 +421,9 @@ fun VideoPlayerScreen(
         onDispose {}
     }
 
-    // Auto-hide controls after 3 seconds (only if not locked), reset on HUD interaction
-    LaunchedEffect(uiState.showControls, uiState.playerLocked, hudInteractionTick) {
-        if (uiState.showControls && !uiState.playerLocked) {
+    // Auto-hide controls after 3 seconds (only if not locked and playing), reset on HUD interaction
+    LaunchedEffect(uiState.showControls, uiState.playerLocked, uiState.isPlaying, hudInteractionTick) {
+        if (uiState.showControls && !uiState.playerLocked && uiState.isPlaying) {
             delay(3000)
             viewModel.onHideControls()
         }

@@ -805,6 +805,9 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     override fun resume() {
+        if (_playbackState.value.state == PlayerState.ENDED) {
+            seekTo(0L)
+        }
         player.play()
         assHandler.setIsPlaying(true)
         _playbackState.update { it.copy(isPlaying = true) }
@@ -1392,7 +1395,18 @@ class FfmpegNativeEngine @Inject constructor(
     }
 
     override fun onRenderViewPaused(view: View) {}
-    override fun onRenderViewResumed(view: View) {}
+    override fun onRenderViewResumed(view: View) {
+        if (!_playbackState.value.isPlaying) {
+            if (_playbackState.value.state == PlayerState.READY) {
+                val currentPos = getCurrentPosition()
+                if (currentPos >= 0) {
+                    seekTo(currentPos)
+                }
+            } else if (_playbackState.value.state == PlayerState.ENDED) {
+                seekTo(0L)
+            }
+        }
+    }
 
     override fun getMedia3Player(): Player? = null
     override fun setOnPlayerReplacedListener(listener: ((Player) -> Unit)?) {}

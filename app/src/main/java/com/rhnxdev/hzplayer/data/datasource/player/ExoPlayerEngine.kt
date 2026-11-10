@@ -195,6 +195,9 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun resume() {
+        if (player.playbackState == Player.STATE_ENDED) {
+            player.seekTo(0L)
+        }
         player.play()
     }
 
@@ -724,7 +727,16 @@ class ExoPlayerEngine @Inject constructor(
     }
 
     override fun onRenderViewPaused(view: View) = (view as PlayerView).onPause()
-    override fun onRenderViewResumed(view: View) = (view as PlayerView).onResume()
+    override fun onRenderViewResumed(view: View) {
+        (view as PlayerView).onResume()
+        if (!player.isPlaying) {
+            if (player.playbackState == Player.STATE_READY) {
+                player.seekTo(player.currentPosition)
+            } else if (player.playbackState == Player.STATE_ENDED) {
+                player.seekTo(0L)
+            }
+        }
+    }
 
     override fun getMedia3Player(): Player = playerHolder.player
 

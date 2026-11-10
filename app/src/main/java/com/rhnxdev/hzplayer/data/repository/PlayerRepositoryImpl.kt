@@ -10,6 +10,7 @@ import com.rhnxdev.hzplayer.data.datasource.player.MediaPlaybackService
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 import com.rhnxdev.hzplayer.domain.model.DebugStats
 import com.rhnxdev.hzplayer.domain.model.NetworkTraffic
+import com.rhnxdev.hzplayer.domain.model.PlayerState
 import com.rhnxdev.hzplayer.domain.model.PlayerStateInfo
 import com.rhnxdev.hzplayer.domain.model.SessionNetworkTracker
 import com.rhnxdev.hzplayer.domain.model.next
@@ -260,8 +261,14 @@ class PlayerRepositoryImpl @Inject constructor(
     override fun seekToMediaItem(index: Int) = engine().seekToMediaItem(index)
 
     override fun togglePlayPause() {
-        if (engine().isPlaying()) engine().pause()
-        else engine().resume()
+        if (engine().isPlaying()) {
+            engine().pause()
+        } else {
+            if (engine().playbackState.value.state == PlayerState.ENDED) {
+                engine().seekTo(0L)
+            }
+            engine().resume()
+        }
     }
 
     override fun seekTo(positionMs: Long) = engine().seekTo(positionMs)

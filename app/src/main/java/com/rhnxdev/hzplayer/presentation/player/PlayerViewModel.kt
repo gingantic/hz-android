@@ -2,6 +2,7 @@ package com.rhnxdev.hzplayer.presentation.player
 
 import android.content.Context
 import android.net.Uri
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhnxdev.hzplayer.domain.model.AudioItem
@@ -44,6 +45,7 @@ class PlayerViewModel @Inject constructor(
     private val playHistory: PlayHistoryRepository,
     private val mediaDao: MediaDao,
     val assHandler: com.rhnxdev.hzplayer.data.datasource.subtitle.assrender.AssHandler,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -174,6 +176,10 @@ class PlayerViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "PlayerViewModel"
+        private const val KEY_SAVED_URI = "player_saved_uri"
+        private const val KEY_SAVED_TITLE = "player_saved_title"
+        private const val KEY_SAVED_IS_VIDEO = "player_saved_is_video"
+        private const val KEY_SAVED_MIME_TYPE = "player_saved_mime_type"
         /** Positions below this are treated as "not really started" — no resume prompt. */
         private const val RESUME_THRESHOLD_MS = 5_000L
         /** Sentinel passed to [onSetSleepTimer]: stop when the current video ends. */
@@ -195,6 +201,24 @@ class PlayerViewModel @Inject constructor(
         // changes, refresh the merged track list so the dialog shows them.
         playerRepository.activeEngine.subtitleTrackChangeListener = {
             trackCache.refresh()
+        }
+        restoreSavedSessionIfAny()
+    }
+
+    private fun restoreSavedSessionIfAny() {
+        val savedUri = savedStateHandle.get<String>(KEY_SAVED_URI) ?: return
+        val savedTitle = savedStateHandle.get<String>(KEY_SAVED_TITLE) ?: ""
+        val savedIsVideo = savedStateHandle.get<Boolean>(KEY_SAVED_IS_VIDEO) ?: false
+        val savedMime = savedStateHandle.get<String>(KEY_SAVED_MIME_TYPE)
+        if (playerRepository.currentPlaybackUri == null) {
+            android.util.Log.i(TAG, "Restoring playback session for $savedUri after process recreation")
+            playUri(
+                uri = savedUri,
+                title = savedTitle,
+                isVideo = savedIsVideo,
+                playImmediately = false,
+                mimeType = savedMime,
+            )
         }
     }
 
@@ -315,6 +339,7 @@ class PlayerViewModel @Inject constructor(
                         abLoopEndMs = if (uriChanged || isIdle) null else state.abLoopEndMs,
                         // Survives track changes within a playlist (see above).
                         playingVideoAsAudio = playingVideoAsAudio,
+                        showControls = if (info.state == PlayerState.ENDED) true else state.showControls,
                     )
                 }
                 // Refresh track cache once ExoPlayer finishes preparing (state == READY).
@@ -472,6 +497,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun playVideo(video: com.rhnxdev.hzplayer.domain.model.VideoItem) {
+        savedStateHandle[KEY_SAVED_URI] = video.uri
+        savedStateHandle[KEY_SAVED_TITLE] = video.title
+        savedStateHandle[KEY_SAVED_IS_VIDEO] = true
+        savedStateHandle[KEY_SAVED_MIME_TYPE] = video.mimeType
         positionController.onForeground()
         _uiState.update { state ->
             state.copy(
@@ -512,6 +541,10 @@ class PlayerViewModel @Inject constructor(
         mimeType: String? = null,
         headers: Map<String, String> = emptyMap(),
     ) {
+        savedStateHandle[KEY_SAVED_URI] = uri
+        savedStateHandle[KEY_SAVED_TITLE] = title
+        savedStateHandle[KEY_SAVED_IS_VIDEO] = isVideo
+        savedStateHandle[KEY_SAVED_MIME_TYPE] = mimeType
         positionController.onForeground()
         _uiState.update { state ->
             state.copy(
@@ -536,7 +569,19 @@ class PlayerViewModel @Inject constructor(
                 mimeType = mimeType,
                 artist = null,
                 savedPositionMs = resumePos,
-                play = { pos -> playerRepository.playUri(uri, title, isVideo = isVideo, mimeType = mimeType, resumePositionMs = pos, headers = headers) },
+                play = { pos ->
+                    playerRepository.playUri(
+                        uri = uri,
+                        title = title,
+                        isVideo = isVideo,
+                        mimeType = mimeType,
+                        resumePositionMs = pos,
+                        headers = headers,
+                    )
+                    if (!playImmediately) {
+                        playerRepository.activeEngine.pause()
+                    }
+                },
             )
         }
         trackCache.markNeedsRefresh()
@@ -904,6 +949,10 @@ class PlayerViewModel @Inject constructor(
 
     fun stop() {
         android.util.Log.i(TAG, "stop() called")
+        savedStateHandle.remove<String>(KEY_SAVED_URI)
+        savedStateHandle.remove<String>(KEY_SAVED_TITLE)
+        savedStateHandle.remove<Boolean>(KEY_SAVED_IS_VIDEO)
+        savedStateHandle.remove<String>(KEY_SAVED_MIME_TYPE)
         positionController.saveProgressNow()
         playerRepository.stop()
         positionController.reset()
@@ -983,8 +1032,14 @@ class PlayerViewModel @Inject constructor(
     /** Notify the position controller that the app returned to the foreground. */
     fun onAppForeground() = positionController.onForeground()
 
+    /** Force an immediate progress save to the database. */
+    fun saveProgressNow() = positionController.saveProgressNow()
+
     /** Notify the position controller that the app moved to the background. */
-    fun onAppBackground() = positionController.onBackground()
+    fun onAppBackground() {
+        positionController.saveProgressNow()
+        positionController.onBackground()
+    }
 
     fun playNetworkUri(uri: String, title: String, isVideo: Boolean, mimeType: String? = null, headers: Map<String, String> = emptyMap()) {
         android.util.Log.i(TAG, "playNetworkUri: scheme=${uri.substringBefore("://")} uri=$uri (headersCount=${headers.size})")
@@ -993,6 +1048,10 @@ class PlayerViewModel @Inject constructor(
 
     fun playVideoPlaylist(items: List<VideoItem>, startIndex: Int = 0) {
         items.getOrNull(startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)))?.let { item ->
+            savedStateHandle[KEY_SAVED_URI] = item.uri
+            savedStateHandle[KEY_SAVED_TITLE] = item.title
+            savedStateHandle[KEY_SAVED_IS_VIDEO] = true
+            savedStateHandle[KEY_SAVED_MIME_TYPE] = item.mimeType
             recordHistory(item.uri, item.title, isVideo = true, artist = null, mimeType = item.mimeType)
         }
         playlistController.playVideoPlaylist(items, startIndex)
