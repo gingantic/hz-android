@@ -61,10 +61,12 @@ import com.rhnxdev.hzplayer.core.components.MediaErrorState
 import com.rhnxdev.hzplayer.core.components.MediaLoadingState
 import com.rhnxdev.hzplayer.core.components.MediaPropertiesDialog
 import com.rhnxdev.hzplayer.core.components.ShimmerShape
+import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import com.rhnxdev.hzplayer.core.components.rowThumbnailWidth
 import com.rhnxdev.hzplayer.domain.model.MediaType
 import com.rhnxdev.hzplayer.core.components.ThumbnailPlaceholder
 import com.rhnxdev.hzplayer.core.components.ViewSortBottomSheet
+import com.rhnxdev.hzplayer.core.designsystem.LocalMiniPlayerInset
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import androidx.compose.ui.layout.ContentScale
 import com.rhnxdev.hzplayer.core.thumbnail.VideoFrame
@@ -352,7 +354,8 @@ fun VideoLibraryScreen(
                 exit = fadeOut() + scaleOut(),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(Spacing.lg),
+                    .padding(Spacing.lg)
+                    .padding(bottom = LocalMiniPlayerInset.current),
             ) {
                 PlayAllFab(
                     onClick = { onPlayVideoPlaylist?.invoke(playableVideos, 0) },
@@ -433,6 +436,7 @@ private fun FolderListContent(
     )
     LazyColumn(
         state = listState,
+        modifier = Modifier.verticalScrollbar(listState),
         contentPadding = PaddingValues(Spacing.sm),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -484,6 +488,7 @@ private fun FolderGridContent(
     )
     LazyVerticalGrid(
         state = gridState,
+        modifier = Modifier.verticalScrollbar(gridState),
         columns = GridCells.Fixed(thumbnailSize.columns),
         contentPadding = PaddingValues(Spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -564,6 +569,7 @@ private fun SearchResultsContent(
         )
         LazyVerticalGrid(
             state = gridState,
+            modifier = Modifier.verticalScrollbar(gridState),
             columns = GridCells.Fixed(thumbnailSize.columns),
             contentPadding = PaddingValues(Spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -605,6 +611,7 @@ private fun SearchResultsContent(
         )
         LazyColumn(
             state = listState,
+            modifier = Modifier.verticalScrollbar(listState),
             contentPadding = PaddingValues(Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

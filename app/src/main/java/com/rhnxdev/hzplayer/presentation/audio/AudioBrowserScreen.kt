@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -198,8 +201,10 @@ private fun SongsTab(
             )
         }
         else -> {
+            val listState = rememberLazyListState()
             LazyColumn(
-                modifier = modifier.fillMaxSize(),
+                state = listState,
+                modifier = modifier.fillMaxSize().verticalScrollbar(listState),
                 contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -243,9 +248,11 @@ private fun AlbumsTab(
             )
         }
         else -> {
+            val gridState = rememberLazyGridState()
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Fixed(2),
-                modifier = modifier.fillMaxSize(),
+                modifier = modifier.fillMaxSize().verticalScrollbar(gridState),
                 contentPadding = PaddingValues(Spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -284,8 +291,10 @@ private fun ArtistsTab(
             )
         }
         else -> {
+            val listState = rememberLazyListState()
             LazyColumn(
-                modifier = modifier.fillMaxSize(),
+                state = listState,
+                modifier = modifier.fillMaxSize().verticalScrollbar(listState),
                 contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {

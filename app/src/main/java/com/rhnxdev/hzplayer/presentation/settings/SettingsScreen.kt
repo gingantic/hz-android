@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.Composable
@@ -176,8 +178,10 @@ fun SettingsScreen(
             modifier = Modifier.hideTopOnScroll(LocalHideOnScrollState.current),
         )
 
+        val listState = rememberLazyListState()
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            modifier = Modifier.fillMaxSize().verticalScrollbar(listState),
             contentPadding = PaddingValues(vertical = Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(Spacing.lg),
         ) {

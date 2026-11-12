@@ -68,6 +68,7 @@ import com.rhnxdev.hzplayer.core.components.DirectoryBrowsePane
 import com.rhnxdev.hzplayer.core.components.DirectoryHeader
 import com.rhnxdev.hzplayer.core.components.FileItemData
 import com.rhnxdev.hzplayer.core.designsystem.HzPlayerIcons
+import com.rhnxdev.hzplayer.core.designsystem.LocalMiniPlayerInset
 import com.rhnxdev.hzplayer.core.designsystem.Spacing
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isAudioMedia
@@ -513,7 +514,8 @@ internal fun ServerBrowseStackContent(
                 exit = fadeOut() + scaleOut(),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .padding(bottom = LocalMiniPlayerInset.current),
             ) {
                 FloatingActionButton(
                     onClick = onPlayAllVideos,

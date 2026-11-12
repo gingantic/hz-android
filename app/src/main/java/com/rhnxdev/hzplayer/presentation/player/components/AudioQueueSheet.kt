@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.AlbumArtImage
+import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import com.rhnxdev.hzplayer.core.util.formatDuration
 import com.rhnxdev.hzplayer.domain.model.AudioItem
 
@@ -90,7 +91,7 @@ fun AudioQueueSheet(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().verticalScrollbar(listState),
             ) {
                 itemsIndexed(queue, key = { index, item -> "${item.id}_$index" }) { index, item ->
                     QueueTrackRow(

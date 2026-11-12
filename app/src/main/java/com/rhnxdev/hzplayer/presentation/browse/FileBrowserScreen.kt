@@ -41,6 +41,7 @@ import com.rhnxdev.hzplayer.R
 import com.rhnxdev.hzplayer.core.components.HzPlayerSearchableScaffold
 import com.rhnxdev.hzplayer.core.components.SelectionAction
 import com.rhnxdev.hzplayer.core.components.SelectionActionBar
+import com.rhnxdev.hzplayer.core.designsystem.LocalMiniPlayerInset
 import com.rhnxdev.hzplayer.core.util.ArchiveBrowsePath
 import com.rhnxdev.hzplayer.core.util.isArchiveExtension
 import com.rhnxdev.hzplayer.core.util.isVideoMedia
@@ -218,7 +219,8 @@ fun FileBrowserScreen(
                             },
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .padding(16.dp),
+                                .padding(16.dp)
+                                .padding(bottom = LocalMiniPlayerInset.current),
                         )
                     }
                 }
