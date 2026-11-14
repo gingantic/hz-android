@@ -136,7 +136,8 @@ class FfmpegNativePlayer {
         surface: Surface?,
         startPositionMs: Long,
         headers: Map<String, String>? = null,
-        caFile: String? = null
+        caFile: String? = null,
+        allowTailProbe: Boolean = false
     ): Boolean {
         callbackGeneration.incrementAndGet()
         val headersArray = if (!headers.isNullOrEmpty()) {
@@ -150,7 +151,7 @@ class FfmpegNativePlayer {
             null
         }
         return withNativeContext(false) { handle ->
-            nativeOpen(handle, bridge, url, surface, startPositionMs, headersArray, caFile)
+            nativeOpen(handle, bridge, url, surface, startPositionMs, headersArray, caFile, allowTailProbe)
         }
     }
 
@@ -434,7 +435,8 @@ class FfmpegNativePlayer {
         surface: Surface?,
         startPositionMs: Long,
         headers: Array<String>?,
-        caFile: String?
+        caFile: String?,
+        allowTailProbe: Boolean
     ): Boolean
     private external fun nativeIsSeekable(handle: Long): Boolean
     private external fun nativeGetLastErrorClass(handle: Long): Int

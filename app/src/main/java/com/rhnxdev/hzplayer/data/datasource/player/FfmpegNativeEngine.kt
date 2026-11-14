@@ -768,7 +768,17 @@ class FfmpegNativeEngine @Inject constructor(
         val success = try {
             // The bridge carries its own headers and TLS; FFmpeg's HTTP options do not apply.
             val nativeHeaders = if (httpSource != null) emptyMap() else openHeaders
-            if (!player.open(bridge, directUrl, activeSurface, startPositionMs, nativeHeaders, caFile)) {
+            // MPEG-TS/PS have no container duration; FFmpeg estimates it from a tail PTS
+            // read during open. Only random-access bridges make that read cheap — the
+            // HTTP bridge may read through a range-less file, archives may decompress
+            // to the tail.
+            val allowTailProbe = bridge is LocalRandomAccessSource ||
+                bridge is ChannelRandomAccessSource ||
+                bridge is SmbRandomAccessSource
+            val opened = player.open(
+                bridge, directUrl, activeSurface, startPositionMs, nativeHeaders, caFile, allowTailProbe
+            )
+            if (!opened) {
                 false
             } else {
                 player.setSpeed(currentSpeed)

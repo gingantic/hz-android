@@ -571,6 +571,12 @@ sequential decompression constraints, demuxer tail-probing, and flash NAND stora
   a linear sequential stream, reading headers from the front (~1.4 MB) and ignoring EOF trailers.
   Immediately after `avformat_find_stream_info`, `seekable = AVIO_SEEKABLE_NORMAL` is restored
   so user seekbar scrubbing works during playback.
+- **MPEG-TS exception:** TS/PS carry no container-level duration; FFmpeg estimates it by
+  reading the last ~250 KB for PTS, and only when the AVIO is seekable. `nativeOpen` therefore
+  re-enables `seekable` for the `mpegts`/`mpeg` demuxers between open and
+  `avformat_find_stream_info`, but only when the caller passes `allowTailProbe` — random-access
+  bridges (local, `content://`, SMB). The HTTP bridge is excluded because a range-less server
+  would have to read through the whole file for that tail probe.
 - **ExoPlayer:** `MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES` is configured in
   `AssExtractorsFactory`. Together with EBML cluster resynchronization (`0x1F43B675`) in
   `AssMatroskaExtractor`, playback starts without seeking to the Cues index.

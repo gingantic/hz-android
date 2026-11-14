@@ -26,7 +26,7 @@ JNI_FUNC(jlong, nativeCreate) {
     return reinterpret_cast<jlong>(ctx);
 }
 
-JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, jobject surfaceObj, jlong startPositionMs, jobjectArray headersArr, jstring caFileStr) {
+JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, jobject surfaceObj, jlong startPositionMs, jobjectArray headersArr, jstring caFileStr, jboolean allowTailProbe) {
     auto* ctx = reinterpret_cast<FfmpegPlayerContext*>(handle);
     if (!ctx) return JNI_FALSE;
 
@@ -237,6 +237,18 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     ctx->fmtCtx->max_analyze_duration = analyzeUs;
     ctx->fmtCtx->probesize = probeSize;
 
+    // MPEG-TS/PS carry no container-level duration. FFmpeg derives it by reading the
+    // last ~250 KB for PTS (estimate_timings_from_pts), but only when the AVIO is
+    // seekable — and it is cleared above so Matroska does not chase Cues/Tags to EOF.
+    // Re-enable it for these formats only: the tail read is cheap on random-access
+    // bridges, while the HTTP bridge may have to read through the whole file.
+    if (allowTailProbe == JNI_TRUE && bridgeObj && ctx->avioCtx && ctx->fmtCtx->iformat) {
+        const char* fmtName = ctx->fmtCtx->iformat->name;
+        if (fmtName && (strcmp(fmtName, "mpegts") == 0 || strcmp(fmtName, "mpeg") == 0)) {
+            ctx->avioCtx->seekable = AVIO_SEEKABLE_NORMAL;
+        }
+    }
+
     ctx->lastIoTimeMs.store(getMonotonicTimeMs());
     const int infoRet = avformat_find_stream_info(ctx->fmtCtx, nullptr);
     if (infoRet < 0) {
@@ -250,6 +262,9 @@ JNI_FUNC(jboolean, nativeOpen, jlong handle, jobject bridgeObj, jstring urlStr, 
     ctx->lastIoTimeMs.store(getMonotonicTimeMs());
 
     ctx->durationMs = (ctx->fmtCtx->duration > 0) ? (ctx->fmtCtx->duration / 1000) : 0;
+    if (ctx->durationMs > 0) {
+        LOGI("Container duration %" PRId64 " ms", ctx->durationMs);
+    }
 
     // Restore seekable for bridge sources so seeking/scrubbing works during playback
     if (bridgeObj && ctx->avioCtx) {
