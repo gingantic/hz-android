@@ -31,9 +31,12 @@ class NetworkDomainUtilsTest {
 
     @Test
     fun resolveDomain_returnsIpIfResolutionFailsOrSame() {
-        val ip = "192.168.254.254"
+        // TEST-NET-3 (RFC 5737) is never assigned to a host, so its reverse
+        // lookup always fails. A private IP would resolve on CI runners whose
+        // VNet actually owns that address, making this test environment-bound.
+        val ip = "203.0.113.254"
         val resolved = NetworkDomainUtils.resolveDomain(null, ip)
-        assertEquals("192.168.254.254", resolved)
+        assertEquals("203.0.113.254", resolved)
     }
 
     @Test
