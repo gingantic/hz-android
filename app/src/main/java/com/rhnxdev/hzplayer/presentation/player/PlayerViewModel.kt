@@ -228,7 +228,15 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             playerRepository.playbackStateInfo.collect { info ->
                 val isBuffering = info.state == PlayerState.BUFFERING
-                if (isBuffering) {
+                val isIdle = info.state == PlayerState.IDLE
+                // The engine reports IDLE briefly while new media loads (error
+                // clear → prepare) and before a pending play reaches it. Only an
+                // IDLE with no session and no load in flight means "nothing to
+                // play" — otherwise the player screen would leave on startup.
+                val sessionActive = playerRepository.currentPlaybackUri != null
+                val sessionEnded = isIdle && !sessionActive && !_uiState.value.isLoading
+                val sessionStarting = isIdle && !sessionEnded
+                if (isBuffering || sessionStarting) {
                     if (bufferingJob == null && !_uiState.value.isLoading) {
                         bufferingJob = viewModelScope.launch {
                             delay(250)
@@ -246,8 +254,6 @@ class PlayerViewModel @Inject constructor(
                 val artworkUri = info.currentUri?.let { uri ->
                     mediaDao.getByUri(uri)?.albumArtUri
                 }
-
-                val isIdle = info.state == PlayerState.IDLE
 
                 _uiState.update { state ->
                     val oldUri = state.currentPlaybackUri
@@ -308,22 +314,22 @@ class PlayerViewModel @Inject constructor(
                         info.currentUri != null &&
                         state.videoPlaylist.any { it.uri == info.currentUri }
                     val playingVideoAsAudio = when {
-                        isIdle -> false
+                        sessionEnded -> false
                         uriChanged -> stillPlaylistAudio
                         else -> state.playingVideoAsAudio
                     }
                     state.copy(
                         isPlaying = info.isPlaying,
-                        isLoading = if (isBuffering) state.isLoading else false,
+                        isLoading = if (isBuffering || sessionStarting) state.isLoading else false,
                         playbackSpeed = info.playbackSpeed,
                         shuffleMode = info.shuffleModeEnabled,
                         repeatMode = info.repeatMode,
                         errorMessage = info.errorMessage,
                         errorKind = info.errorKind,
-                        currentTitle = if (isIdle) null else (info.currentTitle ?: state.currentTitle),
-                        currentArtist = if (isIdle) null else (info.currentArtist ?: state.currentArtist),
-                        currentPlaybackUri = if (isIdle) null else (info.currentUri ?: state.currentPlaybackUri),
-                        currentArtworkUri = if (isIdle) null else (artworkUri ?: if (info.currentUri != state.currentPlaybackUri) null else state.currentArtworkUri),
+                        currentTitle = if (sessionEnded) null else (info.currentTitle ?: state.currentTitle),
+                        currentArtist = if (sessionEnded) null else (info.currentArtist ?: state.currentArtist),
+                        currentPlaybackUri = if (sessionEnded) null else (info.currentUri ?: state.currentPlaybackUri),
+                        currentArtworkUri = if (sessionEnded) null else (artworkUri ?: if (info.currentUri != state.currentPlaybackUri) null else state.currentArtworkUri),
                         audioQueueIndex = newQueueIndex,
                         currentPlaylistIndex = newPlaylistIndex,
                         // Track DRM status — exposed in `drmSessionActive` for any
@@ -335,8 +341,8 @@ class PlayerViewModel @Inject constructor(
                         isVideoSurfaceActive = videoActive,
                         chapters = chapters,
                         // A new media item ends any A-B loop from the previous one.
-                        abLoopStartMs = if (uriChanged || isIdle) null else state.abLoopStartMs,
-                        abLoopEndMs = if (uriChanged || isIdle) null else state.abLoopEndMs,
+                        abLoopStartMs = if (uriChanged || sessionEnded) null else state.abLoopStartMs,
+                        abLoopEndMs = if (uriChanged || sessionEnded) null else state.abLoopEndMs,
                         // Survives track changes within a playlist (see above).
                         playingVideoAsAudio = playingVideoAsAudio,
                         showControls = if (info.state == PlayerState.ENDED) true else state.showControls,

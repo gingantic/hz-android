@@ -87,12 +87,16 @@ internal class PlayerPositionController(
                 _position.value = effectivePosition
 
                 uiState.update { state ->
-                    val uriChanged = state.currentPlaybackUri != currentUri
+                    // The repository has no URI yet while a play is being dispatched
+                    // (it is set after the resume lookup); adopting it here would
+                    // blank the session the screen is already showing.
+                    val uri = if (currentUri == null && state.isLoading) state.currentPlaybackUri else currentUri
+                    val uriChanged = state.currentPlaybackUri != uri
                     if (uriChanged || state.duration != duration || state.bufferedPercentage != bufferedPct) {
                         state.copy(
                             duration = duration,
                             bufferedPercentage = bufferedPct,
-                            currentPlaybackUri = currentUri,
+                            currentPlaybackUri = uri,
                         )
                     } else state
                 }
