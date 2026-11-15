@@ -229,12 +229,14 @@ class PlayerViewModel @Inject constructor(
             playerRepository.playbackStateInfo.collect { info ->
                 val isBuffering = info.state == PlayerState.BUFFERING
                 val isIdle = info.state == PlayerState.IDLE
-                // The engine reports IDLE briefly while new media loads (error
-                // clear → prepare) and before a pending play reaches it. Only an
-                // IDLE with no session and no load in flight means "nothing to
-                // play" — otherwise the player screen would leave on startup.
+                // The repository owns the session: it records the URI on every play
+                // and clears it on stop(). Engine callbacks are queued, so a stale
+                // READY/BUFFERING from a session the user just closed can arrive
+                // after stop() — only the repository's URI decides liveness.
+                // isLoading covers the window before the deferred play dispatch
+                // records that URI.
                 val sessionActive = playerRepository.currentPlaybackUri != null
-                val sessionEnded = isIdle && !sessionActive && !_uiState.value.isLoading
+                val sessionEnded = !sessionActive && !_uiState.value.isLoading
                 val sessionStarting = isIdle && !sessionEnded
                 if (isBuffering || sessionStarting) {
                     if (bufferingJob == null && !_uiState.value.isLoading) {
@@ -959,6 +961,9 @@ class PlayerViewModel @Inject constructor(
         savedStateHandle.remove<String>(KEY_SAVED_TITLE)
         savedStateHandle.remove<Boolean>(KEY_SAVED_IS_VIDEO)
         savedStateHandle.remove<String>(KEY_SAVED_MIME_TYPE)
+        // A pending buffering tick must not re-mark the stopped session as loading.
+        bufferingJob?.cancel()
+        bufferingJob = null
         positionController.saveProgressNow()
         playerRepository.stop()
         positionController.reset()

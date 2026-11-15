@@ -420,6 +420,13 @@ precisely so that this works: the main app's mini player did not start the playb
 (it may have been started by the browser or a URL handler), so it can only recognise
 the session as video from the shared engine state.
 
+Session liveness is owned by `PlayerRepositoryImpl.currentPlaybackUri`: every play
+records it synchronously and `stop()` clears it. `PlayerViewModel` treats any engine
+emission with no repository session as ended (a queued `READY`/`BUFFERING` from a
+session the user just closed must not restore `currentTitle`), and the repository
+only follows URI transitions while a session exists — otherwise the bar reappears
+for a video the user already exited.
+
 ---
 
 ## Engine Selection (three engines)

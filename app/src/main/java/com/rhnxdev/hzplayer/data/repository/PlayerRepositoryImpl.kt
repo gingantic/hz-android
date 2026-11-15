@@ -104,6 +104,10 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         scope.launch {
             playbackStateInfo.collect { info ->
+                // Follow transitions only while a session exists. After stop() the
+                // engine's queued callbacks still carry the old media item; adopting
+                // one would resurrect the session the user just closed.
+                if (savedPlaybackUri == null) return@collect
                 info.currentUri?.let { uri ->
                     if (uri != savedPlaybackUri) {
                         savedPlaybackUri = uri
