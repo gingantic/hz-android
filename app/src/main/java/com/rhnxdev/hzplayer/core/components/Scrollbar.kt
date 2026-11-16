@@ -256,8 +256,9 @@ fun rememberScrollbarAdapter(state: ScrollState): ScrollbarAdapter =
  *
  * - Rests as a faint thumb so it can always be found and grabbed.
  * - Brightens and thickens while scrolling or dragging.
- * - Grabbing the thumb starts the drag immediately, in place — no jump, no slop wait.
+ * - Grabbing the thumb drags in place — no jump under the finger, no slop wait once the drag starts.
  * - Dragging anywhere on the 48 dp end strip jumps the thumb under the finger, then scrubs.
+ * - Taps inside the strip fall through to the content beneath, so overlapping buttons stay clickable.
  * - Completely hidden when all items fit within the viewport.
  */
 @Composable
@@ -344,9 +345,10 @@ fun Modifier.verticalScrollbar(
 ): Modifier {
     val coroutineScope = rememberCoroutineScope()
     var isDragging by remember { mutableStateOf(false) }
+    var isPressed by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
 
-    val isInteracting = adapter.isScrollInProgress || isDragging
+    val isInteracting = adapter.isScrollInProgress || isDragging || isPressed
     val alpha = remember { Animatable(0f) }
 
     LaunchedEffect(isInteracting) {
@@ -435,12 +437,12 @@ fun Modifier.verticalScrollbar(
                 }
 
                 if (onThumb) {
-                    // Grab immediately — no touch-slop wait, no jump to the finger.
-                    down.consume()
+                    // Arm an in-place grab. The down is deliberately NOT consumed: the
+                    // strip overlaps card content (e.g. a grid card's overflow button),
+                    // and a consumed down swallows taps meant for it. Moves are only
+                    // consumed once the drag is confirmed below.
                     dragProgress = lastProgress
-                    dragStarted = true
-                    isDragging = true
-                    coroutineScope.launch { alpha.snapTo(1f) }
+                    isPressed = true
                 }
 
                 try {
@@ -472,6 +474,7 @@ fun Modifier.verticalScrollbar(
                     }
                 } finally {
                     // The last seek is left to finish: cancelling it here would swallow short drags.
+                    isPressed = false
                     if (dragStarted) {
                         isDragging = false
                     }
