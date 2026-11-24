@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.rhnxdev.hzplayer.core.components.DENSE_HIT_AREA_WIDTH
 import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -57,7 +58,7 @@ fun ArtistDetailScreen(
         val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().verticalScrollbar(listState),
+            modifier = Modifier.fillMaxSize().verticalScrollbar(listState, hitAreaWidth = DENSE_HIT_AREA_WIDTH),
             contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import com.rhnxdev.hzplayer.core.components.DENSE_HIT_AREA_WIDTH
 import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -128,7 +129,7 @@ private fun HistoryContent(
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
                     .padding(innerPadding)
-                    .verticalScrollbar(listState),
+                    .verticalScrollbar(listState, hitAreaWidth = DENSE_HIT_AREA_WIDTH),
             ) {
                 items(state.items, key = { it.uri }) { item ->
                     HistoryRow(

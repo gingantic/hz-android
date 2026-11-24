@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import com.rhnxdev.hzplayer.core.components.DENSE_HIT_AREA_WIDTH
 import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -157,7 +158,7 @@ private fun SearchResults(
     val listState = rememberLazyListState()
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxSize().verticalScrollbar(listState),
+        modifier = modifier.fillMaxSize().verticalScrollbar(listState, hitAreaWidth = DENSE_HIT_AREA_WIDTH),
         contentPadding = PaddingValues(bottom = Spacing.xxl),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {

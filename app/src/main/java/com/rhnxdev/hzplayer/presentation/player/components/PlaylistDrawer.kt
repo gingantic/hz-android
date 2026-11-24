@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.rhnxdev.hzplayer.core.components.DENSE_HIT_AREA_WIDTH
 import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -123,7 +124,7 @@ fun PlaylistDrawer(
                 val listState = rememberLazyListState()
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize().verticalScrollbar(listState)
+                    modifier = Modifier.fillMaxSize().verticalScrollbar(listState, hitAreaWidth = DENSE_HIT_AREA_WIDTH)
                 ) {
                     itemsIndexed(playlist) { index, item ->
                         val isCurrent = index == currentIndex

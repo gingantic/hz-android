@@ -65,7 +65,13 @@ private val MIN_THUMB_HEIGHT = 36.dp
 private val THUMB_TRACK_GAP = 16.dp
 
 /** Width of the strip along the end edge that accepts a grab. */
-private val HIT_AREA_WIDTH = 48.dp
+val HIT_AREA_WIDTH = 48.dp
+
+/**
+ * Narrower grab strip for dense list rows, where a 48 dp strip would cover the
+ * trailing content of every row and steal vertical drags meant for list scrolling.
+ */
+val DENSE_HIT_AREA_WIDTH = 24.dp
 
 /** Vertical slack around the thumb that still counts as grabbing it. */
 private val GRAB_MARGIN = 20.dp
@@ -257,7 +263,7 @@ fun rememberScrollbarAdapter(state: ScrollState): ScrollbarAdapter =
  * - Rests as a faint thumb so it can always be found and grabbed.
  * - Brightens and thickens while scrolling or dragging.
  * - Grabbing the thumb drags in place — no jump under the finger, no slop wait once the drag starts.
- * - Dragging anywhere on the 48 dp end strip jumps the thumb under the finger, then scrubs.
+ * - Dragging anywhere on the [hitAreaWidth] end strip jumps the thumb under the finger, then scrubs.
  * - Taps inside the strip fall through to the content beneath, so overlapping buttons stay clickable.
  * - Completely hidden when all items fit within the viewport.
  */
@@ -271,6 +277,7 @@ fun Modifier.verticalScrollbar(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
 ): Modifier = verticalScrollbar(
     adapter = rememberScrollbarAdapter(state),
     color = color,
@@ -280,6 +287,7 @@ fun Modifier.verticalScrollbar(
     autoHideDelayMs = autoHideDelayMs,
     endPadding = endPadding,
     verticalPadding = verticalPadding,
+    hitAreaWidth = hitAreaWidth,
 )
 
 /** [verticalScrollbar] overload for [LazyGridState]. */
@@ -293,6 +301,7 @@ fun Modifier.verticalScrollbar(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
 ): Modifier = verticalScrollbar(
     adapter = rememberScrollbarAdapter(state),
     color = color,
@@ -302,6 +311,7 @@ fun Modifier.verticalScrollbar(
     autoHideDelayMs = autoHideDelayMs,
     endPadding = endPadding,
     verticalPadding = verticalPadding,
+    hitAreaWidth = hitAreaWidth,
 )
 
 /** [verticalScrollbar] overload for [ScrollState]. */
@@ -315,6 +325,7 @@ fun Modifier.verticalScrollbar(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
 ): Modifier = verticalScrollbar(
     adapter = rememberScrollbarAdapter(state),
     color = color,
@@ -324,6 +335,7 @@ fun Modifier.verticalScrollbar(
     autoHideDelayMs = autoHideDelayMs,
     endPadding = endPadding,
     verticalPadding = verticalPadding,
+    hitAreaWidth = hitAreaWidth,
 )
 
 /**
@@ -342,6 +354,7 @@ fun Modifier.verticalScrollbar(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
 ): Modifier {
     val coroutineScope = rememberCoroutineScope()
     var isDragging by remember { mutableStateOf(false) }
@@ -378,7 +391,7 @@ fun Modifier.verticalScrollbar(
     return this
         .pointerInput(adapter) {
             val touchSlop = viewConfiguration.touchSlop
-            val hitAreaWidthPx = HIT_AREA_WIDTH.toPx()
+            val hitAreaWidthPx = hitAreaWidth.toPx()
             val grabMarginPx = GRAB_MARGIN.toPx()
             val minThumbPx = MIN_THUMB_HEIGHT.toPx()
             val thumbGapPx = THUMB_TRACK_GAP.toPx()
@@ -542,6 +555,7 @@ fun HzVerticalScrollbar(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
 ) {
     Box(
         modifier = modifier
@@ -554,6 +568,7 @@ fun HzVerticalScrollbar(
                 autoHideDelayMs = autoHideDelayMs,
                 endPadding = endPadding,
                 verticalPadding = verticalPadding,
+                hitAreaWidth = hitAreaWidth,
             )
     )
 }
@@ -570,6 +585,7 @@ fun HzVerticalScrollbar(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
 ) {
     HzVerticalScrollbar(
         adapter = rememberScrollbarAdapter(state),
@@ -581,6 +597,7 @@ fun HzVerticalScrollbar(
         autoHideDelayMs = autoHideDelayMs,
         endPadding = endPadding,
         verticalPadding = verticalPadding,
+        hitAreaWidth = hitAreaWidth,
     )
 }
 
@@ -596,6 +613,7 @@ fun HzVerticalScrollbar(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
 ) {
     HzVerticalScrollbar(
         adapter = rememberScrollbarAdapter(state),
@@ -607,6 +625,7 @@ fun HzVerticalScrollbar(
         autoHideDelayMs = autoHideDelayMs,
         endPadding = endPadding,
         verticalPadding = verticalPadding,
+        hitAreaWidth = hitAreaWidth,
     )
 }
 
@@ -624,6 +643,7 @@ fun HzScrollbarBox(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(modifier = modifier) {
@@ -640,6 +660,7 @@ fun HzScrollbarBox(
             autoHideDelayMs = autoHideDelayMs,
             endPadding = endPadding,
             verticalPadding = verticalPadding,
+            hitAreaWidth = hitAreaWidth,
         )
     }
 }
@@ -656,6 +677,7 @@ fun HzScrollbarBox(
     autoHideDelayMs: Long = 900L,
     endPadding: Dp = 4.dp,
     verticalPadding: Dp = 4.dp,
+    hitAreaWidth: Dp = HIT_AREA_WIDTH,
     content: @Composable BoxScope.() -> Unit,
 ) {
     HzScrollbarBox(
@@ -668,6 +690,7 @@ fun HzScrollbarBox(
         autoHideDelayMs = autoHideDelayMs,
         endPadding = endPadding,
         verticalPadding = verticalPadding,
+        hitAreaWidth = hitAreaWidth,
         content = content,
     )
 }

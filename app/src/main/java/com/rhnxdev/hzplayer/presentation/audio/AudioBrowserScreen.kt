@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import com.rhnxdev.hzplayer.core.components.DENSE_HIT_AREA_WIDTH
 import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
@@ -204,7 +205,7 @@ private fun SongsTab(
             val listState = rememberLazyListState()
             LazyColumn(
                 state = listState,
-                modifier = modifier.fillMaxSize().verticalScrollbar(listState),
+                modifier = modifier.fillMaxSize().verticalScrollbar(listState, hitAreaWidth = DENSE_HIT_AREA_WIDTH),
                 contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -294,7 +295,7 @@ private fun ArtistsTab(
             val listState = rememberLazyListState()
             LazyColumn(
                 state = listState,
-                modifier = modifier.fillMaxSize().verticalScrollbar(listState),
+                modifier = modifier.fillMaxSize().verticalScrollbar(listState, hitAreaWidth = DENSE_HIT_AREA_WIDTH),
                 contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {

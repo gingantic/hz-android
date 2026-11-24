@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import com.rhnxdev.hzplayer.core.components.DENSE_HIT_AREA_WIDTH
 import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -90,7 +91,7 @@ fun StorageRootsContent(
                 val listState = rememberLazyListState()
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize().padding(Spacing.lg).verticalScrollbar(listState),
+                    modifier = Modifier.fillMaxSize().padding(Spacing.lg).verticalScrollbar(listState, hitAreaWidth = DENSE_HIT_AREA_WIDTH),
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     // Storage section

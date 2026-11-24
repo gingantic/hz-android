@@ -222,7 +222,7 @@ fun DirectoryBrowsePane(
                 val actualListState = listState ?: androidx.compose.foundation.lazy.rememberLazyListState()
                 LazyColumn(
                     state = actualListState,
-                    modifier = Modifier.fillMaxSize().verticalScrollbar(actualListState),
+                    modifier = Modifier.fillMaxSize().verticalScrollbar(actualListState, hitAreaWidth = DENSE_HIT_AREA_WIDTH),
                     contentPadding = contentPadding,
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {

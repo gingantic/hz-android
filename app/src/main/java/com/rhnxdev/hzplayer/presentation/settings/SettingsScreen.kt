@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.rhnxdev.hzplayer.core.components.DENSE_HIT_AREA_WIDTH
 import com.rhnxdev.hzplayer.core.components.verticalScrollbar
 import android.util.Log
 import android.widget.Toast
@@ -181,7 +182,7 @@ fun SettingsScreen(
         val listState = rememberLazyListState()
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().verticalScrollbar(listState),
+            modifier = Modifier.fillMaxSize().verticalScrollbar(listState, hitAreaWidth = DENSE_HIT_AREA_WIDTH),
             contentPadding = PaddingValues(vertical = Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(Spacing.lg),
         ) {
