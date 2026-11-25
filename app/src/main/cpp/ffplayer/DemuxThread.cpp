@@ -1,6 +1,21 @@
 #include "FfmpegPlayerContext.h"
 #include "NetworkIo.h"
 
+// MPEG-TS has no keyframe index. av_seek_frame() lands on the video packet nearest the
+// target (not on a keyframe), and the decoder then drops frames until the next keyframe:
+// video stays frozen for up to one GOP while audio is ready. Seeking this far BEFORE the
+// target lets the normal preroll (frames before the target are decoded and dropped) reach
+// a keyframe first. The lead follows the largest keyframe gap seen so far; the default
+// applies until the first gap is measured.
+static constexpr int64_t kTsSeekLeadDefaultUs = 5000000LL;
+static constexpr int64_t kTsSeekLeadMinUs     = 2000000LL;
+static constexpr int64_t kTsSeekLeadMaxUs     = 12000000LL;
+
+static int64_t tsSeekLeadUs(int64_t maxKeyGapUs) {
+    if (maxKeyGapUs <= 0) return kTsSeekLeadDefaultUs;
+    return std::min(kTsSeekLeadMaxUs, std::max(kTsSeekLeadMinUs, maxKeyGapUs + maxKeyGapUs / 4));
+}
+
 // ─── Demux Thread ────────────────────────────────────────────────────────────
 
 void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
@@ -62,6 +77,15 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
     auto lastPosNotify = std::chrono::steady_clock::now();
     int64_t readErrorSinceMs = -1;
 
+    // MPEG-TS keyframe tracking (demux-thread only). See kTsSeekLeadDefaultUs.
+    const bool isMpegTs = ctx->fmtCtx->iformat && ctx->fmtCtx->iformat->name &&
+                          strcmp(ctx->fmtCtx->iformat->name, "mpegts") == 0;
+    int64_t tsLastKeyUs = AV_NOPTS_VALUE;     // PTS of the previous video keyframe
+    int64_t tsMaxKeyGapUs = 0;                // largest keyframe gap observed
+    int64_t tsSeekStartUs = AV_NOPTS_VALUE;   // where the last seek actually started reading
+    int64_t tsSeekTargetUs = 0;               // target of that seek
+    bool tsAwaitKey = isMpegTs;               // drop undecodable video until the first keyframe
+
     auto reportDemuxFailure = [&](const char* prefix, int ret) {
         char errorText[AV_ERROR_MAX_STRING_SIZE] = {};
         av_strerror(ret, errorText, sizeof(errorText));
@@ -112,13 +136,21 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
             ctx->nativeAudioSink.flush();
 
             int64_t targetUs = target * 1000;
+            int64_t seekUs = targetUs;
+            if (isMpegTs && targetUs > 0) {
+                seekUs = std::max<int64_t>(0, targetUs - tsSeekLeadUs(tsMaxKeyGapUs));
+            }
+            tsLastKeyUs = AV_NOPTS_VALUE;
+            tsSeekStartUs = seekUs;
+            tsSeekTargetUs = targetUs;
+            tsAwaitKey = isMpegTs;
             int seekRet = -1;
-            if (target <= 0) {
+            if (seekUs <= 0) {
                 seekRet = av_seek_frame(ctx->fmtCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
             } else {
-                seekRet = av_seek_frame(ctx->fmtCtx, -1, targetUs, AVSEEK_FLAG_BACKWARD);
+                seekRet = av_seek_frame(ctx->fmtCtx, -1, seekUs, AVSEEK_FLAG_BACKWARD);
                 if (seekRet < 0 && ctx->videoStreamIdx >= 0) {
-                    int64_t vSeekTs = av_rescale_q(targetUs, AV_TIME_BASE_Q, ctx->videoTimeBase);
+                    int64_t vSeekTs = av_rescale_q(seekUs, AV_TIME_BASE_Q, ctx->videoTimeBase);
                     seekRet = av_seek_frame(ctx->fmtCtx, ctx->videoStreamIdx, vSeekTs, AVSEEK_FLAG_BACKWARD);
                 }
             }
@@ -212,7 +244,35 @@ void demuxThreadFunc(FfmpegPlayerContext* ctx, int64_t initialSeekMs) {
         readErrorSinceMs = -1;
 
         if (pkt->stream_index == ctx->videoStreamIdx && (ctx->videoCodecCtx || ctx->videoCodecPar)) {
-            AVPacket* vpkt = av_packet_alloc();
+            if (isMpegTs && (pkt->flags & AV_PKT_FLAG_KEY)) {
+                int64_t keyTs = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : pkt->dts;
+                if (keyTs != AV_NOPTS_VALUE) {
+                    int64_t keyUs = av_rescale_q(keyTs, ctx->videoTimeBase, AV_TIME_BASE_Q);
+                    if (tsLastKeyUs != AV_NOPTS_VALUE) {
+                        if (keyUs > tsLastKeyUs) {
+                            tsMaxKeyGapUs = std::max(tsMaxKeyGapUs, std::min(keyUs - tsLastKeyUs, kTsSeekLeadMaxUs));
+                        }
+                    } else if (tsSeekStartUs != AV_NOPTS_VALUE && keyUs > tsSeekTargetUs) {
+                        // First keyframe after the seek is already past the target: the
+                        // lead was shorter than the GOP. keyUs - tsSeekStartUs is a lower
+                        // bound on that gap, so the next seek reaches back far enough.
+                        tsMaxKeyGapUs = std::max(tsMaxKeyGapUs, std::min(keyUs - tsSeekStartUs, kTsSeekLeadMaxUs));
+                    }
+                    tsLastKeyUs = keyUs;
+                    tsSeekStartUs = AV_NOPTS_VALUE;
+                }
+            }
+            // Packets between the seek point and the first keyframe cannot be decoded.
+            // Feeding them stalls some hardware decoders for seconds, so drop them. If
+            // the stream never flags a keyframe, stop dropping once the target is reached.
+            if (tsAwaitKey) {
+                int64_t ts = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : pkt->dts;
+                if ((pkt->flags & AV_PKT_FLAG_KEY) || ts == AV_NOPTS_VALUE ||
+                    av_rescale_q(ts, ctx->videoTimeBase, AV_TIME_BASE_Q) >= tsSeekTargetUs) {
+                    tsAwaitKey = false;
+                }
+            }
+            AVPacket* vpkt = tsAwaitKey ? nullptr : av_packet_alloc();
             if (vpkt) {
                 av_packet_move_ref(vpkt, pkt);
                 ctx->videoQueue.push(vpkt, ctx->videoTimeBase);

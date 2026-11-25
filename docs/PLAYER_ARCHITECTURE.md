@@ -326,6 +326,16 @@ the new target.
   (`DemuxThread.cpp`, `nativeGetPosition`) require
   `videoStreamIdx >= 0 && hasSurface && videoSeekTargetPtsUs >= 0 && totalRenderedFrames == 0`
   before reporting the pre-roll target.
+- **MPEG-TS seeks** (DemuxThread.cpp, demuxer name mpegts only). TS has no keyframe index,
+  so v_seek_frame() lands on a non-key video packet and the picture stays frozen until the
+  next keyframe, while audio is already ready. Worse, feeding those undecodable packets to an
+  AMediaCodec decoder stalled it for seconds on the emulator. The demux thread therefore seeks
+  	arget - lead (lead = 1.25x the largest video keyframe gap seen, clamped 2-12 s, 5 s until
+  a gap is measured), drops video packets until the first keyframe, and lets the normal pre-roll
+  drop frames up to the target. A seek whose first keyframe is still past the target raises the
+  gap estimate for the next one. Other containers take the unchanged path. ExoPlayer is not
+  touched: a lead there only moved cost from waiting for the next IDR to decoding up to the
+  target (no gain on the emulator), so it was not adopted.
 
 Kotlin mirrors the same rule (`FfmpegNativeEngine`, `PlayerPositionController`):
 `pendingSeekTargetMs` is an `AtomicLong` cleared only by a `compareAndSet` that still
