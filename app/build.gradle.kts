@@ -22,6 +22,11 @@ fun getGitCommitHash(): String {
     }
 }
 
+// versionCode is derived from the commit count, which a history rewrite lowers.
+// This offset keeps it above every already-published build (259 before the CI
+// history squash). Raise it when squashing, never lower it.
+val VERSION_CODE_OFFSET = 3
+
 // Shared signing config for the `release` variant so local builds and CI-published
 // OTA APKs carry the same certificate (otherwise INSTALL_FAILED_UPDATE_INCOMPATIBLE).
 // CI passes values via env vars; local dev reads them from gitignored local.properties.
@@ -84,7 +89,7 @@ android {
 
         val commitCount = getGitCommitCount()
         val commitHash = getGitCommitHash()
-        versionCode = commitCount
+        versionCode = commitCount + VERSION_CODE_OFFSET
         versionName = "0.9.6-build.$commitCount+$commitHash"
 
         val r2BaseUrl = (project.findProperty("R2_UPDATE_BASE_URL") as? String)
@@ -179,6 +184,19 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+// Robolectric fetches its android-all runtime jars from Maven Central at test
+// time, outside Gradle, so they never land in the Gradle cache and CI re-fetched
+// ~250 MB every run. Resolve them as ordinary dependencies and run Robolectric
+// offline against the resolved files instead (wiring at the bottom of the file).
+// Two configurations: both jars share group:artifact, so one configuration would
+// resolve them to a single version.
+val robolectricRuntimeNewest by configurations.creating {
+    isCanBeConsumed = false
+}
+val robolectricRuntimeOldest by configurations.creating {
+    isCanBeConsumed = false
+}
+
 dependencies {
     // Core
     implementation(libs.androidx.core.ktx)
@@ -246,10 +264,33 @@ dependencies {
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+
+    // Robolectric runtime jars. Coordinates come from Robolectric's
+    // DefaultSdkProvider: 35 is the newest SDK it ships (what targetSdk 36
+    // resolves to), 21 the oldest it still supports. Bump these when the
+    // Robolectric version or compileSdk changes, or tests fail with
+    // "Unable to locate dependency".
+    robolectricRuntimeNewest("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
+    robolectricRuntimeOldest("org.robolectric:android-all-instrumented:5.0.2_r3-robolectric-r0-i7")
+
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+}
+
+// Robolectric's LocalDependencyResolver looks for a flat directory of
+// <artifactId>-<version>.jar, which is exactly what these artifacts are called.
+val robolectricRuntimeDir = layout.buildDirectory.dir("robolectric-runtime")
+val syncRobolectricRuntime by tasks.registering(Sync::class) {
+    from(robolectricRuntimeNewest, robolectricRuntimeOldest)
+    into(robolectricRuntimeDir)
+}
+
+tasks.withType<Test>().configureEach {
+    dependsOn(syncRobolectricRuntime)
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", robolectricRuntimeDir.get().asFile.absolutePath)
 }
 
 tasks.register("printVersionName") {
