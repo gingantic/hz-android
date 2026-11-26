@@ -48,23 +48,36 @@ object NetworkDomainUtils {
      * back to [expectedIp]. Tries the bare [candidate] first, then `candidate.local` (mDNS) for
      * a dot-less NetBIOS-style name. Returns the first form that resolves to [expectedIp], or null.
      *
+     * Every address of a form is checked, not just the first: a dual-stack name resolves to both
+     * an IPv6 and an IPv4 address, and [InetAddress.getByName] would return the IPv6 one and
+     * reject a name that is perfectly usable.
+     *
      * Why the round-trip check: a NetBIOS/reverse-DNS name is worthless if the device can't later
      * connect to it, so we only swap in a name we just proved reachable.
      */
-    fun verifiedHostName(candidate: String, expectedIp: String): String? {
-        val name = candidate.trim()
-        if (name.isBlank() || isNumericIp(name)) return null
+    fun verifiedHostName(candidate: String, expectedIp: String): String? =
+        verifiedHostName(candidate, expectedIp) { InetAddress.getAllByName(it) }
+
+    /** [verifiedHostName] with an injectable resolver, so the matching rules are unit-testable. */
+    internal fun verifiedHostName(
+        candidate: String,
+        expectedIp: String,
+        resolve: (String) -> Array<InetAddress>,
+    ): String? {
+        val name = candidate.trim().trimEnd('.')
+        if (name.isEmpty() || isNumericIp(name)) return null
 
         val forms = if (name.contains(".")) listOf(name) else listOf(name, "$name.local")
         for (form in forms) {
-            try {
-                val resolved = InetAddress.getByName(form)
-                if (resolved.hostAddress == expectedIp) {
-                    Log.d(TAG, "verifiedHostName: $form resolves to $expectedIp")
-                    return form
-                }
+            val addresses = try {
+                resolve(form)
             } catch (e: Exception) {
                 Log.d(TAG, "verifiedHostName: $form did not resolve: ${e.message}")
+                continue
+            }
+            if (addresses.any { it.hostAddress == expectedIp }) {
+                Log.d(TAG, "verifiedHostName: $form resolves to $expectedIp")
+                return form
             }
         }
         return null

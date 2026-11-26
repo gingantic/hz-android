@@ -235,15 +235,20 @@ class ServerDiscoverer @Inject constructor(
         }
     }
 
+    /**
+     * Machine name behind [host]: reverse DNS, else a NetBIOS node-status query.
+     *
+     * The full reverse-DNS name is kept (`nas.lan`, not `nas`) so it can be verified and used
+     * as the connect target; callers that need a short label take the first label.
+     */
     internal fun resolveComputerName(host: String): String? {
         // 1. Try Reverse DNS
         try {
             val inetAddress = InetAddress.getByName(host)
-            val dnsHost = inetAddress.hostName
-            if (!dnsHost.isNullOrEmpty() && dnsHost != host) {
-                val cleanName = dnsHost.substringBefore(".local").substringBefore(".")
-                Log.d(TAG, "resolveComputerName: DNS resolved $host to $cleanName")
-                return cleanName
+            val dnsHost = inetAddress.hostName?.trimEnd('.')
+            if (!dnsHost.isNullOrEmpty() && dnsHost != host && !NetworkDomainUtils.isNumericIp(dnsHost)) {
+                Log.d(TAG, "resolveComputerName: DNS resolved $host to $dnsHost")
+                return dnsHost
             }
         } catch (e: Exception) {
             Log.d(TAG, "resolveComputerName: DNS reverse lookup failed for $host: ${e.message}")
@@ -312,11 +317,11 @@ class ServerDiscoverer @Inject constructor(
 
         // Resolve the computer name once and prefer it (verified reachable) as the stored host,
         // so the saved server uses a domain instead of a numeric IP. Fall back: reverse-DNS
-        // domain (resolveDomain) → the numeric IP.
+        // domain (resolveDomain) → the numeric IP. The card title stays a short label.
         val resolvedName = resolveComputerName(host)
         val verifiedHost = resolvedName?.let { NetworkDomainUtils.verifiedHostName(it, host) }
         val storedHost = verifiedHost ?: NetworkDomainUtils.resolveDomain(null, host)
-        val displayName = resolvedName?.takeIf { it.isNotEmpty() } ?: storedHost
+        val displayName = resolvedName?.substringBefore('.')?.takeIf { it.isNotEmpty() } ?: storedHost
 
         if (smbOpen) {
             Log.d(TAG, "probeHost: discovered active SMB service on $host:445 (stored as $storedHost)")
@@ -366,19 +371,33 @@ class ServerDiscoverer @Inject constructor(
         discoveryName: String?,
         ip: String?,
     ) {
+        val server = ServerConfig(
+            name = name,
+            protocol = protocol,
+            host = host,
+            port = port,
+            basePath = "/",
+            discoveryName = discoveryName,
+            lastKnownIp = ip,
+        )
         _discoveredServers.update { current ->
-            val existing = current.any { it.host == host && it.protocol == protocol }
-            if (existing) return@update current
-            Log.d(TAG, "addDiscoveredServer: adding $name ($protocol @ $host:$port)")
-            current + ServerConfig(
-                name = name,
-                protocol = protocol,
-                host = host,
-                port = port,
-                basePath = "/",
-                discoveryName = discoveryName,
-                lastKnownIp = ip,
-            )
+            // mDNS and the subnet sweep can find the same machine; dedupe by the address it was
+            // seen at (two machines may share a name). If the earlier entry only had an IP and
+            // this one learned a name, swap it in so the card shows the domain.
+            val index = current.indexOfFirst {
+                it.protocol == protocol && (it.host == host || (ip != null && it.lastKnownIp == ip))
+            }
+            if (index < 0) {
+                Log.d(TAG, "addDiscoveredServer: adding $name ($protocol @ $host:$port)")
+                return@update current + server
+            }
+            val existing = current[index]
+            if (NetworkDomainUtils.isNumericIp(existing.host) && !NetworkDomainUtils.isNumericIp(host)) {
+                Log.d(TAG, "addDiscoveredServer: $name ($protocol) now has name $host")
+                current.toMutableList().also { it[index] = server }
+            } else {
+                current
+            }
         }
     }
 
@@ -540,10 +559,18 @@ class ServerDiscoverer @Inject constructor(
 
         val displayName = name.removeSuffix(".$type").removeSuffix(".")
 
-        // Prefer the mDNS service name (→ name.local) as the stored host when it verifiably
-        // resolves to this IP, so the saved server uses a domain. Fall back: reverse-DNS
-        // domain (resolveDomain, seeded with the already-resolved InetAddress) → the numeric IP.
-        val verifiedHost = NetworkDomainUtils.verifiedHostName(displayName, hostAddress)
+        // Prefer a name that verifiably resolves to this IP as the stored host, so the saved
+        // server uses a domain. The service instance name is free text ("My Cloud Home") and
+        // need not be the hostname, so the platform mDNS hostname wins when it is available;
+        // fall back to the instance name only if it could be a DNS name, then reverse DNS.
+        val mdnsHost = info.mdnsHostname()
+        val candidates = listOfNotNull(
+            mdnsHost,
+            displayName.takeIf { it.isHostnameCandidate() && it != mdnsHost },
+        )
+        val verifiedHost = candidates.firstNotNullOfOrNull {
+            NetworkDomainUtils.verifiedHostName(it, hostAddress)
+        }
         val storedHost = verifiedHost ?: NetworkDomainUtils.resolveDomain(info.host, hostAddress)
 
         addDiscoveredServer(
@@ -555,4 +582,18 @@ class ServerDiscoverer @Inject constructor(
             ip = hostAddress.takeIf { !it.contains(":") },
         )
     }
+
+    /**
+     * The mDNS hostname of a resolved service, or null when the platform doesn't expose it.
+     *
+     * [NsdServiceInfo.getHostname] is API 36 but ships through the Connectivity module on 13+,
+     * so reflection is the only way to use it without dropping those devices.
+     */
+    private fun NsdServiceInfo.mdnsHostname(): String? = runCatching {
+        javaClass.getMethod("getHostname").invoke(this) as? String
+    }.getOrNull()?.trimEnd('.')?.takeIf { it.isNotEmpty() }
+
+    /** mDNS instance names are free text; only a DNS-like name can double as a host. */
+    private fun String.isHostnameCandidate(): Boolean =
+        isNotEmpty() && all { it.isLetterOrDigit() || it == '-' || it == '.' }
 }

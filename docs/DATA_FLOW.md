@@ -271,8 +271,10 @@ NetworkScreen → scan → ServerDiscoverer.startScan()
   → NsdManager.discoverServices("_smb._tcp" / "_ftp._tcp" / "_webdav._tcp")
       // needs NEARBY_WIFI_DEVICES on API 33+; without it the scan is skipped
   → fallback: /24 subnet sweep probing port 445 (SMB) and 21 (FTP)
-  → per host: reverse DNS / NetBIOS name → NetworkDomainUtils.verifiedHostName(name, ip)
-      // the name must resolve back to the same IP
+  → per host: mDNS hostname / reverse DNS / NetBIOS name → verifiedHostName(name, ip)
+      // the name must resolve back to the same IP; every address of the name is checked
+      // (a dual-stack name also resolves to IPv6), and the full reverse-DNS name is kept
+      // (`nas.lan`, not `nas`) so it stays resolvable
     → else NetworkDomainUtils.resolveDomain(...) → else the numeric IP
   → discoveredServers: StateFlow<List<ServerConfig>>
   → NetworkViewModel.onSaveDiscoveredServer(server)

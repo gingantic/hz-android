@@ -2,9 +2,11 @@ package com.rhnxdev.hzplayer.core.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
+import java.net.UnknownHostException
 
 class NetworkDomainUtilsTest {
 
@@ -37,6 +39,38 @@ class NetworkDomainUtilsTest {
         val ip = "203.0.113.254"
         val resolved = NetworkDomainUtils.resolveDomain(null, ip)
         assertEquals("203.0.113.254", resolved)
+    }
+
+    @Test
+    fun verifiedHostName_acceptsAnyAddressOfADualStackName() {
+        val ipv6 = InetAddress.getByName("fe80::1")
+        val ipv4 = InetAddress.getByName("192.168.1.10")
+        val verified = NetworkDomainUtils.verifiedHostName("nas.lan", "192.168.1.10") {
+            arrayOf(ipv6, ipv4)
+        }
+        assertEquals("nas.lan", verified)
+    }
+
+    @Test
+    fun verifiedHostName_rejectsNameResolvingToAnotherHost() {
+        val other = InetAddress.getByName("192.168.1.99")
+        val verified = NetworkDomainUtils.verifiedHostName("nas.lan", "192.168.1.10") { arrayOf(other) }
+        assertNull(verified)
+    }
+
+    @Test
+    fun verifiedHostName_triesMdnsSuffixForBareName() {
+        val ip = InetAddress.getByName("192.168.1.10")
+        val verified = NetworkDomainUtils.verifiedHostName("nas", "192.168.1.10") { form ->
+            if (form == "nas.local") arrayOf(ip) else throw UnknownHostException(form)
+        }
+        assertEquals("nas.local", verified)
+    }
+
+    @Test
+    fun verifiedHostName_ignoresNumericAndBlankCandidates() {
+        assertNull(NetworkDomainUtils.verifiedHostName("192.168.1.10", "192.168.1.10") { arrayOf() })
+        assertNull(NetworkDomainUtils.verifiedHostName("   ", "192.168.1.10") { arrayOf() })
     }
 
     @Test
